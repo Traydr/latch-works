@@ -446,6 +446,7 @@ impl ViewMode {
         let excluded = options
             .excluded
             .unwrap_or(preferences.excluded_root_child_paths);
+        let order = (settings.sort_mode, settings.random_seed);
         if settings.remember_last_folder
             && settings.last_folder_path.as_deref() != Some(&folder_text)
         {
@@ -456,6 +457,7 @@ impl ViewMode {
             recursive,
             filters: scan_filters(&filters),
             excluded_root_children: excluded.into_iter().map(PathBuf::from).collect(),
+            order,
         };
         self.catalog
             .update(cx, |catalog, cx| catalog.scan(request, cx));
@@ -614,9 +616,14 @@ impl ViewMode {
         } else {
             let key = (catalog.revision(), mode, seed);
             if self.sorted.key != Some(key) {
+                // The scan sorted its items as it finished, unless the order changed since.
+                let media = match catalog.sorted((mode, seed)) {
+                    Some(sorted) => sorted.clone(),
+                    None => sort_media(catalog.items(), mode, seed).into(),
+                };
                 self.sorted = SortedMedia {
                     key: Some(key),
-                    media: sort_media(catalog.items(), mode, seed).into(),
+                    media,
                 };
             }
             self.sorted.media.clone()

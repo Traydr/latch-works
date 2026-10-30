@@ -30,16 +30,41 @@ pub enum MediaKind {
     Video,
 }
 
+/// What every media tile's key starts with, before the item's id, as `media-domain`'s
+/// `buildBrowserEntryCollection` keys it.
+pub const MEDIA_KEY_PREFIX: &str = "media:";
+
 /// One file the gallery shows: where it is, what it is, and what its thumbnail is keyed by.
-#[derive(Clone, Debug, PartialEq)]
-pub struct MediaEntry {
-    id: SharedString,
+///
+/// Clones share one allocation. The scan's items, their sorted order, the tiles, the thumbnail
+/// queue and the viewer all hold every item, so a clone is a reference count and a listing of
+/// 20,000 is a few hundred kilobytes of handles rather than a copy of each item per holder.
+#[derive(Clone)]
+pub struct MediaEntry(Arc<Entry>);
+
+#[derive(Debug, PartialEq)]
+struct Entry {
+    /// The gallery tile's key, [`MEDIA_KEY_PREFIX`] and the id, made once for the item; the id
+    /// is the rest of it.
+    key: SharedString,
     path: Arc<Path>,
     name: SharedString,
     extension: SharedString,
     kind: MediaKind,
     size: u64,
     modified_ms: f64,
+}
+
+impl PartialEq for MediaEntry {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) || self.0 == other.0
+    }
+}
+
+impl std::fmt::Debug for MediaEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
 }
 
 impl MediaEntry {
@@ -50,15 +75,15 @@ impl MediaEntry {
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default();
         let extension = oriel_core_domain::get_extension(&name);
-        Self {
-            id: format!("{}:{size}:{modified_ms}", path.display()).into(),
+        Self(Arc::new(Entry {
+            key: format!("{MEDIA_KEY_PREFIX}{}:{size}:{modified_ms}", path.display()).into(),
             path,
             name: name.into(),
             extension: extension.into(),
             kind,
             size,
             modified_ms,
-        }
+        }))
     }
 
     /// The gallery's item for a file the scan found.
@@ -68,82 +93,88 @@ impl MediaEntry {
             CatalogMediaType::Image if item.extension == "gif" => MediaKind::Gif,
             CatalogMediaType::Image => MediaKind::Image,
         };
-        Self {
-            id: item.id.clone().into(),
-            path: PathBuf::from(&item.path).into(),
-            name: item.name.clone().into(),
-            extension: item.extension.clone().into(),
+        Self(Arc::new(Entry {
+            key: format!("{MEDIA_KEY_PREFIX}{}", item.id).into(),
+            path: Arc::from(Path::new(&item.path)),
+            name: SharedString::from(item.name.as_str()),
+            extension: SharedString::from(item.extension.as_str()),
             kind,
             size: item.size,
             modified_ms: item.mtime_ms,
-        }
+        }))
     }
 
     /// `path:size:mtimeMs`, which changes when the file does.
-    pub fn id(&self) -> &SharedString {
-        &self.id
+    pub fn id(&self) -> &str {
+        &self.0.key[MEDIA_KEY_PREFIX.len()..]
+    }
+
+    /// The item's gallery tile key, `media:` and the id. The thumbnails and the video facts are
+    /// kept by it, since it is as unique as the id and already made.
+    pub fn key(&self) -> &SharedString {
+        &self.0.key
     }
 
     pub fn path(&self) -> &Arc<Path> {
-        &self.path
+        &self.0.path
     }
 
     /// The file's name, which the gallery sorts by and the viewer titles itself with.
     pub fn name(&self) -> &SharedString {
-        &self.name
+        &self.0.name
     }
 
     /// The canonical extension, lowercased (`jpeg` reads `jpg`).
     pub fn extension(&self) -> &SharedString {
-        &self.extension
+        &self.0.extension
     }
 
     pub fn kind(&self) -> MediaKind {
-        self.kind
+        self.0.kind
     }
 
     pub fn is_video(&self) -> bool {
-        self.kind == MediaKind::Video
+        self.0.kind == MediaKind::Video
     }
 
     /// The file's size in bytes.
     pub fn size(&self) -> u64 {
-        self.size
+        self.0.size
     }
 
     /// The file's modification time as Node's `fs.Stats.mtimeMs` gives it: milliseconds since
     /// the epoch, with the nanoseconds as a fraction. Electron Oriel keys thumbnails by it.
     pub fn modified_ms(&self) -> f64 {
-        self.modified_ms
+        self.0.modified_ms
     }
 }
 
 impl NamedPath for MediaEntry {
     fn name(&self) -> &str {
-        &self.name
+        &self.0.name
     }
 
     /// The path as text, as the TypeScript compares it. macOS file names are UTF-8, so the
     /// empty fallback is for a path no Mac volume makes.
     fn path(&self) -> &str {
-        self.path.to_str().unwrap_or_default()
+        self.0.path.to_str().unwrap_or_default()
     }
 }
 
 impl SortableMediaItem for MediaEntry {
     fn mtime_ms(&self) -> f64 {
-        self.modified_ms
+        self.0.modified_ms
     }
 }
 
 impl ComicMediaItem for MediaEntry {
     fn id(&self) -> &str {
-        &self.id
+        MediaEntry::id(self)
     }
 
     /// View's two kinds, as its `MediaItem` has them: a GIF is an image.
     fn media_type(&self) -> MediaType {
-        match self.kind {
+        match self.0.kind {
             MediaKind::Video => MediaType::Video,
             MediaKind::Image | MediaKind::Gif => MediaType::Image,
         }
@@ -256,7 +287,8 @@ mod tests {
         );
         let entry = MediaEntry::from_catalog(&item);
         assert_eq!(entry.kind(), MediaKind::Gif);
-        assert_eq!(entry.id().as_ref(), item.id);
+        assert_eq!(entry.id(), item.id);
+        assert_eq!(entry.key().as_ref(), format!("media:{}", item.id));
         assert_eq!(
             MediaEntry::new(
                 Path::new("/r/a.gif"),

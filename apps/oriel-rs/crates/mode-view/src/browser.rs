@@ -63,8 +63,8 @@ pub enum Tile {
         key: SharedString,
         comic: Arc<Comic>,
     },
+    /// A media item, keyed by [`MediaEntry::key`].
     Media {
-        key: SharedString,
         media: MediaEntry,
         /// Where the item is in the listing's media, which the viewer steps through.
         media_index: usize,
@@ -76,7 +76,8 @@ impl Tile {
     /// selection is kept by.
     pub fn key(&self) -> &SharedString {
         match self {
-            Self::Folder { key, .. } | Self::Comic { key, .. } | Self::Media { key, .. } => key,
+            Self::Folder { key, .. } | Self::Comic { key, .. } => key,
+            Self::Media { media, .. } => media.key(),
         }
     }
 
@@ -173,8 +174,13 @@ pub struct Browse<'a> {
 }
 
 /// The gallery's tiles: `buildBrowserEntryCollection`.
+///
+/// The shared rule decides the folders and comics, their order and their keys. The media come
+/// after them in display order, each keyed `media:` and its id as the rule keys it; they are
+/// added here from the keys the items already carry, since the rule would format a new key
+/// string for each of them on every rebuild, which during a scan is every batch.
 pub fn build_tiles(browse: &Browse<'_>) -> Vec<Tile> {
-    // The shared rule decides the order and the keys; the comics ride along by position.
+    // The comics ride along by position.
     let shared: Vec<ComicEntry<&MediaEntry>> = browse
         .comics
         .iter()
@@ -186,43 +192,54 @@ pub fn build_tiles(browse: &Browse<'_>) -> Vec<Tile> {
             pages: Vec::new(),
         })
         .collect();
-    let listing = BrowserListing {
+    let listing = BrowserListing::<'_, _, MediaEntry> {
         folders: browse.folders,
         comics: &shared,
-        items: browse.media,
+        items: &[],
         recursive: browse.recursive,
         comic_mode: browse.comic_mode,
         sort_mode: browse.sort_mode,
     };
-    build_browser_entries(&listing)
-        .into_iter()
-        .map(|entry| match entry {
-            BrowserEntry::Folder { key, folder } => Tile::Folder {
+    let entries = build_browser_entries(&listing);
+    let media = if browse.comic_mode {
+        &[][..]
+    } else {
+        browse.media
+    };
+    let mut tiles = Vec::with_capacity(entries.len() + media.len());
+    tiles.extend(entries.into_iter().map(|entry| match entry {
+        BrowserEntry::Folder { key, folder } => Tile::Folder {
+            key: key.into(),
+            path: PathBuf::from(&folder.path).into(),
+            name: folder.name.clone().into(),
+        },
+        BrowserEntry::Comic { key, comic } => {
+            let position = shared
+                .iter()
+                .position(|candidate| std::ptr::eq(candidate, comic))
+                .expect("the comic came from this list");
+            Tile::Comic {
                 key: key.into(),
-                path: PathBuf::from(&folder.path).into(),
-                name: folder.name.clone().into(),
-            },
-            BrowserEntry::Comic { key, comic } => {
-                let position = shared
-                    .iter()
-                    .position(|candidate| std::ptr::eq(candidate, comic))
-                    .expect("the comic came from this list");
-                Tile::Comic {
-                    key: key.into(),
-                    comic: browse.comics[position].clone(),
-                }
+                comic: browse.comics[position].clone(),
             }
-            BrowserEntry::Media {
-                key,
-                media,
-                media_index,
-            } => Tile::Media {
-                key: key.into(),
+        }
+        BrowserEntry::Media {
+            media, media_index, ..
+        } => Tile::Media {
+            media: media.clone(),
+            media_index,
+        },
+    }));
+    tiles.extend(
+        media
+            .iter()
+            .enumerate()
+            .map(|(media_index, media)| Tile::Media {
                 media: media.clone(),
                 media_index,
-            },
-        })
-        .collect()
+            }),
+    );
+    tiles
 }
 
 #[cfg(test)]
@@ -284,6 +301,35 @@ mod tests {
             .collect();
         assert_eq!(pages, ["1.jpg", "2.jpg", "10.jpg"]);
         assert_eq!(comics[0].cover().name().as_ref(), "1.jpg");
+    }
+
+    /// The media tiles' keys are the ones the shared rule gives them, though the tiles take them
+    /// from the items.
+    #[test]
+    fn media_tiles_carry_the_shared_rules_keys() {
+        let folders = [folder("/r/b")];
+        let media = [still("/r/x.jpg", 1.5), still("/r/y.jpg", 2.)];
+        for recursive in [false, true] {
+            let tiles = build_tiles(&Browse {
+                folders: &folders,
+                media: &media,
+                comics: &[],
+                recursive,
+                comic_mode: false,
+                sort_mode: GallerySortMode::NameAsc,
+            });
+            let shared = build_browser_entries(&BrowserListing::<'_, &MediaEntry, _> {
+                folders: &folders,
+                comics: &[],
+                items: &media,
+                recursive,
+                comic_mode: false,
+                sort_mode: GallerySortMode::NameAsc,
+            });
+            let keys: Vec<&str> = tiles.iter().map(|tile| tile.key().as_ref()).collect();
+            let expected: Vec<&str> = shared.iter().map(BrowserEntry::key).collect();
+            assert_eq!(keys, expected);
+        }
     }
 
     #[test]

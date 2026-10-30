@@ -10,7 +10,7 @@
 //! - stills through ImageIO and libwebp at sharp's settings (lossless at effort 0 for PNG, BMP and
 //!   GIF, quality 92 at effort 5 for the rest); videos as a frame a second in from the pinned
 //!   ffmpeg, at quality 82 and effort 4;
-//! - as many image workers (half the cores, 2 to 6) and one video worker;
+//! - one video worker; the image workers are more than Electron Oriel's (below);
 //! - the gallery's visible tiles before its overscan, and a tile that scrolled away dropped from
 //!   the queue;
 //! - the disk cache pruned to its 5,000 newest files once it passes 5,100. That cap is Electron
@@ -20,6 +20,10 @@
 //!
 //! Electron Oriel also keeps the last 600 WebP files' bytes in memory; here the decoded tiles
 //! are in the gallery's own bounded image cache instead, so that layer has nothing to do.
+//!
+//! Electron Oriel runs half the cores as image workers, 2 to 6, each a process of its own. Here a
+//! worker is a thread, whose cost is the buffers of the one still it decodes, so View runs all
+//! the cores but two, up to 12: the thumbnails come out the same, and sooner.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
@@ -86,11 +90,12 @@ fn js_number(value: f64) -> String {
     format!("{value}")
 }
 
-/// Electron Oriel's image workers: half the cores, at least 2 and at most 6. Its memory cap (one
-/// worker per 2 GiB) only binds below 12 GiB, so it is left out.
+/// The image workers: every core but two, kept for the main thread and the rest of the app, at
+/// least 2 and at most 12. Each holds one still's decode at a time, 20 to 100 MB for the largest
+/// AVIF while ImageIO decodes it, so the cap bounds that on a machine with many cores.
 fn default_concurrency() -> usize {
     let cores = std::thread::available_parallelism().map_or(4, |cores| cores.get());
-    (cores / 2).clamp(2, 6)
+    cores.saturating_sub(2).clamp(2, 12)
 }
 
 /// A gallery item's thumbnail, as the gallery draws it.
@@ -274,6 +279,11 @@ pub struct ThumbnailService {
     requested_at: HashMap<SharedString, Instant>,
     disk_files: usize,
     pruning: bool,
+    /// The cache's WebP files by name, listed at start and kept up as files are written, pruned
+    /// and cleared, so a thumbnail already on disk is ready as soon as it is wanted, without a
+    /// job and its trip to a worker and back for each. `None` until the listing is in and while
+    /// a prune runs; the jobs then look on disk themselves, as they always do before making one.
+    on_disk: Option<HashSet<Box<str>>>,
 }
 
 impl ThumbnailService {
@@ -301,6 +311,7 @@ impl ThumbnailService {
             requested_at: HashMap::new(),
             disk_files: 0,
             pruning: false,
+            on_disk: None,
         };
         let tools = service.tools.status();
         service.event(format!(
@@ -309,13 +320,19 @@ impl ThumbnailService {
             tools.available()
         ));
         cx.spawn(async move |this, cx| {
-            let counted = cx
+            let left = cx
                 .background_spawn(async move {
                     let _ = fs::create_dir_all(&folder);
-                    prune(&folder)
+                    prune_listing(&folder)
                 })
                 .await;
-            this.update(cx, |this, _| this.disk_files = counted).ok();
+            this.update(cx, |this, _| {
+                let (count, names) = left;
+                this.disk_files = count;
+                // A file made meanwhile is missing from the listing; its job found or made it.
+                this.on_disk = Some(names);
+            })
+            .ok();
         })
         .detach();
         service
@@ -404,6 +421,9 @@ impl ThumbnailService {
     /// Deletes every thumbnail on disk (Settings › Storage).
     pub fn clear_cache(&mut self, cx: &mut Context<Self>) {
         self.reset(cx);
+        if let Some(on_disk) = &mut self.on_disk {
+            on_disk.clear();
+        }
         let folder = self.folder.clone();
         cx.spawn(async move |this, cx| {
             cx.background_spawn(async move { clear(&folder) }).await;
@@ -418,7 +438,7 @@ impl ThumbnailService {
     }
 
     pub fn thumbnail(&self, entry: &MediaEntry) -> Thumbnail {
-        match self.slots.get(entry.id()) {
+        match self.slots.get(entry.key()) {
             Some(Slot::Ready(path)) => Thumbnail::Ready(path.clone()),
             Some(Slot::Unavailable) => Thumbnail::Unavailable,
             _ => Thumbnail::Pending,
@@ -427,30 +447,66 @@ impl ThumbnailService {
 
     /// The items the gallery wants now: `visible` first, then `nearby` (its overscan). Anything
     /// queued before and wanted no longer is dropped from the queue, as Electron Oriel aborts
-    /// the request of a tile that scrolled away. Nothing is drawn differently until a thumbnail
-    /// is ready, so this does not notify.
+    /// the request of a tile that scrolled away. A thumbnail the cache's listing has is ready at
+    /// once, and the gallery is told; the rest are drawn differently only once made.
     pub fn want(&mut self, visible: &[MediaEntry], nearby: &[MediaEntry], cx: &mut Context<Self>) {
         for entry in self.images.drain(..).chain(self.videos.drain(..)) {
-            if matches!(self.slots.get(entry.id()), Some(Slot::Queued)) {
-                self.slots.remove(entry.id());
-                self.requested_at.remove(entry.id());
+            if matches!(self.slots.get(entry.key()), Some(Slot::Queued)) {
+                self.slots.remove(entry.key());
+                self.requested_at.remove(entry.key());
             }
         }
         let mut seen = HashSet::new();
         let now = Instant::now();
+        let mut found = false;
         for entry in visible.iter().chain(nearby) {
-            if !seen.insert(entry.id().clone()) || self.slots.contains_key(entry.id()) {
+            if !seen.insert(entry.key().clone()) || self.slots.contains_key(entry.key()) {
                 continue;
             }
-            self.slots.insert(entry.id().clone(), Slot::Queued);
-            self.requested_at.entry(entry.id().clone()).or_insert(now);
+            if let Some(path) = self.on_disk_path(entry) {
+                self.found_on_disk(entry, path, now);
+                found = true;
+                continue;
+            }
+            self.slots.insert(entry.key().clone(), Slot::Queued);
+            self.requested_at.entry(entry.key().clone()).or_insert(now);
             if entry.is_video() {
                 self.videos.push_back(entry.clone());
             } else {
                 self.images.push_back(entry.clone());
             }
         }
+        if found {
+            cx.notify();
+        }
         self.pump(cx);
+    }
+
+    /// The entry's file, if the cache's listing has it.
+    fn on_disk_path(&self, entry: &MediaEntry) -> Option<Arc<Path>> {
+        let on_disk = self.on_disk.as_ref()?;
+        let name = file_name(&cache_key(
+            entry.path(),
+            self.size,
+            entry.modified_ms(),
+            entry.size(),
+        ));
+        on_disk
+            .contains(name.as_str())
+            .then(|| self.folder.join(name).into())
+    }
+
+    /// Records a thumbnail found in the cache's listing as a job finding it on disk would.
+    fn found_on_disk(&mut self, entry: &MediaEntry, path: Arc<Path>, now: Instant) {
+        self.stats.first_started.get_or_insert(now);
+        self.stats.last_finished = Some(now);
+        self.stats.from_disk += 1;
+        if self.debug.monitoring {
+            let took = now.elapsed();
+            self.timings.disk_hit.record(took);
+            self.timings.end_to_end.record(took);
+        }
+        self.slots.insert(entry.key().clone(), Slot::Ready(path));
     }
 
     /// Whether nothing is queued or running.
@@ -479,7 +535,7 @@ impl ThumbnailService {
     }
 
     fn start(&mut self, entry: MediaEntry, cx: &mut Context<Self>) {
-        self.slots.insert(entry.id().clone(), Slot::Running);
+        self.slots.insert(entry.key().clone(), Slot::Running);
         self.stats.first_started.get_or_insert_with(Instant::now);
         let generation = self.generation;
         let folder = self.folder.clone();
@@ -513,7 +569,7 @@ impl ThumbnailService {
         if generation != self.generation {
             return;
         }
-        let requested = self.requested_at.remove(entry.id());
+        let requested = self.requested_at.remove(entry.key());
         if !self.debug.monitoring {
             return;
         }
@@ -559,13 +615,16 @@ impl ThumbnailService {
                 self.stats.generating += took;
                 if created {
                     self.disk_files += 1;
+                    if let (Some(on_disk), Some(name)) = (&mut self.on_disk, path.file_name()) {
+                        on_disk.insert(name.to_string_lossy().into());
+                    }
                     self.prune_if_full(cx);
                 }
                 Slot::Ready(path)
             }
             Err(Failure::Cancelled) => {
                 self.stats.cancelled += 1;
-                self.slots.remove(entry.id());
+                self.slots.remove(entry.key());
                 self.pump(cx);
                 return;
             }
@@ -578,7 +637,7 @@ impl ThumbnailService {
                 self.fail(entry, &error)
             }
         };
-        self.slots.insert(entry.id().clone(), slot);
+        self.slots.insert(entry.key().clone(), slot);
         cx.notify();
         self.pump(cx);
     }
@@ -599,13 +658,20 @@ impl ThumbnailService {
             return;
         }
         self.pruning = true;
+        // The listing would name files the prune deletes, so it is set aside until the prune
+        // says what is left.
+        self.on_disk = None;
         let folder = self.folder.clone();
         cx.spawn(async move |this, cx| {
-            let left = cx.background_spawn(async move { prune(&folder) }).await;
+            let left = cx
+                .background_spawn(async move { prune_listing(&folder) })
+                .await;
             this.update(cx, |this, _| {
+                let (count, names) = left;
                 this.pruning = false;
-                this.disk_files = left;
-                this.event(format!("Disk cache pruned to {left} files"));
+                this.disk_files = count;
+                this.event(format!("Disk cache pruned to {count} files"));
+                this.on_disk = Some(names);
             })
             .ok();
         })
@@ -622,7 +688,7 @@ fn make(
     cancel: &CancelToken,
 ) -> Result<Made, Failure> {
     let key = cache_key(entry.path(), size, entry.modified_ms(), entry.size());
-    let path: Arc<Path> = folder.join(format!("{key}.webp")).into();
+    let path: Arc<Path> = folder.join(file_name(&key)).into();
     if path.is_file() {
         return Ok(Made::FromDisk(path));
     }
@@ -699,12 +765,36 @@ fn cached_files(folder: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// A thumbnail's file name in the cache.
+fn file_name(key: &str) -> String {
+    format!("{key}.webp")
+}
+
 /// `pruneDiskCache`: deletes the oldest files past [`MAX_DISK_FILES`], by modified time, and
 /// returns how many are left.
 pub fn prune(folder: &Path) -> usize {
+    prune_kept(folder).len()
+}
+
+/// [`prune`], and the names of the WebP files left, which the service looks thumbnails up in.
+fn prune_listing(folder: &Path) -> (usize, HashSet<Box<str>>) {
+    let kept = prune_kept(folder);
+    let names = kept
+        .iter()
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "webp")
+        })
+        .filter_map(|path| Some(path.file_name()?.to_string_lossy().into()))
+        .collect();
+    (kept.len(), names)
+}
+
+/// The cache's files once pruned.
+fn prune_kept(folder: &Path) -> Vec<PathBuf> {
     let files = cached_files(folder);
     if files.len() <= MAX_DISK_FILES {
-        return files.len();
+        return files;
     }
     let mut dated: Vec<(SystemTime, PathBuf)> = files
         .into_iter()
@@ -715,7 +805,11 @@ pub fn prune(folder: &Path) -> usize {
     for (_, path) in dated.iter().take(excess) {
         let _ = fs::remove_file(path);
     }
-    dated.len() - excess
+    dated
+        .into_iter()
+        .skip(excess)
+        .map(|(_, path)| path)
+        .collect()
 }
 
 fn clear(folder: &Path) {

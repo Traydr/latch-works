@@ -14,7 +14,9 @@
 //! 6. `steps` (with `ORIEL_RS_SPIKE_STEPS=<n>`): the viewer opened on the first AVIF and then
 //!    the first JPEG, among stills of that format only, and stepped `n` times: half a second
 //!    apart (`steady`, the neighbours decoded ahead) and then a tenth apart (`rapid`).
-//! 7. `done`; the app quits if `ORIEL_RS_SPIKE_QUIT=1`.
+//! 7. `workflow` (with `ORIEL_RS_SPIKE_WORKFLOWS=1`, in place of the steps): each order, Shuffle,
+//!    Refresh, and comic mode on and off, 0.7 s apart, with the time each took on the main thread.
+//! 8. `done`; the app quits if `ORIEL_RS_SPIKE_QUIT=1`.
 //!
 //! `ORIEL_RS_SPIKE_WINDOW=1280x900` sizes the window first, as `e2e/scripts/frame-performance.ts`
 //! sizes Electron Oriel's.
@@ -25,6 +27,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gpui_kit::{AsyncWindowContext, Context, Entity, WeakEntity, Window, px, size};
+use oriel_core_domain::GallerySortMode;
 
 use crate::listing::{MediaEntry, MediaKind};
 use crate::{Gallery, Listing, ViewMode, Viewer};
@@ -34,6 +37,7 @@ const FILL_VARIABLE: &str = "ORIEL_RS_SPIKE_FILL";
 const REST_VARIABLE: &str = "ORIEL_RS_SPIKE_REST_MS";
 const SCROLL_VARIABLE: &str = "ORIEL_RS_SPIKE_SCROLL";
 const STEPS_VARIABLE: &str = "ORIEL_RS_SPIKE_STEPS";
+const WORKFLOWS_VARIABLE: &str = "ORIEL_RS_SPIKE_WORKFLOWS";
 const QUIT_VARIABLE: &str = "ORIEL_RS_SPIKE_QUIT";
 const WINDOW_VARIABLE: &str = "ORIEL_RS_SPIKE_WINDOW";
 
@@ -58,6 +62,7 @@ pub(crate) struct Spike {
     rest: Duration,
     scroll: Option<f32>,
     steps: usize,
+    workflows: bool,
     quit: bool,
     phase: Phase,
     created: Instant,
@@ -90,6 +95,7 @@ impl Spike {
             steps: variable(STEPS_VARIABLE)
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(0),
+            workflows: variable(WORKFLOWS_VARIABLE).is_some_and(|value| value == "1"),
             quit: variable(QUIT_VARIABLE).is_some_and(|value| value == "1"),
             phase: Phase::Listing,
             created: Instant::now(),
@@ -250,6 +256,10 @@ impl Spike {
         window: &mut Window,
         cx: &mut Context<ViewMode>,
     ) {
+        if self.workflows {
+            self.start_workflows(window, cx);
+            return;
+        }
         if self.steps == 0 {
             self.finish(cx);
             return;
@@ -317,6 +327,64 @@ impl Spike {
                         return;
                     }
                 }
+            }
+            this.update(cx, |view, cx| {
+                if let Some(mut spike) = view.spike.take() {
+                    spike.finish(cx);
+                    view.spike = Some(spike);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// View's other workflows on the listing, one at a time, each written with the time its
+    /// action took on the main thread: the orders, Shuffle, Refresh (whose scan then runs in the
+    /// background), and comic mode on and off.
+    fn start_workflows(&mut self, window: &mut Window, cx: &mut Context<ViewMode>) {
+        type Action = fn(&mut ViewMode, &mut Context<ViewMode>);
+        const ACTIONS: [(&str, Action); 9] = [
+            ("sort-name-desc", |view, cx| {
+                view.set_sort_mode(GallerySortMode::NameDesc, cx)
+            }),
+            ("sort-date-newest", |view, cx| {
+                view.set_sort_mode(GallerySortMode::DateNewest, cx)
+            }),
+            ("sort-date-oldest", |view, cx| {
+                view.set_sort_mode(GallerySortMode::DateOldest, cx)
+            }),
+            ("sort-random", |view, cx| {
+                view.set_sort_mode(GallerySortMode::Random, cx)
+            }),
+            ("shuffle", |view, cx| view.shuffle(cx)),
+            ("sort-name-asc", |view, cx| {
+                view.set_sort_mode(GallerySortMode::NameAsc, cx)
+            }),
+            ("refresh", |view, cx| view.refresh(cx)),
+            ("comic-on", |view, cx| view.set_comic_mode(true, cx)),
+            ("comic-off", |view, cx| view.set_comic_mode(false, cx)),
+        ];
+        self.phase = Phase::Waiting;
+        cx.spawn_in(window, async move |this, cx| {
+            for (name, action) in ACTIONS {
+                let done = this.update(cx, |view, cx| {
+                    let started = Instant::now();
+                    action(view, cx);
+                    let took = started.elapsed().as_secs_f64() * 1e3;
+                    if let Some(spike) = view.spike.as_mut() {
+                        spike.write(&format!(
+                            r#""event":"workflow","name":"{name}","main_ms":{took:.2}"#
+                        ));
+                    }
+                });
+                if done.is_err() {
+                    return;
+                }
+                // Long enough for a scan the action started to list, and for a frame to draw.
+                cx.background_executor()
+                    .timer(Duration::from_millis(700))
+                    .await;
             }
             this.update(cx, |view, cx| {
                 if let Some(mut spike) = view.spike.take() {

@@ -9,11 +9,11 @@
 //! are the same: system folders are not entered, junk files are left out, and symlinks are never
 //! followed.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use futures::executor::block_on;
@@ -23,9 +23,12 @@ use oriel_core_domain::{FolderNode, get_extension, is_system_junk_directory, is_
 use oriel_runtime::CancelToken;
 use serde::{Deserialize, Serialize};
 
-use crate::media_index::MediaIndex;
+use crate::media_index::{MediaIndex, ScanWrites, ScanWritesEnd};
 use crate::pool::run_queue;
 use crate::scan::modified_ms;
+
+#[cfg(target_os = "macos")]
+mod bulk;
 
 /// Items sent to the gallery, and written to the index, at a time (`CATALOG_BATCH_SIZE`).
 pub const BATCH_SIZE: usize = 300;
@@ -144,10 +147,11 @@ pub enum CatalogEvent {
         discovered_items: usize,
         current_path: String,
     },
-    /// Items found since the last batch, in the order found.
+    /// Items found since the last batch, in the order found. The index's write of them shares
+    /// them.
     Batch {
         run_id: u64,
-        items: Vec<CatalogItem>,
+        items: Arc<[CatalogItem]>,
     },
     Done {
         run_id: u64,
@@ -207,7 +211,9 @@ impl CatalogScan {
     }
 
     /// Runs the scan to its end or its cancel, sending each event to `emit` and recording the
-    /// items in `index` when there is one. Blocks; run it on a background thread.
+    /// items in `index` when there is one. Blocks, until the index has recorded the scan too;
+    /// run it on a background thread. The gallery hears `Done` as soon as the folder is read,
+    /// before the index has caught up.
     pub fn run(
         self,
         index: Option<&MediaIndex>,
@@ -218,9 +224,11 @@ impl CatalogScan {
         let root_path = self.root.to_string_lossy().into_owned();
         let started = Instant::now();
 
-        let mut index_scan = match index {
+        // The index's writes are queued and the scan does not wait on them; only the start of
+        // the run is waited on, for its id.
+        let writes = match index {
             Some(index) => match block_on(index.start_scan(root_path.clone(), self.recursive)) {
-                Ok(scan_id) => Some((index, scan_id)),
+                Ok(scan_id) => Some(index.scan_writes(root_path.clone(), scan_id)),
                 Err(error) => {
                     emit(CatalogEvent::Error {
                         run_id: Some(run_id),
@@ -232,18 +240,28 @@ impl CatalogScan {
             },
             None => None,
         };
-        let mut index_failed = false;
-
-        let cancelled = |index_scan: &mut Option<(&MediaIndex, i64)>,
-                         emit: &mut dyn FnMut(CatalogEvent)| {
-            if let Some((index, scan_id)) = index_scan.take() {
-                let _ = block_on(index.cancel_scan(scan_id));
+        // A failed batch is reported once, when the scan next looks.
+        let report_failure = |writes: &Option<ScanWrites>, emit: &mut dyn FnMut(CatalogEvent)| {
+            if let Some(message) = writes.as_ref().and_then(ScanWrites::take_failure) {
+                emit(CatalogEvent::Error {
+                    run_id: Some(run_id),
+                    message: format!("Media index update failed: {message}"),
+                    path: None,
+                });
             }
+        };
+        // A cancel is recorded once what was queued before it has run, so a scan started next
+        // finds the index as this one left it.
+        let cancelled = |writes: Option<ScanWrites>, emit: &mut dyn FnMut(CatalogEvent)| {
+            report_failure(&writes, emit);
             emit(CatalogEvent::Cancelled { run_id });
+            if let Some(writes) = writes {
+                let _ = block_on(writes.cancel());
+            }
         };
 
         if cancel.is_cancelled() {
-            cancelled(&mut index_scan, emit);
+            cancelled(writes, emit);
             return;
         }
         emit(CatalogEvent::Reset {
@@ -252,8 +270,6 @@ impl CatalogScan {
             recursive: self.recursive,
         });
 
-        let mut queue = vec![self.root.clone()];
-        let mut cursor = 0;
         let mut scanned_directories = 0;
         let mut discovered_items = 0;
         let mut pending: Vec<CatalogItem> = Vec::new();
@@ -261,88 +277,93 @@ impl CatalogScan {
         let mut pending_progress: Option<String> = None;
 
         let flush = |pending: &mut Vec<CatalogItem>,
-                     index_scan: &Option<(&MediaIndex, i64)>,
-                     index_failed: &mut bool,
+                     writes: &Option<ScanWrites>,
                      emit: &mut dyn FnMut(CatalogEvent)| {
             if pending.is_empty() {
                 return;
             }
-            let batch = std::mem::take(pending);
+            // The gallery and the index share the batch.
+            let batch: Arc<[CatalogItem]> = std::mem::take(pending).into();
             emit(CatalogEvent::Batch {
                 run_id,
                 items: batch.clone(),
             });
-            if let Some((index, scan_id)) = index_scan
-                && !*index_failed
-                && let Err(error) = block_on(index.upsert_batch(root_path.clone(), *scan_id, batch))
-            {
-                *index_failed = true;
-                emit(CatalogEvent::Error {
-                    run_id: Some(run_id),
-                    message: format!("Media index update failed: {error:#}"),
-                    path: None,
-                });
+            if let Some(writes) = writes {
+                writes.upsert(batch);
             }
+            report_failure(writes, emit);
         };
 
-        while cursor < queue.len() {
-            if cancel.is_cancelled() {
-                cancelled(&mut index_scan, emit);
-                return;
+        // Breadth first, one folder at a time, in the order found; the folders are read ahead
+        // on threads of their own.
+        let scan = &self;
+        let ahead = ReadAhead::new(scan.root.clone());
+        let walked = std::thread::scope(|scope| {
+            // The readers stop as the walk leaves, however it leaves, so the scope can end.
+            let _stop = ahead.stop_on_drop();
+            for _ in 0..READ_AHEAD_THREADS {
+                scope.spawn(|| ahead.serve(scan, cancel));
             }
-            let current = queue[cursor].clone();
-            cursor += 1;
-
-            let candidates = match self.read_directory(&current, &mut queue) {
-                Ok(candidates) => candidates,
-                Err(_) => {
-                    emit(CatalogEvent::Error {
-                        run_id: Some(run_id),
-                        message: "Unable to access directory".into(),
-                        path: Some(current.to_string_lossy().into_owned()),
-                    });
-                    continue;
+            while let Some((current, read)) = ahead.next() {
+                if cancel.is_cancelled() {
+                    return Walked::Cancelled;
                 }
-            };
-            scanned_directories += 1;
-            pending_progress = Some(current.to_string_lossy().into_owned());
-            emit_progress(
-                run_id,
-                scanned_directories,
-                discovered_items,
-                &mut pending_progress,
-                &mut last_progress,
-                false,
-                emit,
-            );
+                let candidates = match read {
+                    Ok(read) => {
+                        ahead.push(read.subfolders);
+                        read.candidates
+                    }
+                    Err(_) => {
+                        emit(CatalogEvent::Error {
+                            run_id: Some(run_id),
+                            message: "Unable to access directory".into(),
+                            path: Some(current.to_string_lossy().into_owned()),
+                        });
+                        continue;
+                    }
+                };
+                scanned_directories += 1;
+                pending_progress = Some(current.to_string_lossy().into_owned());
+                emit_progress(
+                    run_id,
+                    scanned_directories,
+                    discovered_items,
+                    &mut pending_progress,
+                    &mut last_progress,
+                    false,
+                    emit,
+                );
 
-            for result in stat_candidates(candidates, cancel) {
-                match result {
-                    Stat::Item(item) => {
-                        pending.push(item);
-                        discovered_items += 1;
-                        if pending.len() >= BATCH_SIZE {
-                            flush(&mut pending, &index_scan, &mut index_failed, emit);
+                for result in stat_candidates(candidates, cancel) {
+                    match result {
+                        Stat::Item(item) => {
+                            pending.push(item);
+                            discovered_items += 1;
+                            if pending.len() >= BATCH_SIZE {
+                                flush(&mut pending, &writes, emit);
+                            }
                         }
-                    }
-                    Stat::Failed(path) => emit(CatalogEvent::Error {
-                        run_id: Some(run_id),
-                        message: "Unable to stat file".into(),
-                        path: Some(path),
-                    }),
-                    Stat::Cancelled => {
-                        cancelled(&mut index_scan, emit);
-                        return;
+                        Stat::Failed(path) => emit(CatalogEvent::Error {
+                            run_id: Some(run_id),
+                            message: "Unable to stat file".into(),
+                            path: Some(path),
+                        }),
+                        Stat::Cancelled => return Walked::Cancelled,
                     }
                 }
             }
+            Walked::Done
+        });
+        if walked == Walked::Cancelled {
+            cancelled(writes, emit);
+            return;
         }
 
         if cancel.is_cancelled() {
-            cancelled(&mut index_scan, emit);
+            cancelled(writes, emit);
             return;
         }
-        flush(&mut pending, &index_scan, &mut index_failed, emit);
+        flush(&mut pending, &writes, emit);
         emit_progress(
             run_id,
             scanned_directories,
@@ -353,45 +374,55 @@ impl CatalogScan {
             emit,
         );
         if cancel.is_cancelled() {
-            cancelled(&mut index_scan, emit);
+            cancelled(writes, emit);
             return;
         }
 
-        // The index is a cache: a failure to finish it is reported, and the scan is still done.
-        if let Some((index, scan_id)) = index_scan {
-            if index_failed {
-                let _ = block_on(index.cancel_scan(scan_id));
-            } else if let Err(error) = block_on(index.finish_scan(root_path.clone(), scan_id)) {
-                emit(CatalogEvent::Error {
-                    run_id: Some(run_id),
-                    message: format!("Media index finalize failed: {error:#}"),
-                    path: None,
-                });
-                let _ = block_on(index.cancel_scan(scan_id));
-            }
-        }
-
+        // The scan's end is queued behind its batches before the gallery hears it is done, so a
+        // scan started after this one is queued behind it. The index is a cache: the gallery
+        // does not wait for it, and a failure to finish it is reported, the scan still done.
+        let finished = writes.as_ref().map(ScanWrites::finish);
         emit(CatalogEvent::Done {
             run_id,
             total_items: discovered_items,
             elapsed: started.elapsed(),
         });
+        // What goes wrong after `Done` the gallery no longer shows, so it is logged too.
+        if let Some(finished) = finished {
+            let end = block_on(finished);
+            if let Some(message) = writes.as_ref().and_then(ScanWrites::take_failure) {
+                log::warn!("View's media index update failed: {message}");
+                emit(CatalogEvent::Error {
+                    run_id: Some(run_id),
+                    message: format!("Media index update failed: {message}"),
+                    path: None,
+                });
+            }
+            let error = match end {
+                Ok(ScanWritesEnd::Done | ScanWritesEnd::Cancelled) => None,
+                Ok(ScanWritesEnd::FinishFailed(error)) | Err(error) => Some(error),
+            };
+            if let Some(error) = error {
+                log::warn!("View's media index finalize failed: {error:#}");
+                emit(CatalogEvent::Error {
+                    run_id: Some(run_id),
+                    message: format!("Media index finalize failed: {error:#}"),
+                    path: None,
+                });
+            }
+        }
     }
 
-    /// Reads one folder: its media files as candidates, and its subfolders onto `queue` when the
+    /// Reads one folder: its media files as candidates, and its subfolders to enter when the
     /// scan is recursive. The order is the file system's, as `opendir` gives it.
-    fn read_directory(
-        &self,
-        current: &Path,
-        queue: &mut Vec<PathBuf>,
-    ) -> io::Result<Vec<Candidate>> {
+    fn read_directory(&self, current: &Path) -> io::Result<FolderRead> {
         let mut candidates = Vec::new();
-        for entry in fs::read_dir(current)? {
-            let entry = entry?;
-            let file_type = entry.file_type()?;
-            let name = entry.file_name().to_string_lossy().into_owned();
+        let mut subfolders = Vec::new();
+        for entry in read_entries(current)? {
+            let DirEntry { name, kind, stat } = entry?;
+            let name = name.to_string_lossy().into_owned();
             let full_path = current.join(&name);
-            if file_type.is_dir() {
+            if kind == EntryKind::Folder {
                 if is_system_junk_directory(&name) {
                     continue;
                 }
@@ -399,12 +430,12 @@ impl CatalogScan {
                     if current == self.root && self.excluded_root_children.contains(&full_path) {
                         continue;
                     }
-                    queue.push(full_path);
+                    subfolders.push(full_path);
                 }
                 continue;
             }
             // A symlink is neither a file nor a folder here, and is left out.
-            if !file_type.is_file() {
+            if kind != EntryKind::File {
                 continue;
             }
             if let Some((extension, media_type)) = self.filters.classify(&name) {
@@ -413,11 +444,206 @@ impl CatalogScan {
                     name,
                     extension,
                     media_type,
+                    stat,
                 });
             }
         }
-        Ok(candidates)
+        Ok(FolderRead {
+            subfolders,
+            candidates,
+        })
     }
+}
+
+/// One folder as the scan reads it.
+struct FolderRead {
+    subfolders: Vec<PathBuf>,
+    candidates: Vec<Candidate>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Walked {
+    Done,
+    Cancelled,
+}
+
+/// Threads reading folders ahead of the scan.
+const READ_AHEAD_THREADS: usize = 4;
+/// How far past the folder the scan is on they read.
+const READ_AHEAD_FOLDERS: usize = 8;
+
+/// The folders of one scan, read ahead of it by a few threads and handed to it in its own order:
+/// the scan still takes one folder at a time, breadth first, but finds each one read when it gets
+/// there. A folder's subfolders are queued once the scan takes it, so the order is the one a
+/// scan reading each folder itself would follow.
+struct ReadAhead {
+    state: Mutex<AheadState>,
+    /// The readers wait here for a folder to read.
+    work: Condvar,
+    /// The scan waits here for the folder it is on.
+    ready: Condvar,
+}
+
+struct AheadState {
+    /// Every folder queued so far, in the scan's order.
+    folders: Vec<PathBuf>,
+    /// How many of them a reader has taken.
+    claimed: usize,
+    /// How many of them the scan has taken.
+    taken: usize,
+    reads: HashMap<usize, io::Result<FolderRead>>,
+    stopped: bool,
+}
+
+impl ReadAhead {
+    fn new(root: PathBuf) -> Self {
+        Self {
+            state: Mutex::new(AheadState {
+                folders: vec![root],
+                claimed: 0,
+                taken: 0,
+                reads: HashMap::new(),
+                stopped: false,
+            }),
+            work: Condvar::new(),
+            ready: Condvar::new(),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, AheadState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// A reader: reads the next folder not yet read, within the window ahead of the scan, until
+    /// stopped.
+    fn serve(&self, scan: &CatalogScan, cancel: &CancelToken) {
+        loop {
+            let (ix, folder) = {
+                let mut state = self.lock();
+                loop {
+                    if state.stopped {
+                        return;
+                    }
+                    if state.claimed < state.folders.len()
+                        && state.claimed < state.taken + READ_AHEAD_FOLDERS
+                    {
+                        break;
+                    }
+                    state = self
+                        .work
+                        .wait(state)
+                        .unwrap_or_else(PoisonError::into_inner);
+                }
+                let ix = state.claimed;
+                state.claimed += 1;
+                (ix, state.folders[ix].clone())
+            };
+            let read = if cancel.is_cancelled() {
+                Err(io::Error::from(io::ErrorKind::Interrupted))
+            } else {
+                scan.read_directory(&folder)
+            };
+            self.lock().reads.insert(ix, read);
+            self.ready.notify_all();
+        }
+    }
+
+    /// The next folder in the scan's order and how its read went, once read; `None` when every
+    /// folder queued has been taken.
+    fn next(&self) -> Option<(PathBuf, io::Result<FolderRead>)> {
+        let mut state = self.lock();
+        let ix = state.taken;
+        if ix >= state.folders.len() {
+            return None;
+        }
+        let read = loop {
+            if let Some(read) = state.reads.remove(&ix) {
+                break read;
+            }
+            state = self
+                .ready
+                .wait(state)
+                .unwrap_or_else(PoisonError::into_inner);
+        };
+        state.taken += 1;
+        let folder = state.folders[ix].clone();
+        drop(state);
+        self.work.notify_all();
+        Some((folder, read))
+    }
+
+    /// Queues the subfolders of the folder the scan just took.
+    fn push(&self, subfolders: Vec<PathBuf>) {
+        if subfolders.is_empty() {
+            return;
+        }
+        self.lock().folders.extend(subfolders);
+        self.work.notify_all();
+    }
+
+    /// Stops the readers when the scan leaves, however it leaves.
+    fn stop_on_drop(&self) -> impl Drop + '_ {
+        struct Stop<'a>(&'a ReadAhead);
+        impl Drop for Stop<'_> {
+            fn drop(&mut self) {
+                self.0.lock().stopped = true;
+                self.0.work.notify_all();
+            }
+        }
+        Stop(self)
+    }
+}
+
+#[cfg(target_os = "macos")]
+use bulk::Kind as EntryKind;
+
+#[cfg(not(target_os = "macos"))]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EntryKind {
+    File,
+    Folder,
+    Other,
+}
+
+/// One entry of a folder: its name, what it is as `readdir` types it, and a file's size and
+/// time when the read gave them.
+struct DirEntry {
+    name: std::ffi::OsString,
+    kind: EntryKind,
+    stat: Option<(u64, f64)>,
+}
+
+/// A folder's entries in its own order. On macOS one call reads many entries with each file's
+/// size and time ([`bulk`]); elsewhere `readdir`, and the scan states each file.
+#[cfg(target_os = "macos")]
+fn read_entries(folder: &Path) -> io::Result<impl Iterator<Item = io::Result<DirEntry>>> {
+    Ok(bulk::read(folder)?.into_iter().map(|entry| {
+        Ok(DirEntry {
+            name: entry.name.into(),
+            kind: entry.kind,
+            stat: entry.stat,
+        })
+    }))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_entries(folder: &Path) -> io::Result<impl Iterator<Item = io::Result<DirEntry>>> {
+    Ok(fs::read_dir(folder)?.map(|entry| {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let kind = if file_type.is_dir() {
+            EntryKind::Folder
+        } else if file_type.is_file() {
+            EntryKind::File
+        } else {
+            EntryKind::Other
+        };
+        Ok(DirEntry {
+            name: entry.file_name(),
+            kind,
+            stat: None,
+        })
+    }))
 }
 
 struct Candidate {
@@ -425,6 +651,8 @@ struct Candidate {
     name: String,
     extension: String,
     media_type: CatalogMediaType,
+    /// The size and time the folder's read gave, if it did.
+    stat: Option<(u64, f64)>,
 }
 
 enum Stat {
@@ -433,27 +661,41 @@ enum Stat {
     Cancelled,
 }
 
-/// States a folder's candidates, ten at a time, keeping their order.
+/// States a folder's candidates, ten at a time, keeping their order. Those the folder's read
+/// already gave a size and time to need no `stat`.
 fn stat_candidates(candidates: Vec<Candidate>, cancel: &CancelToken) -> Vec<Stat> {
     let stat = |candidate: &Candidate| -> Stat {
         if cancel.is_cancelled() {
             return Stat::Cancelled;
         }
         let path = candidate.full_path.to_string_lossy().into_owned();
-        match fs::metadata(&candidate.full_path) {
-            Ok(metadata) => Stat::Item(CatalogItem::new(
+        let stat = candidate.stat.map(Ok).unwrap_or_else(|| {
+            fs::metadata(&candidate.full_path)
+                .map(|metadata| (metadata.len(), modified_ms(&metadata)))
+        });
+        match stat {
+            Ok((size, mtime_ms)) => Stat::Item(CatalogItem::new(
                 path,
                 candidate.name.clone(),
                 candidate.extension.clone(),
                 candidate.media_type,
-                metadata.len(),
-                modified_ms(&metadata),
+                size,
+                mtime_ms,
             )),
             Err(_) => Stat::Failed(path),
         }
     };
-    if candidates.len() <= 1 {
-        return candidates.iter().map(stat).collect();
+    if candidates.len() <= 1 || candidates.iter().all(|candidate| candidate.stat.is_some()) {
+        let mut stats: Vec<Stat> = Vec::with_capacity(candidates.len());
+        for candidate in &candidates {
+            let stat = stat(candidate);
+            let cancelled = matches!(stat, Stat::Cancelled);
+            stats.push(stat);
+            if cancelled {
+                break;
+            }
+        }
+        return stats;
     }
     let results: Vec<Mutex<Option<Stat>>> = candidates.iter().map(|_| Mutex::new(None)).collect();
     let concurrency = FILE_STAT_CONCURRENCY.min(candidates.len());

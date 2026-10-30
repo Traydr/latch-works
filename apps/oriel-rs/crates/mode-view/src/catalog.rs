@@ -16,12 +16,13 @@ use futures::StreamExt as _;
 use futures::channel::mpsc;
 use futures::executor::block_on;
 use gpui_kit::{AppContext as _, Context, EventEmitter, SharedString, Task};
-use oriel_core_domain::FolderNode;
+use oriel_core_domain::{FolderNode, GallerySortMode};
 use oriel_core_index::{
     CatalogEvent, CatalogFilters, CatalogScan, MediaIndex, MediaIndexStats, list_folder_children,
 };
 use oriel_runtime::CancelToken;
 
+use crate::browser::sort_media;
 use crate::listing::MediaEntry;
 
 /// How long "Loaded N item(s)" stays in the header after a scan (`PrismLayout`'s ready state).
@@ -54,6 +55,26 @@ pub struct ScanRequest {
     pub recursive: bool,
     pub filters: CatalogFilters,
     pub excluded_root_children: Vec<PathBuf>,
+    /// The order the gallery shows, which the scan sorts its items in once it is done, off the
+    /// main thread. The gallery sorts them itself if the order has changed meanwhile.
+    pub order: SortOrder,
+}
+
+/// An order of the gallery: the sort mode, and the seed of the random one.
+pub type SortOrder = (GallerySortMode, i64);
+
+/// What the scan's thread hands the catalog: its events, with each batch already made into the
+/// gallery's items and the finished listing already sorted, so the main thread does neither.
+enum ScanMessage {
+    Event(CatalogEvent),
+    Batch {
+        run_id: u64,
+        items: Vec<MediaEntry>,
+    },
+    Done {
+        event: CatalogEvent,
+        sorted: Arc<[MediaEntry]>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -118,6 +139,8 @@ pub struct Catalog {
     message_path: Option<SharedString>,
     /// Items found so far by the running scan, or all of the last one's, in the order found.
     items: Vec<MediaEntry>,
+    /// The last scan's items in the order it was asked to sort them by, once it is done.
+    sorted: Option<(SortOrder, Arc<[MediaEntry]>)>,
     /// Bumped whenever `items` changes, so the owner sorts only then.
     revision: u64,
     children: Arc<[FolderNode]>,
@@ -145,6 +168,7 @@ impl Catalog {
             message: SharedString::default(),
             message_path: None,
             items: Vec::new(),
+            sorted: None,
             revision: 0,
             children: Arc::from([]),
             siblings: Arc::from([]),
@@ -183,6 +207,14 @@ impl Catalog {
 
     pub fn items(&self) -> &[MediaEntry] {
         &self.items
+    }
+
+    /// The finished scan's items sorted by `order`, if the scan sorted them so.
+    pub fn sorted(&self, order: SortOrder) -> Option<&Arc<[MediaEntry]>> {
+        self.sorted
+            .as_ref()
+            .filter(|(sorted_by, _)| *sorted_by == order)
+            .map(|(_, sorted)| sorted)
     }
 
     pub fn revision(&self) -> u64 {
@@ -238,22 +270,55 @@ impl Catalog {
         )
         .excluding(request.excluded_root_children.clone());
         let index = self.index.clone();
+        let order = request.order;
         let (sender, mut receiver) = mpsc::unbounded();
         let worker = cx.background_spawn(async move {
-            scan.run(index.get().as_ref(), &cancel, &mut |event| {
-                let _ = sender.unbounded_send(event);
+            let index = index.get();
+            let mut found: Vec<MediaEntry> = Vec::new();
+            scan.run(index.as_ref(), &cancel, &mut |event| {
+                let message = match event {
+                    CatalogEvent::Batch { run_id, items } => {
+                        let items: Vec<MediaEntry> =
+                            items.iter().map(MediaEntry::from_catalog).collect();
+                        found.extend(items.iter().cloned());
+                        ScanMessage::Batch { run_id, items }
+                    }
+                    CatalogEvent::Done { .. } => {
+                        let sorted = sort_media(&found, order.0, order.1).into();
+                        ScanMessage::Done { event, sorted }
+                    }
+                    event => ScanMessage::Event(event),
+                };
+                let _ = sender.unbounded_send(message);
             });
         });
         self._scan = Some(cx.spawn(async move |this, cx| {
             while let Some(first) = receiver.next().await {
                 // Take whatever else has arrived too, so a burst of batches draws once.
-                let mut events = vec![first];
-                while let Ok(event) = receiver.try_recv() {
-                    events.push(event);
+                let mut messages = vec![first];
+                while let Ok(message) = receiver.try_recv() {
+                    messages.push(message);
                 }
                 let applied = this.update(cx, |this, cx| {
-                    for event in events {
-                        this.apply(event, cx);
+                    for message in messages {
+                        match message {
+                            ScanMessage::Event(event) => this.apply(event, cx),
+                            ScanMessage::Batch { run_id, items } => {
+                                if this.active_run == Some(run_id) {
+                                    this.items.extend(items);
+                                    this.sorted = None;
+                                    this.revision += 1;
+                                }
+                            }
+                            ScanMessage::Done { event, sorted } => {
+                                if let CatalogEvent::Done { run_id, .. } = event
+                                    && this.active_run == Some(run_id)
+                                {
+                                    this.sorted = Some((order, sorted));
+                                }
+                                this.apply(event, cx);
+                            }
+                        }
                     }
                     cx.notify();
                 });
@@ -282,6 +347,7 @@ impl Catalog {
                 self.root = Some(root);
                 self.recursive = recursive;
                 self.items.clear();
+                self.sorted = None;
                 self.revision += 1;
                 self.state = ScanState::Loading;
                 self.message = "Scanning folder...".into();
@@ -300,13 +366,8 @@ impl Catalog {
                     self.message_path = Some(current_path.into());
                 }
             }
-            CatalogEvent::Batch { run_id, items } => {
-                if self.active_run == Some(run_id) {
-                    self.items
-                        .extend(items.iter().map(MediaEntry::from_catalog));
-                    self.revision += 1;
-                }
-            }
+            // The scan's thread makes the batches into items before they come here.
+            CatalogEvent::Batch { .. } => {}
             CatalogEvent::Done {
                 run_id,
                 total_items,

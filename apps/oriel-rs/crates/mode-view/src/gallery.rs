@@ -186,7 +186,7 @@ struct Hover {
 #[derive(Default)]
 struct VideoProbes {
     facts: HashMap<SharedString, VideoProbe>,
-    /// Asked for, queued or under way, by item id.
+    /// Asked for, queued or under way, by item key.
     asked: HashSet<SharedString>,
     queue: VecDeque<MediaEntry>,
     in_flight: usize,
@@ -280,7 +280,7 @@ impl Gallery {
 
     /// ffprobe's facts about a video tile drawn, once read.
     pub fn video_probe(&self, entry: &MediaEntry) -> Option<&VideoProbe> {
-        self.probes.facts.get(entry.id())
+        self.probes.facts.get(entry.key())
     }
 
     /// A new folder: back to the top, and its thumbnails, probes and preview start over.
@@ -358,18 +358,18 @@ impl Gallery {
         let wanted: HashSet<&SharedString> = entries
             .iter()
             .filter(|entry| entry.is_video())
-            .map(MediaEntry::id)
+            .map(MediaEntry::key)
             .collect();
         let probes = &mut self.probes;
         probes.queue.retain(|entry| {
-            let keep = wanted.contains(entry.id());
+            let keep = wanted.contains(entry.key());
             if !keep {
-                probes.asked.remove(entry.id());
+                probes.asked.remove(entry.key());
             }
             keep
         });
         for entry in entries.iter().filter(|entry| entry.is_video()) {
-            if !probes.facts.contains_key(entry.id()) && probes.asked.insert(entry.id().clone()) {
+            if !probes.facts.contains_key(entry.key()) && probes.asked.insert(entry.key().clone()) {
                 probes.queue.push_back(entry.clone());
             }
         }
@@ -384,7 +384,7 @@ impl Gallery {
             self.probes.in_flight += 1;
             let generation = self.probes.generation;
             cx.spawn(async move |this, cx| {
-                let id = entry.id().clone();
+                let key = entry.key().clone();
                 let probe = cx
                     .background_spawn(async move {
                         ViewMediaTools::shared().probe_video(
@@ -400,7 +400,7 @@ impl Gallery {
                     }
                     this.probes.in_flight -= 1;
                     if let Some(probe) = probe {
-                        this.probes.facts.insert(id, probe);
+                        this.probes.facts.insert(key, probe);
                         cx.notify();
                     }
                     this.pump_probes(cx);
@@ -860,7 +860,7 @@ impl Gallery {
                     .bg(theme.muted)
                     .when_some(picture, |card, path| card.child(self.picture(path)))
                     .when_some(preview, |card, preview| card.child(preview))
-                    .child(hover_caption(media, self.probes.facts.get(media.id())))
+                    .child(hover_caption(media, self.probes.facts.get(media.key())))
                     .when(media.is_video(), |card| card.child(video_badge()))
                     .when(hover_plays, |card| {
                         card.on_hover(cx.listener(move |this, hovered: &bool, window, cx| {

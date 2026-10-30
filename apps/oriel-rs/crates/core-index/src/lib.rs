@@ -22,7 +22,9 @@ pub mod sync_plan;
 pub use catalog::{
     CatalogEvent, CatalogFilters, CatalogItem, CatalogMediaType, CatalogScan, list_folder_children,
 };
-pub use media_index::{IndexedRow, MEDIA_INDEX_FILE_NAME, MediaIndex, MediaIndexStats};
+pub use media_index::{
+    IndexedRow, MEDIA_INDEX_FILE_NAME, MediaIndex, MediaIndexStats, ScanWrites, ScanWritesEnd,
+};
 pub use scan::{
     ArchiveFileFingerprint, HashArchiveItems, ScanArchive, ScanArchiveProgress, ScanArchiveResult,
     SkipReason, SkippedArchiveEntry, escapes_root, fingerprints_match, hash_file_contents,

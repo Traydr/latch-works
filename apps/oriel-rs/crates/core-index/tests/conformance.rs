@@ -450,7 +450,7 @@ fn makes_and_reads_views_index_as_electron_oriel_does() {
         4096,
         1_767_268_900_123.456_8,
     );
-    block_on(index.upsert_batch("/archive".into(), scan, vec![item])).unwrap();
+    block_on(index.upsert_batch("/archive".into(), scan, vec![item].into())).unwrap();
     block_on(index.finish_scan("/archive".into(), scan)).unwrap();
     let rows = block_on(index.rows()).unwrap();
     assert_eq!(rows.len(), 1);

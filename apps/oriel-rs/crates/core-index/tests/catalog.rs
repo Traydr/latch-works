@@ -64,7 +64,7 @@ fn run(
     let mut found: Vec<String> = events
         .iter()
         .filter_map(|event| match event {
-            CatalogEvent::Batch { items, .. } => Some(items.clone()),
+            CatalogEvent::Batch { items, .. } => Some(items.to_vec()),
             _ => None,
         })
         .flatten()
@@ -239,5 +239,66 @@ fn folder_children_are_every_real_folder_by_name() {
     // Base strength without numeric order, as `folderService.ts` sorts; system folders count,
     // and the symlinked folder does not.
     assert_eq!(names, ["__MACOSX", "10", "2", "bulk", "comics", "Zeta"]);
+    fs::remove_dir_all(&root).unwrap();
+}
+
+/// The scan lists items in the order a breadth-first walk reading each folder with `readdir`
+/// and stating each file finds them, with the same ids, whoever reads the folders.
+fn walk_like_readdir(root: &Path, filters: &CatalogFilters) -> Vec<String> {
+    let mut queue = vec![root.to_path_buf()];
+    let mut cursor = 0;
+    let mut ids = Vec::new();
+    while cursor < queue.len() {
+        let folder = queue[cursor].clone();
+        cursor += 1;
+        for entry in fs::read_dir(&folder).unwrap() {
+            let entry = entry.unwrap();
+            let kind = entry.file_type().unwrap();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if kind.is_dir() {
+                if !oriel_core_domain::is_system_junk_directory(&name) {
+                    queue.push(folder.join(&name));
+                }
+            } else if kind.is_file() && filters.classify(&name).is_some() {
+                let metadata = fs::metadata(entry.path()).unwrap();
+                ids.push(format!(
+                    "{}:{}:{}",
+                    folder.join(&name).display(),
+                    metadata.len(),
+                    oriel_core_index::modified_ms(&metadata)
+                ));
+            }
+        }
+    }
+    ids
+}
+
+fn scanned_ids(root: &Path) -> Vec<String> {
+    let mut ids = Vec::new();
+    CatalogScan::new(1, root.to_path_buf(), true, filters(true, true)).run(
+        None,
+        &CancelToken::new(),
+        &mut |event| {
+            if let CatalogEvent::Batch { items, .. } = event {
+                ids.extend(items.iter().map(|item| item.id.clone()));
+            }
+        },
+    );
+    ids
+}
+
+#[test]
+fn lists_in_the_order_a_breadth_first_readdir_walk_finds() {
+    let root = scratch("order");
+    for folder in 0..12 {
+        for file in 0..40 {
+            let path = root.join(format!("f{folder}/sub{}/p{file}.jpg", file % 3));
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, vec![b'x'; file]).unwrap();
+        }
+    }
+    let ids = scanned_ids(&root);
+    assert_eq!(ids.len(), 480);
+    assert_eq!(ids, walk_like_readdir(&root, &filters(true, true)));
     fs::remove_dir_all(&root).unwrap();
 }
