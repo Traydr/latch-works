@@ -245,11 +245,16 @@ Phase 0's measurements are scripted, so a run repeats exactly; this Mac allows n
 The environment variables are documented at the top of each spike:
 
 - View (gallery, thumbnails, viewer): `crates/mode-view/src/spike.rs`.
-- The Library table: `crates/mode-tidy/src/spike.rs`.
+- The Library table: `crates/mode-tidy/src/spike.rs`. In the whole app it starts only once Tidy
+  has a root, so add `ORIEL_RS_TIDY_ROOT=<a sandbox folder>` and `ORIEL_RS_TIDY_PAGE=library`,
+  and bring the window to the front.
 - Video through AVPlayer, which `video_spike` forces: `cargo run --release -p oriel-media --example
   video_spike -- <single|tiles|sweep|errors>`,
   and the same through libmpv with `--example mpv_spike` (also `verify` and `colour`).
 - Electron Oriel on the same fixture: `FRAME_PERF_FIXTURE_ROOT=<fixture> pnpm --filter
   @latch-works/e2e exec tsx scripts/frame-performance.ts <label>`.
+
+Phase 9's scorecard, with every row's command, is in
+[docs/research/oriel-rs/scorecard.md](../research/oriel-rs/scorecard.md) under "Run it again".
 
 Reports carry numbers only: the owner's library is never screenshotted or uploaded.
