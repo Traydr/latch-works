@@ -324,6 +324,7 @@ impl Render for ComicReader {
                             .ghost()
                             .icon(Icon::new(IconName::ArrowUp))
                             .tooltip("Scroll to top")
+                            .accessibility_label("Scroll to top")
                             .on_click(cx.listener(|this, _, window, cx| this.go_to(0, window, cx))),
                     )
                     .child(
@@ -331,6 +332,7 @@ impl Render for ComicReader {
                             .ghost()
                             .icon(Icon::new(IconName::FolderOpen))
                             .tooltip("Reveal in folder")
+                            .accessibility_label("Reveal in folder")
                             .on_click(move |_, _, cx| cx.reveal_path(&cover)),
                     )
                     .child(

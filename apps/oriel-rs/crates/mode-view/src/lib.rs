@@ -32,6 +32,7 @@ pub use comic_reader::{ComicReader, ComicReaderEvent};
 pub use folder_overlay::{FolderOverlay, FolderOverlayEvent};
 pub use gallery::{Activation, FolderStep, Gallery, GalleryEvent, Listing, PreviewSettings};
 pub use player::{CapsulePanel, CapsulePlayer, CapsulePlayerEvent, PlayerOptions};
+pub use settings_section::{Diagnostics, FactGroup, LineGroup};
 pub use viewer::{Viewer, ViewerEvent};
 
 use std::collections::hash_map::RandomState;
@@ -333,6 +334,7 @@ impl ViewMode {
             });
             return;
         };
+        self.leave_overlays();
         self.pending_focus = path.is_file().then(|| PendingFocus {
             folder: folder.clone().into(),
             file: std::fs::canonicalize(&path).unwrap_or(path),
@@ -340,11 +342,24 @@ impl ViewMode {
         self.start_scan_at(folder, cx);
     }
 
+    /// Closes the viewer and the reader for a folder opened over them (from the menu, a drop,
+    /// or another mode): it replaces what they show. A file handed over opens the viewer again
+    /// once its folder lists. Focus goes to the gallery at the next frame.
+    fn leave_overlays(&mut self) {
+        self.viewer = None;
+        self.viewer_subscription = None;
+        self.comic_reader = None;
+        self.focus_before_overlay = None;
+    }
+
     /// Opens `folder` as one the owner chose: it becomes the top View steps up to, and the
     /// folder View starts at again.
     pub fn open_folder(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
         match resolve_folder_path(&folder) {
-            Some(folder) => self.start_scan_at(folder, cx),
+            Some(folder) => {
+                self.leave_overlays();
+                self.start_scan_at(folder, cx);
+            }
             None => self.catalog.update(cx, |catalog, cx| {
                 catalog.fail("Invalid folder path", Some(&folder), cx);
             }),
@@ -489,8 +504,8 @@ impl ViewMode {
         }
     }
 
-    /// The thumbnail size, the order and what video tiles do under the pointer follow the
-    /// settings.
+    /// The thumbnail size, the order, what video tiles do under the pointer and what the
+    /// thumbnail service records follow the settings.
     fn apply_display_settings(&mut self, cx: &mut Context<Self>) {
         let settings = self.settings.settings();
         let size = settings.thumbnail_size as f32;
@@ -499,9 +514,17 @@ impl ViewMode {
             sound: settings.preview_audio_enabled,
             looping: settings.loop_videos,
         };
+        // Diagnostics' switches: the thumbnail service's events to the terminal, and its timings.
+        let debug = thumbnails::DebugOptions {
+            logging: settings.debug.enable_debug_logging,
+            monitoring: settings.debug.enable_performance_monitoring,
+        };
         self.gallery.update(cx, |gallery, cx| {
             gallery.set_thumbnail_size(size, cx);
             gallery.set_preview_settings(preview, cx);
+            gallery
+                .thumbnails()
+                .update(cx, |thumbnails, _| thumbnails.set_debug(debug));
         });
         self.rebuild_tiles(cx);
     }
@@ -990,6 +1013,23 @@ fn random_seed() -> i64 {
     i64::from((now as u32) ^ (hasher.finish() as u32))
 }
 
+/// What takes the keys when View comes on screen with no focus of its own kept: the viewer, the
+/// reader or the folder browser while one is open, else the gallery. Its keys, and the File
+/// menu's Open Folder… and Refresh, then work at once.
+impl gpui_kit::Focusable for ViewMode {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        if let Some(viewer) = &self.viewer {
+            viewer.focus_handle(cx)
+        } else if let Some((reader, _)) = &self.comic_reader {
+            reader.focus_handle(cx)
+        } else if let Some((overlay, _)) = &self.folder_overlay {
+            overlay.focus_handle(cx)
+        } else {
+            self.gallery.focus_handle(cx)
+        }
+    }
+}
+
 impl Render for ViewMode {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if let Some(spike) = &mut self.spike {
@@ -998,22 +1038,29 @@ impl Render for ViewMode {
         if let Some(ix) = self.pending_open_viewer.take() {
             self.open_viewer(ix, window, cx);
         }
+        // File › Open Folder… (⌘O) and File › Refresh (⌘R), which the shell's menu sends to the
+        // mode on screen, reach View under the viewer and the reader too, as in Electron Oriel.
+        let commands = div()
+            .size_full()
+            .on_action(cx.listener(|this, _: &commands::OpenFolder, _, cx| this.choose_folder(cx)))
+            .on_action(cx.listener(|this, _: &commands::Refresh, _, cx| this.refresh(cx)))
+            // A folder, or a file whose folder opens, dropped anywhere on View: the gallery, the
+            // sidebar, the top bar or the viewer (`useAppBootstrap` listens on the window).
+            .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                if let Some(path) = paths.paths().first() {
+                    this.open_path(path.clone(), window, cx);
+                }
+            }));
         if let Some(viewer) = &self.viewer {
-            return viewer.clone().into_any_element();
+            return commands.child(viewer.clone()).into_any_element();
         }
         if let Some((reader, _)) = &self.comic_reader {
-            return reader.clone().into_any_element();
+            return commands.child(reader.clone()).into_any_element();
         }
 
         let navigation = self.render_navigation(cx);
         let mut content = div()
             .id("view-content")
-            // A folder, or a file whose folder opens, dropped on the gallery (`useAppBootstrap`).
-            .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
-                if let Some(path) = paths.paths().first() {
-                    this.open_path(path.clone(), window, cx);
-                }
-            }))
             .relative()
             .flex()
             .flex_col()
@@ -1050,12 +1097,7 @@ impl Render for ViewMode {
                 }
             });
         }
-        div()
-            .size_full()
-            // File › Open Folder… (⌘O) and File › Refresh (⌘R), which the shell's menu sends to
-            // the mode on screen.
-            .on_action(cx.listener(|this, _: &commands::OpenFolder, _, cx| this.choose_folder(cx)))
-            .on_action(cx.listener(|this, _: &commands::Refresh, _, cx| this.refresh(cx)))
+        commands
             .child(
                 ModeLayout::new(&self.shell)
                     .navigation(navigation)

@@ -31,6 +31,10 @@ impl ViewMode {
         let parent = self.parent_folder(cx);
         if rail {
             return div()
+                .id("view-sidebar")
+                .role(Role::Navigation)
+                .test_support()
+                .aria_label("View")
                 .flex()
                 .flex_col()
                 .items_center()
@@ -42,6 +46,7 @@ impl ViewMode {
                         .large()
                         .icon(Icon::new(IconName::FolderOpen))
                         .tooltip("Open a folder  ⌘O")
+                        .accessibility_label("Open a folder")
                         .on_click(cx.listener(|this, _, _, cx| this.choose_folder(cx))),
                 )
                 .child(
@@ -53,6 +58,7 @@ impl ViewMode {
                             Some(parent) => format!("Up to {}", display_name(parent)),
                             None => "Up a folder".into(),
                         })
+                        .accessibility_label("Up to the parent folder")
                         .disabled(parent.is_none())
                         .on_click(cx.listener(|this, _, _, cx| this.open_parent_folder(cx))),
                 )
@@ -66,14 +72,13 @@ impl ViewMode {
         let children = catalog.children().clone();
         let children_loading = catalog.children_loading();
 
-        let opened_button = div()
-            .id("sidebar-open-folder")
-            .role(Role::Button)
-            .test_support()
-            .aria_label("Open a folder")
+        // A button, so Tab reaches it and Return or Space presses it, as Electron Oriel's is.
+        let opened_button = gpui_kit::base::Button::new("sidebar-open-folder")
+            .accessibility_label("Open a folder")
             .flex()
             .flex_row()
             .items_center()
+            .justify_start()
             .gap(px(10.))
             .h(px(52.))
             .mx_2()
@@ -133,6 +138,7 @@ impl ViewMode {
                 let name = display_name(&upward);
                 list = list.child(
                     NavItem::new("sidebar-up", Icon::new(IconName::ArrowUp), name.clone())
+                        .accessibility_label(format!("Up to {name}"))
                         .on_click(cx.listener(|this, _, _, cx| this.open_parent_folder(cx))),
                 );
             }
@@ -179,6 +185,9 @@ impl ViewMode {
 
         div()
             .id("view-sidebar")
+            .role(Role::Navigation)
+            .test_support()
+            .aria_label("View")
             .flex()
             .flex_col()
             .w_full()

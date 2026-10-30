@@ -17,8 +17,8 @@ use gpui_kit::test::TestEventExt as _;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
     AnyWindowHandle, AppContext as _, Bounds, Context, ElementId, Entity, ImageSource, IntoElement,
-    ParentElement as _, Render, ScrollDelta, Styled as _, TestAppContext, Window, WindowBounds,
-    WindowOptions, div, point, px, size,
+    ParentElement as _, Render, Role, ScrollDelta, Styled as _, TestAppContext, Window,
+    WindowBounds, WindowOptions, div, point, px, size,
 };
 use oriel_core_domain::{GallerySortMode, NamedPath, SortableMediaItem, compare_by_name};
 use oriel_core_paths::DataRoot;
@@ -655,6 +655,63 @@ fn every_image_tile_renders_a_thumbnail(cx: &mut TestAppContext) {
     .unwrap();
 }
 
+/// The titles of the fact groups Diagnostics shows.
+fn diagnostics_groups(cx: &mut TestAppContext, session: &Session) -> Vec<&'static str> {
+    cx.update(|cx| {
+        session
+            .view
+            .read(cx)
+            .diagnostics(cx)
+            .facts
+            .iter()
+            .map(|group| group.title)
+            .collect()
+    })
+}
+
+#[gpui_kit::test]
+fn performance_monitoring_keeps_the_thumbnail_timings_diagnostics_shows(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("diagnostics");
+    let session = launch(cx, &fixture.root.join("data"));
+    // Tall enough for the whole Settings section, Diagnostics at its foot, to be on screen.
+    cx.simulate_window_resize(session.handle, size(px(1320.), px(4000.)));
+    assert!(!diagnostics_groups(cx, &session).contains(&"Timings"));
+
+    flip_setting(cx, &session, "performance-monitoring");
+    open_folder(cx, &session, &fixture.absolute("comics/alpha"));
+    assert!(diagnostics_groups(cx, &session).contains(&"Timings"));
+    cx.update(|cx| {
+        let gallery = session.view.read(cx).gallery().read(cx);
+        let timings = gallery.thumbnails().read(cx).diagnostics().timings.unwrap();
+        // Each of the five stills was made once, and asked for once.
+        assert_eq!(timings.generation.count, 5);
+        assert_eq!(timings.end_to_end.count, 5);
+        assert_eq!(timings.disk_hit.count, 0);
+        let report = session.view.read(cx).diagnostics_report(cx);
+        assert!(
+            report.contains("\nTimings\nDisk hit: 0 ms average"),
+            "{report}"
+        );
+        assert!(report.contains("\nRecent thumbnail events\n"), "{report}");
+    });
+
+    // The details list the same groups, and turning monitoring off drops the timings.
+    flip_setting(cx, &session, "diagnostics-show");
+    cx.update(|cx| {
+        session.harness.update(cx, |harness, cx| {
+            harness.settings = true;
+            cx.notify();
+        });
+    });
+    settle(cx, &session);
+    assert_eq!(
+        label(cx, &session, "diagnostics-details").as_deref(),
+        Some("Diagnostics details")
+    );
+    click(cx, &session, "performance-monitoring");
+    assert!(!diagnostics_groups(cx, &session).contains(&"Timings"));
+}
+
 #[gpui_kit::test]
 fn video_tiles_get_a_frame_from_ffmpeg(cx: &mut TestAppContext) {
     let fixture = Fixture::new("video-thumbnails");
@@ -706,6 +763,12 @@ fn double_click_opens_the_viewer_the_arrows_step_and_escape_closes(cx: &mut Test
             .read(cx);
         assert!(viewer.is_current_ready(), "the still is decoded");
     });
+    // The File menu's Open Folder… and Refresh stay lit over the viewer, as in Electron Oriel.
+    cx.update_window(session.handle, |_, window, cx| {
+        assert!(window.is_action_available(&oriel_ui::commands::OpenFolder, cx));
+        assert!(window.is_action_available(&oriel_ui::commands::Refresh, cx));
+    })
+    .unwrap();
     press(cx, &session, "right");
     assert_eq!(
         viewer_label(cx, &session),
@@ -1209,6 +1272,14 @@ fn comic_mode_groups_leaf_folders_and_the_reader_opens_one(cx: &mut TestAppConte
         let reader = session.view.read(cx).comic_reader().unwrap().read(cx);
         assert!(reader.is_page_ready(1), "the page in view is decoded");
     });
+    assert_eq!(
+        label(cx, &session, "comic-scroll-top").as_deref(),
+        Some("Scroll to top")
+    );
+    assert_eq!(
+        label(cx, &session, "comic-reveal").as_deref(),
+        Some("Reveal in folder")
+    );
     click(cx, &session, "comic-close");
     assert_eq!(label(cx, &session, "comic-reader"), None);
 
@@ -1219,6 +1290,77 @@ fn comic_mode_groups_leaf_folders_and_the_reader_opens_one(cx: &mut TestAppConte
     assert_eq!(
         label(cx, &session, "gallery-folders").as_deref(),
         Some("3 folders")
+    );
+}
+
+/// The role and the name VoiceOver reads for the element `id`.
+fn role_and_name(
+    cx: &mut TestAppContext,
+    session: &Session,
+    id: impl Into<ElementId>,
+) -> (Option<Role>, Option<String>) {
+    let id = id.into();
+    cx.update_window(session.handle, |_, window, _| {
+        let element = window.find(id);
+        (element.role(), element.label().map(str::to_owned))
+    })
+    .unwrap()
+}
+
+#[gpui_kit::test]
+fn voiceover_reads_views_sidebar_and_icon_buttons_by_name(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("names");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("comics"));
+    let named = |name: &str| (Some(Role::Button), Some(name.to_owned()));
+
+    assert_eq!(
+        role_and_name(cx, &session, "view-sidebar"),
+        (Some(Role::Navigation), Some("View".to_owned()))
+    );
+    assert_eq!(
+        role_and_name(cx, &session, "sidebar-open-folder"),
+        named("Open a folder")
+    );
+    let alpha = fixture.absolute("comics/alpha");
+    click(
+        cx,
+        &session,
+        ElementId::Name(format!("sidebar-folder:{}", alpha.display()).into()),
+    );
+    assert_eq!(
+        role_and_name(cx, &session, "sidebar-up"),
+        named("Up to comics")
+    );
+
+    // The viewer's icon buttons are read by what they do.
+    let first = tile_paths(cx, &session)[0].clone();
+    double_click(cx, &session, tile_id(&first));
+    for (id, name) in [
+        ("viewer-copy-path", "Copy path"),
+        ("viewer-reveal", "Reveal in folder"),
+        ("viewer-show-in-tidy", "Show in Tidy"),
+        ("viewer-fullscreen", "Fullscreen"),
+        ("viewer-close", "Close"),
+    ] {
+        assert_eq!(role_and_name(cx, &session, id), named(name), "{id}");
+    }
+    press(cx, &session, "escape");
+
+    // The rail's icons keep their names.
+    session.shell.update(cx, |shell, cx| shell.toggle_rail(cx));
+    settle(cx, &session);
+    assert_eq!(
+        role_and_name(cx, &session, "view-sidebar"),
+        (Some(Role::Navigation), Some("View".to_owned()))
+    );
+    assert_eq!(
+        role_and_name(cx, &session, "sidebar-open-folder"),
+        named("Open a folder")
+    );
+    assert_eq!(
+        role_and_name(cx, &session, "sidebar-parent"),
+        named("Up to the parent folder")
     );
 }
 

@@ -360,6 +360,8 @@ pub struct NavItem {
     id: ElementId,
     icon: Icon,
     label: SharedString,
+    /// What VoiceOver reads instead of the label, where the label alone says too little.
+    accessibility_label: Option<SharedString>,
     current: bool,
     rail: bool,
     tooltip: Option<SharedString>,
@@ -377,12 +379,20 @@ impl NavItem {
             id: id.into(),
             icon: icon.into(),
             label: label.into(),
+            accessibility_label: None,
             current: false,
             rail: false,
             tooltip: None,
             trailing: None,
             on_click: None,
         }
+    }
+
+    /// The name VoiceOver reads, when the visible label alone says too little ("Up to Pictures"
+    /// for an item labelled "Pictures").
+    pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.accessibility_label = Some(label.into());
+        self
     }
 
     pub fn current(mut self, current: bool) -> Self {
@@ -427,7 +437,11 @@ impl RenderOnce for NavItem {
 
         gpui_kit::base::Button::new(self.id)
             .keeps_focus_on_press()
-            .accessibility_label(self.label.clone())
+            .accessibility_label(
+                self.accessibility_label
+                    .clone()
+                    .unwrap_or_else(|| self.label.clone()),
+            )
             .aria_selected(current)
             .relative()
             .flex_row()

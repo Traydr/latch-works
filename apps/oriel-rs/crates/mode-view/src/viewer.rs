@@ -781,6 +781,11 @@ impl Render for Viewer {
                                 } else {
                                     "Fullscreen"
                                 })
+                                .accessibility_label(if fullscreen {
+                                    "Exit fullscreen"
+                                } else {
+                                    "Fullscreen"
+                                })
                                 .on_click(|_, window, _| window.toggle_fullscreen()),
                         )
                         .child(

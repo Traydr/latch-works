@@ -436,73 +436,156 @@ impl ViewMode {
         .detach();
     }
 
-    /// The diagnostics report, as text to paste into a bug report.
-    pub fn diagnostics_report(&self, cx: &App) -> String {
+    /// What Diagnostics shows, as Electron Oriel's `ViewDiagnostics` groups it: facts under a
+    /// title each, then lists of recent lines. Oriel RS has no worker processes, so Electron
+    /// Oriel's worker crashes, restarts and probe errors have nothing to count, and the media
+    /// tools take the thumbnail worker's place.
+    pub fn diagnostics(&self, cx: &App) -> Diagnostics {
         let catalog = self.catalog.read(cx);
         let gallery = self.gallery.read(cx);
         let thumbnails = gallery.thumbnails().read(cx);
         let stats = thumbnails.stats();
-        let diagnostics = thumbnails.diagnostics();
+        let state = thumbnails.diagnostics();
         let tools = ViewMediaTools::shared().status();
-        let index = &self.settings_panel.index_stats;
-        let lines = [
-            format!("Oriel RS {}", env!("CARGO_PKG_VERSION")),
-            format!(
-                "Platform {} / {}",
-                std::env::consts::OS,
-                std::env::consts::ARCH
-            ),
-            format!(
-                "Folder {}",
-                catalog
-                    .root()
-                    .map(|root| display_name(root))
-                    .unwrap_or_else(|| "none".into())
-            ),
-            format!("Items shown {}", gallery.media().len()),
-            format!("Recursive {}", yes_no(self.is_recursive(cx))),
-            format!("Scan {}", catalog.state().label()),
-            format!("Image workers {}", diagnostics.image_workers),
-            format!("Video workers {}", diagnostics.video_workers),
-            format!("Images queued {}", diagnostics.images_queued),
-            format!("Videos queued {}", diagnostics.videos_queued),
-            format!("In flight {}", diagnostics.in_flight),
-            format!("Disk cache hits {}", stats.from_disk()),
-            format!("Made {}", stats.generated()),
-            format!("Cancelled {}", stats.cancelled()),
-            format!("Video frames that failed {}", stats.video_failures()),
-            format!("Images ImageIO could not read {}", stats.decode_failures()),
-            format!("Thumbnails on disk {}", diagnostics.disk_files),
-            format!(
-                "ffmpeg {}",
-                tools
-                    .ffmpeg_path
-                    .as_ref()
-                    .map_or("not available".into(), |path| path.display().to_string())
-            ),
-            format!(
-                "ffprobe {}",
-                tools
-                    .ffprobe_path
-                    .as_ref()
-                    .map_or("not available".into(), |path| path.display().to_string())
-            ),
-            format!(
-                "Media index {}",
-                index.as_ref().map_or("not counted".into(), |stats| format!(
-                    "{} items from {} folders, {}",
-                    stats.total_items,
-                    stats.unique_roots,
-                    stats.db_path.display()
-                ))
-            ),
+        let debug = self.settings.settings().debug;
+        let fact = |label: &str, value: String| (label.to_owned(), value);
+        let available = |path: &Option<std::path::PathBuf>| {
+            if path.is_some() {
+                "available"
+            } else {
+                "not available"
+            }
+            .to_owned()
+        };
+        let path = |path: &Option<std::path::PathBuf>| {
+            path.as_ref()
+                .map_or("unknown".into(), |path| path.display().to_string())
+        };
+
+        let mut facts = vec![
+            FactGroup {
+                title: "Current folder",
+                facts: vec![
+                    fact(
+                        "Folder",
+                        catalog
+                            .root()
+                            .map(|root| display_name(root))
+                            .unwrap_or_else(|| "none".into()),
+                    ),
+                    fact("Items shown", gallery.media().len().to_string()),
+                    fact("Recursive", yes_no(self.is_recursive(cx)).into()),
+                    fact("Scan", catalog.state().label().to_string()),
+                ],
+            },
+            FactGroup {
+                title: "Runtime",
+                facts: vec![
+                    fact("Version", env!("CARGO_PKG_VERSION").into()),
+                    fact(
+                        "Platform",
+                        format!("{} / {}", std::env::consts::OS, std::env::consts::ARCH),
+                    ),
+                    fact("Packaged", yes_no(is_packaged()).into()),
+                    fact("Debug logging", yes_no(debug.enable_debug_logging).into()),
+                    fact(
+                        "Performance monitoring",
+                        yes_no(debug.enable_performance_monitoring).into(),
+                    ),
+                ],
+            },
+            FactGroup {
+                title: "Thumbnails",
+                facts: vec![
+                    fact("Image workers", state.image_workers.to_string()),
+                    fact("Video workers", state.video_workers.to_string()),
+                    fact("Images queued", state.images_queued.to_string()),
+                    fact("Videos queued", state.videos_queued.to_string()),
+                    fact("In flight", state.in_flight.to_string()),
+                    fact("Disk cache hits", stats.from_disk().to_string()),
+                    fact("Made", stats.generated().to_string()),
+                    fact("Cancelled", stats.cancelled().to_string()),
+                    fact(
+                        "Video frames that failed",
+                        stats.video_failures().to_string(),
+                    ),
+                    fact(
+                        "Images ImageIO could not read",
+                        stats.decode_failures().to_string(),
+                    ),
+                    fact("On disk", state.disk_files.to_string()),
+                ],
+            },
+            FactGroup {
+                title: "Media tools",
+                facts: vec![
+                    fact("ffmpeg", available(&tools.ffmpeg_path)),
+                    fact("ffmpeg path", path(&tools.ffmpeg_path)),
+                    fact("ffprobe", available(&tools.ffprobe_path)),
+                    fact("ffprobe path", path(&tools.ffprobe_path)),
+                ],
+            },
         ];
-        let mut report = lines.join("\n");
-        if !diagnostics.recent_failures.is_empty() {
-            report.push_str("\nRecent thumbnail failures:\n");
-            report.push_str(&diagnostics.recent_failures.join("\n"));
+        if let Some(timings) = state.timings {
+            facts.push(FactGroup {
+                title: "Timings",
+                facts: vec![
+                    fact("Disk hit", timing(&timings.disk_hit)),
+                    fact("Made", timing(&timings.generation)),
+                    fact("End to end", timing(&timings.end_to_end)),
+                ],
+            });
         }
-        report
+        if let Some(index) = &self.settings_panel.index_stats {
+            facts.push(FactGroup {
+                title: "Media index",
+                facts: vec![
+                    fact("Items", index.total_items.to_string()),
+                    fact("Folders", index.unique_roots.to_string()),
+                    fact("Database", index.db_path.display().to_string()),
+                ],
+            });
+        }
+        Diagnostics {
+            facts,
+            lines: vec![
+                LineGroup {
+                    title: "Recent thumbnail events",
+                    lines: state.recent_events,
+                },
+                LineGroup {
+                    title: "Recent thumbnail failures",
+                    lines: state.recent_failures,
+                },
+            ],
+        }
+    }
+
+    /// The diagnostics report, as text to paste into a bug report (`buildDiagnosticsReport`):
+    /// each group's title, then its facts or lines, "None" for an empty list.
+    pub fn diagnostics_report(&self, cx: &App) -> String {
+        let diagnostics = self.diagnostics(cx);
+        let mut report = vec!["Oriel RS View Diagnostics".to_owned()];
+        for group in &diagnostics.facts {
+            report.push(String::new());
+            report.push(group.title.to_owned());
+            report.extend(
+                group
+                    .facts
+                    .iter()
+                    .map(|(label, value)| format!("{label}: {value}")),
+            );
+        }
+        for group in &diagnostics.lines {
+            report.push(String::new());
+            report.push(group.title.to_owned());
+            if group.lines.is_empty() {
+                report.push("None".into());
+            } else {
+                report.extend(group.lines.iter().cloned());
+            }
+        }
+        report.join("\n")
     }
 
     fn render_diagnostics(&self, settings: &ViewSettings, cx: &mut Context<Self>) -> AnyElement {
@@ -580,27 +663,88 @@ impl ViewMode {
             ),
         ];
         if shown {
+            let diagnostics = self.diagnostics(cx);
             let theme = cx.theme();
-            let report = self.diagnostics_report(cx);
-            rows.push(
+            let (muted, border) = (theme.muted_foreground, theme.border);
+            let heading = |title: &'static str| {
                 div()
-                    .id(ElementId::Name("diagnostics-details".into()))
-                    .role(Role::Document)
-                    .test_support()
-                    .aria_label("Diagnostics details")
-                    .px_4()
-                    .py_3()
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.))
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .children(report.lines().map(|line| div().child(line.to_string())))
-                    .into_any_element(),
-            );
+                    .mb(px(6.))
+                    .text_size(px(13.))
+                    .font_weight(gpui_kit::FontWeight::MEDIUM)
+                    .child(title)
+            };
+            let section = || div().px_4().py_3().border_t_1().border_color(border);
+            let mut details = div()
+                .id(ElementId::Name("diagnostics-details".into()))
+                .role(Role::Document)
+                .test_support()
+                .aria_label("Diagnostics details")
+                .flex()
+                .flex_col()
+                .text_xs();
+            for group in diagnostics.facts {
+                details = details.child(section().child(heading(group.title)).children(
+                    group.facts.into_iter().map(|(label, value)| {
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_4()
+                            .child(div().flex_shrink_0().text_color(muted).child(label))
+                            .child(div().flex_1().min_w_0().text_right().child(value))
+                    }),
+                ));
+            }
+            for group in diagnostics.lines {
+                let lines = if group.lines.is_empty() {
+                    vec![div().text_color(muted).child("None")]
+                } else {
+                    group
+                        .lines
+                        .into_iter()
+                        .map(|line| div().child(line))
+                        .collect()
+                };
+                details = details.child(section().child(heading(group.title)).children(lines));
+            }
+            rows.push(details.into_any_element());
         }
         group("Diagnostics", rows, cx)
     }
+}
+
+/// A titled list of facts in Diagnostics (`Facts`).
+pub struct FactGroup {
+    pub title: &'static str,
+    pub facts: Vec<(String, String)>,
+}
+
+/// A titled list of recorded lines in Diagnostics (`Lines`).
+pub struct LineGroup {
+    pub title: &'static str,
+    pub lines: Vec<String>,
+}
+
+/// Everything Diagnostics shows.
+pub struct Diagnostics {
+    pub facts: Vec<FactGroup>,
+    pub lines: Vec<LineGroup>,
+}
+
+/// A timing as Diagnostics writes it (`timing`): "12.5 ms average, 40 ms at most".
+fn timing(aggregate: &crate::thumbnails::TimingAggregate) -> String {
+    format!(
+        "{} ms average, {} ms at most",
+        aggregate.average_ms(),
+        aggregate.max_ms()
+    )
+}
+
+/// Whether the app runs from its bundle (`app.isPackaged`).
+fn is_packaged() -> bool {
+    std::env::current_exe().is_ok_and(|path| {
+        path.parent()
+            .is_some_and(|folder| folder.ends_with("Contents/MacOS"))
+    })
 }
 
 fn count(value: u64, one: &str, many: &str) -> String {

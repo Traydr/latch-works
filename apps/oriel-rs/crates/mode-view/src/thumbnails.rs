@@ -59,6 +59,9 @@ const VIDEO_WORKERS: usize = 1;
 /// How many failures Diagnostics lists (`MAX_RECENT_FAILURES`).
 const RECENT_FAILURES: usize = 10;
 
+/// How many of the service's own events Diagnostics lists (`MAX_RECENT_WORKER_EVENTS`).
+const RECENT_EVENTS: usize = 10;
+
 /// The size thumbnails are made at for a thumbnail size setting: twice it, for a 2× display
 /// (`getThumbnailRequestSize`), within the 64–1024 the media protocol accepts.
 pub fn request_size(thumbnail_size: f32) -> u32 {
@@ -182,6 +185,54 @@ impl ThumbnailStats {
     }
 }
 
+/// What View's two Diagnostics switches ask of the service (`ThumbnailDebugOptions`): its events
+/// written to the terminal as they happen, and its timings kept.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DebugOptions {
+    pub logging: bool,
+    pub monitoring: bool,
+}
+
+/// One kind of timing, in milliseconds (`ThumbnailPerformanceAggregateState`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TimingAggregate {
+    pub count: u64,
+    total_ms: f64,
+    max_ms: f64,
+}
+
+impl TimingAggregate {
+    fn record(&mut self, took: Duration) {
+        let ms = took.as_secs_f64() * 1000.;
+        self.count += 1;
+        self.total_ms += ms;
+        self.max_ms = self.max_ms.max(ms);
+    }
+
+    /// The mean, to two decimals, as `createTimingAggregateSnapshot` rounds it.
+    pub fn average_ms(&self) -> f64 {
+        if self.count == 0 {
+            return 0.;
+        }
+        (self.total_ms / self.count as f64 * 100.).round() / 100.
+    }
+
+    /// The longest, to two decimals.
+    pub fn max_ms(&self) -> f64 {
+        (self.max_ms * 100.).round() / 100.
+    }
+}
+
+/// The service's timings while performance monitoring is on (`ThumbnailBrokerTimings`): a
+/// thumbnail found on disk, one made, and each from the gallery asking to it being ready.
+/// Electron Oriel's memory hits have no counterpart: the gallery's image cache serves those.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ThumbnailTimings {
+    pub disk_hit: TimingAggregate,
+    pub generation: TimingAggregate,
+    pub end_to_end: TimingAggregate,
+}
+
 /// What Diagnostics shows of the service right now.
 #[derive(Clone, Debug, Default)]
 pub struct ThumbnailDiagnostics {
@@ -192,6 +243,10 @@ pub struct ThumbnailDiagnostics {
     pub in_flight: usize,
     pub disk_files: usize,
     pub recent_failures: Vec<String>,
+    /// The service's own events, newest last (`recentWorkerEvents`).
+    pub recent_events: Vec<String>,
+    /// The timings, while performance monitoring is on.
+    pub timings: Option<ThumbnailTimings>,
 }
 
 /// Makes and finds thumbnails. The gallery says which items it wants; the service works through
@@ -212,6 +267,11 @@ pub struct ThumbnailService {
     running_videos: usize,
     stats: ThumbnailStats,
     recent_failures: VecDeque<String>,
+    recent_events: VecDeque<String>,
+    debug: DebugOptions,
+    timings: ThumbnailTimings,
+    /// When the gallery asked for each queued or running thumbnail, for the end-to-end timing.
+    requested_at: HashMap<SharedString, Instant>,
     disk_files: usize,
     pruning: bool,
 }
@@ -221,7 +281,7 @@ impl ThumbnailService {
     /// files are counted, and pruned if there are too many, in the background.
     pub fn new(folder: impl Into<PathBuf>, size: u32, cx: &mut Context<Self>) -> Self {
         let folder: Arc<Path> = folder.into().into();
-        let service = Self {
+        let mut service = Self {
             folder: folder.clone(),
             size,
             concurrency: default_concurrency(),
@@ -235,9 +295,19 @@ impl ThumbnailService {
             running_videos: 0,
             stats: ThumbnailStats::default(),
             recent_failures: VecDeque::new(),
+            recent_events: VecDeque::new(),
+            debug: DebugOptions::default(),
+            timings: ThumbnailTimings::default(),
+            requested_at: HashMap::new(),
             disk_files: 0,
             pruning: false,
         };
+        let tools = service.tools.status();
+        service.event(format!(
+            "{} image workers and {VIDEO_WORKERS} video worker ready. ffmpeg={} ImageIO=true",
+            service.concurrency,
+            tools.available()
+        ));
         cx.spawn(async move |this, cx| {
             let counted = cx
                 .background_spawn(async move {
@@ -276,6 +346,26 @@ impl ThumbnailService {
             in_flight: self.running_images + self.running_videos,
             disk_files: self.disk_files,
             recent_failures: self.recent_failures.iter().cloned().collect(),
+            recent_events: self.recent_events.iter().cloned().collect(),
+            timings: self.debug.monitoring.then_some(self.timings),
+        }
+    }
+
+    /// Follows View's Diagnostics switches (`setDebugOptions`).
+    pub fn set_debug(&mut self, debug: DebugOptions) {
+        self.debug = debug;
+    }
+
+    /// Notes one of the service's own events for Diagnostics, and writes it to the terminal while
+    /// debug logging is on, as Electron Oriel's broker writes its worker events.
+    fn event(&mut self, message: String) {
+        if self.debug.logging {
+            eprintln!("[thumbnails] {message}");
+        }
+        self.recent_events
+            .push_back(format!("{} {message}", timestamp()));
+        while self.recent_events.len() > RECENT_EVENTS {
+            self.recent_events.pop_front();
         }
     }
 
@@ -290,6 +380,16 @@ impl ThumbnailService {
     /// Forgets every thumbnail and stops the work queued or running for them: for a new folder,
     /// where none of them will be asked for again. The files stay on disk.
     pub fn reset(&mut self, cx: &mut Context<Self>) {
+        let (queued, running) = (
+            self.images.len() + self.videos.len(),
+            self.running_images + self.running_videos,
+        );
+        if queued + running > 0 {
+            self.event(format!(
+                "Started over: {queued} queued dropped, {running} running stopped"
+            ));
+        }
+        self.requested_at.clear();
         self.generation += 1;
         self.cancel.cancel();
         self.cancel = CancelToken::new();
@@ -309,6 +409,7 @@ impl ThumbnailService {
             cx.background_spawn(async move { clear(&folder) }).await;
             this.update(cx, |this, cx| {
                 this.disk_files = 0;
+                this.event("Disk cache cleared".into());
                 cx.notify();
             })
             .ok();
@@ -332,14 +433,17 @@ impl ThumbnailService {
         for entry in self.images.drain(..).chain(self.videos.drain(..)) {
             if matches!(self.slots.get(entry.id()), Some(Slot::Queued)) {
                 self.slots.remove(entry.id());
+                self.requested_at.remove(entry.id());
             }
         }
         let mut seen = HashSet::new();
+        let now = Instant::now();
         for entry in visible.iter().chain(nearby) {
             if !seen.insert(entry.id().clone()) || self.slots.contains_key(entry.id()) {
                 continue;
             }
             self.slots.insert(entry.id().clone(), Slot::Queued);
+            self.requested_at.entry(entry.id().clone()).or_insert(now);
             if entry.is_video() {
                 self.videos.push_back(entry.clone());
             } else {
@@ -384,13 +488,45 @@ impl ThumbnailService {
         let cancel = self.cancel.clone();
         cx.spawn(async move |this, cx| {
             let job = entry.clone();
+            let started = Instant::now();
             let made = cx
                 .background_spawn(async move { make(&job, &folder, size, &tools, &cancel) })
                 .await;
-            this.update(cx, |this, cx| this.finish(generation, &entry, made, cx))
-                .ok();
+            let took = started.elapsed();
+            this.update(cx, |this, cx| {
+                this.time(generation, &entry, &made, took);
+                this.finish(generation, &entry, made, cx);
+            })
+            .ok();
         })
         .detach();
+    }
+
+    /// Records a job's timings while performance monitoring is on (`recordTiming`).
+    fn time(
+        &mut self,
+        generation: u64,
+        entry: &MediaEntry,
+        made: &Result<Made, Failure>,
+        took: Duration,
+    ) {
+        if generation != self.generation {
+            return;
+        }
+        let requested = self.requested_at.remove(entry.id());
+        if !self.debug.monitoring {
+            return;
+        }
+        match made {
+            Ok(Made::FromDisk(_)) => self.timings.disk_hit.record(took),
+            Ok(Made::Generated { took, .. }) => self.timings.generation.record(*took),
+            Err(_) => {}
+        }
+        if made.is_ok()
+            && let Some(requested) = requested
+        {
+            self.timings.end_to_end.record(requested.elapsed());
+        }
     }
 
     fn finish(
@@ -469,6 +605,7 @@ impl ThumbnailService {
             this.update(cx, |this, _| {
                 this.pruning = false;
                 this.disk_files = left;
+                this.event(format!("Disk cache pruned to {left} files"));
             })
             .ok();
         })

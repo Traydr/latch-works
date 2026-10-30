@@ -265,6 +265,9 @@ impl Render for FolderOverlay {
                     .child(
                         div()
                             .id(SharedString::from(format!("crumb:{}", path.display())))
+                            .role(Role::Button)
+                            .test_support()
+                            .aria_label(format!("Browse {name}"))
                             .truncate()
                             .when(last, |this| this.font_weight(gpui_kit::FontWeight::MEDIUM))
                             .when(!last, |this| this.text_color(theme.muted_foreground))
@@ -410,6 +413,7 @@ impl Render for FolderOverlay {
                                     .ghost()
                                     .icon(Icon::new(IconName::Close))
                                     .tooltip("Close")
+                                    .accessibility_label("Close")
                                     .on_click(cx.listener(|_, _, _, cx| {
                                         cx.emit(FolderOverlayEvent::Close);
                                     })),
