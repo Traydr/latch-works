@@ -1,30 +1,39 @@
-//! The Library (`views/LibraryView.tsx`): every file in the catalog in GPUI Kit's data table,
-//! paged in from the engine as it scrolls, with the search, the filter menu and its chips, the
-//! Inspector (I), the selection bar and its More… menu.
+//! The Library (`views/LibraryView.tsx`): every file in the catalog, as a list in GPUI Kit's data
+//! table or as a grid of tiles, paged in from the engine as it scrolls, with the search, the
+//! filter menu and its chips, the Inspector (I), the selection bar, and the menu a right-click or
+//! the bar's "⋯" opens.
 //!
-//! The table's selected row is the cursor; the checkboxes are the selection, which bulk actions
-//! take. Without a selection, the Inspector and the shortcuts act on the cursor's file.
+//! Finder's selection model, as `use-file-cursor.ts` has it: a click selects one file, ⌘-click
+//! adds or removes one, ⇧-click extends from the last one clicked; the arrows move the cursor
+//! (← → too in the grid) and ⇧ extends; Space shows the cursor's file in Quick Look, Return
+//! renames it in place and Esc clears. The table's selected row is the cursor. Bulk actions take
+//! the selection; without one, the Inspector and the shortcuts act on the cursor's file.
+
+mod grid;
+pub mod menu;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
+use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_kit::component::input::{Escape as InputEscape, Input, InputEvent, InputState};
 use gpui_kit::component::popover::Popover;
 use gpui_kit::component::table::{
     Column, ColumnSort, DataTable, TableDelegate, TableEvent, TableState,
 };
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable, FontWeight,
-    InteractiveElement as _, IntoElement, KeyDownEvent, ObjectFit, ParentElement as _, Render,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
-    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
+    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable,
+    FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent, Modifiers, ObjectFit,
+    ParentElement as _, Render, SharedString, Stateful, StatefulInteractiveElement as _,
+    Styled as _, Subscription, Task, TestSupportExt as _, UniformListScrollHandle, Window, canvas,
+    div, prelude::FluentBuilder as _, px,
 };
+pub use menu::{LibraryMenu, MenuChoice, last_menu};
 use oriel_core_tidy::TidyEngine;
 use oriel_core_tidy::contract::{
     AudioState, FileFacets, FileFilter, FileFlag, FileFormat, FileId, FileKind, FileQuery, FileRow,
@@ -33,10 +42,11 @@ use oriel_core_tidy::contract::{
 use oriel_ui::{LocalStorage, Toast, TopBar};
 
 use crate::actions::PerformOptions;
-use crate::changes::{PlanRequest, Rename, VideoCodecChoice};
+use crate::changes::{PlanRequest, Rename};
 use crate::format;
 use crate::loaded::Loaded;
 use crate::pages::TidyPage;
+use crate::quick_look::quick_look;
 use crate::state::{LibraryPreset, TidyState};
 use crate::thumbs::{self, Thumbs};
 use crate::widgets;
@@ -46,6 +56,33 @@ const PAGE: usize = 200;
 
 /// Where the Inspector's choice is kept, Electron Oriel's key.
 const INSPECTOR_KEY: &str = "glazier.library.inspector";
+
+/// Where the choice of list or grid is kept, Electron Oriel's key.
+const MODE_KEY: &str = "glazier.library.mode";
+
+/// Room the selection bar covers at the bottom of the files, so the last ones scroll clear of it.
+const BAR_INSET: f32 = 80.;
+
+/// ⌘, or Ctrl elsewhere, as Electron Oriel's `isCommandKey` reads either.
+fn is_command(modifiers: &Modifiers) -> bool {
+    modifiers.platform || modifiers.control
+}
+
+/// The Library shown as a list or as a grid of tiles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LibraryMode {
+    List,
+    Grid,
+}
+
+impl LibraryMode {
+    fn key(self) -> &'static str {
+        match self {
+            LibraryMode::List => "list",
+            LibraryMode::Grid => "grid",
+        }
+    }
+}
 
 /// Folders the filter lists at once; its field narrows the rest.
 const FOLDER_LIMIT: usize = 200;
@@ -102,33 +139,61 @@ enum Col {
     Modified,
 }
 
-const COLUMNS: [Col; 6] = [
-    Col::Select,
-    Col::Name,
-    Col::Format,
-    Col::Dimensions,
-    Col::Size,
-    Col::Modified,
-];
+/// The name's room before the table has been measured, and the least it keeps.
+const NAME_WIDTH: f32 = 360.;
+const MIN_NAME_WIDTH: f32 = 200.;
+/// What the table's vertical scrollbar takes from the columns.
+const SCROLLBAR: f32 = 16.;
+
+/// The columns a list `width` wide shows, and the name's width (`columnsFor`): a narrow list
+/// drops Modified first, then Dimensions, so the name keeps room to read, and the name takes
+/// whatever the others leave.
+fn columns_for(width: f32) -> (Vec<Col>, f32) {
+    let mut columns = vec![Col::Select, Col::Name, Col::Format];
+    if width >= 620. {
+        columns.push(Col::Dimensions);
+    }
+    columns.push(Col::Size);
+    if width >= 760. {
+        columns.push(Col::Modified);
+    }
+    let fixed: f32 = columns.iter().map(|column| column.width()).sum();
+    (columns, (width - fixed - SCROLLBAR).max(MIN_NAME_WIDTH))
+}
 
 impl Col {
-    fn column(self) -> Column {
+    /// The column's width; the name's is whatever the others leave.
+    fn width(self) -> f32 {
         match self {
-            Col::Select => Column::new("select", "").width(40.).resizable(false),
-            Col::Name => Column::new("name", "Name").width(360.).sortable(),
-            Col::Format => Column::new("format", "Format").width(110.).sortable(),
-            Col::Dimensions => Column::new("dimensions", "Dimensions")
-                .width(120.)
-                .sortable(),
-            Col::Size => Column::new("size", "Size")
-                .width(96.)
-                .text_right()
-                .sortable(),
-            Col::Modified => Column::new("modified", "Modified")
-                .width(130.)
-                .text_right()
-                .sortable(),
+            Col::Select => 40.,
+            Col::Name => 0.,
+            Col::Format => 110.,
+            Col::Dimensions => 120.,
+            Col::Size => 96.,
+            Col::Modified => 130.,
         }
+    }
+
+    fn column(self, name_width: f32, sort: Option<ColumnSort>) -> Column {
+        let column = match self {
+            Col::Select => return Column::new("select", "").width(self.width()),
+            Col::Name => Column::new("name", "Name").width(name_width),
+            Col::Format => Column::new("format", "Format").width(self.width()),
+            Col::Dimensions => Column::new("dimensions", "Dimensions").width(self.width()),
+            Col::Size => Column::new("size", "Size").width(self.width()).text_right(),
+            Col::Modified => Column::new("modified", "Modified")
+                .width(self.width())
+                .text_right(),
+        };
+        let mut column = column.sortable();
+        column.sort = sort;
+        column
+    }
+
+    /// Whether the first click sorts largest, newest or longest first, as Finder does
+    /// (`DESCENDING_FIRST`); names and formats start from A.
+    fn descending_first(self) -> bool {
+        matches!(self, Col::Dimensions | Col::Size | Col::Modified)
     }
 
     /// The catalog's order for this column, as Electron Oriel's headers sort: the format by
@@ -156,6 +221,10 @@ fn dimensions_text(row: &FileRow) -> String {
     format::dimensions(row).unwrap_or_default()
 }
 
+/// What the header's checkbox calls to select every matching file: the page's ⌘A, which asks
+/// the engine for the ids.
+type SelectAll = Rc<dyn Fn(&mut Window, &mut App)>;
+
 /// The table's rows: pages of the catalog, read as they come into view.
 pub struct CatalogRows {
     engine: Option<TidyEngine>,
@@ -166,8 +235,24 @@ pub struct CatalogRows {
     requested: HashSet<usize>,
     generation: u64,
     selected: BTreeSet<FileId>,
+    /// Where ⇧ extends from: the file last clicked, toggled or moved to without ⇧.
+    anchor: Option<usize>,
+    /// The selection a move of the cursor brings, in place of the cursor's file alone.
+    pending: Option<BTreeSet<FileId>>,
+    /// The cursor goes when the query changes, the selection stays.
+    keep_selection: bool,
+    /// The file being renamed in place, and its field.
+    renaming: Option<(FileId, Entity<InputState>)>,
+    /// Selects every matching file, from the header's checkbox.
+    select_all: Option<SelectAll>,
     thumbs: Entity<Thumbs>,
     root_name: SharedString,
+    /// The columns shown, as the list's width allows, and the name's width.
+    cols: Vec<Col>,
+    name_width: f32,
+    /// The column the files are sorted by and whether largest first; none for the catalog's own
+    /// order, by path.
+    sorted: Option<(Col, bool)>,
     columns: Vec<Column>,
     tasks: Vec<Task<()>>,
 }
@@ -183,11 +268,55 @@ impl CatalogRows {
             requested: HashSet::new(),
             generation: 0,
             selected: BTreeSet::new(),
+            anchor: None,
+            pending: None,
+            keep_selection: false,
+            renaming: None,
+            select_all: None,
             thumbs: thumbs.clone(),
             root_name: SharedString::default(),
-            columns: COLUMNS.map(Col::column).to_vec(),
+            cols: columns_for(f32::INFINITY).0,
+            name_width: NAME_WIDTH,
+            sorted: None,
+            columns: Vec::new(),
             tasks: Vec::new(),
         }
+        .with_columns()
+    }
+
+    fn with_columns(mut self) -> Self {
+        self.rebuild_columns();
+        self
+    }
+
+    /// The table's columns from what is shown and how it is sorted: the arrow on the column
+    /// sorted by, the others ready to sort.
+    fn rebuild_columns(&mut self) {
+        self.columns = self
+            .cols
+            .iter()
+            .map(|col| {
+                let sort = col.sort().map(|_| match self.sorted {
+                    Some((sorted, true)) if sorted == *col => ColumnSort::Descending,
+                    Some((sorted, false)) if sorted == *col => ColumnSort::Ascending,
+                    _ => ColumnSort::Default,
+                });
+                col.column(self.name_width, sort)
+            })
+            .collect();
+    }
+
+    /// Lays the columns out for a list `width` wide; true when they changed, and the table has
+    /// to read them again.
+    fn fit(&mut self, width: f32) -> bool {
+        let (cols, name_width) = columns_for(width);
+        if cols == self.cols && (name_width - self.name_width).abs() < 1. {
+            return false;
+        }
+        self.cols = cols;
+        self.name_width = name_width;
+        self.rebuild_columns();
+        true
     }
 
     /// How many files match, once the first page has said.
@@ -276,6 +405,55 @@ impl CatalogRows {
         cx.notify();
     }
 
+    /// The files from `from` to `to`, both included, added to `base`.
+    fn range(&self, from: usize, to: usize, base: &BTreeSet<FileId>) -> BTreeSet<FileId> {
+        let mut next = base.clone();
+        next.extend((from.min(to)..=from.max(to)).filter_map(|index| Some(self.row(index)?.id)));
+        next
+    }
+
+    /// Checks or unchecks the file at `index`, which ⇧ then extends from.
+    fn toggle(&mut self, index: usize, on: bool, cx: &mut Context<TableState<Self>>) {
+        let Some(id) = self.row(index).map(|row| row.id) else {
+            return;
+        };
+        let mut next = self.selected.clone();
+        if on {
+            next.insert(id);
+        } else {
+            next.remove(&id);
+        }
+        self.anchor = Some(index);
+        self.set_selected(next, cx);
+    }
+
+    /// What a click on the file at `index` selects, with the keys held: ⇧ extends from the
+    /// anchor (⇧⌘ keeps the rest too), ⌘ toggles, a plain click selects it alone.
+    fn clicked(&mut self, index: usize, modifiers: Modifiers) -> BTreeSet<FileId> {
+        if modifiers.shift
+            && let Some(anchor) = self.anchor
+        {
+            let base = if is_command(&modifiers) {
+                self.selected.clone()
+            } else {
+                BTreeSet::new()
+            };
+            return self.range(anchor, index, &base);
+        }
+        self.anchor = Some(index);
+        let Some(id) = self.row(index).map(|row| row.id) else {
+            return BTreeSet::new();
+        };
+        if is_command(&modifiers) {
+            let mut next = self.selected.clone();
+            if !next.remove(&id) {
+                next.insert(id);
+            }
+            return next;
+        }
+        BTreeSet::from([id])
+    }
+
     fn render_name(&self, row: &FileRow, cx: &mut Context<TableState<Self>>) -> AnyElement {
         let theme = cx.theme();
         let (muted, radius) = (theme.muted_foreground, theme.radius);
@@ -306,8 +484,13 @@ impl CatalogRows {
                     .flex_col()
                     .flex_1()
                     .min_w_0()
-                    .child(
-                        div()
+                    .child(match self.rename_field(row.id) {
+                        // Return renames, Esc or clicking away keeps the name (`RenameField`).
+                        Some(input) => Input::new(&input)
+                            .xsmall()
+                            .aria_label(format!("New name for {}", row.name))
+                            .into_any_element(),
+                        None => div()
                             .flex()
                             .flex_row()
                             .items_center()
@@ -318,17 +501,87 @@ impl CatalogRows {
                                 this.child(
                                     Icon::new(IconName::VolumeX).size(px(14.)).text_color(muted),
                                 )
-                            }),
-                    )
+                            })
+                            .into_any_element(),
+                    })
                     .child(div().truncate().text_xs().text_color(muted).child(folder)),
             )
             .into_any_element()
     }
 }
 
+impl CatalogRows {
+    /// The rename field, while `id` is being renamed.
+    fn rename_field(&self, id: FileId) -> Option<Entity<InputState>> {
+        self.renaming
+            .as_ref()
+            .filter(|(renamed, _)| *renamed == id)
+            .map(|(_, input)| input.clone())
+    }
+}
+
 impl TableDelegate for CatalogRows {
     fn columns_count(&self, _: &App) -> usize {
         self.columns.len()
+    }
+
+    /// A row takes ⌘- and ⇧-clicks, which the table leaves alone (`select_on_modifier_click`):
+    /// they toggle and extend the selection and move the cursor there.
+    fn render_tr(
+        &mut self,
+        row_ix: usize,
+        _: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Stateful<gpui_kit::Div> {
+        div().id(("library-row", row_ix)).on_click(cx.listener(
+            move |table, event: &ClickEvent, _, cx| {
+                let modifiers = event.modifiers();
+                if !(is_command(&modifiers) || modifiers.shift) {
+                    return;
+                }
+                let rows = table.delegate_mut();
+                let next = rows.clicked(row_ix, modifiers);
+                rows.pending = Some(next);
+                table.set_selected_row(row_ix, cx);
+            },
+        ))
+    }
+
+    /// The select column's header checks every matching file (`Select every matching file`).
+    fn render_th(
+        &mut self,
+        col_ix: usize,
+        _: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> impl IntoElement {
+        if self.cols[col_ix] != Col::Select {
+            return div()
+                .size_full()
+                .child(self.columns[col_ix].name.clone())
+                .into_any_element();
+        }
+        let total = self.total.unwrap_or(0);
+        let all = total > 0 && self.selected.len() >= total;
+        let select_all = self.select_all.clone();
+        let table = cx.entity().downgrade();
+        Checkbox::new("library-select-all")
+            .checked(all)
+            .accessibility_label("Select every matching file")
+            .tooltip("Select every matching file  ⌘A")
+            .on_click(move |checked, window, cx| {
+                if *checked {
+                    if let Some(select_all) = &select_all {
+                        select_all(window, cx);
+                    }
+                } else {
+                    table
+                        .update(cx, |table, cx| {
+                            table.delegate_mut().set_selected(BTreeSet::new(), cx);
+                        })
+                        .ok();
+                }
+            })
+            .into_any_element()
     }
 
     fn rows_count(&self, _: &App) -> usize {
@@ -339,23 +592,33 @@ impl TableDelegate for CatalogRows {
         self.columns[col_ix].clone()
     }
 
+    /// A click on a header, as Electron Oriel's headers sort: the column sorted by turns around,
+    /// another starts largest, newest or longest first for the size, the date and the length,
+    /// and from A for the rest. The table's own cycle, which comes back to no order, is set
+    /// aside: its arrows are drawn again from the delegate's.
     fn perform_sort(
         &mut self,
         col_ix: usize,
-        sort: ColumnSort,
-        _: &mut Window,
+        _: ColumnSort,
+        window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        let (Some(engine), Some(mut query)) = (self.engine.clone(), self.query.clone()) else {
+        let Some(col) = self.cols.get(col_ix).copied() else {
             return;
         };
-        let column = COLUMNS[col_ix].sort();
-        (query.sort, query.descending) = match (column, sort) {
-            (Some(column), ColumnSort::Ascending) => (column, false),
-            (Some(column), ColumnSort::Descending) => (column, true),
-            // Back to the catalog's own order: by path, as the scan found them.
-            _ => (FileSortColumn::Path, false),
+        let (Some(engine), Some(mut query), Some(column)) =
+            (self.engine.clone(), self.query.clone(), col.sort())
+        else {
+            return;
         };
+        let descending = match self.sorted {
+            Some((sorted, descending)) if sorted == col => !descending,
+            _ => col.descending_first(),
+        };
+        self.sorted = Some((col, descending));
+        (query.sort, query.descending) = (column, descending);
+        self.rebuild_columns();
+        cx.defer_in(window, |table, _, cx| table.refresh(cx));
         self.reset(engine, query, cx);
     }
 
@@ -380,17 +643,30 @@ impl TableDelegate for CatalogRows {
         _: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
+        let col = self.cols[col_ix];
+        // Each cell sits in the middle of its 44 px row, as the Electron list's grid centres
+        // them, the size and the date against the right edge.
+        let cell = div()
+            .size_full()
+            .flex()
+            .flex_row()
+            .items_center()
+            .min_w_0()
+            .when(matches!(col, Col::Size | Col::Modified), |this| {
+                this.justify_end()
+            });
         let Some(row) = self.row(row_ix).cloned() else {
             // Not read yet: a quiet placeholder, as the Electron list draws one.
-            return div()
-                .h(px(10.))
-                .w(px(if col_ix == 1 { 160. } else { 40. }))
-                .rounded_full()
-                .bg(cx.theme().muted)
-                .into_any_element();
+            return cell.child(
+                div()
+                    .h(px(10.))
+                    .w(px(if col == Col::Name { 160. } else { 40. }))
+                    .rounded_full()
+                    .bg(cx.theme().muted),
+            );
         };
         let theme = cx.theme();
-        match COLUMNS[col_ix] {
+        let content = match col {
             Col::Select => {
                 let id = row.id;
                 let checked = self.selected.contains(&id);
@@ -402,14 +678,7 @@ impl TableDelegate for CatalogRows {
                         let checked = *checked;
                         table
                             .update(cx, |table, cx| {
-                                let rows = table.delegate_mut();
-                                let mut selected = rows.selected.clone();
-                                if checked {
-                                    selected.insert(id);
-                                } else {
-                                    selected.remove(&id);
-                                }
-                                rows.set_selected(selected, cx);
+                                table.delegate_mut().toggle(row_ix, checked, cx);
                             })
                             .ok();
                     })
@@ -445,12 +714,13 @@ impl TableDelegate for CatalogRows {
                 .text_color(theme.muted_foreground)
                 .child(format::date(row.mtime_ms))
                 .into_any_element(),
-        }
+        };
+        cell.child(content)
     }
 
     fn cell_label(&self, row_ix: usize, col_ix: usize, _: &App) -> Option<SharedString> {
         let row = self.row(row_ix)?;
-        Some(match COLUMNS[col_ix] {
+        Some(match self.cols[col_ix] {
             Col::Select => return None,
             Col::Name => row.name.clone().into(),
             Col::Format => format::format_label(row.format).into(),
@@ -477,6 +747,17 @@ pub struct LibraryPage {
     sample: Loaded<Vec<FileRow>>,
     inspector: bool,
     filter_open: bool,
+    mode: LibraryMode,
+    /// The file being renamed in place: its id, its name before, and what watches its field.
+    renaming: Option<(FileId, String, Subscription)>,
+    /// The files the menu on screen acts on, and the one file it is about, if any.
+    menu: Option<(Vec<FileId>, Option<FileRow>)>,
+    /// The list's width when last drawn, which its columns fit.
+    list_width: f32,
+    /// The grid's width when last drawn, and the columns it had.
+    grid_width: f32,
+    grid_columns: usize,
+    grid_scroll: UniformListScrollHandle,
     /// What the page last read for: the root, the catalog's version and the last preset.
     seen: (Option<RootId>, u64, u64),
     targets_seen: (Vec<FileId>, u64),
@@ -492,13 +773,20 @@ impl LibraryPage {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let rows = CatalogRows::new(thumbs);
+        let mut rows = CatalogRows::new(thumbs);
+        let page = cx.entity().downgrade();
+        rows.select_all = Some(Rc::new(move |window, cx| {
+            page.update(cx, |page, cx| page.select_all(window, cx)).ok();
+        }));
         let table = cx.new(|cx| {
             TableState::new(rows, window, cx)
                 .row_selectable(true)
                 .row_header(false)
                 .col_movable(false)
+                .col_resizable(false)
                 .col_selectable(false)
+                // ⌘- and ⇧-clicks belong to the selection, not to the cursor.
+                .select_on_modifier_click(false)
         });
         let search =
             cx.new(|cx| InputState::new(window, cx).placeholder("Search names and folders"));
@@ -507,18 +795,18 @@ impl LibraryPage {
             Some(stored) => stored == "open",
             None => window.bounds().size.width >= px(1440.),
         };
+        let mode = match LocalStorage::get(cx, MODE_KEY) {
+            Some("grid") => LibraryMode::Grid,
+            _ => LibraryMode::List,
+        };
         let subscriptions = vec![
             cx.observe(state, |this, _, cx| this.sync(cx)),
             cx.observe(thumbs, |this, _, cx| {
                 this.table.update(cx, |_, cx| cx.notify());
             }),
             cx.observe(&table, |this, _, cx| this.targets_changed(cx)),
-            cx.subscribe(&table, |this, _, event: &TableEvent, cx| {
-                if let TableEvent::DoubleClickedRow(index) = event
-                    && let Some(row) = this.table.read(cx).delegate().row(*index)
-                {
-                    cx.open_with_system(Path::new(&row.abs_path));
-                }
+            cx.subscribe_in(&table, window, |this, _, event: &TableEvent, window, cx| {
+                this.on_table_event(event, window, cx);
             }),
             cx.subscribe_in(&search, window, |this, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::Change) {
@@ -546,6 +834,13 @@ impl LibraryPage {
             sample: Loaded::default(),
             inspector,
             filter_open: false,
+            mode,
+            renaming: None,
+            menu: None,
+            list_width: 0.,
+            grid_width: 0.,
+            grid_columns: 1,
+            grid_scroll: UniformListScrollHandle::new(),
             seen: (None, 0, 0),
             targets_seen: (Vec::new(), 0),
             search_timer: None,
@@ -568,6 +863,321 @@ impl LibraryPage {
 
     pub fn total(&self, cx: &App) -> Option<usize> {
         self.table.read(cx).delegate().total()
+    }
+
+    /// Whether the files show as a list or a grid.
+    pub fn mode(&self) -> LibraryMode {
+        self.mode
+    }
+
+    /// Shows the files as a list or a grid, remembered for the next launch.
+    pub fn set_mode(&mut self, mode: LibraryMode, cx: &mut Context<Self>) {
+        if self.mode != mode {
+            self.mode = mode;
+            LocalStorage::set(cx, MODE_KEY, mode.key());
+            cx.notify();
+        }
+    }
+
+    /// The file being renamed in place, if any.
+    pub fn renaming(&self) -> Option<FileId> {
+        self.renaming.as_ref().map(|(id, _, _)| *id)
+    }
+
+    /// The files selected, in id order.
+    pub fn selection(&self, cx: &App) -> Vec<FileId> {
+        self.selected(cx)
+    }
+
+    /// The cursor's position among the matching files.
+    pub fn cursor(&self, cx: &App) -> Option<usize> {
+        self.table.read(cx).selected_row()
+    }
+
+    fn on_table_event(&mut self, event: &TableEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match event {
+            // A click or an arrow moved the cursor: it selects that file alone, unless the move
+            // brought a selection of its own (⌘, ⇧).
+            TableEvent::SelectRow(index) => {
+                let index = *index;
+                self.table.update(cx, |table, cx| {
+                    let rows = table.delegate_mut();
+                    let next = match rows.pending.take() {
+                        Some(next) => next,
+                        None => {
+                            rows.anchor = Some(index);
+                            rows.row(index).map(|row| row.id).into_iter().collect()
+                        }
+                    };
+                    rows.set_selected(next, cx);
+                });
+            }
+            // Esc in the table clears its cursor, and with it the selection.
+            TableEvent::ClearSelection => {
+                let keep = self.table.update(cx, |table, _| {
+                    std::mem::take(&mut table.delegate_mut().keep_selection)
+                });
+                if !keep {
+                    self.clear_selection(cx);
+                }
+            }
+            TableEvent::DoubleClickedRow(index) => self.open_file(*index, cx),
+            TableEvent::RightClickedRow(Some(index)) => self.context_menu(*index, window, cx),
+            _ => {}
+        }
+    }
+
+    /// Double-click: the file in its default app.
+    fn open_file(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(row) = self.table.read(cx).delegate().row(index) {
+            cx.open_with_system(Path::new(&row.abs_path));
+        }
+    }
+
+    /// A click on a tile: the cursor moves there, and the selection as the keys held say.
+    fn click_file(
+        &mut self,
+        index: usize,
+        modifiers: Modifiers,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.focus.contains_focused(window, cx) {
+            self.focus.focus(window, cx);
+        }
+        self.table.update(cx, |table, cx| {
+            let rows = table.delegate_mut();
+            let next = rows.clicked(index, modifiers);
+            rows.pending = Some(next);
+            table.set_selected_row(index, cx);
+        });
+    }
+
+    /// A tile's checkbox: the file in or out of the selection, the cursor where it is.
+    fn toggle_file(&mut self, index: usize, on: bool, cx: &mut Context<Self>) {
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().toggle(index, on, cx);
+        });
+    }
+
+    /// The arrows: the cursor `delta` files on, the selection with it, or ⇧ extending it from
+    /// the anchor (`move`).
+    fn move_cursor(&mut self, delta: isize, extend: bool, cx: &mut Context<Self>) {
+        let cursor = self.cursor(cx);
+        let total = self.total(cx).unwrap_or(0);
+        if total == 0 {
+            return;
+        }
+        let next = cursor.map_or(0, |cursor| {
+            (cursor as isize + delta).clamp(0, total as isize - 1) as usize
+        });
+        self.table.update(cx, |table, cx| {
+            let rows = table.delegate_mut();
+            let selection = if extend {
+                let anchor = *rows.anchor.get_or_insert(cursor.unwrap_or(next));
+                rows.range(anchor, next, &BTreeSet::new())
+            } else {
+                rows.anchor = Some(next);
+                rows.row(next).map(|row| row.id).into_iter().collect()
+            };
+            rows.pending = Some(selection);
+            table.set_selected_row(next, cx);
+        });
+        if self.mode == LibraryMode::Grid {
+            self.reveal_in_grid(next);
+        }
+    }
+
+    /// A right-click on a file: the cursor moves there, and a file outside the selection is
+    /// selected alone, before the menu asks what the files hold (`contextMenu`).
+    fn context_menu(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(row) = self.table.read(cx).delegate().row(index).cloned() else {
+            return;
+        };
+        self.table.update(cx, |table, cx| {
+            let rows = table.delegate_mut();
+            if !rows.selected.contains(&row.id) {
+                rows.anchor = Some(index);
+                rows.pending = Some(BTreeSet::from([row.id]));
+            } else {
+                rows.pending = Some(rows.selected.clone());
+            }
+            table.set_selected_row(index, cx);
+        });
+        self.run_menu(Some(row), window, cx);
+    }
+
+    /// The menu for a right-clicked file, or for the targets from the bar's "⋯": a file outside
+    /// the selection acts alone, so its summary is asked for here rather than read from state
+    /// that has not caught up yet (`runMenu`).
+    fn run_menu(&mut self, row: Option<FileRow>, window: &mut Window, cx: &mut Context<Self>) {
+        let selected = self.selected(cx);
+        let files = match &row {
+            Some(row) if !selected.contains(&row.id) => vec![row.id],
+            _ => self.targets(cx),
+        };
+        let target = row.or_else(|| (files.len() == 1).then(|| self.single(cx)).flatten());
+        let Some(engine) = self.state.read(cx).engine().cloned() else {
+            return;
+        };
+        if files.is_empty() {
+            return;
+        }
+        let position = window.mouse_position();
+        let summary = crate::loaded::engine_call(
+            engine.selection_summary(files.iter().copied().take(MAX_BULK_FILES).collect()),
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            let held = summary.await.ok();
+            this.update_in(cx, |this, window, cx| {
+                let capabilities = this.state.read(cx).capabilities().copied();
+                let entries = menu::menu_entries(
+                    &files,
+                    target.as_ref(),
+                    held.as_ref(),
+                    capabilities.as_ref(),
+                );
+                this.menu = Some((files, target));
+                // The menu's choice comes back as an action, through the focused element.
+                if !this.focus.contains_focused(window, cx) {
+                    this.focus.focus(window, cx);
+                }
+                menu::record(&entries);
+                menu::native_menu(&entries).show(position, window, cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// What the menu's choice does, to the files it was shown for.
+    pub fn choose(&mut self, choice: MenuChoice, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((files, target)) = self.menu.take() else {
+            return;
+        };
+        let path = target.as_ref().map(|row| row.abs_path.clone());
+        match choice {
+            MenuChoice::QuickLook => {
+                if let Some(path) = path {
+                    quick_look(Path::new(&path), window, cx);
+                }
+            }
+            MenuChoice::Open => {
+                if let Some(path) = path {
+                    cx.open_with_system(Path::new(&path));
+                }
+            }
+            MenuChoice::OpenInView => {
+                if let Some(path) = path {
+                    self.open_in_view(path, cx);
+                }
+            }
+            MenuChoice::Reveal => {
+                if let Some(path) = path {
+                    cx.reveal_path(Path::new(&path));
+                }
+            }
+            MenuChoice::Convert => self.convert(files, window, cx),
+            MenuChoice::Reencode(codec) => {
+                let quality = self
+                    .state
+                    .read(cx)
+                    .settings()
+                    .map_or(VideoQuality::High, |settings| settings.reencode_quality);
+                self.perform(
+                    PlanRequest::Reencode {
+                        file_ids: files,
+                        codec,
+                        quality,
+                    },
+                    window,
+                    cx,
+                );
+            }
+            MenuChoice::StripAudio => {
+                self.perform(PlanRequest::StripAudio { file_ids: files }, window, cx);
+            }
+            MenuChoice::FixExtension => {
+                self.perform(PlanRequest::FixExtension { file_ids: files }, window, cx);
+            }
+            MenuChoice::Rename => {
+                if let Some(row) = target {
+                    self.start_rename(row, window, cx);
+                }
+            }
+            MenuChoice::Prefer => {
+                if let Some(row) = target {
+                    crate::settings::prefer_folder(&self.state, row.dir, window, cx);
+                }
+            }
+            MenuChoice::ShowFolder => {
+                if let Some(row) = target {
+                    let filters = Filters {
+                        dir: Some(row.dir),
+                        ..self.filters.clone()
+                    };
+                    self.set_filters(filters, cx);
+                }
+            }
+            MenuChoice::Move => self.move_to(files, window, cx),
+            MenuChoice::Hold => self.hold(files, window, cx),
+        }
+    }
+
+    /// Return, or the menu's Rename: the name becomes a field, its stem selected
+    /// (`RenameField`).
+    fn start_rename(&mut self, row: FileRow, window: &mut Window, cx: &mut Context<Self>) {
+        let input = cx.new(|cx| {
+            let mut input = InputState::new(window, cx);
+            input.set_value(row.name.clone(), window, cx);
+            let stem = row.name.rfind('.').filter(|dot| *dot > 0);
+            input.set_selected_range(0..stem.unwrap_or(row.name.len()), cx);
+            input
+        });
+        let subscription =
+            cx.subscribe_in(
+                &input,
+                window,
+                |this, input, event, window, cx| match event {
+                    InputEvent::PressEnter { .. } => {
+                        let name = input.read(cx).value().to_string();
+                        this.finish_rename(Some(name), window, cx);
+                    }
+                    InputEvent::Blur => this.finish_rename(None, window, cx),
+                    _ => {}
+                },
+            );
+        let focus = input.focus_handle(cx);
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().renaming = Some((row.id, input));
+            cx.notify();
+        });
+        self.renaming = Some((row.id, row.name, subscription));
+        window.focus(&focus, cx);
+        cx.notify();
+    }
+
+    /// Ends the rename: a new name, trimmed, renames the file; none keeps it as it was.
+    fn finish_rename(&mut self, name: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((id, before, _)) = self.renaming.take() else {
+            return;
+        };
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().renaming = None;
+            cx.notify();
+        });
+        self.focus.focus(window, cx);
+        let name = name.map(|name| name.trim().to_string());
+        if let Some(name) = name.filter(|name| !name.is_empty() && *name != before) {
+            self.state.update(cx, |state, cx| {
+                let request = PlanRequest::Rename {
+                    renames: vec![Rename { file_id: id, name }],
+                };
+                state.perform(request, PerformOptions::default(), window, cx);
+            });
+        }
+        cx.notify();
     }
 
     fn filter(&self, root_id: RootId) -> FileFilter {
@@ -633,8 +1243,9 @@ impl LibraryPage {
             return;
         };
         let filter = self.filter(root.id);
+        let current = self.table.read(cx).delegate().query.clone();
+        let query_changed = current.as_ref().is_some_and(|query| query.filter != filter);
         let query = {
-            let current = self.table.read(cx).delegate().query.clone();
             FileQuery {
                 filter: filter.clone(),
                 sort: current
@@ -649,6 +1260,12 @@ impl LibraryPage {
         self.table.update(cx, |table, cx| {
             table.delegate_mut().root_name = root_name;
             table.delegate_mut().reset(engine.clone(), query, cx);
+            // The cursor points into one query's results; a new query starts without one, and
+            // keeps the selection.
+            if query_changed && table.selected_row().is_some() {
+                table.delegate_mut().keep_selection = true;
+                table.clear_selection(cx);
+            }
         });
         self.facets
             .load(engine.file_facets(filter), |this| &mut this.facets, cx);
@@ -857,44 +1474,6 @@ impl LibraryPage {
         });
     }
 
-    fn rename(&mut self, row: FileRow, window: &mut Window, cx: &mut Context<Self>) {
-        let input = cx.new(|cx| {
-            let mut state = InputState::new(window, cx);
-            state.set_value(row.name.clone(), window, cx);
-            state
-        });
-        let page = cx.entity().downgrade();
-        let field = input.clone();
-        window.open_dialog(cx, move |dialog, _, _| {
-            let (page, field, id) = (page.clone(), field.clone(), row.id);
-            dialog
-                .title(format!("Rename “{}”", row.name))
-                .w(px(420.))
-                .child(Input::new(&input))
-                .footer(div().flex().flex_row().justify_end().gap_2().child(
-                    Button::new("rename-ok").primary().label("Rename").on_click(
-                        move |_, window, cx| {
-                            let name = field.read(cx).value().trim().to_string();
-                            window.close_dialog(cx);
-                            if name.is_empty() {
-                                return;
-                            }
-                            page.update(cx, |page, cx| {
-                                page.perform(
-                                    PlanRequest::Rename {
-                                        renames: vec![Rename { file_id: id, name }],
-                                    },
-                                    window,
-                                    cx,
-                                );
-                            })
-                            .ok();
-                        },
-                    ),
-                ))
-        });
-    }
-
     fn toggle_inspector(&mut self, cx: &mut Context<Self>) {
         self.inspector = !self.inspector;
         LocalStorage::set(
@@ -918,213 +1497,155 @@ impl LibraryPage {
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keys = &event.keystroke;
-        let typing = window.has_focused_input(cx);
-        let selected = self.selected(cx);
-        if keys.key == "/" && !keys.modifiers.modified() && !typing {
-            self.search.focus_handle(cx).focus(window, cx);
-        } else if keys.key == "i" && !keys.modifiers.modified() && !typing {
-            self.toggle_inspector(cx);
-        } else if keys.key == "escape" && !typing && !selected.is_empty() {
-            self.clear_selection(cx);
-        } else if keys.modifiers.platform && keys.key == "backspace" && !selected.is_empty() {
-            self.hold(selected, window, cx);
-        } else if keys.modifiers.platform && keys.modifiers.shift && keys.key == "m" {
-            self.move_to(selected, window, cx);
-        } else if keys.modifiers.platform && keys.modifiers.shift && keys.key == "r" {
-            if let Some(row) = self.cursor_row(cx) {
-                cx.reveal_path(Path::new(&row.abs_path));
-            }
-        } else if keys.key == "enter" && !keys.modifiers.modified() && !typing {
-            if let Some(row) = self.cursor_row(cx) {
-                self.rename(row, window, cx);
-            }
-        } else {
+        let modifiers = keys.modifiers;
+        // While a name is being edited, its field has the keys.
+        if self.renaming.is_some() {
             return;
+        }
+        // Keys typed into a field belong to the field.
+        if window.has_focused_input(cx) {
+            return;
+        }
+        let selected = self.selected(cx);
+        let command = is_command(&modifiers);
+        let grid = self.mode == LibraryMode::Grid;
+        match keys.key.as_str() {
+            "/" if !command => self.search.focus_handle(cx).focus(window, cx),
+            "i" if !modifiers.modified() => self.toggle_inspector(cx),
+            "backspace" if command && !selected.is_empty() => self.hold(selected, window, cx),
+            "m" if command && modifiers.shift && !selected.is_empty() => {
+                self.move_to(selected, window, cx);
+            }
+            "r" if command && modifiers.shift => {
+                if let Some(row) = self.single(cx) {
+                    cx.reveal_path(Path::new(&row.abs_path));
+                }
+            }
+            _ if command || modifiers.alt => return,
+            // The table moves its own cursor while it has the keys; ⇧ and the grid come here.
+            "down" | "up" => {
+                let step = if grid { self.grid_columns.max(1) } else { 1 } as isize;
+                let delta = if keys.key == "down" { step } else { -step };
+                self.move_cursor(delta, modifiers.shift, cx);
+            }
+            "right" | "left" if grid => {
+                let delta = if keys.key == "right" { 1 } else { -1 };
+                self.move_cursor(delta, modifiers.shift, cx);
+            }
+            // Space looks closer, as in Finder.
+            "space" => {
+                if let Some(row) = self.cursor_row(cx) {
+                    quick_look(Path::new(&row.abs_path), window, cx);
+                }
+            }
+            "enter" if !modifiers.shift => {
+                if let Some(row) = self.cursor_row(cx)
+                    && selected.len() <= 1
+                {
+                    self.start_rename(row, window, cx);
+                }
+            }
+            "escape" if !selected.is_empty() => self.clear_selection(cx),
+            _ => return,
         }
         cx.stop_propagation();
     }
 
-    /// The More… menu: what applies to the files at hand (`moreEntries`).
-    fn more_menu(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    /// The list, its columns fitted to the width it was last drawn at.
+    fn render_list(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let width = self.list_width;
+        if width > 0. {
+            self.table.update(cx, |table, cx| {
+                if table.delegate_mut().fit(width) {
+                    table.refresh(cx);
+                }
+            });
+        }
         let page = cx.entity().downgrade();
-        let summary = self.summary.data().cloned();
-        let single = self.single(cx);
-        let ids = self.targets(cx);
-        let quality = self
-            .state
-            .read(cx)
-            .settings()
-            .map_or(VideoQuality::High, |settings| settings.reencode_quality);
+        div()
+            .relative()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .size_full()
+            .child(
+                canvas(
+                    move |bounds, _, cx| {
+                        let width = f32::from(bounds.size.width);
+                        page.update(cx, |page, cx| {
+                            if (page.list_width - width).abs() >= 0.5 {
+                                page.list_width = width;
+                                cx.notify();
+                            }
+                        })
+                        .ok();
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
+            // 44 px rows, as Electron Oriel's list has them, for the name over its folder.
+            .child(
+                DataTable::new(&self.table)
+                    .stripe(false)
+                    .bordered(false)
+                    .with_size(px(44.))
+                    .header_row_height(px(32.)),
+            )
+            .into_any_element()
+    }
+
+    /// List or grid (`Show as`).
+    fn render_mode_switch(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let item = |id: &'static str, icon: IconName, label: &'static str, mode: LibraryMode| {
+            Button::new(id)
+                .ghost()
+                .xsmall()
+                .icon(Icon::new(icon))
+                .accessibility_label(label)
+                .tooltip(label)
+                .toggled(self.mode == mode)
+                .on_click(cx.listener(move |this, _, _, cx| this.set_mode(mode, cx)))
+        };
+        div()
+            .id("library-mode")
+            .test_support()
+            .role(gpui_kit::Role::Group)
+            .aria_label("Show as")
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(2.))
+            .p(px(2.))
+            .rounded(theme.radius)
+            .bg(theme.tab_bar)
+            .child(item(
+                "library-mode-list",
+                IconName::List,
+                "List",
+                LibraryMode::List,
+            ))
+            .child(item(
+                "library-mode-grid",
+                IconName::LayoutGrid,
+                "Grid",
+                LibraryMode::Grid,
+            ))
+            .into_any_element()
+    }
+
+    /// The bar's "⋯": the menu of what applies to the files at hand.
+    fn more_button(&self, cx: &mut Context<Self>) -> Button {
         Button::new("library-more")
             .ghost()
             .small()
             .icon(Icon::new(IconName::Ellipsis))
             .accessibility_label("More actions")
             .tooltip("More actions")
-            .dropdown_menu(move |menu, _, _| {
-                let mut menu = menu;
-                let act = |request: PlanRequest| {
-                    let page = page.clone();
-                    move |_: &gpui_kit::ClickEvent, window: &mut Window, cx: &mut App| {
-                        let request = request.clone();
-                        page.update(cx, |page, cx| page.perform(request, window, cx))
-                            .ok();
-                    }
-                };
-                if let Some(row) = &single {
-                    let (open, reveal) = (row.abs_path.clone(), row.abs_path.clone());
-                    let (shown, viewing) = (row.abs_path.clone(), page.clone());
-                    menu = menu
-                        .item(PopupMenuItem::new("Open").on_click(move |_, _, cx| {
-                            cx.open_with_system(Path::new(&open));
-                        }))
-                        .item(
-                            PopupMenuItem::new("Open in View").on_click(move |_, _, cx| {
-                                let file = shown.clone();
-                                viewing
-                                    .update(cx, |page, cx| page.open_in_view(file, cx))
-                                    .ok();
-                            }),
-                        )
-                        .item(
-                            PopupMenuItem::new("Show in Finder  ⇧⌘R")
-                                .on_click(move |_, _, cx| cx.reveal_path(Path::new(&reveal))),
-                        )
-                        .separator();
-                }
-                if let Some(summary) = &summary {
-                    if summary.convertible.files > 0 {
-                        let page = page.clone();
-                        let ids = ids.clone();
-                        menu = menu.item(
-                            PopupMenuItem::new(format!(
-                                "Convert {} to AVIF or MP4",
-                                format::count(summary.convertible.files)
-                            ))
-                            .on_click(move |_, window, cx| {
-                                let ids = ids.clone();
-                                page.update(cx, |page, cx| page.convert(ids, window, cx))
-                                    .ok();
-                            }),
-                        );
-                    }
-                    if summary.videos > 0 {
-                        for (codec, label) in [
-                            (VideoCodecChoice::Hevc, "HEVC"),
-                            (VideoCodecChoice::Av1, "AV1"),
-                            (VideoCodecChoice::Avc, "H.264"),
-                        ] {
-                            menu = menu.item(
-                                PopupMenuItem::new(format!(
-                                    "Re-encode {} as {label}",
-                                    format::plural(summary.videos, "video")
-                                ))
-                                .on_click(act(
-                                    PlanRequest::Reencode {
-                                        file_ids: ids.clone(),
-                                        codec,
-                                        quality,
-                                    },
-                                )),
-                            );
-                        }
-                    }
-                    if summary.with_audio > 0 {
-                        menu = menu.item(
-                            PopupMenuItem::new(format!(
-                                "Remove the audio track from {}",
-                                format::plural(summary.with_audio, "video")
-                            ))
-                            .on_click(act(PlanRequest::StripAudio {
-                                file_ids: ids.clone(),
-                            })),
-                        );
-                    }
-                    if summary.extension_mismatches > 0 {
-                        menu = menu.item(
-                            PopupMenuItem::new(format!(
-                                "Fix {}",
-                                format::plural(summary.extension_mismatches, "extension")
-                            ))
-                            .on_click(act(
-                                PlanRequest::FixExtension {
-                                    file_ids: ids.clone(),
-                                },
-                            )),
-                        );
-                    }
-                }
-                if let Some(row) = &single
-                    && ids.len() <= 1
-                {
-                    let folder = if row.dir.is_empty() {
-                        "the top folder".to_string()
-                    } else {
-                        row.dir.clone()
-                    };
-                    let (rename, prefer, only) = (page.clone(), page.clone(), page.clone());
-                    let (renamed, dir, shown) = (row.clone(), row.dir.clone(), row.dir.clone());
-                    menu = menu
-                        .item(
-                            PopupMenuItem::new("Rename…  ↩").on_click(move |_, window, cx| {
-                                let row = renamed.clone();
-                                rename
-                                    .update(cx, |page, cx| page.rename(row, window, cx))
-                                    .ok();
-                            }),
-                        )
-                        .separator()
-                        .item(
-                            PopupMenuItem::new(format!("Prefer {folder} for duplicates")).on_click(
-                                move |_, window, cx| {
-                                    let dir = dir.clone();
-                                    prefer
-                                        .update(cx, |page, cx| {
-                                            crate::settings::prefer_folder(
-                                                &page.state,
-                                                dir,
-                                                window,
-                                                cx,
-                                            );
-                                        })
-                                        .ok();
-                                },
-                            ),
-                        )
-                        .item(PopupMenuItem::new(format!("Show only {folder}")).on_click(
-                            move |_, _, cx| {
-                                let dir = shown.clone();
-                                only.update(cx, |page, cx| {
-                                    let filters = Filters {
-                                        dir: Some(dir),
-                                        ..page.filters.clone()
-                                    };
-                                    page.set_filters(filters, cx);
-                                })
-                                .ok();
-                            },
-                        ));
-                }
-                let (move_page, hold_page) = (page.clone(), page.clone());
-                let (move_ids, hold_ids) = (ids.clone(), ids.clone());
-                menu.separator()
-                    .item(
-                        PopupMenuItem::new("Move to…  ⇧⌘M").on_click(move |_, window, cx| {
-                            let ids = move_ids.clone();
-                            move_page
-                                .update(cx, |page, cx| page.move_to(ids, window, cx))
-                                .ok();
-                        }),
-                    )
-                    .item(PopupMenuItem::new("Move to holding  ⌘⌫").on_click(
-                        move |_, window, cx| {
-                            let ids = hold_ids.clone();
-                            hold_page
-                                .update(cx, |page, cx| page.hold(ids, window, cx))
-                                .ok();
-                        },
-                    ))
-            })
+            .on_click(cx.listener(|this, _, window, cx| this.run_menu(None, window, cx)))
     }
 
     /// The one file shown: the cursor's without a selection, or the one selected.
@@ -1534,7 +2055,7 @@ impl LibraryPage {
     }
 
     fn render_selection_bar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let more = self.more_menu(cx);
+        let more = self.more_button(cx);
         let theme = cx.theme();
         let selected = self.selected(cx);
         let summary = self.summary.data().cloned();
@@ -1960,6 +2481,7 @@ impl Render for LibraryPage {
                     .child(Input::new(&self.search).small().cleanable(true)),
             )
             .trailing(filter)
+            .trailing(self.render_mode_switch(cx))
             .trailing(
                 Button::new("library-inspector-toggle")
                     .ghost()
@@ -2002,13 +2524,10 @@ impl Render for LibraryPage {
                 cx,
             )
             .into_any_element(),
-            // 44 px rows, as Electron Oriel's list has them, for the name over its folder.
-            _ => DataTable::new(&self.table)
-                .stripe(false)
-                .bordered(false)
-                .with_size(px(44.))
-                .header_row_height(px(32.))
-                .into_any_element(),
+            _ if self.mode == LibraryMode::Grid => {
+                self.render_grid(if bar_visible { BAR_INSET } else { 0. }, cx)
+            }
+            _ => self.render_list(cx),
         };
         let selection_bar = bar_visible.then(|| self.render_selection_bar(cx));
         let inspector = self
@@ -2020,6 +2539,16 @@ impl Render for LibraryPage {
             .track_focus(&self.focus)
             .key_context("TidyLibrary")
             .on_key_down(cx.listener(Self::on_key_down))
+            .on_action(cx.listener(|this, action: &LibraryMenu, window, cx| {
+                this.choose(action.0, window, cx);
+            }))
+            // Esc in the rename field keeps the name, before the field or the table take it.
+            .capture_action(cx.listener(|this, _: &InputEscape, window, cx| {
+                if this.renaming.is_some() {
+                    this.finish_rename(None, window, cx);
+                    cx.stop_propagation();
+                }
+            }))
             .flex()
             .flex_col()
             .size_full()
@@ -2045,5 +2574,41 @@ impl Render for LibraryPage {
                     )
                     .children(inspector),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Col, columns_for};
+
+    #[test]
+    fn narrow_lists_drop_modified_then_dimensions() {
+        let shown = |width: f32| columns_for(width).0;
+        let all = vec![
+            Col::Select,
+            Col::Name,
+            Col::Format,
+            Col::Dimensions,
+            Col::Size,
+            Col::Modified,
+        ];
+        assert_eq!(shown(900.), all);
+        assert_eq!(
+            shown(700.),
+            [
+                Col::Select,
+                Col::Name,
+                Col::Format,
+                Col::Dimensions,
+                Col::Size
+            ]
+        );
+        assert_eq!(
+            shown(600.),
+            [Col::Select, Col::Name, Col::Format, Col::Size]
+        );
+        // The name takes what the others leave, and never less than it needs to read.
+        assert_eq!(columns_for(900.).1, 900. - 496. - 16.);
+        assert_eq!(columns_for(300.).1, 200.);
     }
 }

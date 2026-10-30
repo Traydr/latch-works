@@ -4,7 +4,9 @@
 //! - `ORIEL_RS_TIDY_ROOT=<folder>` adds the folder as a root, if it is not one yet, shows it and
 //!   scans it;
 //! - `ORIEL_RS_TIDY_PAGE=<page>` opens a page by its `oriel.tidy.view` name (`overview`,
-//!   `duplicates`, `convert`, `cleanup`, `shrink`, `library`, `history`, `holding`).
+//!   `duplicates`, `convert`, `cleanup`, `shrink`, `library`, `history`, `holding`);
+//! - `ORIEL_RS_QUICK_LOOK=<file>` shows the file in Quick Look once Tidy is up;
+//! - `ORIEL_RS_TIDY_PICKER=1` opens the folder picker (Add Folder…) once Tidy is up.
 
 use std::path::{Path, PathBuf};
 
@@ -16,6 +18,8 @@ use crate::state::TidyState;
 
 pub const ROOT_VARIABLE: &str = "ORIEL_RS_TIDY_ROOT";
 pub const PAGE_VARIABLE: &str = "ORIEL_RS_TIDY_PAGE";
+pub const QUICK_LOOK_VARIABLE: &str = "ORIEL_RS_QUICK_LOOK";
+pub const PICKER_VARIABLE: &str = "ORIEL_RS_TIDY_PICKER";
 
 fn variable(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
@@ -29,13 +33,28 @@ pub fn apply_from_environment(
 ) -> Option<Subscription> {
     let page = variable(PAGE_VARIABLE).and_then(|key| TidyPage::from_key(&key));
     let root = variable(ROOT_VARIABLE).map(PathBuf::from);
-    if page.is_none() && root.is_none() {
+    let look = variable(QUICK_LOOK_VARIABLE).map(PathBuf::from);
+    let picker = variable(PICKER_VARIABLE).is_some();
+    if page.is_none() && root.is_none() && look.is_none() && !picker {
         return None;
     }
     let mut pending = Some((page, root));
+    let mut overlays = Some((look, picker));
     Some(cx.observe_in(state, window, move |_, state, window, cx| {
         if !state.read(cx).is_ready() {
             return;
+        }
+        // Once the window has drawn, so the panel and the picker have something to sit over.
+        if let Some((look, picker)) = overlays.take() {
+            let state = state.clone();
+            cx.defer_in(window, move |_, window, cx| {
+                if let Some(look) = look {
+                    crate::quick_look::quick_look(&look, window, cx);
+                }
+                if picker {
+                    crate::open_add_folder(&state, window, cx);
+                }
+            });
         }
         let Some((page, root)) = pending.take() else {
             return;

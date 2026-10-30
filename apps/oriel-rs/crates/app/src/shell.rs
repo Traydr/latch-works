@@ -509,14 +509,14 @@ impl Shell {
     }
 
     /// The focus a mode takes when it comes on screen with none of its own kept: View's gallery
-    /// (or its open viewer) and Sync's page, so their keys (⌘L) and menu commands (Open
-    /// Folder…, Refresh) reach them at once, before a click. Tidy takes focus itself as its
-    /// pages come.
+    /// (or its open viewer), Tidy's root, which hands it on to the page on screen, and Sync's
+    /// page, so their keys (⌘L, Space) and menu commands (Open Folder…, Refresh) reach them at
+    /// once, before a click.
     fn own_focus(&self, mode: ModeId, cx: &gpui_kit::App) -> Option<FocusHandle> {
         match mode {
             ModeId::View => Some(self.view.focus_handle(cx)),
+            ModeId::Tidy => Some(self.tidy.focus_handle(cx)),
             ModeId::Sync => Some(self.sync.focus_handle(cx)),
-            ModeId::Tidy => None,
         }
     }
 

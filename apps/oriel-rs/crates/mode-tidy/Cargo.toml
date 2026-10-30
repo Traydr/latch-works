@@ -20,9 +20,14 @@ oriel-core-tidy.workspace = true
 oriel-media.workspace = true
 oriel-runtime.workspace = true
 oriel-tools.workspace = true
+# Quick Look reads the window's AppKit view from GPUI's raw handle (0.6, as GPUI has it).
+raw-window-handle = "0.6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
+# Quick Look's panel, on the objc2 0.6 line GPUI's own macOS crates use.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString", "NSURL"] }
 
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }

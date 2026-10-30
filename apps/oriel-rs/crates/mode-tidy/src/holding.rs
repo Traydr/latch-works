@@ -1,6 +1,7 @@
 //! Holding (`views/HoldingView.tsx`): what Tidy's changes moved aside, grouped by the change that
 //! held them, until the owner restores them (⌘⌫) or empties holding to the Trash (⇧⌘⌫). Click
-//! picks one, ⌘-click adds or removes one, ⇧-click picks a run; Escape clears.
+//! picks one, ⌘-click adds or removes one, ⇧-click picks a run; Escape clears. Space or a
+//! double-click shows a held file in Quick Look.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -24,6 +25,7 @@ use crate::changes::{
 use crate::format;
 use crate::loaded::Loaded;
 use crate::pages::TidyPage;
+use crate::quick_look::quick_look;
 use crate::state::TidyState;
 use crate::thumbs::{Thumb, Thumbs};
 use crate::widgets;
@@ -277,6 +279,17 @@ impl HoldingPage {
         } else if keys.key == "escape" && !self.selected.is_empty() {
             self.selected.clear();
             cx.notify();
+        } else if keys.key == "space" && !keys.modifiers.modified() {
+            // The file last clicked, else the first chosen, as Finder's Space previews it.
+            let ordered = self.ordered();
+            let target = self
+                .anchor
+                .and_then(|anchor| ordered.iter().find(|item| item.id == anchor))
+                .or_else(|| ordered.iter().find(|item| self.selected.contains(&item.id)));
+            let Some(target) = target else {
+                return;
+            };
+            quick_look(Path::new(&target.hold_path), window, cx);
         } else {
             return;
         }
@@ -338,12 +351,17 @@ impl HoldingPage {
                     gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(window, cx)
                 }
             })
-            .on_click(
-                cx.listener(move |this, event: &gpui_kit::ClickEvent, _, cx| {
+            .on_click({
+                let held = item.hold_path.clone();
+                cx.listener(move |this, event: &gpui_kit::ClickEvent, window, cx| {
+                    if event.click_count() >= 2 {
+                        quick_look(Path::new(&held), window, cx);
+                        return;
+                    }
                     let modifiers = event.modifiers();
                     this.select(id, modifiers.platform, modifiers.shift, cx);
-                }),
-            )
+                })
+            })
             .child(
                 div()
                     .h(px(132.))

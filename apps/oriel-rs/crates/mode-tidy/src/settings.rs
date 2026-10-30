@@ -10,10 +10,13 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::{
-    AnyElement, App, Context, Entity, IntoElement, ParentElement as _, SharedString, Styled as _,
-    Window, div, px,
+    AnyElement, App, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
+    Role, SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
+    div, px,
 };
-use oriel_core_tidy::contract::{PreferredFolder, Settings, SimilarityLevel, VideoQuality};
+use oriel_core_tidy::contract::{
+    EncoderCapabilities, PreferredFolder, Settings, SimilarityLevel, VideoQuality,
+};
 use oriel_ui::segmented::{Segmented, SegmentedItem};
 use oriel_ui::{SettingsGroup, SettingsRow, Toast};
 
@@ -93,15 +96,132 @@ pub fn prefer_folder(state: &Entity<TidyState>, dir: String, window: &mut Window
     );
 }
 
+/// The encoders Settings lists (`ENCODERS`), and whether this machine has each. Oriel RS adds
+/// libavif and libvips, which it converts pictures with where Electron Oriel uses wasm and sharp.
+fn encoder_rows(capabilities: &EncoderCapabilities, vips: bool) -> [(&'static str, bool); 8] {
+    [
+        ("H.264 video", capabilities.video.avc),
+        ("HEVC video", capabilities.video.hevc),
+        ("AV1 video", capabilities.video.av1 || capabilities.svt_av1),
+        ("AAC audio", capabilities.aac),
+        ("AVIF pictures", capabilities.avif),
+        ("ffmpeg", capabilities.ffmpeg),
+        ("ffprobe", capabilities.ffprobe),
+        ("libvips", vips),
+    ]
+}
+
 pub struct SettingsSection {
     state: Entity<TidyState>,
+    /// Whether the encoders are listed; until the owner says, only when one is missing.
+    encoders_open: Option<bool>,
 }
 
 impl SettingsSection {
     pub fn new(state: &Entity<TidyState>) -> Self {
         Self {
             state: state.clone(),
+            encoders_open: None,
         }
+    }
+
+    /// Encoders as one summary row that lists them when clicked (`Encoders`). It opens by itself
+    /// only when something is missing, since a full set is nothing to act on.
+    fn encoders(
+        &self,
+        group: SettingsGroup,
+        capabilities: &EncoderCapabilities,
+        vips: bool,
+        cx: &mut Context<Self>,
+    ) -> SettingsGroup {
+        let theme = cx.theme();
+        let rows = encoder_rows(capabilities, vips);
+        let missing = rows.iter().filter(|(_, found)| !found).count();
+        let open = self.encoders_open.unwrap_or(missing > 0);
+        let status = if missing > 0 {
+            format!("{missing} of {} missing", rows.len())
+        } else {
+            format!("All {} available", rows.len())
+        };
+        let mut group = group.child(
+            div()
+                .id("tidy-settings-encoders")
+                .test_support()
+                .role(Role::Button)
+                .aria_label(SharedString::from(format!("Encoders, {status}")))
+                .aria_expanded(open)
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_3()
+                .min_h(px(52.))
+                .px_4()
+                .py(px(10.))
+                .cursor_pointer()
+                .hover(|style| style.bg(theme.list_hover))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.encoders_open = Some(!open);
+                    cx.notify();
+                }))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(px(13.))
+                        .child("Encoders"),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(if missing > 0 {
+                            theme.warning
+                        } else {
+                            theme.muted_foreground
+                        })
+                        .child(status),
+                )
+                .child(
+                    Icon::new(if open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .size(px(16.))
+                    .text_color(theme.muted_foreground),
+                ),
+        );
+        if open {
+            for (label, found) in rows {
+                group = group.child(
+                    div()
+                        .id(SharedString::from(format!("tidy-settings-encoder-{label}")))
+                        .test_support()
+                        .aria_label(SharedString::from(format!(
+                            "{label}: {}",
+                            if found { "Available" } else { "Not found" }
+                        )))
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_4()
+                        .h(px(40.))
+                        .px_4()
+                        .text_size(px(13.))
+                        .text_color(if found {
+                            theme.muted_foreground
+                        } else {
+                            theme.warning
+                        })
+                        .child(div().flex_1().min_w_0().truncate().child(label))
+                        .child(if found {
+                            div().text_xs().child("Available")
+                        } else {
+                            div().child("Not found")
+                        }),
+                );
+            }
+        }
+        group
     }
 
     fn change(
@@ -176,14 +296,10 @@ impl SettingsSection {
         };
         let root = state.root().cloned();
         let sandbox = state.data().sandbox();
-        let media = state.engine().map(|engine| {
-            let media = engine.media();
-            [
-                ("ffmpeg", media.ffmpeg.is_some()),
-                ("ffprobe", media.ffprobe.is_some()),
-                ("libvips", media.vips.is_some()),
-            ]
-        });
+        let capabilities = state.capabilities().copied();
+        let vips = state
+            .engine()
+            .is_some_and(|engine| engine.media().vips.is_some());
         let theme = cx.theme();
         let root_name = root
             .as_ref()
@@ -309,44 +425,8 @@ impl SettingsSection {
                 )
                 .child(quality),
         );
-        if let Some(tools) = media {
-            let missing = tools.iter().filter(|(_, found)| !found).count();
-            convert = convert.child(
-                SettingsRow::new("Encoders")
-                    .description("Oriel RS converts with its own pinned ffmpeg, as Electron Oriel falls back to it")
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(if missing > 0 {
-                                theme.warning
-                            } else {
-                                theme.muted_foreground
-                            })
-                            .child(if missing > 0 {
-                                format!("{missing} of {} missing", tools.len())
-                            } else {
-                                format!("All {} available", tools.len())
-                            }),
-                    ),
-            );
-            for (label, found) in tools {
-                convert = convert.child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .h(px(40.))
-                        .px_4()
-                        .text_size(px(13.))
-                        .text_color(if found {
-                            theme.muted_foreground
-                        } else {
-                            theme.warning
-                        })
-                        .child(div().flex_1().child(label))
-                        .child(if found { "Available" } else { "Not found" }),
-                );
-            }
+        if let Some(capabilities) = capabilities {
+            convert = self.encoders(convert, &capabilities, vips, cx);
         }
 
         let analysis = {

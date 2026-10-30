@@ -4,9 +4,10 @@
 //! chooses, ⌘↑ goes to the enclosing folder.
 //!
 //! While Oriel RS is an experiment, Tidy changes files only inside its sandbox or the temp folder
-//! (plan 063), so a picker for a folder to tidy offers only those as places, says so, and cannot
-//! choose a folder outside them. A picker `within` a root (Move to…, a preferred folder) stays
-//! inside that root.
+//! (plan 063). A picker for a folder to tidy offers those first, lists Electron Oriel's places
+//! (the home folder, its usual folders, the drives) under them as unavailable, with the rule as
+//! their caption and in each one's tooltip, and cannot choose a folder outside them. A picker
+//! `within` a root (Move to…, a preferred folder) stays inside that root.
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -108,12 +109,105 @@ struct Place {
     label: SharedString,
     path: PathBuf,
     icon: IconName,
+    /// False for a place the sandbox keeps Tidy out of: it shows, but cannot be opened.
+    available: bool,
+}
+
+/// The places beside the list, under their headings, as Electron Oriel's `folderPlaces` finds
+/// them, after Oriel RS's own two while the sandbox holds.
+fn places_for(sandbox: Option<&DataRoot>) -> Vec<(SharedString, Vec<Place>)> {
+    let admits = |path: &Path| sandbox.is_none_or(|data| data.admits_tidy_root(path));
+    let mut groups = Vec::new();
+    if let Some(data) = sandbox {
+        let temp =
+            std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
+        groups.push((
+            "Where Tidy works".into(),
+            vec![
+                Place {
+                    label: "Sandbox".into(),
+                    path: data.sandbox(),
+                    icon: IconName::Lock,
+                    available: true,
+                },
+                Place {
+                    label: "Temp folder".into(),
+                    path: temp,
+                    icon: IconName::FolderOpen,
+                    available: true,
+                },
+            ],
+        ));
+    }
+    let mut standard = Vec::new();
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        let name = home
+            .file_name()
+            .map_or_else(|| "Home".into(), |name| name.to_string_lossy().into_owned());
+        standard.push((name, home.clone(), IconName::House));
+        for (label, folder, icon) in [
+            ("Desktop", "Desktop", IconName::Monitor),
+            ("Documents", "Documents", IconName::FileText),
+            ("Downloads", "Downloads", IconName::Download),
+            ("Pictures", "Pictures", IconName::Image),
+            ("Movies", "Movies", IconName::Film),
+        ] {
+            standard.push((label.to_string(), home.join(folder), icon));
+        }
+    }
+    let places: Vec<Place> = standard
+        .into_iter()
+        .filter(|(_, path, _)| path.is_dir())
+        .map(|(label, path, icon)| Place {
+            label: label.into(),
+            available: admits(&path),
+            path,
+            icon,
+        })
+        .collect();
+    if !places.is_empty() {
+        groups.push(("Places".into(), places));
+    }
+    let drives: Vec<Place> = list_volumes()
+        .into_iter()
+        .map(|entry| Place {
+            label: entry.name.into(),
+            available: admits(&entry.path),
+            path: entry.path,
+            icon: IconName::HardDrive,
+        })
+        .collect();
+    if !drives.is_empty() {
+        groups.push(("Drives".into(), drives));
+    }
+    groups
+}
+
+/// Mounted drives, from `/Volumes`; the startup disk shows there as a link to `/`
+/// (`listVolumes`).
+fn list_volumes() -> Vec<FolderEntry> {
+    let Ok(entries) = std::fs::read_dir("/Volumes") else {
+        return Vec::new();
+    };
+    let mut volumes: Vec<FolderEntry> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') || name.starts_with("com.apple.") {
+                return None;
+            }
+            let path = std::fs::canonicalize(entry.path()).ok()?;
+            path.is_dir().then_some(FolderEntry { name, path })
+        })
+        .collect();
+    volumes.sort_by(compare_by_name);
+    volumes
 }
 
 pub struct FolderPicker {
     options: PickOptions,
     on_choose: OnChoose,
-    places: Vec<Place>,
+    places: Vec<(SharedString, Vec<Place>)>,
     input: Entity<InputState>,
     listing: Option<Listing>,
     highlight: Option<usize>,
@@ -133,23 +227,11 @@ impl FolderPicker {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let mut places = Vec::new();
-        if options.within.is_none()
-            && let Some(data) = &options.sandbox
-        {
-            places.push(Place {
-                label: "Sandbox".into(),
-                path: data.sandbox(),
-                icon: IconName::Lock,
-            });
-            let temp = std::fs::canonicalize(std::env::temp_dir())
-                .unwrap_or_else(|_| std::env::temp_dir());
-            places.push(Place {
-                label: "Temp folder".into(),
-                path: temp,
-                icon: IconName::FolderOpen,
-            });
-        }
+        let places = if options.within.is_none() {
+            places_for(options.sandbox.as_ref())
+        } else {
+            Vec::new()
+        };
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("Folder path"));
         let subscriptions = vec![cx.subscribe_in(&input, window, Self::on_input)];
         let start = options
@@ -157,7 +239,13 @@ impl FolderPicker {
             .clone()
             .filter(|start| start.is_dir())
             .or_else(|| options.within.as_ref().map(|(path, _)| path.clone()))
-            .or_else(|| places.first().map(|place| place.path.clone()))
+            .or_else(|| {
+                places
+                    .iter()
+                    .flat_map(|(_, places)| places)
+                    .find(|place| place.available)
+                    .map(|place| place.path.clone())
+            })
             .unwrap_or_else(|| PathBuf::from("/"));
         let select = options.select.clone();
         let mut picker = Self {
@@ -424,6 +512,83 @@ impl FolderPicker {
     }
 }
 
+impl FolderPicker {
+    /// One place beside the list: a click opens it, unless the sandbox keeps Tidy out, when it
+    /// shows dimmed and says so.
+    fn render_place(
+        &self,
+        index: usize,
+        place: &Place,
+        current: Option<&PathBuf>,
+        rule: Option<&str>,
+        cx: &mut Context<Self>,
+    ) -> gpui_kit::AnyElement {
+        let theme = cx.theme();
+        let here = current == Some(&place.path);
+        let path = place.path.clone();
+        let available = place.available;
+        let tooltip: SharedString = if available {
+            place.path.display().to_string().into()
+        } else {
+            format!(
+                "{} is outside the sandbox. {}",
+                place.path.display(),
+                rule.unwrap_or_default()
+            )
+            .into()
+        };
+        div()
+            .id(("picker-place", index))
+            .test_support()
+            .aria_label(place.label.clone())
+            .when(!available, |this| {
+                this.aria_description("Outside the sandbox")
+            })
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(10.))
+            .h(px(32.))
+            .px(px(10.))
+            .rounded(theme.radius)
+            .text_size(px(13.))
+            .tooltip(move |window, cx| {
+                gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(window, cx)
+            })
+            .when(available, |this| {
+                this.cursor_pointer()
+                    .when(here, |this| this.bg(theme.list_active))
+                    .when(!here, |this| this.hover(|style| style.bg(theme.list_hover)))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.open(path.clone(), true, None, window, cx);
+                    }))
+            })
+            .when(!available, |this| {
+                this.text_color(theme.muted_foreground).opacity(0.6)
+            })
+            .child(
+                Icon::new(place.icon)
+                    .size(px(16.))
+                    .text_color(theme.muted_foreground),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .child(place.label.clone()),
+            )
+            .when(!available, |this| {
+                this.child(
+                    Icon::new(IconName::Lock)
+                        .size(px(12.))
+                        .text_color(theme.muted_foreground),
+                )
+            })
+            .into_any_element()
+    }
+}
+
 impl Focusable for FolderPicker {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
         self.input.focus_handle(cx)
@@ -432,7 +597,7 @@ impl Focusable for FolderPicker {
 
 impl Render for FolderPicker {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let theme = cx.theme().clone();
         let matches: Vec<FolderEntry> = self.matches().into_iter().cloned().collect();
         let active = self.active();
         let chosen = self.chosen();
@@ -474,49 +639,62 @@ impl Render for FolderPicker {
             Some(_) => None,
         };
 
+        let rule = self
+            .options
+            .sandbox
+            .as_ref()
+            .map(crate::links::sandbox_rule);
+        let mut index = 0;
+        let mut explained = false;
         let places = (!self.places.is_empty()).then(|| {
             div()
+                .id("picker-places")
                 .flex()
                 .flex_col()
                 .w(px(176.))
                 .flex_shrink_0()
-                .gap_0p5()
+                .overflow_y_scroll()
                 .pr_3()
-                .child(
+                .children(self.places.iter().map(|(heading, places)| {
+                    // Why the places cannot be opened, once, under the first heading of places
+                    // the sandbox keeps Tidy out of; each one's tooltip says it in full.
+                    let blocked = places.iter().any(|place| !place.available);
+                    let explain = blocked && !explained;
+                    explained |= blocked;
                     div()
-                        .px(px(10.))
-                        .pb(px(6.))
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child("Places"),
-                )
-                .children(self.places.iter().enumerate().map(|(index, place)| {
-                    let here = current.as_ref() == Some(&place.path);
-                    let path = place.path.clone();
-                    div()
-                        .id(("picker-place", index))
-                        .test_support()
-                        .aria_label(place.label.clone())
                         .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap(px(10.))
-                        .h(px(32.))
-                        .px(px(10.))
-                        .rounded(theme.radius)
-                        .text_size(px(13.))
-                        .cursor_pointer()
-                        .when(here, |this| this.bg(theme.list_active))
-                        .when(!here, |this| this.hover(|style| style.bg(theme.list_hover)))
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.open(path.clone(), true, None, window, cx);
-                        }))
+                        .flex_col()
+                        .gap_0p5()
+                        .pb_3()
                         .child(
-                            Icon::new(place.icon)
-                                .size(px(16.))
-                                .text_color(theme.muted_foreground),
+                            div()
+                                .px(px(10.))
+                                .pb(px(6.))
+                                .text_xs()
+                                .font_weight(gpui_kit::FontWeight::MEDIUM)
+                                .text_color(theme.muted_foreground)
+                                .child(heading.clone()),
                         )
-                        .child(div().truncate().child(place.label.clone()))
+                        .when(explain && rule.is_some(), |this| {
+                            this.child(
+                                div()
+                                    .id("picker-places-rule")
+                                    .test_support()
+                                    .px(px(10.))
+                                    .pb(px(6.))
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .child(
+                                        "Tidy works only in the sandbox and the temp folder \
+                                         while Oriel RS is an experiment",
+                                    ),
+                            )
+                        })
+                        .children(places.iter().map(|place| {
+                            index += 1;
+                            let rule = rule.as_deref();
+                            self.render_place(index - 1, place, current.as_ref(), rule, cx)
+                        }))
                 }))
         });
 

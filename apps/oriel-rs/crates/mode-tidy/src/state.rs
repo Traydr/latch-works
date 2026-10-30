@@ -13,8 +13,8 @@ use gpui_kit::{
 };
 use oriel_core_paths::DataRoot;
 use oriel_core_tidy::contract::{
-    AudioState, DuplicateScope, FileFlag, FileFormat, FileKind, OptimizeCategory, Root, RootId,
-    Settings, Tidy,
+    AudioState, DuplicateScope, EncoderCapabilities, FileFlag, FileFormat, FileKind,
+    OptimizeCategory, Root, RootId, Settings, Tidy,
 };
 use oriel_core_tidy::{AnalysisReport, ScanReport, TidyEngine};
 use oriel_runtime::{Job, JobEvent};
@@ -156,6 +156,8 @@ pub struct TidyState {
     pub(crate) changes: Changes,
     roots: Vec<Root>,
     settings: Option<Settings>,
+    /// What this machine can encode with, once ffmpeg has said.
+    capabilities: Option<EncoderCapabilities>,
     root_id: Option<RootId>,
     page: TidyPage,
     catalog_version: u64,
@@ -243,6 +245,7 @@ impl TidyState {
             changes,
             roots: Vec::new(),
             settings: None,
+            capabilities: None,
             root_id: None,
             page,
             catalog_version: 0,
@@ -266,6 +269,19 @@ impl TidyState {
         match opened {
             Ok(engine) => {
                 self.engine = Engine::Ready(engine.clone());
+                let capabilities = engine.capabilities();
+                cx.spawn(async move |this, cx| {
+                    let capabilities = crate::loaded::engine_call(capabilities, cx).await;
+                    this.update(cx, |this, cx| match capabilities {
+                        Ok(capabilities) => {
+                            this.capabilities = Some(capabilities);
+                            cx.notify();
+                        }
+                        Err(error) => log::warn!("Tidy could not list its encoders: {error:#}"),
+                    })
+                    .ok();
+                })
+                .detach();
                 cx.spawn(async move |this, cx| {
                     let (roots, settings) = (
                         crate::loaded::engine_call(engine.roots(), cx).await,
@@ -342,6 +358,11 @@ impl TidyState {
 
     pub fn settings(&self) -> Option<&Settings> {
         self.settings.as_ref()
+    }
+
+    /// What this machine can encode with, once known.
+    pub fn capabilities(&self) -> Option<&EncoderCapabilities> {
+        self.capabilities.as_ref()
     }
 
     pub fn page(&self) -> TidyPage {

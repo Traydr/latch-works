@@ -494,6 +494,9 @@ fn activity(state: &Entity<TidyState>, rail: bool, cx: &App) -> AnyElement {
                     .gap_1()
                     .child(
                         div()
+                            .id("tidy-activity-caption")
+                            .test_support()
+                            .aria_label(caption.clone())
                             .flex_1()
                             .min_w_0()
                             .truncate()

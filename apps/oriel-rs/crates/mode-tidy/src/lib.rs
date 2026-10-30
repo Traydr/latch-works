@@ -28,6 +28,7 @@ pub mod links;
 mod loaded;
 mod overview;
 mod pages;
+mod quick_look;
 mod settings;
 mod shortcuts;
 mod shrink;
@@ -42,10 +43,11 @@ pub use actions::{PerformOptions, TidyStep};
 pub use changes::{Changes, EngineChanges, NotYet, TidyChanges};
 pub use duplicates::DuplicatesPage;
 pub use folder_picker::{FolderPicker, PickOptions};
-pub use library::LibraryPage;
+pub use library::{LibraryMenu, LibraryMode, LibraryPage, MenuChoice, last_menu};
 pub use links::TidyEvent;
 pub use overview::OverviewPage;
 pub use pages::TidyPage;
+pub use quick_look::last_quick_look;
 pub use state::{LibraryPreset, TidyState};
 pub use synthetic::{LibraryColumn, LibraryDelegate, LibraryRow, SyntheticLibrary, synthetic_rows};
 pub use widgets::last_toast;
@@ -84,7 +86,9 @@ pub struct TidyMode {
     library: Entity<LibraryPage>,
     history: Entity<HistoryPage>,
     holding: Entity<HoldingPage>,
-    /// Takes the keys while no page is on screen (the welcome, "Starting…").
+    /// Tidy's own focus, drawn on its root whatever is on screen, so the shell can hand the keys
+    /// to Tidy as it comes on screen (⌘2); Tidy passes them on to the page on screen, and keeps
+    /// them while there is none (the welcome, "Starting…").
     focus: FocusHandle,
     /// Phase 0's Library of synthetic rows, shown in place of the catalog's only when the spike
     /// asks for it (`ORIEL_RS_SPIKE_LIBRARY`).
@@ -144,6 +148,7 @@ impl TidyMode {
         let history = cx.new(|cx| HistoryPage::new(&state, cx));
         let holding = cx.new(|cx| HoldingPage::new(&state, &thumbs, cx));
         let settings = cx.new(|_| settings::SettingsSection::new(&state));
+        let focus = cx.focus_handle();
         let subscriptions = vec![
             cx.observe(shell, |_, _, cx| cx.notify()),
             cx.observe(&state, |this, state, cx| {
@@ -194,7 +199,7 @@ impl TidyMode {
             library,
             history,
             holding,
-            focus: cx.focus_handle(),
+            focus,
             spike: None,
             page,
             settings,
@@ -446,7 +451,6 @@ impl TidyMode {
         };
         div()
             .id("tidy-start")
-            .track_focus(&self.focus)
             .flex()
             .flex_col()
             .flex_1()
@@ -464,8 +468,9 @@ fn view<T: Render + Focusable>(page: &Entity<T>, cx: &gpui_kit::App) -> (AnyView
 impl Render for TidyMode {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Keys and the menu's commands reach the page on screen when nothing else has focus, as
-        // after a launch.
-        if window.focused(cx).is_none() && self.shell.read(cx).mode() == ModeId::Tidy {
+        // after a launch, and when the shell hands Tidy the keys as it comes on screen (⌘2).
+        let unfocused = window.focused(cx).is_none() || self.focus.is_focused(window);
+        if unfocused && self.shell.read(cx).mode() == ModeId::Tidy {
             self.focus_page(window, cx);
         }
         let rail = self.shell.read(cx).rail();
@@ -476,6 +481,7 @@ impl Render for TidyMode {
 
         div()
             .id("tidy")
+            .track_focus(&self.focus)
             .size_full()
             .on_key_down(cx.listener(Self::on_key_down))
             .on_action(cx.listener(|this, _: &commands::AddFolder, window, cx| {
@@ -551,7 +557,8 @@ impl Render for TidyMode {
     }
 }
 
-/// The Library's synthetic spike is a page of its own; Tidy's commands reach it like any page.
+/// Tidy's root, which the shell focuses as Tidy comes on screen; the page on screen takes the
+/// keys from there. The Library's synthetic spike has none of its own and keeps Tidy's.
 impl Focusable for TidyMode {
     fn focus_handle(&self, _: &gpui_kit::App) -> FocusHandle {
         self.focus.clone()

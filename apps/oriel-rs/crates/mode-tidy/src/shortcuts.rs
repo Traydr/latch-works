@@ -48,6 +48,7 @@ const DUPLICATES: (&str, &[Shortcut]) = (
         ("Look closer", "Space", None),
         ("Keep the one shown", "↩", None),
         ("Actual size", "Z", None),
+        ("Quick Look", "⌘Y", None),
         ("Show in Finder", "⇧⌘R", None),
         ("Sound on or off", "M", None),
         ("Prefer this folder", "P", None),
@@ -59,6 +60,8 @@ const LIBRARY: (&str, &[Shortcut]) = (
     &[
         ("Search", "/", None),
         ("Move", "↑ ↓", None),
+        ("Extend", "⇧↑ ⇧↓", None),
+        ("Quick Look", "Space", None),
         ("Rename", "↩", None),
         ("Select all", "⌘A", None),
         ("Move to holding", "⌘⌫", None),

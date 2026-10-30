@@ -6,8 +6,8 @@
 //! Return keeps the suggestion and moves on; 1–9 keep only that version; ⇧1–9 keep it as well;
 //! N marks the set as not duplicates; S skips; ↑ ↓ (J K) move through the queue and ← → (H L)
 //! through the versions; Space or C looks closer, Z shows actual size, M turns sound on or off,
-//! P prefers the version's folder, ⇧⌘R shows it in Finder. Each decision says what it did in a
-//! toast with its own Undo.
+//! P prefers the version's folder, ⌘Y shows it in Quick Look and ⇧⌘R in Finder. Each decision
+//! says what it did in a toast with its own Undo.
 
 pub mod model;
 mod video;
@@ -41,6 +41,7 @@ use crate::changes::{PlanRequest, ResolveGroup};
 use crate::format;
 use crate::loaded::Loaded;
 use crate::pages::TidyPage;
+use crate::quick_look::quick_look;
 use crate::settings::SIMILARITY_LEVELS;
 use crate::state::TidyState;
 use crate::thumbs::{self, Thumbs};
@@ -777,9 +778,18 @@ impl DuplicatesPage {
             return;
         }
         let rows = self.rows();
-        if modifiers.platform && modifiers.shift && key == "r" {
+        // ⌘, or Ctrl elsewhere, as Electron Oriel's `isCommandKey` reads either.
+        let command = modifiers.platform || modifiers.control;
+        if command && modifiers.shift && key == "r" {
             if let Some(row) = rows.get(self.target()) {
                 cx.reveal_path(Path::new(&row.file.abs_path));
+            }
+            cx.stop_propagation();
+            return;
+        }
+        if command && key == "y" {
+            if let Some(row) = rows.get(self.target()) {
+                quick_look(Path::new(&row.file.abs_path), window, cx);
             }
             cx.stop_propagation();
             return;
@@ -799,7 +809,9 @@ impl DuplicatesPage {
             cx.stop_propagation();
             return;
         }
-        if modifiers.shift {
+        // Electron reads the key as typed, so ⇧ still means the letter, except for H and L,
+        // which only move as lower case there.
+        if modifiers.shift && matches!(key, "h" | "l") {
             return;
         }
         let similar = self
@@ -861,7 +873,7 @@ impl DuplicatesPage {
                     }
                     Some(_) if similar && !self.looking => self.open_loupe(target, cx),
                     Some(row) if !similar => {
-                        cx.open_with_system(Path::new(&row.file.abs_path));
+                        quick_look(Path::new(&row.file.abs_path), window, cx);
                     }
                     _ => {}
                 }
