@@ -11,7 +11,9 @@
 //! - `libmpv [--jobs N] [--work <dir>] [--out <dir>] [--keep-work]`: builds the LGPL libmpv
 //!   from pinned sources into `apps/oriel-rs/.libmpv/<id>/`;
 //! - `bundle`: makes `target/release/bundle/Oriel RS.app`, with the libraries above, the pinned
-//!   ffmpeg and ffprobe, the licence notices for all of them, and an ad hoc signature.
+//!   ffmpeg and ffprobe, the licence notices for all of them, and an ad hoc signature;
+//! - `measure <rows…> [--app <path>]… [--rounds N] [--out <dir>] [--fixture <dir>]`: takes Phase
+//!   9's scorecard rows for one app, or several interleaved for an A/B (`measure/mod.rs`).
 //!
 //! They replace the Node scripts that did this, so the workspace's tooling is Rust (the owner's
 //! decision of 2026-10-29). They drive the system's own tools (curl, tar, otool,
@@ -19,6 +21,7 @@
 
 mod bundle;
 mod libmpv;
+mod measure;
 mod notices;
 mod support;
 mod vendor;
@@ -31,7 +34,9 @@ commands:
   vendor [libvips] [libavif]   fetch the pinned prebuilt libraries into .vendor/ (both by default)
   libmpv [--jobs N] [--work <dir>] [--out <dir>] [--keep-work]
                                build the LGPL libmpv from pinned sources into .libmpv/
-  bundle                       make target/release/bundle/Oriel RS.app";
+  bundle                       make target/release/bundle/Oriel RS.app
+  measure <rows…> [--app <path>]… [--rounds N] [--out <dir>] [--fixture <dir>]
+                               take the scorecard's rows (`measure --help` lists them)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -43,6 +48,7 @@ fn main() -> ExitCode {
         "vendor" => vendor::command(rest),
         "libmpv" => libmpv::command(rest),
         "bundle" => bundle::command(rest),
+        "measure" => measure::command(rest),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
             Ok(())
