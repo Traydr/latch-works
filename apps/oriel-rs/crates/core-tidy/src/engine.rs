@@ -148,8 +148,8 @@ struct Inner {
     clusters: Mutex<HashMap<(Option<RootId>, SimilarityLevel), ClusterCache>>,
     /// Where each root's held files go.
     places: crate::plans::holding::HoldingPlaces,
-    /// Whether the pinned ffmpeg has SVT-AV1, asked once.
-    svt_av1: OnceLock<bool>,
+    /// What the pinned ffmpeg and libavif can encode, asked once.
+    capabilities: OnceLock<crate::contract::EncoderCapabilities>,
     /// Convert's estimates per root and category, kept while the category holds the same files.
     estimates: Mutex<HashMap<(RootId, crate::contract::OptimizeCategory), changes::CachedEstimate>>,
 }
@@ -262,7 +262,7 @@ impl TidyEngine {
                 fingerprints: AtomicU64::new(0),
                 clusters: Mutex::new(HashMap::new()),
                 places: crate::plans::holding::HoldingPlaces::new(data_dir),
-                svt_av1: OnceLock::new(),
+                capabilities: OnceLock::new(),
                 estimates: Mutex::new(HashMap::new()),
             }),
         })

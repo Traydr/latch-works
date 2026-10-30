@@ -640,6 +640,32 @@ impl Default for Settings {
     }
 }
 
+/// The video encoders a re-encode can use (glazier-core's `EncoderCapabilities.video`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoEncoders {
+    pub avc: bool,
+    pub hevc: bool,
+    pub av1: bool,
+}
+
+/// What this machine can encode with, for Settings › Encoders and the Library's Re-encode menu
+/// (glazier-core's `EncoderCapabilities`). Electron Oriel's video encoders are WebCodecs'; Oriel
+/// RS has none, so its are the pinned ffmpeg's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncoderCapabilities {
+    pub video: VideoEncoders,
+    pub aac: bool,
+    pub ffmpeg: bool,
+    /// ffmpeg has SVT-AV1, which every AV1 encode uses.
+    pub svt_av1: bool,
+    pub ffprobe: bool,
+    /// libavif loads, which Oriel RS encodes AVIF pictures with (Electron Oriel's are wasm).
+    #[serde(default)]
+    pub avif: bool,
+}
+
 // Changing the archive: plans, their steps, holding and the history (glazier-core's
 // `PlanRequestSchema` and what follows it in `contract.ts`).
 

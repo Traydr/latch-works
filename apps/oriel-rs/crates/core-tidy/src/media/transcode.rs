@@ -19,6 +19,7 @@
 //! rejects, and Electron Oriel then keeps ffmpeg's. Quality stays the fallback's CRF, not
 //! Mediabunny's bitrate.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::time::Duration;
 
@@ -27,6 +28,8 @@ use oriel_core_format::{
 };
 use oriel_runtime::CancelToken;
 use oriel_tools::ToolRun;
+
+use crate::contract::{EncoderCapabilities, VideoEncoders};
 
 use super::ToolFailure;
 use crate::contract::VideoQuality;
@@ -174,18 +177,57 @@ pub fn ffmpeg_args(job: &TranscodeJob<'_>) -> Vec<std::ffi::OsString> {
     args
 }
 
-/// Whether this ffmpeg was built with SVT-AV1; false when it cannot be asked.
-pub fn has_svt_av1(ffmpeg: &Path) -> bool {
+/// The encoders this ffmpeg was built with, by name (`libx264`, `aac`, …), as `ffmpeg -encoders`
+/// lists them; none when it cannot be asked.
+pub fn ffmpeg_encoders(ffmpeg: &Path) -> HashSet<String> {
     let Ok(output) = ToolRun::new(ffmpeg, Duration::from_secs(15))
         .args(["-hide_banner", "-encoders"])
         .run()
     else {
-        return false;
+        return HashSet::new();
     };
-    output.success()
-        && String::from_utf8_lossy(&output.stdout)
-            .split(|character: char| !(character.is_alphanumeric() || character == '_'))
-            .any(|word| word == "libsvtav1")
+    if !output.success() {
+        return HashSet::new();
+    }
+    encoder_names(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// The names in `ffmpeg -encoders`' table: each line under the `------` rule is six flag letters
+/// (`V....D`), the name, then its description.
+fn encoder_names(listing: &str) -> HashSet<String> {
+    listing
+        .lines()
+        .skip_while(|line| !line.trim_start().starts_with("---"))
+        .skip(1)
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            let flags = words.next()?;
+            (flags.len() == 6).then(|| words.next().map(str::to_owned))?
+        })
+        .collect()
+}
+
+/// What Tidy can encode with (glazier-core's `EncoderCapabilities`). Oriel RS has no WebCodecs,
+/// so its video encoders are the pinned ffmpeg's: libx264, libx265 and SVT-AV1.
+pub fn encoder_capabilities(
+    ffmpeg: Option<&Path>,
+    ffprobe: bool,
+    avif: bool,
+) -> EncoderCapabilities {
+    let encoders = ffmpeg.map(ffmpeg_encoders).unwrap_or_default();
+    let has = |name: &str| encoders.contains(name);
+    EncoderCapabilities {
+        video: VideoEncoders {
+            avc: has("libx264"),
+            hevc: has("libx265"),
+            av1: has("libsvtav1"),
+        },
+        aac: has("aac"),
+        ffmpeg: ffmpeg.is_some(),
+        svt_av1: has("libsvtav1"),
+        ffprobe,
+        avif,
+    }
 }
 
 /// Runs one conversion with ffmpeg, killed when `cancel` is.
@@ -269,5 +311,21 @@ mod tests {
             "-hide_banner -loglevel error -y -i /a/in.mov -map 0:v:0 -c:v copy -an \
              -map_metadata 0 -movflags +faststart -f mp4 /a/in.mp4"
         );
+    }
+
+    #[test]
+    fn encoders_are_read_from_ffmpegs_table() {
+        let listing = "Encoders:
+ V..... = Video
+ A..... = Audio
+ ------
+ V....D libx264              libx264 H.264 / AVC / MPEG-4 AVC (codec h264)
+ V....D libsvtav1            SVT-AV1(Scalable Video Technology for AV1) encoder (codec av1)
+ A....D aac                  AAC (Advanced Audio Coding)
+";
+        let names = encoder_names(listing);
+        let mut sorted: Vec<&str> = names.iter().map(String::as_str).collect();
+        sorted.sort_unstable();
+        assert_eq!(sorted, ["aac", "libsvtav1", "libx264"]);
     }
 }

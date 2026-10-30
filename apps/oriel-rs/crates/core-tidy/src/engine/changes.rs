@@ -31,13 +31,13 @@ use super::{ChangedOnDrop, Inner, TidyEngine, on_thread};
 use crate::catalog::files::list_file_ids;
 use crate::catalog::roots::{find_root, list_roots, read_settings};
 use crate::contract::{
-    AudioState, EmptyHoldingResult, FileFilter, FileId, FileKind, HoldingId, HoldingList,
-    HoldingRequest, MAX_HISTORY_ROWS, OptimizeCategory, OptimizeEstimate, PlanId, PlanListRequest,
-    PlanPreview, PlanRequest, PlanStatus, PlanStepPage, PlanStepsRequest, PlanSummary,
-    RestoreResult, Root, RootId, VideoQuality,
+    AudioState, EmptyHoldingResult, EncoderCapabilities, FileFilter, FileId, FileKind, HoldingId,
+    HoldingList, HoldingRequest, MAX_HISTORY_ROWS, OptimizeCategory, OptimizeEstimate, PlanId,
+    PlanListRequest, PlanPreview, PlanRequest, PlanStatus, PlanStepPage, PlanStepsRequest,
+    PlanSummary, RestoreResult, Root, RootId, VideoQuality,
 };
 use crate::media::still::encode_still_to_avif;
-use crate::media::transcode::{TranscodeJob, has_svt_av1, transcode_with_ffmpeg};
+use crate::media::transcode::{TranscodeJob, encoder_capabilities, transcode_with_ffmpeg};
 use crate::optimize::CandidateHolds;
 use crate::passes::{Progress, Quiet};
 use crate::plans::executor::{ExecutorDeps, apply_plan, undo_plan};
@@ -246,9 +246,18 @@ impl Inner {
     }
 
     fn svt_av1(&self) -> bool {
-        *self
-            .svt_av1
-            .get_or_init(|| self.media.ffmpeg.as_deref().is_some_and(has_svt_av1))
+        self.capabilities().svt_av1
+    }
+
+    /// What this machine can encode with; the first call asks ffmpeg, which takes a moment.
+    pub(super) fn capabilities(&self) -> EncoderCapabilities {
+        *self.capabilities.get_or_init(|| {
+            encoder_capabilities(
+                self.media.ffmpeg.as_deref(),
+                self.media.ffprobe.is_some(),
+                Libavif::get().is_ok(),
+            )
+        })
     }
 
     fn executor<'a>(&'a self, progress: &'a dyn Progress) -> anyhow::Result<ExecutorDeps<'a>> {
@@ -346,6 +355,15 @@ impl Inner {
 }
 
 impl TidyEngine {
+    /// What this machine can encode with (glazier-core's `capabilities`), asked of ffmpeg once,
+    /// on a thread of its own.
+    pub fn capabilities(
+        &self,
+    ) -> impl Future<Output = anyhow::Result<EncoderCapabilities>> + Send + 'static {
+        let inner = self.inner.clone();
+        on_thread("tidy-capabilities", move || Ok(inner.capabilities()))
+    }
+
     // Plans.
 
     /// Drafts a request as a plan and returns what it would do (glazier-core's `previewPlan`).
