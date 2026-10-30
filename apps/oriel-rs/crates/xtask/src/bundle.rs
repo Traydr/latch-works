@@ -1,12 +1,14 @@
-//! Makes `apps/oriel-rs/target/release/bundle/Oriel RS.app` from a release build, for the owner
-//! to double-click (plan 063):
+//! Makes `apps/oriel-rs/target/release/bundle/Oriel RS.app` for the owner to double-click (plan
+//! 063), or `release/bundle` in `CARGO_TARGET_DIR` when that is set:
 //!
 //! ```text
 //! cargo run -p xtask -- bundle
 //! ```
 //!
-//! - `Contents/MacOS/oriel-rs`: `cargo build --release -p oriel-rs`, in Cargo's own target folder
-//!   (`CARGO_TARGET_DIR` if set);
+//! - `Contents/MacOS/oriel-rs`: `cargo build --profile dist -p oriel-rs`, the release build with
+//!   fat LTO (the workspace's `Cargo.toml` says why), in Cargo's own target folder
+//!   (`CARGO_TARGET_DIR` if set), without its symbol table. The build in the target folder keeps
+//!   it, under the same UUID, so `atos -o <target>/dist/oriel-rs` still reads a crash report;
 //! - `Contents/Frameworks`: the LGPL libmpv set, built first if it is not, and the vendored
 //!   libvips and libavif sets, fetched first if they are not. Where two sets carry the same file
 //!   (both have dav1d 1.5.4 as `libdav1d.7.dylib`), the first set's copy serves both;
@@ -71,12 +73,14 @@ fn crate_version(workspace: &Path) -> Result<String> {
         .context("Cargo.toml's [workspace.package] has no version")
 }
 
-/// Where Cargo puts the release binary, honouring `CARGO_TARGET_DIR` as Cargo does.
-fn release_binary(workspace: &Path) -> PathBuf {
-    let target = std::env::var_os("CARGO_TARGET_DIR")
+/// The profile the bundle's binary is built with, `[profile.dist]` in the workspace's manifest.
+const PROFILE: &str = "dist";
+
+/// Cargo's target folder, honouring `CARGO_TARGET_DIR` as Cargo does.
+fn target_folder(workspace: &Path) -> PathBuf {
+    std::env::var_os("CARGO_TARGET_DIR")
         .filter(|value| !value.is_empty())
-        .map_or_else(|| workspace.join("target"), |folder| workspace.join(folder));
-    target.join("release").join(EXECUTABLE)
+        .map_or_else(|| workspace.join("target"), |folder| workspace.join(folder))
 }
 
 fn escape_xml(text: &str) -> String {
@@ -276,23 +280,25 @@ pub fn command(args: &[String]) -> Result<()> {
         media_tools.folder.display()
     ));
 
-    log("\n4. The release build");
+    log("\n4. The release build, with fat LTO");
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
     run_here(
         &cargo,
         &[
             "build".as_ref(),
-            "--release".as_ref(),
+            "--profile".as_ref(),
+            PROFILE.as_ref(),
             "-p".as_ref(),
             "oriel-rs".as_ref(),
         ],
         &workspace,
     )?;
-    let binary = release_binary(&workspace);
+    let binary = target_folder(&workspace).join(PROFILE).join(EXECUTABLE);
     let version = crate_version(&workspace)?;
 
     log("\n5. The bundle");
-    let bundle_folder = workspace.join("target").join("release").join("bundle");
+    // In the target folder of the build it packs, so two target folders make two bundles.
+    let bundle_folder = target_folder(&workspace).join("release").join("bundle");
     let app = bundle_folder.join(format!("{APP_NAME}.app"));
     let staging = bundle_folder.join(format!(".{APP_NAME}.app.staging"));
     let contents = staging.join("Contents");
@@ -305,7 +311,10 @@ pub fn command(args: &[String]) -> Result<()> {
     fs::create_dir_all(&frameworks)?;
     fs::create_dir_all(resources.join("media-tools"))?;
 
-    copy_executable(&binary, &contents.join("MacOS").join(EXECUTABLE))?;
+    let executable = contents.join("MacOS").join(EXECUTABLE);
+    copy_executable(&binary, &executable)?;
+    // The symbol table is a fifth of the binary, and nothing reads it at run time.
+    capture("/usr/bin/strip", &["-x".as_ref(), executable.as_os_str()])?;
     fs::write(contents.join("PkgInfo"), "APPL????")?;
     // Electron Oriel's icon, the same artwork for the same app.
     fs::copy(
@@ -365,7 +374,7 @@ pub fn command(args: &[String]) -> Result<()> {
         )?;
     }
 
-    let (floor, needed_by) = minimum_macos(&contents.join("MacOS").join(EXECUTABLE), &frameworks)?;
+    let (floor, needed_by) = minimum_macos(&executable, &frameworks)?;
     if floor != DEPLOYMENT_TARGET {
         log(format!(
             "  macOS {floor} and later: {needed_by} needs it, above Oriel RS's own {DEPLOYMENT_TARGET}"

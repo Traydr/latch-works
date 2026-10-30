@@ -10,6 +10,7 @@ pub mod menus;
 pub mod open_paths;
 pub mod quit;
 pub mod shell;
+mod spike;
 mod terminate;
 pub mod welcome;
 pub mod window_state;
@@ -64,6 +65,7 @@ pub fn run() {
     });
 
     app.run(move |cx| {
+        oriel_ui::theme::prepare(cx);
         gpui_kit::init(cx);
         // Sync's HTTP runs on a tokio thread of its own, started once here rather than at the
         // first push.

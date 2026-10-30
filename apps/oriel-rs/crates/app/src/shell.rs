@@ -93,6 +93,8 @@ pub struct Shell {
     welcome: Option<(Entity<Welcome>, bool, Subscription)>,
     /// `ORIEL_RS_ABOUT=1` asked for the About dialog at start, which opens once the window draws.
     about_at_start: bool,
+    /// The shell's measurements, when `ORIEL_RS_SPIKE_SHELL` asks for them.
+    pub(crate) spike: Option<crate::spike::ShellSpike>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -103,6 +105,10 @@ impl Shell {
         let mut this = Self::build(data, Rc::new(SystemQuit), true, window, cx);
         crate::check::apply_from_environment(&this.state, cx);
         this.about_at_start = crate::check::about_from_environment();
+        this.spike = crate::spike::ShellSpike::from_environment();
+        if this.spike.is_some() {
+            crate::spike::start(window, cx);
+        }
         if welcome::allowed_from_environment() {
             this.offer_welcome(window, cx);
         }
@@ -241,6 +247,7 @@ impl Shell {
             folder_sources: None,
             welcome: None,
             about_at_start: false,
+            spike: None,
             _subscriptions: subscriptions,
         };
         this.show_mode(mode, window, cx);
@@ -627,6 +634,13 @@ impl Render for Shell {
             && before != drawn
         {
             self.hand_over_focus(before, drawn, window, cx);
+        }
+        if let Some(spike) = &mut self.spike {
+            let screen = match settings {
+                Some(section) => crate::spike::Screen::Settings(section),
+                None => crate::spike::Screen::Mode(mode),
+            };
+            spike.on_render(screen, window);
         }
         self.open_welcome_dialog(window, cx);
         if std::mem::take(&mut self.about_at_start) {

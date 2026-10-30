@@ -2,8 +2,9 @@
 //! decision of 2026-10-29: prebuilt binaries over builds from source). Changing a pin changes its
 //! set's id, so a new set is fetched beside the old one.
 
-/// Bump when the steps that lay a set out change in a way the pins below do not show.
-pub const VENDOR_REVISION: u32 = 1;
+/// Bump when the steps that lay a set out change in a way the pins below do not show. 2: a
+/// relocated set's libraries are stripped of their local symbols.
+pub const VENDOR_REVISION: u32 = 2;
 
 /// The anonymous token GitHub's container registry takes for public images such as Homebrew's.
 const GHCR_TOKEN: &str = "Authorization: Bearer QQ==";

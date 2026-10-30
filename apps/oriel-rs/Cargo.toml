@@ -50,3 +50,14 @@ oriel-tools = { path = "crates/tools" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+
+# The app the owner double-clicks: `cargo run -p xtask -- bundle` builds it with this profile.
+# Fat LTO over one codegen unit makes the binary 30 % smaller (45.6 to 31.8 MB; 26 MB in the
+# bundle, which leaves out the symbol table), with the same cold start and sorts. It also makes
+# a build take about three minutes after any change, against seconds, so `cargo build
+# --release`, which the spikes, examples and benches use, stays as Cargo has it. Not
+# `panic = "abort"`: the runtime turns a job's or a catalog call's panic into its error.
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1

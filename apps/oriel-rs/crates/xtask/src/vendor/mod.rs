@@ -8,9 +8,9 @@
 //! Each package must hash to its pin before it is unpacked. A set holds its dylibs, the licence
 //! files its packages carry, `manifest.json` (versions, URLs, hashes, licences, each library's
 //! links and minimum macOS) and `SHA256SUMS`, which a later run and the bundle check the files
-//! against. A relocated set's libraries are renamed `@rpath/<file>` and find each other through
-//! `@loader_path`, so nothing in it names Homebrew's prefix; the command refuses a set where
-//! anything still does.
+//! against. A relocated set's libraries are stripped of their local symbols, as libmpv's are,
+//! renamed `@rpath/<file>` and find each other through `@loader_path`, so nothing in it names
+//! Homebrew's prefix; the command refuses a set where anything still does.
 
 pub mod pins;
 
@@ -226,8 +226,9 @@ fn record(set: &'static VendorSet, path: &Path, file: &str, members: &[String]) 
     })
 }
 
-/// Copies the entry library and every library it needs out of the unpacked bottles, renamed
-/// `@rpath/<file>` with `@loader_path` as their only rpath, and signs each ad hoc again.
+/// Copies the entry library and every library it needs out of the unpacked bottles, strips their
+/// local symbols (aom's alone are 0.4 MB, and no export goes), renames them `@rpath/<file>` with
+/// `@loader_path` as their only rpath, and signs each ad hoc again.
 fn assemble_relocated(
     set: &'static VendorSet,
     unpacked: &Path,
@@ -260,6 +261,7 @@ fn assemble_relocated(
         let target = out.join(file);
         fs::copy(source(file)?, &target)?;
         set_mode(&target, 0o755)?;
+        support::capture("/usr/bin/strip", &["-x".as_ref(), target.as_os_str()])?;
         let mut relink = Vec::new();
         for link in read_macho(&target)?.links {
             if let Some(member) = member_of(set, &link)? {

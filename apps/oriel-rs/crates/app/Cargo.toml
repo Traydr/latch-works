@@ -29,6 +29,8 @@ oriel-mode-tidy.workspace = true
 oriel-mode-sync.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# The shell spike's CPU and memory readings (`proc_pid_rusage`), as View's spike reads them.
+libc = "0.2"
 # The Dock icon's progress bar (`NSDockTile`) and the View menu's full-screen item, on the objc2
 # 0.6 line GPUI's macOS crates use.
 objc2 = "0.6"
