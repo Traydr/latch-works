@@ -25,8 +25,9 @@
   (2026-10-30, branch `agent/063-0-spike`); Phase 8, Windows, is not started. The reports start
   at [docs/research/oriel-rs/README.md](../research/oriel-rs/README.md). 92 of Electron Oriel's
   104 features are done and 32 of its 33 e2e cases pass as GPUI tests
-  ([parity](../research/oriel-rs/parity.md)). Tidy changes files only in the sandbox. Next: the
-  owner's Phase 9 decision, and whether to show the sandbox setting (Phase 6).
+  ([parity](../research/oriel-rs/parity.md)). Tidy changes files only in the sandbox. The owner
+  chose to go on toward replacing Electron Oriel (decisions 11 to 15). Next: optimizing every
+  workflow.
 - **Priority**: P3 (an experiment the owner asked for)
 - **Effort**: XL several times over. About 24.8k lines of UI, 15k lines of core packages and the
   main-side services are rewritten in Rust. Phase 0, the gate, is L.
@@ -84,6 +85,17 @@ On Phase 1's results (2026-10-28):
 9. **One branch**, `agent/063-0-spike`, for the whole plan, not one per phase.
 10. **The name is Oriel RS**: `apps/oriel-rs`, the `oriel-rs` binary and package,
     `~/.latch-works/oriel-rs/`, and `ORIEL_RS_*` variables.
+
+On Phase 9's scorecard (2026-10-30):
+
+11. **Go on toward replacing Electron Oriel.** Using Oriel's data and retiring the Electron app
+    need a plan of their own. Until then, Oriel RS keeps optimizing every workflow: View, Tidy,
+    Sync and the shell.
+12. **The sandbox stays.** There is no setting to let Tidy change files outside it, for now.
+13. **macOS 15 and later is fine**, as Homebrew's prebuilt aom sets it.
+14. **The licence notices stand as they are**: the GPL notice points at the upstream sources,
+    and shared MIT and Apache-2.0 texts cover the 62 crates without a licence file of their own.
+15. **No signing with a real identity, notarization or auto-update** for now.
 
 ## Which GPUI (D1, settled: A)
 
