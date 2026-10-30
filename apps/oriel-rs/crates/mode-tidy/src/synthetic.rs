@@ -10,7 +10,7 @@ use gpui_kit::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, SharedString,
     Styled as _, Window, div,
 };
-use oriel_core_domain::{NamedPath, compare_by_name};
+use oriel_core_domain::{NamedPath, name_ranks};
 
 use crate::spike::LibrarySpike;
 
@@ -27,6 +27,10 @@ pub struct LibraryRow {
     height: u32,
     duration_ms: Option<u32>,
     modified_ms: i64,
+    /// Where the row falls in natural order by name, and by folder, the path breaking ties in
+    /// each; set by [`LibraryDelegate::rank`] before the first sort that needs them.
+    name_rank: u32,
+    folder_rank: u32,
 }
 
 impl NamedPath for LibraryRow {
@@ -137,12 +141,13 @@ impl LibraryColumn {
     }
 
     /// Ascending order for this column; names and folders in the shared natural order, as
-    /// Electron Oriel's Library sorts them.
+    /// Electron Oriel's Library sorts them, through the rows' ranks in it, which answer as
+    /// `compare_by_name` does.
     fn compare(self, a: &LibraryRow, b: &LibraryRow) -> Ordering {
-        let by_name = || compare_by_name(a, b);
+        let by_name = || a.name_rank.cmp(&b.name_rank);
         match self {
             LibraryColumn::Name => by_name(),
-            LibraryColumn::Folder => compare_by_name(&ByFolder(a), &ByFolder(b)),
+            LibraryColumn::Folder => a.folder_rank.cmp(&b.folder_rank),
             LibraryColumn::Kind => a.kind.cmp(&b.kind).then_with(by_name),
             LibraryColumn::Format => a.format.cmp(b.format).then_with(by_name),
             LibraryColumn::Size => a.bytes.cmp(&b.bytes).then_with(by_name),
@@ -159,6 +164,8 @@ pub struct LibraryDelegate {
     rows: Vec<LibraryRow>,
     columns: Vec<Column>,
     last_sort: Option<Duration>,
+    /// Whether the rows' ranks by name and by folder are set.
+    ranked: (bool, bool),
 }
 
 impl LibraryDelegate {
@@ -167,6 +174,27 @@ impl LibraryDelegate {
             rows,
             columns: LibraryColumn::ALL.map(LibraryColumn::column).to_vec(),
             last_sort: None,
+            ranked: (false, false),
+        }
+    }
+
+    /// Ranks the rows in natural order once, by name for every column (names break the other
+    /// columns' ties) and by folder for the folder's, so later sorts compare numbers.
+    fn rank(&mut self, column: LibraryColumn) {
+        if !self.ranked.0 {
+            let ranks = name_ranks(&self.rows);
+            for (row, rank) in self.rows.iter_mut().zip(ranks) {
+                row.name_rank = rank;
+            }
+            self.ranked.0 = true;
+        }
+        if column == LibraryColumn::Folder && !self.ranked.1 {
+            let folders: Vec<ByFolder<'_>> = self.rows.iter().map(ByFolder).collect();
+            let ranks = name_ranks(&folders);
+            for (row, rank) in self.rows.iter_mut().zip(ranks) {
+                row.folder_rank = rank;
+            }
+            self.ranked.1 = true;
         }
     }
 
@@ -181,6 +209,9 @@ impl LibraryDelegate {
 
     pub fn sort(&mut self, column: LibraryColumn, sort: ColumnSort) {
         let started = Instant::now();
+        if sort != ColumnSort::Default {
+            self.rank(column);
+        }
         match sort {
             ColumnSort::Ascending => self.rows.sort_by(|a, b| column.compare(a, b)),
             ColumnSort::Descending => self.rows.sort_by(|a, b| column.compare(b, a)),
@@ -346,6 +377,8 @@ pub fn synthetic_rows(count: usize) -> Vec<LibraryRow> {
                 height,
                 duration_ms: (kind != FileKind::Image).then(|| 1_000 + (next() % 3_600_000) as u32),
                 modified_ms: 1_262_304_000_000 + (next() % 504_576_000_000) as i64,
+                name_rank: 0,
+                folder_rank: 0,
             }
         })
         .collect()

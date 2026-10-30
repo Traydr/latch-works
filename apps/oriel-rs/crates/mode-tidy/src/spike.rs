@@ -254,7 +254,7 @@ impl LibrarySpike {
     }
 }
 
-fn frame_stats(frames: &[Instant], speed: f32) -> String {
+pub(crate) fn frame_stats(frames: &[Instant], speed: f32) -> String {
     let mut intervals: Vec<f64> = frames
         .windows(2)
         .map(|pair| pair[1].duration_since(pair[0]).as_secs_f64() * 1e3)
@@ -279,7 +279,7 @@ fn frame_stats(frames: &[Instant], speed: f32) -> String {
     )
 }
 
-fn percentile(sorted: &[f64], share: f64) -> f64 {
+pub(crate) fn percentile(sorted: &[f64], share: f64) -> f64 {
     if sorted.is_empty() {
         return 0.;
     }
@@ -290,7 +290,7 @@ fn percentile(sorted: &[f64], share: f64) -> f64 {
 /// This process's resident size and its physical footprint (what Activity Monitor shows), in
 /// bytes.
 #[cfg(target_os = "macos")]
-fn memory() -> (u64, u64) {
+pub(crate) fn memory() -> (u64, u64) {
     let mut usage = std::mem::MaybeUninit::<libc::rusage_info_v2>::zeroed();
     // SAFETY: `usage` is a `rusage_info_v2`, the flavour asked for.
     let status = unsafe {
@@ -309,6 +309,6 @@ fn memory() -> (u64, u64) {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn memory() -> (u64, u64) {
+pub(crate) fn memory() -> (u64, u64) {
     (0, 0)
 }

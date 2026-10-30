@@ -754,6 +754,58 @@ impl DuplicatesPage {
         cx.notify();
     }
 
+    // What the pages spike (`crate::page_spike`) does in place of the owner's keys.
+
+    /// The next set or the one before, as ↓ and ↑ show them.
+    pub(crate) fn spike_move(&mut self, delta: isize, cx: &mut Context<Self>) {
+        self.move_by(delta, cx);
+    }
+
+    /// Opens the loupe on the set's second version, as Space does, or closes it.
+    pub(crate) fn spike_loupe(&mut self, open: bool, cx: &mut Context<Self>) {
+        if open {
+            self.open_loupe(1, cx);
+        } else {
+            self.close_loupe(cx);
+        }
+    }
+
+    /// Goes to the first set with a video and plays it in its tile; false when there is none.
+    pub(crate) fn spike_play_video(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let found = self.sets().iter().enumerate().find_map(|(index, set)| {
+            let file = files_of(set)
+                .into_iter()
+                .find(|file| file.kind == FileKind::Video)?;
+            Some((index, file.clone()))
+        });
+        let Some((index, file)) = found else {
+            return false;
+        };
+        self.active_index = index;
+        self.follow_active(cx);
+        self.play(&file, window, cx);
+        true
+    }
+
+    /// Whether the set's first `count` versions show their pictures: what the grid shows before
+    /// it is scrolled.
+    pub(crate) fn spike_tiles_shown(&self, count: usize, cx: &App) -> bool {
+        let thumbs = self.thumbs.read(cx);
+        let rows = self.rows();
+        !rows.is_empty()
+            && rows
+                .iter()
+                .take(count)
+                .all(|row| thumbs.is_done(Path::new(&row.file.abs_path), 768))
+    }
+
+    /// Whether the video playing has shown its first picture.
+    pub(crate) fn spike_video_shows(&self, cx: &App) -> bool {
+        self.video
+            .as_ref()
+            .is_some_and(|(_, video)| video.read(cx).shows_picture())
+    }
+
     fn toggle_sound(&mut self, cx: &mut Context<Self>) {
         self.sound_on = !self.sound_on;
         if let Some((_, video)) = &self.video {

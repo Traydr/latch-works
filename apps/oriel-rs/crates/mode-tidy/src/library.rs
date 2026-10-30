@@ -371,7 +371,9 @@ impl CatalogRows {
             ..query
         };
         let answer = engine.list_files(query);
+        let in_flight = crate::loaded::InFlight::start();
         self.tasks.push(cx.spawn(async move |table, cx| {
+            let _in_flight = in_flight;
             let answer = answer.await;
             table
                 .update(cx, |table, cx| {
@@ -1493,6 +1495,69 @@ impl LibraryPage {
     /// The search the rows are filtered by, as the field shows it once drawn.
     pub fn search(&self) -> &str {
         &self.applied_search
+    }
+
+    // What the pages spike (`crate::page_spike`) does in place of the owner's clicks and keys.
+
+    /// Sorts by the column `key` names, as a click on its header does.
+    pub(crate) fn spike_sort(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.table.update(cx, |table, cx| {
+            let rows = table.delegate_mut();
+            if let Some(index) = rows.columns.iter().position(|column| column.key == key) {
+                rows.perform_sort(index, ColumnSort::Default, window, cx);
+            }
+            table.refresh(cx);
+        });
+    }
+
+    /// Types `text` into the search field where the cursor is, as a key press does.
+    pub(crate) fn spike_type(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let text = text.to_owned();
+        self.search
+            .update(cx, |search, cx| search.insert(text, window, cx));
+    }
+
+    /// Empties the search field, as ⌘A and Delete do.
+    pub(crate) fn spike_clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search
+            .update(cx, |search, cx| search.set_value("", window, cx));
+        self.search_changed(cx);
+    }
+
+    /// Sets the filters, as the filter menu and its chips do.
+    pub(crate) fn spike_filters(&mut self, filters: Filters, cx: &mut Context<Self>) {
+        self.set_filters(filters, cx);
+    }
+
+    /// Puts the cursor on the first file and opens or closes the Inspector.
+    pub(crate) fn spike_inspector(&mut self, open: bool, cx: &mut Context<Self>) {
+        if open {
+            self.table
+                .update(cx, |table, cx| table.set_selected_row(0, cx));
+        }
+        if self.inspector != open {
+            self.toggle_inspector(cx);
+        }
+    }
+
+    /// Whether the Inspector's reads of the files at hand have landed.
+    pub(crate) fn spike_targets_read(&self) -> bool {
+        self.summary.data().is_some() && self.sample.data().is_some()
+    }
+
+    /// The scroll handle of the list or the grid, whichever shows.
+    pub(crate) fn spike_scroll_handle(&self, cx: &App) -> gpui_kit::ScrollHandle {
+        match self.mode {
+            LibraryMode::List => self
+                .table
+                .read(cx)
+                .vertical_scroll_handle
+                .0
+                .borrow()
+                .base_handle
+                .clone(),
+            LibraryMode::Grid => self.grid_scroll.0.borrow().base_handle.clone(),
+        }
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {

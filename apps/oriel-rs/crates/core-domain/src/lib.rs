@@ -29,7 +29,9 @@ pub use paths::{
     join_archive_path, normalize_path_for_compare, normalize_path_for_compare_keeping_extensions,
     pair_sync_paths, to_archive_path, trim_trailing_slash,
 };
-pub use sort::{NamedPath, SortableMediaItem, compare_by_name, hash_string, sort_media_items};
+pub use sort::{
+    NamedPath, SortableMediaItem, compare_by_name, hash_string, name_ranks, sort_media_items,
+};
 pub use system_files::{
     GLAZIER_HOLDING_DIRECTORY_NAME, LATCH_WORKS_DIRECTORY_NAME, is_system_junk_directory,
     is_system_junk_file,

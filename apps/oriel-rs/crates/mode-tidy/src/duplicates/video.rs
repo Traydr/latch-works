@@ -27,6 +27,13 @@ impl TileVideo {
         self.video.as_ref().is_ok_and(AnyPlayer::is_playing)
     }
 
+    /// Whether a picture shows yet, or the error that stands for one.
+    pub fn shows_picture(&self) -> bool {
+        self.video
+            .as_ref()
+            .map_or(true, |video| video.picture().is_some())
+    }
+
     pub fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Ok(video) = &mut self.video {
             video.toggle_playback();

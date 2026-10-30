@@ -2,8 +2,35 @@
 //! none, with only the newest request's answer kept, so a slow older one never overwrites it.
 
 use std::future::Future;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use gpui_kit::{AppContext, Context, SharedString, Task};
+
+/// Page reads asked for whose answers have not landed yet, so the pages spike can tell when a
+/// page has everything it asked for.
+static READS_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+/// How many page reads are still waiting for their answers.
+pub fn reads_in_flight() -> usize {
+    READS_IN_FLIGHT.load(Ordering::Relaxed)
+}
+
+/// Counts one page read from when it is asked for until its answer has landed, or the read is
+/// dropped for a newer one.
+pub struct InFlight(());
+
+impl InFlight {
+    pub fn start() -> Self {
+        READS_IN_FLIGHT.fetch_add(1, Ordering::Relaxed);
+        Self(())
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        READS_IN_FLIGHT.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 /// Waits for an engine call on GPUI's background executor, blocking one of its threads while the
 /// catalog's thread answers. The answer then reaches the UI from GPUI's own executor, never from
@@ -75,7 +102,9 @@ impl<T: Send + 'static> Loaded<T> {
         self.stamp += 1;
         let stamp = self.stamp;
         let answer = engine_call(future, cx);
+        let in_flight = InFlight::start();
         self.task = Some(cx.spawn(async move |this, cx| {
+            let _in_flight = in_flight;
             let answer = answer.await;
             this.update(cx, |view, cx| {
                 let loaded = slot(view);

@@ -27,6 +27,7 @@ pub mod library;
 pub mod links;
 mod loaded;
 mod overview;
+mod page_spike;
 mod pages;
 mod quick_look;
 mod settings;
@@ -93,6 +94,8 @@ pub struct TidyMode {
     /// Phase 0's Library of synthetic rows, shown in place of the catalog's only when the spike
     /// asks for it (`ORIEL_RS_SPIKE_LIBRARY`).
     spike: Option<Entity<SyntheticLibrary>>,
+    /// The pages spike, when `ORIEL_RS_SPIKE_TIDY` asks for it.
+    page_spike: Option<page_spike::PageSpike>,
     /// The page on screen, as the state last said.
     page: TidyPage,
     /// Tidy's own Settings section, which keeps a folder picker's answer.
@@ -111,6 +114,7 @@ impl TidyMode {
     pub fn new(shell: &Entity<ShellState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let data = DataRoot::from_environment().expect("Oriel RS needs a data folder");
         let mut tidy = Self::with_data(shell, &data, Rc::new(EngineChanges), window, cx);
+        tidy.page_spike = page_spike::PageSpike::from_environment();
         tidy.spike = spike::requested_rows().map(|count| {
             let started = Instant::now();
             let rows = synthetic_rows(count);
@@ -201,6 +205,7 @@ impl TidyMode {
             holding,
             focus,
             spike: None,
+            page_spike: None,
             page,
             settings,
             pending_hand_off: None,
@@ -467,6 +472,10 @@ fn view<T: Render + Focusable>(page: &Entity<T>, cx: &gpui_kit::App) -> (AnyView
 
 impl Render for TidyMode {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(mut spike) = self.page_spike.take() {
+            spike.on_frame(self, window, cx);
+            self.page_spike = Some(spike);
+        }
         // Keys and the menu's commands reach the page on screen when nothing else has focus, as
         // after a launch, and when the shell hands Tidy the keys as it comes on screen (⌘2).
         let unfocused = window.focused(cx).is_none() || self.focus.is_focused(window);

@@ -15,7 +15,8 @@
 //! Chromium's does, where Node's orders all Han by radical and stroke. The conformance test lists
 //! the pairs this changes.
 
-use std::{cmp::Ordering, sync::LazyLock};
+use std::cmp::{Ordering, Reverse};
+use std::sync::LazyLock;
 
 use icu_collator::{
     CollatorBorrowed, CollatorPreferences,
@@ -71,9 +72,216 @@ static NAME_COLLATOR: LazyLock<CollatorBorrowed<'static>> = LazyLock::new(|| {
 /// paths. Items whose paths are equal too compare equal, so a stable sort keeps them in the order
 /// they came in.
 pub fn compare_by_name<T: NamedPath + ?Sized>(a: &T, b: &T) -> Ordering {
+    compare_names_then_paths((a.name(), a.path()), (b.name(), b.path()))
+}
+
+/// Below this many items, sorting through the collator is as quick as making sort keys first.
+const KEYED_FROM: usize = 256;
+
+/// From this many items on, the keys are made and checked on several threads.
+const SHARED_FROM: usize = 16_384;
+
+/// The most threads the keys are made and checked on.
+const MAX_THREADS: usize = 8;
+
+/// Where each item falls in natural order, as [`compare_by_name`] orders them: item `i` comes
+/// before item `j` exactly when `ranks[i] < ranks[j]`, and items that compare equal share a rank.
+///
+/// Comparing ranks answers every comparison as [`compare_by_name`] would, so a list ranked once
+/// sorts again either way round, or by another column with the names breaking ties, without the
+/// collator, and a sort by rank lands every item where a sort through the collator would.
+///
+/// A long list is ordered by the collator's sort keys, which are made once per item and compared
+/// as bytes, then checked pair by pair against the collator itself; if the keys ever disagreed
+/// with it, the list is sorted through the collator instead, so the ranks are always its order.
+/// A very long list makes and checks its keys on several threads.
+pub fn name_ranks<T: NamedPath>(items: &[T]) -> Vec<u32> {
+    let count = u32::try_from(items.len()).expect("a list ranked by name fits in u32");
+    let names: Vec<&str> = items.iter().map(NamedPath::name).collect();
+    let paths: Vec<&str> = items.iter().map(NamedPath::path).collect();
+    let compare = |a: u32, b: u32| {
+        let (a, b) = (a as usize, b as usize);
+        compare_names_then_paths((names[a], paths[a]), (names[b], paths[b]))
+    };
+    if items.len() >= KEYED_FROM {
+        let threads = threads_for(items.len());
+        let keys = SortKeys::of(&names, threads);
+        let mut order: Vec<u32> = (0..count).collect();
+        order.sort_by(|a, b| keys.get(*a).cmp(keys.get(*b)));
+        order_ties_by_path(&mut order, &keys, &paths);
+        if let Some(ranks) = ranks_in(&order, &compare, threads) {
+            return ranks;
+        }
+    }
+    let mut order: Vec<u32> = (0..count).collect();
+    order.sort_by(|a, b| compare(*a, *b));
+    // A sort through the collator is in the collator's order, so this never falls through.
+    ranks_in(&order, &compare, 1).unwrap_or_else(|| {
+        let mut ranks = vec![0; order.len()];
+        for (rank, index) in order.iter().enumerate() {
+            ranks[*index as usize] = rank as u32;
+        }
+        ranks
+    })
+}
+
+/// Orders each run of `order` whose names share a key by path, as [`compare_by_name`] breaks
+/// their ties: through the paths' own sort keys when there are many such items, as in a list
+/// sorted by folder, where most items share theirs with others.
+fn order_ties_by_path(order: &mut [u32], keys: &SortKeys, paths: &[&str]) {
+    let mut ties = Vec::new();
+    let mut start = 0;
+    for end in 1..=order.len() {
+        if end == order.len() || keys.get(order[end]) != keys.get(order[start]) {
+            if end - start > 1 {
+                ties.push(start..end);
+            }
+            start = end;
+        }
+    }
+    let tied: usize = ties.iter().map(ExactSizeIterator::len).sum();
+    if tied < KEYED_FROM {
+        for run in ties {
+            order[run]
+                .sort_by(|a, b| NAME_COLLATOR.compare(paths[*a as usize], paths[*b as usize]));
+        }
+        return;
+    }
+    let members: Vec<u32> = ties
+        .iter()
+        .flat_map(|run| order[run.clone()].iter().copied())
+        .collect();
+    let member_paths: Vec<&str> = members.iter().map(|index| paths[*index as usize]).collect();
+    let path_keys = SortKeys::of(&member_paths, threads_for(members.len()));
+    let mut slot = vec![0; paths.len()];
+    for (at, index) in members.iter().enumerate() {
+        slot[*index as usize] = at as u32;
+    }
+    for run in ties {
+        order[run].sort_by(|a, b| {
+            path_keys
+                .get(slot[*a as usize])
+                .cmp(path_keys.get(slot[*b as usize]))
+        });
+    }
+}
+
+/// [`compare_by_name`] on a name and a path each.
+fn compare_names_then_paths(a: (&str, &str), b: (&str, &str)) -> Ordering {
     NAME_COLLATOR
-        .compare(a.name(), b.name())
-        .then_with(|| NAME_COLLATOR.compare(a.path(), b.path()))
+        .compare(a.0, b.0)
+        .then_with(|| NAME_COLLATOR.compare(a.1, b.1))
+}
+
+/// The threads to rank `count` items on.
+fn threads_for(count: usize) -> usize {
+    if count < SHARED_FROM {
+        return 1;
+    }
+    std::thread::available_parallelism()
+        .map_or(1, usize::from)
+        .clamp(1, MAX_THREADS)
+}
+
+/// Splits `0..count` into `parts` runs of about the same length.
+fn runs(count: usize, parts: usize) -> impl Iterator<Item = std::ops::Range<usize>> {
+    let length = count.div_ceil(parts.max(1)).max(1);
+    (0..count)
+        .step_by(length)
+        .map(move |start| start..(start + length).min(count))
+}
+
+/// The ranks of the items `order` lists, if it lists them in `compare`'s order: one more at each
+/// step forward, the same between items that compare equal. `None` if any item comes after one
+/// it should precede. The pairs are compared on `threads` threads.
+fn ranks_in(
+    order: &[u32],
+    compare: &(impl Fn(u32, u32) -> Ordering + Sync),
+    threads: usize,
+) -> Option<Vec<u32>> {
+    let pairs = order.len().saturating_sub(1);
+    let steps: Vec<Ordering> = if threads > 1 {
+        std::thread::scope(|scope| {
+            let parts: Vec<_> = runs(pairs, threads)
+                .map(|run| {
+                    scope.spawn(move || {
+                        run.map(|at| compare(order[at], order[at + 1]))
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect();
+            parts
+                .into_iter()
+                .flat_map(|part| part.join().expect("comparing names does not panic"))
+                .collect()
+        })
+    } else {
+        order
+            .windows(2)
+            .map(|pair| compare(pair[0], pair[1]))
+            .collect()
+    };
+    let mut ranks = vec![0; order.len()];
+    let mut rank = 0;
+    for (at, step) in steps.into_iter().enumerate() {
+        match step {
+            Ordering::Less => rank += 1,
+            Ordering::Equal => {}
+            Ordering::Greater => return None,
+        }
+        ranks[order[at + 1] as usize] = rank;
+    }
+    Some(ranks)
+}
+
+/// The collator's sort key of each name, end to end in one buffer.
+struct SortKeys {
+    bytes: Vec<u8>,
+    ends: Vec<usize>,
+}
+
+impl SortKeys {
+    /// The keys of `names`, made on `threads` threads.
+    fn of(names: &[&str], threads: usize) -> Self {
+        if threads <= 1 {
+            return Self::of_run(names);
+        }
+        let parts: Vec<SortKeys> = std::thread::scope(|scope| {
+            let parts: Vec<_> = runs(names.len(), threads)
+                .map(|run| scope.spawn(move || Self::of_run(&names[run])))
+                .collect();
+            parts
+                .into_iter()
+                .map(|part| part.join().expect("making sort keys does not panic"))
+                .collect()
+        });
+        let mut keys = Self {
+            bytes: Vec::with_capacity(parts.iter().map(|part| part.bytes.len()).sum()),
+            ends: Vec::with_capacity(names.len()),
+        };
+        for part in parts {
+            let offset = keys.bytes.len();
+            keys.bytes.extend_from_slice(&part.bytes);
+            keys.ends.extend(part.ends.iter().map(|end| end + offset));
+        }
+        keys
+    }
+
+    fn of_run(names: &[&str]) -> Self {
+        let mut bytes = Vec::with_capacity(names.len() * 16);
+        let mut ends = Vec::with_capacity(names.len());
+        for name in names {
+            let Ok(()) = NAME_COLLATOR.write_sort_key_to(name, &mut bytes);
+            ends.push(bytes.len());
+        }
+        Self { bytes, ends }
+    }
+
+    fn get(&self, index: u32) -> &[u8] {
+        let index = index as usize;
+        let start = index.checked_sub(1).map_or(0, |before| self.ends[before]);
+        &self.bytes[start..self.ends[index]]
+    }
 }
 
 /// Orders two names in natural order alone, as `localeCompare` with the same options does, which
@@ -113,6 +321,10 @@ pub fn sort_media_items<T: SortableMediaItem>(
     mode: GallerySortMode,
     seed: i64,
 ) -> Vec<T> {
+    let by_name = matches!(mode, GallerySortMode::NameAsc | GallerySortMode::NameDesc);
+    if by_name && items.len() >= KEYED_FROM {
+        return sort_ranked(items, mode);
+    }
     match mode {
         GallerySortMode::Random => return random_order(items, seed),
         GallerySortMode::NameAsc => items.sort_by(|a, b| compare_by_name(a, b)),
@@ -125,6 +337,21 @@ pub fn sort_media_items<T: SortableMediaItem>(
         }
     }
     items
+}
+
+/// [`sort_media_items`] by name for a long list: each item's [`name_ranks`] rank in place of the
+/// collator, so every comparison answers as it would and every item lands where it would. Random
+/// and the date orders keep the collator, since there names only break ties, which are rare, and
+/// ranking every item costs more than comparing the few.
+fn sort_ranked<T: SortableMediaItem>(items: Vec<T>, mode: GallerySortMode) -> Vec<T> {
+    let ranks = name_ranks(&items);
+    let mut ranked: Vec<(u32, T)> = ranks.into_iter().zip(items).collect();
+    if mode == GallerySortMode::NameDesc {
+        ranked.sort_by_key(|(rank, _)| Reverse(*rank));
+    } else {
+        ranked.sort_by_key(|(rank, _)| *rank);
+    }
+    ranked.into_iter().map(|(_, item)| item).collect()
 }
 
 /// The sign of the TypeScript's `a.mtimeMs - b.mtimeMs`. For finite times, which `fs.stat` gives,
@@ -148,4 +375,35 @@ fn random_order<T: SortableMediaItem>(items: Vec<T>, seed: i64) -> Vec<T> {
         a_score.cmp(b_score).then_with(|| compare_by_name(a, b))
     });
     scored.into_iter().map(|(_, item)| item).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The keys and the checks shared between threads come out as made on one.
+    #[test]
+    fn threads_rank_as_one_does() {
+        let names: Vec<String> = (0..1_000)
+            .map(|index| {
+                format!(
+                    "{} {}.jpg",
+                    ["IMG_", "img", "\u{C9}t\u{E9}"][index % 3],
+                    index % 70
+                )
+            })
+            .collect();
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        let one = SortKeys::of(&names, 1);
+        let shared = SortKeys::of(&names, 4);
+        assert_eq!((&one.bytes, &one.ends), (&shared.bytes, &shared.ends));
+
+        let compare = |a: u32, b: u32| NAME_COLLATOR.compare(names[a as usize], names[b as usize]);
+        let mut order: Vec<u32> = (0..names.len() as u32).collect();
+        order.sort_by(|a, b| compare(*a, *b));
+        let ranks = ranks_in(&order, &compare, 1).expect("in the collator's order");
+        assert_eq!(ranks_in(&order, &compare, 4), Some(ranks));
+        order.swap(0, 999);
+        assert_eq!(ranks_in(&order, &compare, 4), None);
+    }
 }
