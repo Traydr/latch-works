@@ -12,7 +12,9 @@
 //!   (both have dav1d 1.5.4 as `libdav1d.7.dylib`), the first set's copy serves both;
 //! - `Contents/Resources/media-tools`: the pinned ffmpeg and ffprobe, fetched first if they are
 //!   not, through `oriel-tools`' own code, where `oriel-tools` looks for them in a bundle;
-//! - `Contents/Resources/licenses/<set>`: each set's licences and manifest;
+//! - `Contents/Resources/licenses/<set>`: each set's licences and manifest, and the notices for
+//!   Oriel RS itself, ffmpeg and ffprobe, and the Rust crates in the binary, with `index.json`
+//!   listing them for the About dialog ([`notices`]);
 //! - Electron Oriel's icon, an `Info.plist`, and a signature over the whole: ad hoc, or with the
 //!   identity `ORIEL_MACOS_SIGN_IDENTITY` names, as Electron Oriel's Forge config does.
 //!
@@ -27,6 +29,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result, bail};
 
 use crate::libmpv::{self, BuildOptions, sources::DEPLOYMENT_TARGET};
+use crate::notices::{self, Notice};
 use crate::support::{self, capture, compare_versions, is_system, log, read_macho, run_here};
 use crate::vendor::{self, pins};
 
@@ -335,14 +338,25 @@ pub fn command(args: &[String]) -> Result<()> {
     ];
     let packed = pack_frameworks(&sets, &frameworks)?;
     check_links(&frameworks)?;
+    let licenses = resources.join("licenses");
+    let mut listed = vec![notices::oriel_rs(repository, &licenses, &version)?];
     for set in &sets {
-        let notices = resources.join("licenses").join(set.name);
-        support::copy_tree(&set.folder.join("licenses"), &notices)?;
+        let folder = licenses.join(set.name);
+        support::copy_tree(&set.folder.join("licenses"), &folder)?;
         fs::copy(
             set.folder.join("manifest.json"),
-            notices.join("manifest.json"),
+            folder.join("manifest.json"),
         )?;
+        listed.push(Notice {
+            folder: set.name.into(),
+            name: set.name.into(),
+            version: set.id.clone(),
+            licence: notices::set_licence(&set.folder.join("manifest.json"))?,
+        });
     }
+    listed.push(notices::media_tools(&media_tools.folder, pin, &licenses)?);
+    listed.push(notices::rust_crates(&workspace, &licenses)?);
+    notices::write_index(&licenses, &version, &listed)?;
 
     for tool in oriel_tools::tool_files(&platform) {
         copy_executable(

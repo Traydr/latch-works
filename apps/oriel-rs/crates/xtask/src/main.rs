@@ -11,7 +11,7 @@
 //! - `libmpv [--jobs N] [--work <dir>] [--out <dir>] [--keep-work]`: builds the LGPL libmpv
 //!   from pinned sources into `apps/oriel-rs/.libmpv/<id>/`;
 //! - `bundle`: makes `target/release/bundle/Oriel RS.app`, with the libraries above, the pinned
-//!   ffmpeg and ffprobe, and an ad hoc signature.
+//!   ffmpeg and ffprobe, the licence notices for all of them, and an ad hoc signature.
 //!
 //! They replace the Node scripts that did this, so the workspace's tooling is Rust (the owner's
 //! decision of 2026-10-29). They drive the system's own tools (curl, tar, otool,
@@ -19,6 +19,7 @@
 
 mod bundle;
 mod libmpv;
+mod notices;
 mod support;
 mod vendor;
 
