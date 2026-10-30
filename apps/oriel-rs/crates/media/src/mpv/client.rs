@@ -1,5 +1,6 @@
-//! One mpv core for one file: its options, the commands the player sends, and a thread that
-//! reads mpv's events into [`Observed`], so the UI thread never waits on mpv.
+//! One mpv core: its options, the commands the player sends, and a thread that reads mpv's
+//! events into [`Observed`], so the UI thread never waits on mpv. A core plays one file at a
+//! time, and may play many in turn (`mpv/engine.rs` keeps idle ones for the next player).
 //!
 //! mpv's handle is thread-safe. Commands and property writes go out with mpv's asynchronous
 //! calls, which return at once; the UI reads only [`Observed`], which the event thread keeps
@@ -15,7 +16,7 @@ use super::ffi::{self, Libmpv};
 use crate::video::VideoError;
 
 /// The properties the event thread observes, by the reply id mpv echoes back.
-const OBSERVED: [(u64, &CStr, c_int); 11] = [
+const OBSERVED: [(u64, &CStr, c_int); 12] = [
     (1, c"duration", ffi::FORMAT_DOUBLE),
     (2, c"time-pos", ffi::FORMAT_DOUBLE),
     (3, c"pause", ffi::FORMAT_FLAG),
@@ -27,6 +28,7 @@ const OBSERVED: [(u64, &CStr, c_int); 11] = [
     (9, c"avsync", ffi::FORMAT_DOUBLE),
     (10, c"hwdec-current", ffi::FORMAT_STRING),
     (11, c"speed", ffi::FORMAT_DOUBLE),
+    (12, c"idle-active", ffi::FORMAT_FLAG),
 ];
 
 /// The reply id of the `loadfile` command, so its failure is told from others'.
@@ -64,10 +66,36 @@ pub(super) struct Observed {
     /// `time-pos` when the newest restart came: where the newest seek landed.
     pub(super) restart_pos: Option<f64>,
     pub(super) restarted_at: Option<Instant>,
+    /// Whether the core has no file (`idle-active`): stopped, or never given one.
+    pub(super) idle: bool,
     errors: Vec<String>,
 }
 
 impl Observed {
+    /// Forgets what the events said about the last file, before the core plays the next. What
+    /// the observed properties say stays: mpv sends a property only when it changes, so the
+    /// event thread's copy is already the core's.
+    pub(super) fn forget_file(&mut self) {
+        self.file_loaded = false;
+        self.failed = None;
+        self.errors.clear();
+    }
+
+    /// Whether the core is as a new one starts: no file, so no picture, length or position,
+    /// and the player's settings back at mpv's defaults. Once the event thread has heard all
+    /// this, nothing more of the last file is on its way.
+    pub(super) fn is_at_rest(&self) -> bool {
+        self.idle
+            && self.paused
+            && !self.muted
+            && !self.eof_reached
+            && self.volume == 100.
+            && self.speed == 1.
+            && self.display_size == (None, None)
+            && self.duration.is_none()
+            && self.time_pos.is_none()
+    }
+
     pub(super) fn picture_size(&self) -> Option<(u32, u32)> {
         match self.display_size {
             (Some(width), Some(height)) if width > 0 && height > 0 => {
@@ -185,8 +213,28 @@ impl Core {
     }
 
     /// Loads the file. Called once a render context exists, so the video output can start.
-    pub(super) fn load(&self, path: &str) {
-        self.command(LOADFILE_REPLY, &["loadfile", path]);
+    /// Without `sound` the soundtrack is never selected, for this file only: nothing decodes it
+    /// and no audio device opens.
+    pub(super) fn load(&self, path: &str, sound: bool) {
+        if sound {
+            self.command(LOADFILE_REPLY, &["loadfile", path]);
+        } else {
+            self.command(
+                LOADFILE_REPLY,
+                &["loadfile", path, "replace", "-1", "aid=no"],
+            );
+        }
+    }
+
+    /// Unloads the file and puts back what a player may have changed, so the core is as a new
+    /// one for the next: paused, unmuted, at full volume and normal speed, not looping.
+    pub(super) fn unload(&self) {
+        self.set_flag(c"pause", true);
+        self.command(0, &["stop"]);
+        self.set_flag(c"mute", false);
+        self.set_double(c"volume", 100.);
+        self.set_double(c"speed", 1.);
+        self.command(0, &["set", "loop-file", "no"]);
     }
 
     pub(super) fn set_flag(&self, name: &CStr, value: bool) {
@@ -339,6 +387,7 @@ impl Core {
             9 => observed.avsync = double,
             10 => observed.hwdec = string,
             11 => observed.speed = double.unwrap_or(1.),
+            12 => observed.idle = flag.unwrap_or(false),
             _ => {}
         }
         drop(observed);

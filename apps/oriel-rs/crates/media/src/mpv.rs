@@ -14,11 +14,13 @@
 //! - `sw`: mpv's software renderer draws into memory, shown as a `RenderImage` per frame
 //!   (`mpv/software.rs`).
 //!
-//! Each player runs three threads of its own beside mpv's: one reads mpv's events, one renders
-//! (mpv wants its render calls on a thread that never waits on the rest of its API), and one
-//! tears the core down when the player is dropped. The UI thread only sends asynchronous
-//! commands and reads the state the event thread keeps, so it never waits on mpv. [`pump_frames`]
-//! takes each finished frame at the window's next refresh, as `video::pump_frames` does.
+//! Each player's engine runs two threads of its own beside mpv's: one reads mpv's events and one
+//! renders (mpv wants its render calls on a thread that never waits on the rest of its API).
+//! The UI thread only sends asynchronous commands and reads the state the event thread keeps,
+//! so it never waits on mpv. [`pump_frames`] takes each finished frame at the window's next
+//! refresh, as `video::pump_frames` does. A player that goes gives its engine back, and the next
+//! player plays its file in it (`mpv/engine.rs`): a new engine's first frame costs its renderer
+//! its shaders, and a kept one has them built.
 //!
 //! libmpv is loaded at run time and never linked (`mpv/ffi.rs` has the order it looks in). It is
 //! Oriel RS's own LGPL build (mpv `-Dgpl=false`, FFmpeg without `--enable-gpl`), made by
@@ -29,6 +31,7 @@
 
 mod any;
 mod client;
+mod engine;
 mod ffi;
 #[cfg(target_os = "macos")]
 mod opengl;
@@ -38,7 +41,6 @@ mod software;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use gpui_kit::{
@@ -47,10 +49,12 @@ use gpui_kit::{
 };
 
 use self::client::Core;
+use self::engine::Engine;
 use self::render::{Picture, Rendered, Shared};
 use crate::video::{SeekMode, VideoError, VideoStatus};
 
 pub use any::{AnyPlayer, VideoEngine};
+pub use engine::prewarm;
 
 /// Whether libmpv can be loaded on this Mac: from the app bundle, `ORIEL_RS_LIBMPV`, the
 /// development build, or IINA's copy outside a bundle. AVPlayer plays when it cannot.
@@ -111,8 +115,11 @@ impl MpvRender {
 pub struct MpvPlayer {
     core: Arc<Core>,
     shared: Arc<Shared>,
-    threads: Option<(JoinHandle<()>, JoinHandle<()>)>,
+    /// What plays the file; given back when the player goes.
+    engine: Option<Engine>,
     render: MpvRender,
+    /// Whether the soundtrack plays (muted or not), rather than not at all.
+    sound: bool,
     status: VideoStatus,
     frame: Option<Rendered>,
     /// The time mpv gave when the picture on screen was taken.
@@ -150,6 +157,19 @@ impl MpvPlayer {
 
     /// Opens `path` on the render path given.
     pub fn open_with(path: &Path, render: MpvRender) -> Result<Self, VideoError> {
+        Self::open_file(path, render, true)
+    }
+
+    /// Opens `path` to play without sound, for good: a preview that is never heard. Its
+    /// soundtrack is neither decoded nor sent to an audio device, so the first picture does not
+    /// wait for the device to start, and playing costs less. [`Self::is_muted`] reads true.
+    pub fn open_silent(path: &Path) -> Result<Self, VideoError> {
+        let mut player = Self::open_file(path, MpvRender::from_env(), false)?;
+        player.set_muted(true);
+        Ok(player)
+    }
+
+    fn open_file(path: &Path, render: MpvRender, sound: bool) -> Result<Self, VideoError> {
         if !path.is_file() {
             return Err(VideoError::Failed {
                 code: 0,
@@ -168,58 +188,14 @@ impl MpvPlayer {
             })?
             .to_owned();
         let opened_at = Instant::now();
-        let mut options = vec![
-            // Frames go to this process's render context, never a window of mpv's.
-            ("vo", "libmpv"),
-            // Not the owner's mpv.conf, scripts or key bindings: this is an embedded player.
-            ("config", "no"),
-            ("load-scripts", "no"),
-            ("ytdl", "no"),
-            ("terminal", "no"),
-            ("input-default-bindings", "no"),
-            ("input-vo-keyboard", "no"),
-            // No on-screen display is drawn into the picture; the capsule is GPUI's.
-            ("osd-level", "0"),
-            ("osd-bar", "no"),
-            // At the end, hold the last frame paused, as AVPlayer does.
-            ("keep-open", "yes"),
-            ("idle", "yes"),
-            ("pause", "yes"),
-            // Cover art is not a picture here.
-            ("audio-display", "no"),
-            ("audio-client-name", "Oriel RS"),
-        ];
-        options.extend(render.options());
-        let extra = std::env::var(OPTIONS_VARIABLE).unwrap_or_default();
-        options.extend(
-            extra
-                .split(',')
-                .filter_map(|option| option.split_once('='))
-                .map(|(name, value)| (name.trim(), value.trim())),
-        );
-        let core = Core::start(&options)?;
-        let lead_override = std::env::var(LEAD_VARIABLE)
-            .ok()
-            .and_then(|ms| ms.parse::<f64>().ok())
-            .map(|ms| Duration::from_secs_f64(ms.max(0.) / 1000.));
-        let shared = Shared::new(DEFAULT_REFRESH, lead_override);
-        let events = core.spawn_events();
-        let thread = match render {
-            #[cfg(target_os = "macos")]
-            MpvRender::OpenGl => {
-                render::spawn(core.clone(), shared.clone(), opengl::OpenGl::new(), file)
-            }
-            #[cfg(not(target_os = "macos"))]
-            MpvRender::OpenGl => unreachable!("refused above"),
-            MpvRender::Software => {
-                render::spawn(core.clone(), shared.clone(), software::Software, file)
-            }
-        };
+        let engine = Engine::take(render)?;
+        engine.load(file, sound);
         Ok(Self {
-            core,
-            shared,
-            threads: Some((thread, events)),
+            core: engine.core.clone(),
+            shared: engine.shared.clone(),
+            engine: Some(engine),
             render,
+            sound,
             status: VideoStatus::Loading,
             frame: None,
             frame_position: None,
@@ -643,9 +619,8 @@ impl MpvPlayer {
 
 impl Drop for MpvPlayer {
     fn drop(&mut self) {
-        // Silent at once; the core may take a moment longer to go.
+        // Silent at once; the file may take a moment longer to stop.
         self.core.set_flag(c"pause", true);
-        self.shared.stop();
         if let Some(Rendered {
             picture: Picture::Image(image),
             ..
@@ -656,8 +631,8 @@ impl Drop for MpvPlayer {
                 .unwrap_or_else(|p| p.into_inner())
                 .push(image);
         }
-        if let Some((render, events)) = self.threads.take() {
-            client::shut_down(self.core.clone(), render, events);
+        if let Some(engine) = self.engine.take() {
+            engine.give_back(self.sound);
         }
     }
 }

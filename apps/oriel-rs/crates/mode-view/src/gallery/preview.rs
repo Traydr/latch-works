@@ -3,7 +3,8 @@
 //! video preview" is on, and looping while "Loop videos" is.
 //!
 //! It is kept cheap. One plays at a time, through the same engine as the capsule player (libmpv
-//! by default), with frames drawn at the tile's size rather than the video's. It starts once the
+//! by default), with frames drawn at the tile's size rather than the video's, and with sound off
+//! no soundtrack is decoded and no audio device opens. It starts once the
 //! pointer has rested on the tile for [`HOVER_DELAY`], so tiles passing under a still pointer as
 //! the grid scrolls open nothing, and it stops when the pointer leaves, the tile scrolls away, or
 //! View stops showing the gallery. The thumbnail shows until its first frame does.
@@ -40,7 +41,12 @@ impl TilePreview {
     /// Starts `path` playing, its frames drawn no larger than `max_side` pixels; `None` when it
     /// cannot be opened, and the tile keeps its thumbnail.
     pub fn start(path: &Path, settings: PreviewSettings, max_side: u32) -> Option<Self> {
-        let mut video = AnyPlayer::open_preview(path, max_side)
+        let opened = if settings.sound {
+            AnyPlayer::open_preview(path, max_side)
+        } else {
+            AnyPlayer::open_silent_preview(path, max_side)
+        };
+        let mut video = opened
             .inspect_err(|error| log::debug!("no hover preview: {error}"))
             .ok()?;
         video.set_muted(!settings.sound);

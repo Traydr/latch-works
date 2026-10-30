@@ -313,6 +313,9 @@ impl Gallery {
             }
             return;
         }
+        // A video under the pointer may play next, in the tile or the viewer: libmpv's engine
+        // starts now, off this thread, rather than when it does.
+        oriel_media::mpv::prewarm();
         if current || !self.preview_settings.autoplay {
             return;
         }

@@ -456,6 +456,35 @@ impl Backend for OpenGl {
         Ok(Picture::Buffer(PixelBuffer(out)))
     }
 
+    /// Draws once with no file, into a small framebuffer: mpv's renderer then takes the
+    /// video's new parameters, none, and frees the textures it kept at the last picture's size,
+    /// keeping its compiled shaders. The framebuffer and the `420f` pool go after it.
+    fn trim(&mut self, core: &Core, context: *mut ffi::RenderContext) {
+        if self.gl.is_none() || self.ensure_target((16, 16)).is_err() {
+            return;
+        }
+        let target = self.target.as_ref().expect("ensure_target made one");
+        let fbo = ffi::OpenGlFbo {
+            fbo: target.framebuffer as c_int,
+            w: 16,
+            h: 16,
+            internal_format: GL_RGBA8,
+        };
+        let no_block: c_int = 0;
+        let mut params = [
+            ffi::RenderParam::new(ffi::RENDER_PARAM_OPENGL_FBO, &raw const fbo),
+            ffi::RenderParam::new(ffi::RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &raw const no_block),
+            ffi::RenderParam::END,
+        ];
+        // SAFETY: a live context on its render thread, with its CGL context current, and a
+        // complete framebuffer of 16 by 16.
+        unsafe {
+            (core.api().render_context_render)(context, params.as_mut_ptr());
+            (self.gl().finish)();
+        }
+        self.drop_target();
+    }
+
     fn destroy(&mut self) {
         if self.gl.is_none() {
             return;

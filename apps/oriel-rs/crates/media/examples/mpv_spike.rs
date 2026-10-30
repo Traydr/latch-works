@@ -26,6 +26,14 @@
 //! picture's mean colour as GPUI draws it; with `ORIEL_SPIKE_HOLD=<seconds>` the window stays
 //! for a screenshot, with the capsule's volume or speed panel open under
 //! `ORIEL_SPIKE_PANEL=volume|speed`.
+//!
+//! Four switches mirror the gallery: `ORIEL_SPIKE_SILENT=1` opens the sweep's tiles without
+//! sound, as a hover preview with sound off plays; `ORIEL_SPIKE_PREWARM=<ms>` starts an engine
+//! that long before the first open, as hovering a video tile does; `ORIEL_SPIKE_WARM=<video>`
+//! plays that video for a second and closes it first, so `verify` and `colour` run on an engine
+//! a player gave back; and `ORIEL_SPIKE_REST=<seconds>` prints the process's footprint and
+//! threads once every player has gone, at once and after that rest, to show what idle engines
+//! hold.
 
 // The capsule player lives in View's crate, which depends on this one, so the spike builds the
 // same file in here rather than depend on View.
@@ -96,6 +104,20 @@ fn main() {
             cx.activate(true);
             cx.spawn(async move |cx| {
                 let mode = cx.update(|cx| root.read(cx).mode.clone());
+                if let Some(lead) = std::env::var("ORIEL_SPIKE_PREWARM")
+                    .ok()
+                    .and_then(|ms| ms.parse().ok())
+                {
+                    oriel_media::mpv::prewarm();
+                    wait(cx, Duration::from_millis(lead)).await;
+                }
+                if let Some(warm) = std::env::var_os("ORIEL_SPIKE_WARM") {
+                    let tile = cx.new(|_| Tile::new(Path::new(&warm), true, true));
+                    wait(cx, Duration::from_secs(1)).await;
+                    drop(tile);
+                    // Past the audio handover and the core coming to rest.
+                    wait(cx, Duration::from_secs(1)).await;
+                }
                 match mode.as_str() {
                     "single" => run_single(cx, window, &root).await,
                     "tiles" => run_tiles(cx, &root).await,
@@ -149,6 +171,16 @@ fn main() {
                     })
                 });
                 wait(cx, Duration::from_millis(300)).await;
+                if let Some(rest) = std::env::var("ORIEL_SPIKE_REST")
+                    .ok()
+                    .and_then(|seconds| seconds.parse().ok())
+                {
+                    // Past the audio handover and the core coming to rest.
+                    wait(cx, Duration::from_secs(1)).await;
+                    println!("every player gone: {}", at_rest());
+                    wait(cx, Duration::from_secs(rest)).await;
+                    println!("{rest} s later: {}", at_rest());
+                }
                 cx.update(|cx| cx.quit());
             })
             .detach();
@@ -263,7 +295,12 @@ struct Tile {
 
 impl Tile {
     fn new(path: &Path, sound: bool, play: bool) -> Self {
-        match MpvPlayer::open_with(path, MpvRender::from_env()) {
+        let opened = if std::env::var_os("ORIEL_SPIKE_SILENT").is_some() {
+            MpvPlayer::open_silent(path)
+        } else {
+            MpvPlayer::open_with(path, MpvRender::from_env())
+        };
+        match opened {
             Ok(mut video) => {
                 video.record_samples();
                 video.set_muted(!sound);
@@ -1144,6 +1181,36 @@ impl Usage {
         }
         usage
     }
+}
+
+/// The process's footprint, as Activity Monitor's Memory column and `footprint` give it, and its
+/// thread count.
+fn at_rest() -> String {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage_info_v4>::zeroed();
+    // SAFETY: `usage` is a `rusage_info_v4`, the flavour asked for.
+    let status = unsafe {
+        libc::proc_pid_rusage(
+            libc::getpid(),
+            libc::RUSAGE_INFO_V4,
+            usage.as_mut_ptr().cast(),
+        )
+    };
+    // SAFETY: zeroed is a valid `rusage_info_v4`, and the call filled it on success.
+    let footprint = (status == 0).then(|| unsafe { usage.assume_init() }.ri_phys_footprint);
+    let threads = Command::new("ps")
+        .args(["-M", "-p", &std::process::id().to_string()])
+        .output()
+        .map(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .count()
+                .saturating_sub(1)
+        })
+        .unwrap_or(0);
+    format!(
+        "footprint {:.1} MB, {threads} threads",
+        footprint.unwrap_or(0) as f64 / 1e6
+    )
 }
 
 /// `ps`'s `[[dd-]hh:]mm:ss.cc`.

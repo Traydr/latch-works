@@ -21,6 +21,12 @@ libwebp-sys = "0.14"
 # libmpv (GPL, or LGPL built with -Dgpl=false) is loaded at run time from a dylib, never linked.
 libloading = "0.8"
 
+[dev-dependencies]
+# The libmpv spike's footprint reading (`proc_pid_rusage`).
+libc = "0.2"
+# The pinned ffmpeg makes the clip the engine tests play.
+oriel-tools.workspace = true
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # still/ adds its macOS dependencies below this line.
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFBase", "CFDictionary", "CFNumber", "CFString", "CFURL"] }

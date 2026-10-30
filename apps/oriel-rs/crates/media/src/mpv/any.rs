@@ -58,6 +58,29 @@ impl AnyPlayer {
         Ok(player)
     }
 
+    /// Opens `path` as a gallery tile's preview that plays without sound, as
+    /// [`Self::open_preview`] does otherwise. libmpv then neither decodes the soundtrack nor
+    /// opens the audio device, so the first picture comes sooner and playing costs less;
+    /// AVPlayer plays it muted.
+    pub fn open_silent_preview(path: &Path, max_side: u32) -> Result<Self, VideoError> {
+        let engine = match VideoEngine::from_env() {
+            VideoEngine::Mpv if super::libmpv_available() => {
+                let mut video = MpvPlayer::open_silent(path)?;
+                video.set_max_picture_side(Some(max_side));
+                Engine::Mpv(video)
+            }
+            _ => {
+                let mut player = Self::open_preview(path, max_side)?;
+                player.set_muted(true);
+                return Ok(player);
+            }
+        };
+        Ok(Self {
+            engine,
+            pump_scheduled: false,
+        })
+    }
+
     pub fn open_with(path: &Path, engine: VideoEngine) -> Result<Self, VideoError> {
         let engine = match engine {
             VideoEngine::Mpv if !super::libmpv_available() => {

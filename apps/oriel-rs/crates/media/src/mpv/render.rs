@@ -1,6 +1,8 @@
 //! The render thread both backends share: it waits for mpv's update callback, asks what the
 //! next frame is and when mpv means it to be seen, waits until just early enough for the window
 //! to show it then, has the backend draw it, and queues the picture for the UI thread to take.
+//! It lives as long as its core, through every file the core plays: each file is a new
+//! generation of [`Shared`], and a frame of an older one never reaches the window.
 //!
 //! mpv's render API wants this on a thread of its own: the thread calls only `mpv_render_*` and
 //! the calls mpv marks safe there, and never waits on a thread that calls the rest. Here it
@@ -129,6 +131,8 @@ pub(super) struct Rendered {
     pub(super) picture: Picture,
     /// When mpv meant it to be seen; `None` for a redraw (paused, say).
     pub(super) due: Option<Instant>,
+    /// The file it is of, as [`Shared::begin_file`] counts them.
+    generation: u64,
     pub(super) rendered_at: Instant,
     /// Its place among the frames drawn, from 1.
     pub(super) number: u64,
@@ -149,6 +153,9 @@ pub(super) trait Backend: Send + 'static {
         size: (u32, u32),
         timing: &[ffi::RenderParam],
     ) -> Result<Picture, String>;
+    /// Lets go of what the last file's frames needed, once the core has no file: an idle
+    /// engine then holds little more than its shaders.
+    fn trim(&mut self, _core: &Core, _context: *mut ffi::RenderContext) {}
     /// Releases what `create` made, after the render context is freed.
     fn destroy(&mut self) {}
 }
@@ -172,6 +179,17 @@ pub(super) struct Shared {
     /// The longest side frames are drawn at, in pixels, or 0 for the picture's own size: a
     /// gallery tile's preview needs no more than the tile shows.
     max_side: AtomicU32,
+    /// Counts the files the core has been given, so frames of the last one are told apart.
+    generation: AtomicU64,
+    /// [`Self::drawn`] when the current file began.
+    drawn_before: AtomicU64,
+    /// A file to load and whether with its sound, for the render thread to hand mpv once its
+    /// render context exists (mpv's video output starts only with one), with the generation it
+    /// is for: a player gone before its file loaded leaves nothing to load.
+    load: Mutex<Option<(u64, String, bool)>>,
+    /// Whether the render thread is to trim its backend ([`Backend::trim`]), and whether it
+    /// has since the last request.
+    trim: (AtomicBool, AtomicBool),
 }
 
 impl Shared {
@@ -187,7 +205,56 @@ impl Shared {
             drawn: AtomicU64::new(0),
             begun: Mutex::new(VecDeque::with_capacity(BEGUN_KEPT)),
             max_side: AtomicU32::new(0),
+            generation: AtomicU64::new(0),
+            drawn_before: AtomicU64::new(0),
+            load: Mutex::new(None),
+            trim: (AtomicBool::new(false), AtomicBool::new(false)),
         })
+    }
+
+    /// Has the render thread trim its backend, and waits up to `timeout` for it to have. Only
+    /// while the core has no file, as the trim draws (no picture) to have mpv let go.
+    pub(super) fn trim(&self, timeout: Duration) -> bool {
+        self.trim.1.store(false, Ordering::Release);
+        self.trim.0.store(true, Ordering::Release);
+        self.notify();
+        let asked = Instant::now();
+        while !self.trim.1.load(Ordering::Acquire) {
+            if asked.elapsed() > timeout {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        true
+    }
+
+    /// Starts a new file: frames drawn for the last one are dropped, and so are its size limit
+    /// and any failure to draw.
+    pub(super) fn begin_file(&self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        self.drawn_before
+            .store(self.drawn.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.queue.lock().unwrap_or_else(|p| p.into_inner()).clear();
+        *self.failed.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        self.max_side.store(0, Ordering::Relaxed);
+    }
+
+    fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
+    /// Has the render thread load `path`, with its sound or without, once its render context
+    /// exists.
+    pub(super) fn request_load(&self, path: String, sound: bool) {
+        *self.load.lock().unwrap_or_else(|p| p.into_inner()) =
+            Some((self.generation(), path, sound));
+        self.notify();
+    }
+
+    /// The file to load, if one waits for the current generation.
+    fn take_load(&self) -> Option<(String, bool)> {
+        let load = self.load.lock().unwrap_or_else(|p| p.into_inner()).take()?;
+        (load.0 == self.generation()).then_some((load.1, load.2))
     }
 
     /// Draws frames no larger than `max_side` on their longer side, or at the picture's own size
@@ -216,6 +283,8 @@ impl Shared {
     /// within one refresh of each other so reach the screen a refresh apart, not one of them.
     pub(super) fn take(&self, shown: Instant) -> Option<Rendered> {
         let mut queue = self.queue.lock().unwrap_or_else(|p| p.into_inner());
+        let generation = self.generation();
+        queue.retain(|frame| frame.generation == generation);
         let mut taken = queue.pop_front()?;
         while queue
             .front()
@@ -226,8 +295,9 @@ impl Shared {
         Some(taken)
     }
 
+    /// Frames drawn for the current file.
     pub(super) fn drawn(&self) -> u64 {
-        self.drawn.load(Ordering::Relaxed)
+        self.drawn.load(Ordering::Relaxed) - self.drawn_before.load(Ordering::Relaxed)
     }
 
     /// The newest frame whose draw began at or before `at`, and after `since`: when mpv sends a
@@ -296,12 +366,12 @@ unsafe extern "C" fn on_update(context: *mut c_void) {
     shared.notify();
 }
 
-/// Starts the render thread for `core`; it loads `path` once its context exists.
+/// Starts the render thread for `core`. It loads each file [`Shared::request_load`] names, the
+/// first once its context exists.
 pub(super) fn spawn(
     core: Arc<Core>,
     shared: Arc<Shared>,
     mut backend: impl Backend,
-    path: String,
 ) -> JoinHandle<()> {
     std::thread::Builder::new()
         .name("mpv-render".into())
@@ -328,7 +398,6 @@ pub(super) fn spawn(
             // The event thread hears the picture's size after mpv's first frame may have come.
             let listener = shared.clone();
             core.on_size_change(Box::new(move || listener.notify()));
-            core.load(&path);
             run(&core, &shared, &mut backend, context);
             // SAFETY: freed on the thread that made it, with its API state current, before the
             // core is destroyed (the teardown joins this thread first).
@@ -346,11 +415,24 @@ fn run(core: &Core, shared: &Shared, backend: &mut impl Backend, context: *mut f
         ffi::RENDER_PARAM_BLOCK_FOR_TARGET_TIME,
         &raw const no_block,
     )];
-    // Whether mpv has a current frame, and the size it was last drawn at.
+    // Whether mpv has a current frame of this file, and the size it was last drawn at.
     let (mut current, mut drawn_size) = (false, None);
+    let mut generation = shared.generation();
     // A running average of the draw time, in nanoseconds.
     let mut draw_ns = 4_000_000f64;
     while shared.wait() {
+        if generation != shared.generation() {
+            generation = shared.generation();
+            (current, drawn_size) = (false, None);
+        }
+        if shared.trim.0.swap(false, Ordering::AcqRel) {
+            backend.trim(core, context);
+            shared.trim.1.store(true, Ordering::Release);
+            continue;
+        }
+        if let Some((path, sound)) = shared.take_load() {
+            core.load(&path, sound);
+        }
         // SAFETY: a live context, on its render thread.
         let flags = unsafe { (api.render_context_update)(context) };
         let size = core
@@ -436,7 +518,7 @@ fn frame_pending(core: &Core, context: *mut ffi::RenderContext) -> bool {
 }
 
 /// Draws mpv's frame (the next one, or the current one again when none is pending) and leaves
-/// it for the UI. Returns how long the draw took, if it drew.
+/// it for the UI, as a frame of the file begun last. Returns how long the draw took, if it drew.
 fn draw(
     core: &Core,
     shared: &Shared,
@@ -446,6 +528,7 @@ fn draw(
     timing: &[ffi::RenderParam],
     due: Option<Instant>,
 ) -> Option<Duration> {
+    let generation = shared.generation();
     let started = Instant::now();
     let number = shared.drawn.load(Ordering::Relaxed) + 1;
     {
@@ -461,6 +544,7 @@ fn draw(
             let rendered = Rendered {
                 picture,
                 due,
+                generation,
                 rendered_at: Instant::now(),
                 number,
                 draw_time,
