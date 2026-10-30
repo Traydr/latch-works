@@ -21,11 +21,12 @@
 
 ## Status
 
-- **Status**: IN PROGRESS. Phases 0 and 1 are done (2026-10-28, branch `agent/063-0-spike`).
-  The reports start at [docs/research/oriel-rs/README.md](../research/oriel-rs/README.md). Every
-  STOP condition passed, and the owner accepted the two differences and chose go (decisions 3 to
-  6 below), then settled what Phase 1 raised (decisions 7 to 10). Next: the LGPL libmpv build and
-  an app bundle, then Phase 2.
+- **Status**: IN PROGRESS. Phases 0 to 7 and the scorecard (Phase 9) are done on macOS
+  (2026-10-30, branch `agent/063-0-spike`); Phase 8, Windows, is not started. The reports start
+  at [docs/research/oriel-rs/README.md](../research/oriel-rs/README.md). 92 of Electron Oriel's
+  104 features are done and 32 of its 33 e2e cases pass as GPUI tests
+  ([parity](../research/oriel-rs/parity.md)). Tidy changes files only in the sandbox. Next: the
+  owner's Phase 9 decision, and whether to show the sandbox setting (Phase 6).
 - **Priority**: P3 (an experiment the owner asked for)
 - **Effort**: XL several times over. About 24.8k lines of UI, 15k lines of core packages and the
   main-side services are rewritten in Rust. Phase 0, the gate, is L.
@@ -493,6 +494,10 @@ against AVPlayer among them. The owner answered Phase 1's two questions with dec
 switcher and the menu, reopens on the last mode and page, keeps View's folder while another mode
 shows, and has one Settings page at the mode's section.
 
+**Phase 2 results (2026-10-30).** 13 of the shell's 14 features are done and `shell.spec.ts`'s
+five cases pass as GPUI tests. VoiceOver names and roles are set and tested, but no person has
+listened to them yet.
+
 ### Phase 3: View (L)
 
 1. **`core-index`**, with View's media index in the same schema as Electron Oriel's. The scan
@@ -516,6 +521,9 @@ shows, and has one Settings page at the mode's section.
    Then View's settings groups and Diagnostics. 057's toolbar decisions stand: order, visible
    labels and button names.
 
+**Phase 3 results (2026-10-30).** All 23 of View's features are done, and every
+`gallery.spec.ts` case passes as a GPUI test.
+
 ### Phase 4: Sync (L)
 
 1. **`core-sync`.**
@@ -532,6 +540,10 @@ shows, and has one Settings page at the mode's section.
 
 **Done when** `e2e/tests/lockstep/sync.spec.ts`'s five cases pass against the local stack, and a
 Rust plan equals the Lockstep CLI's for the same source.
+
+**Phase 4 results (2026-10-29).** All seven of Sync's features are done. `sync.spec.ts`'s five
+cases pass against the local stack, and a Rust plan equals the Lockstep CLI's for four sources;
+both tests are `#[ignore]`d by default, since they need the stack.
 
 ### Phase 5: Tidy's engine, part one: knowing the archive (L)
 
@@ -558,6 +570,11 @@ Each of these steps passes its differential runs before the next one starts:
 **Done when** the differential runs pass for every e2e Tidy case. The owner then reads the report,
 and decides whether to show the sandbox setting.
 
+**Phases 5 and 6 results (2026-10-29).** All 16 of the engine's features are done. On the 21k
+fixture, Rust and glazier-core find the same 40 identical and 83 similar sets, with 0
+differences. The differential runs pass for every e2e Tidy case. The executor changes files only
+in roots under the sandbox. The sandbox setting stays hidden until the owner decides.
+
 ### Phase 7: Tidy's UI, and the links (XL; a PR per page)
 
 1. **The pages.**
@@ -581,6 +598,10 @@ and decides whether to show the sandbox setting.
 
 Port `links.spec.ts` and `welcome.spec.ts`; `migration.spec.ts` does not apply.
 
+**Phase 7 results (2026-10-30).** All 15 features of Tidy's pages and all 7 links between the
+modes are done. The nine glazier cases, `links.spec.ts` and `welcome.spec.ts` pass as GPUI
+tests.
+
 ### Phase 8: Windows x64 (L, a gate of its own)
 
 GPUI renders with DirectX 11 on Windows. Five things need building or choosing:
@@ -595,15 +616,22 @@ Re-run plan 062's Windows checks on a throwaway archive: files held open, drives
 names, Explorer's files and hard links. Those were fixes in TypeScript, so each must be redone in
 Rust. **STOP** and report if video cannot reach 60 fps at 1080p on the owner's Windows machine.
 
+**Not started.** The overnight run of 2026-10-29 covered macOS only.
+
 ### Phase 9: the scorecard and the decision (S)
 
 Run the scorecard on release builds of both apps. Then write
-`docs/research/oriel-rs-scorecard.md` with the numbers, the catch-up list of Electron features
+`docs/research/oriel-rs/scorecard.md` with the numbers, the catch-up list of Electron features
 that landed meanwhile, and what is still missing. The owner decides:
 - go on toward replacing Electron Oriel, which needs a new plan for using Oriel's data and
   retiring the Electron app;
 - keep it as an experiment;
 - or stop and delete the workspace.
+
+**Scorecard done (2026-10-30)**: [scorecard.md](../research/oriel-rs/scorecard.md). Oriel RS
+kept Phase 0's lead on everything but video. It is 2.3 times smaller, starts 2.7 times faster,
+and uses 2.1 times less memory at rest. It analyses the 21k fixture in glazier-core's time.
+Electron Oriel still opens video 2.6 to 3.8 times faster. The decision is the owner's.
 
 ## Scorecard
 
