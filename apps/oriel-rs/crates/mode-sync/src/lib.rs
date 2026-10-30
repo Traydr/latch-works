@@ -79,13 +79,22 @@ pub fn init(cx: &mut App) {
     cx.bind_keys([KeyBinding::new("cmd-l", ToggleRunLog, Some(KEY_CONTEXT))]);
 }
 
-/// The app's tokio thread, started by the first mode that needs it.
-fn http(cx: &mut App) -> TokioHandle {
+/// The name of the app's tokio thread, where Sync's HTTP runs.
+pub const HTTP_THREAD: &str = "oriel-http";
+
+/// Starts the app's tokio thread, once: `oriel_rs::run` calls it at launch, so a failure to start
+/// it shows then, not at the first push. Later calls do nothing.
+pub fn start_http(cx: &mut App) -> std::io::Result<()> {
     if !cx.has_global::<TokioRuntime>() {
-        let runtime =
-            TokioRuntime::start("oriel-http").expect("Oriel RS could not start its HTTP thread");
-        cx.set_global(runtime);
+        cx.set_global(TokioRuntime::start(HTTP_THREAD)?);
     }
+    Ok(())
+}
+
+/// The app's tokio thread. The app starts it at launch; a window opened without the app's
+/// start (the GPUI tests) gets it here on its first run.
+fn http(cx: &mut App) -> TokioHandle {
+    start_http(cx).expect("Oriel RS could not start its HTTP thread");
     cx.global::<TokioRuntime>().handle()
 }
 

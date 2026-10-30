@@ -425,6 +425,17 @@ pub fn throughput_series(
     rates
 }
 
+/// Where the throughput chart marks each failure, as a fraction of its width from the left: the
+/// failure's time over the chart's span, which is at least a second (`ThroughputChart`'s red
+/// dashed lines). A failure before the queue was known sits at the left edge.
+pub fn failure_marks(started_at: f64, ended_at: f64, failure_times: &[f64]) -> Vec<f32> {
+    let span = (ended_at - started_at).max(1000.0);
+    failure_times
+        .iter()
+        .map(|at| ((at - started_at) / span).clamp(0.0, 1.0) as f32)
+        .collect()
+}
+
 /// `appendSpan`: keeps at most `MAX_SPANS`, merging neighbours pairwise when full.
 fn append_span(spans: &mut Vec<TransferSpan>, span: TransferSpan) {
     if spans.len() >= MAX_SPANS {
@@ -560,6 +571,18 @@ mod tests {
         assert_eq!(estimate_remaining_ms(10.0, 0.0), None);
         let series = throughput_series(4, 0.0, 2000.0, &spans);
         assert_eq!(series, vec![1000.0; 4]);
+    }
+
+    #[test]
+    fn failures_mark_the_chart_where_they_happened() {
+        // A run queued at 1 s and ended at 5 s: failures at 2 s and 5 s sit a quarter of the
+        // way along and at the right edge; one logged before the queue at the left edge.
+        assert_eq!(
+            failure_marks(1000.0, 5000.0, &[2000.0, 5000.0, 500.0]),
+            [0.25, 1.0, 0.0]
+        );
+        // The span is at least a second, as the series' is.
+        assert_eq!(failure_marks(0.0, 100.0, &[250.0]), [0.25]);
     }
 
     #[test]

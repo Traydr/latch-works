@@ -19,7 +19,7 @@ use gpui_kit::component::{
 use gpui_kit::{
     AnyElement, App, Context, FontWeight, Hsla, InteractiveElement as _, IntoElement,
     ParentElement as _, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
-    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px, uniform_list,
+    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px, relative, uniform_list,
 };
 use oriel_core_domain::format_bytes;
 use oriel_core_index::SyncPlanAction;
@@ -1033,6 +1033,8 @@ impl SyncMode {
                 };
                 this.child(
                     Button::new("sync-prune")
+                        // Locked until the plan's push has run, as Electron Oriel draws it.
+                        .when(!enabled, |this| this.icon(Icon::new(IconName::Lock)))
                         .label(format!(
                             "Prune {}{}",
                             format_count(counts.delete),
@@ -1814,14 +1816,10 @@ impl SyncMode {
         } else {
             "pushed"
         };
-        let series = by_bytes.then(|| {
-            run::throughput_series(
-                CHART_BUCKETS,
-                progress.queued_at.unwrap_or(0.0),
-                elapsed,
-                &progress.spans,
-            )
-        });
+        let chart_start = progress.queued_at.unwrap_or(0.0);
+        let series = by_bytes
+            .then(|| run::throughput_series(CHART_BUCKETS, chart_start, elapsed, &progress.spans));
+        let failure_marks = run::failure_marks(chart_start, elapsed, &progress.failure_times);
         div()
             .flex()
             .flex_col()
@@ -1947,6 +1945,7 @@ impl SyncMode {
                             .role(Role::Image)
                             .test_support()
                             .aria_label("Upload throughput over the run")
+                            .relative()
                             .flex()
                             .flex_row()
                             .items_end()
@@ -1958,6 +1957,19 @@ impl SyncMode {
                                     .h(px(((rate / peak) * 42.0) as f32 + 2.))
                                     .rounded_t(px(1.))
                                     .bg(theme.primary.opacity(0.55))
+                            }))
+                            // Each failure as a red dashed line where it happened.
+                            .children(failure_marks.iter().enumerate().map(|(ix, at)| {
+                                div()
+                                    .id(("run-failure-mark", ix))
+                                    .absolute()
+                                    .top_0()
+                                    .bottom_0()
+                                    .left(relative(*at))
+                                    .w(px(1.))
+                                    .border_l_1()
+                                    .border_dashed()
+                                    .border_color(theme.danger)
                             })),
                     )
             }))
