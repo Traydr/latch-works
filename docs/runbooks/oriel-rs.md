@@ -212,14 +212,15 @@ checks the hashes and does nothing. The pins are in `crates/xtask/src/vendor/pin
 ## Making the app
 
 `pnpm --filter @latch-works/oriel-rs bundle` (`cargo run -p xtask -- bundle`) makes
-`apps/oriel-rs/target/release/bundle/Oriel RS.app` with:
+`apps/oriel-rs/target/release/bundle/Oriel RS.app` (under `$CARGO_TARGET_DIR/release/bundle/`
+when that is set) with:
 
 | Part | Where | Size |
 | --- | --- | --- |
-| The release binary (`cargo build --release -p oriel-rs`, in `CARGO_TARGET_DIR` if set) | `Contents/MacOS/oriel-rs` | 43 MB |
+| The app's binary, `cargo build --profile dist -p oriel-rs` (`[profile.dist]`: the release build with fat LTO over one codegen unit), stripped of its symbol table with `strip -x` | `Contents/MacOS/oriel-rs` | 25 MB |
 | The LGPL libmpv set, built first if it is not | `Contents/Frameworks/` | 26.1 MB, 13 dylibs |
 | The vendored libvips, fetched first if it is not | `Contents/Frameworks/` | 18.1 MB |
-| The vendored libavif, fetched first if it is not; libmpv's dav1d 1.5.4 serves it, under the same install name | `Contents/Frameworks/` | 5.5 MB, 3 dylibs |
+| The vendored libavif, fetched first if it is not, its local symbols stripped; libmpv's dav1d 1.5.4 serves it, under the same install name | `Contents/Frameworks/` | 5.1 MB, 3 dylibs |
 | The pinned ffmpeg and ffprobe, fetched first if they are not (`oriel-tools`' own code) | `Contents/Resources/media-tools/` | 126 MB |
 | Each set's licences and manifest | `Contents/Resources/licenses/<set>/` | |
 | The repository's licence | `Contents/Resources/licenses/oriel-rs/` | |
@@ -228,33 +229,118 @@ checks the hashes and does nothing. The pins are in `crates/xtask/src/vendor/pin
 | `index.json`, one entry per folder, which the About dialog lists | `Contents/Resources/licenses/` | |
 | Electron Oriel's icon, `Info.plist` (`dev.traydr.latchworks.oriel-rs`) | `Contents/` | |
 
-223 MB in all, against Electron Oriel's 503 MB. `LSMinimumSystemVersion` is the newest macOS any
+205 MB in all, against Electron Oriel's 503 MB. `LSMinimumSystemVersion` is the newest macOS any
 part needs, so the libavif set makes the app's macOS 15 and later (Oriel RS's own floor is 13).
 The command checks that every library in `Contents/Frameworks` links only the system and the
 others there, signs the whole ad hoc (`codesign --force --deep -s -`), checks it with
 `codesign --verify --deep --strict`, and loads libmpv, libvips and libavif from the finished
 bundle. Ad hoc signing runs on the Mac that built it. `ORIEL_MACOS_SIGN_IDENTITY` names a
 Developer ID identity instead, signed with the hardened runtime and a timestamp as for Electron
-Oriel (not yet tried with a real identity); notarizing is a follow-up. 43 s with the libraries in
-place and a clean release build on an M5 Pro. The app carries no data: it uses
+Oriel (not yet tried with a real identity); notarizing is a follow-up (decision 15). The dist
+build takes about 4.5 minutes from clean on an M5 Pro, and about 3 minutes after any change,
+since fat LTO relinks the whole program; `cargo build --release`, which the spikes, examples and
+benches use, keeps Cargo's defaults and its seconds-long rebuilds. The bundled binary has no
+symbol table, so read a crash report against the unstripped build of the same UUID: `atos -o
+<target>/dist/oriel-rs`. The app carries no data: it uses
 `~/.latch-works/oriel-rs/` as a development build does.
 
 ## Measuring
 
-Phase 0's measurements are scripted, so a run repeats exactly; this Mac allows no scripted input.
-The environment variables are documented at the top of each spike:
+`cargo run -p xtask -- measure` takes Phase 9's scorecard rows for Oriel RS the way the
+scorecard took them, so a change can be measured again in the same units. It replaced the
+scratch drivers Phase 9 used. From `apps/oriel-rs`:
 
-- View (gallery, thumbnails, viewer): `crates/mode-view/src/spike.rs`.
-- The Library table: `crates/mode-tidy/src/spike.rs`. In the whole app it starts only once Tidy
-  has a root, so add `ORIEL_RS_TIDY_ROOT=<a sandbox folder>` and `ORIEL_RS_TIDY_PAGE=library`,
-  and bring the window to the front.
-- Video through AVPlayer, which `video_spike` forces: `cargo run --release -p oriel-media --example
-  video_spike -- <single|tiles|sweep|errors>`,
-  and the same through libmpv with `--example mpv_spike` (also `verify` and `colour`).
-- Electron Oriel on the same fixture: `FRAME_PERF_FIXTURE_ROOT=<fixture> pnpm --filter
-  @latch-works/e2e exec tsx scripts/frame-performance.ts <label>`.
+```sh
+cargo run -p xtask -- bundle
+cargo run -p xtask -- measure view --rounds 3          # the bundle in target/release/bundle
+cargo run -p xtask -- measure scroll idle \
+  --app base=/tmp/base/oriel-rs --app mine=/tmp/mine/oriel-rs   # an A/B, interleaved
+```
 
-Phase 9's scorecard, with every row's command, is in
+| Row | What runs | What it reports | About |
+| --- | --- | --- | --- |
+| `cold-start` | View on the fixture's `stills/`, a fresh data folder | Launch to the first thumbnails; the stills listed; the app's CPU time to then | 3 s |
+| `fill` | The same, `ORIEL_RS_SPIKE_FILL=1` | Thumbnails made per second; stills without one; CPU time | 90 s |
+| `scroll` | The fill's folder (its first screen evicted): 60 s at rest, the scroll at 5,000 px/s, 60 s at rest, 20 viewer steps | The warm start; memory and CPU 60 s after opening and after the scroll; frame times, long frames and CPU time in the scroll; the steps | 5 min |
+| `warm-start` | The cold start's folder (its first screen on disk), 100 s at rest | The warm start; CPU from 30 to 90 s after the first thumbnails | 2 min |
+| `video` | `mpv_spike sweep` on the first 10 videos of each codec, with a bundle's own libmpv | Open, exact and fast seek, medians per codec | 1 min |
+| `library` | The Library spike, 100,000 rows, the scroll at 30,000 px/s | Sorts, scroll, selection, memory | 2 min |
+| `idle-view`, `idle-tidy`, `idle-sync` | Each mode with nothing open | CPU from 30 to 90 s after launch; memory | 90 s each |
+| `sync` | `oriel-core-sync`'s `sync_bench` example: plan, then push, of `--sync-source` (the smoke fixture) with a fresh hash cache | Plan and push times; the plan's counts | seconds |
+| `tidy` | The fixture added as a root, on Overview | Launch to a finished Overview (the app and its ffmpeg and ffprobe quiet for 5 s); CPU time; memory; CPU at rest after; the catalog's counts | 6 min on the 21k fixture |
+
+`view` runs the four View rows, `idle` the three modes, and `all` every row (Sync only with
+`--sync-url`). A row that reuses another's data folder brings it along: `scroll` runs `fill`, and
+`warm-start` runs `cold-start`.
+
+- **Apps.** `--app [<label>=]<path>` takes an `Oriel RS.app` or a binary, A, B… unless labelled.
+  With several, each round interleaves them, A, B then B, A, for every row. `video` and `sync`
+  run a tool built from source: for a binary, the `examples/mpv_spike` and `examples/sync_bench` beside it
+  (a cargo target's `release/` folder has both once built), so an A/B measures each side's own
+  code; otherwise the workspace's, built in release before the first round. The Library and Tidy
+  rows bring the window to the front, where GPUI draws it: `open -a` for a bundle, System Events
+  by process id for a binary.
+- **Output.** `--out <folder>` (default `/tmp/oriel-rs-measure/run-<seconds>`). `<app>/r<round>/`
+  holds each run's data folder, the spike's log, the app's stderr and `<row>.json`: every event,
+  the readings from outside at each, the exit code and the load average before. `summary.md` is
+  the table printed at the end, each measure's median with its spread (min–max) per app and each
+  app against the first; `summary.json` has the same numbers round by round. Both are rewritten
+  after each round, so a series cut short still has a table.
+- **What it reads.** The spikes' own events and memory, as the scorecard did (a spike moves on
+  the moment it writes a reading, so its own is the one at rest); CPU time, resident memory and
+  footprint from outside through `proc_pid_rusage`, at each event and for the modes at rest; the
+  `footprint` tool only at rest, never while something is timed; the Tidy catalog's counts through `/usr/bin/sqlite3`, once the
+  app has quit. Each launch drops the shell's `ORIEL_RS_*` variables; `--env K=V` adds one to
+  every launch. `--fixture` moves View's, video's and Tidy's fixture (the 21k fixture by default);
+  Tidy's must be in the sandbox.
+- **Sync** needs `--sync-url`, and refuses any URL but `http://127.0.0.1` or
+  `http://localhost` (or `https://`), with no credentials; `--sync-token` defaults to the e2e
+  stack's. It pushes into the target as it finds it, so only the first push into a fresh target
+  uploads; the plan's counts show which it was. For the scorecard's push into an empty target,
+  start `e2e/scripts/start-pane-view.ts` before each run (`--rounds 1`): it drops and recreates
+  the `latch_works_e2e` database, and each push writes the smoke fixture's 247 files to the
+  `latch-works-e2e` bucket on the local RustFS. Nothing goes to a remote URL.
+- **Electron Oriel.** `--electron` runs `e2e/scripts/frame-performance.ts` once a round, after
+  Oriel RS in odd rounds and before it in even ones, and folds its numbers into the same lines
+  (`FRAME_PERF_FIXTURE_ROOT`, a fresh `FRAME_PERF_WORK_DIR` under the out folder). It needs the
+  e2e package's prerequisites (`docs/runbooks/e2e.md`) and takes about 12 minutes a round.
+
+The spikes' variables, for a run by hand, are documented at the top of each spike:
+- View's in `crates/mode-view/src/spike.rs`; `ORIEL_RS_SPIKE_WORKFLOWS=1` times each sort order,
+  Shuffle, Refresh and comic mode in place of the scroll and the steps;
+- the Library's in `crates/mode-tidy/src/spike.rs`;
+- Tidy's pages in `crates/mode-tidy/src/page_spike.rs`: `ORIEL_RS_SPIKE_TIDY=<log>` runs page
+  switches, sorts, typing, filters, the Inspector, list and grid scrolls, Duplicates' sets, the
+  loupe and a rescan on the root Tidy shows; `ORIEL_RS_SPIKE_TIDY_ONLY=pages,rescan,redraw,
+  library,grid,duplicates` picks groups and `ORIEL_RS_SPIKE_TIDY_HOLD=1` keeps the app open;
+- the shell's in `crates/app/src/spike.rs`: `ORIEL_RS_SPIKE_SHELL=<log>` times the launch, each
+  mode switch and Settings at each section.
+
+`mpv_spike`'s own switches mirror the gallery: `ORIEL_SPIKE_SILENT=1` (a preview with sound off),
+`ORIEL_SPIKE_PREWARM=<ms>` (an engine started that long before the first open, as hovering a video
+tile does), `ORIEL_SPIKE_WARM=<video>` (the first open on an engine a player gave back) and
+`ORIEL_SPIKE_REST=<seconds>` (the footprint after that rest). Video through
+AVPlayer, which `video_spike` forces: `cargo run --release -p oriel-media --example video_spike --
+<single|tiles|sweep|errors>`, and the same through libmpv with `--example mpv_spike` (also
+`verify` and `colour`).
+
+Phase 9's scorecard, and how its rows map to these, is in
 [docs/research/oriel-rs/scorecard.md](../research/oriel-rs/scorecard.md) under "Run it again".
+
+Tidy's engine has two timers of its own, headless, in `oriel-core-tidy`'s examples:
+
+```sh
+# The scan and analysis pass by pass (wall, CPU in the app and in ffmpeg, cores busy), Overview's
+# and Duplicates' queries, memory after; --rescans n, --probe (a UI-priority thread's lateness),
+# --changes (Convert, Shrink, Clean up, Tidy up and their undos, on a copy), --hold <s>.
+cargo run --release -p oriel-core-tidy --example tidy_timing -- <root> <data-folder> [flags]
+# Per still, at several counts at once, checking every round makes the same results:
+# fingerprint (decode and pHash), probe (header) or convert (decode and AVIF encode).
+cargo run --release -p oriel-core-tidy --example stills_timing -- \
+  fingerprint|probe|convert <folder> <scratch> 4,8,18
+```
+
+The root must be one Tidy admits: a data folder whose `sandbox` links to the real one, as the
+`tidy` row does, or a copy under that `sandbox` for `--changes`.
 
 Reports carry numbers only: the owner's library is never screenshotted or uploaded.

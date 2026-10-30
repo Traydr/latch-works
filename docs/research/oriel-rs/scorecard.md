@@ -214,26 +214,50 @@ These are left for the owner, since no script measures them:
 
 ## Run it again
 
-From `apps/oriel-rs`, with the bundle made and copied to `/tmp/oriel-rs-scorecard/`:
+Oriel RS's rows are one command, `cargo run -p xtask -- measure` (`crates/xtask/src/measure/`),
+which drives the spikes and reads the app as this page's drivers did. From `apps/oriel-rs`, with
+the bundle made (`cargo run -p xtask -- bundle`), on a quiet Mac:
 
-- View: the variables at the top of `crates/mode-view/src/spike.rs`, with `ORIEL_RS_DATA_DIR`
-  set, `ORIEL_RS_OPEN=<fixture>/stills`, `ORIEL_RS_SPIKE_WINDOW=1280x900` and
-  `ORIEL_RS_SPIKE_QUIT=1`: cold start with a fresh folder and a 1 s rest; the fill with
-  `ORIEL_RS_SPIKE_FILL=1`; warm with a 60 s rest, `ORIEL_RS_SPIKE_SCROLL=5000` and
-  `ORIEL_RS_SPIKE_STEPS=20`; at rest with a 100 s rest on the cold start's folder.
-- Electron Oriel, from the repository root: `FRAME_PERF_FIXTURE_ROOT=<fixture>
-  FRAME_PERF_WORK_DIR=<folder> pnpm --filter @latch-works/e2e exec tsx
-  scripts/frame-performance.ts <label>`, then `FRAME_PERF_PHASES=warmstart` on the same folder.
-- Video: `cargo run --release -p oriel-media --example mpv_spike -- sweep <videos>`.
-- The Library: `ORIEL_RS_SPIKE_LIBRARY=100000 ORIEL_RS_SPIKE_SCROLL=30000
-  ORIEL_RS_SPIKE_LOG=<file>`, plus `ORIEL_RS_TIDY_ROOT=<an empty folder in the data folder's
-  sandbox>` and `ORIEL_RS_TIDY_PAGE=library`. The synthetic rows show only once Tidy has a root,
-  so a first short launch with `ORIEL_RS_TIDY_ROOT` alone adds it (on a fresh root Tidy goes to
-  Overview after the scan); and the table draws only in front, so the window is brought forward
-  (`open -a "Oriel RS.app"`) once it opens.
-- Tidy: `ORIEL_RS_TIDY_ROOT=<data folder>/sandbox/spike-fixture ORIEL_RS_TIDY_PAGE=overview`,
-  where the scratch data folder's `sandbox` links to `~/.latch-works/oriel-rs/sandbox`.
-- Sync and glazier-core: the scratch timers this page names, kept out of the repository.
+```sh
+cargo run -p xtask -- measure view video library idle-sync --rounds 3 --electron
+cargo run -p xtask -- measure tidy --rounds 1
+cargo run -p xtask -- measure sync --rounds 1 --sync-url http://127.0.0.1:3100
+```
 
-The drivers and raw logs were under `/tmp/oriel-rs-scorecard/` on the machine that ran them, and
-they are not kept.
+The Sync line runs three times, each after `e2e/scripts/start-pane-view.ts` has started afresh,
+since `measure` pushes into the target as it finds it and only a fresh one is empty.
+
+It prints the median and spread of every measure, and writes each run's raw JSON
+([the runbook](../../runbooks/oriel-rs.md#measuring) says where). Each row of the table above
+comes from one of its rows:
+
+| Scorecard row | `measure` row |
+| --- | --- |
+| Cold start; all 20,000 stills listed | `cold-start` |
+| Warm start, first screen's thumbnails on disk; CPU at rest in View, settled | `warm-start` (the cold start's folder, 100 s at rest) |
+| Warm start after a full scroll; memory 60 s after opening and after scrolling; the gallery scroll and its long frames; the viewer steps; CPU in View in the first 60 s and after the scroll | `scroll` (the fill's folder; it runs `fill` first) |
+| Making all 20,000 thumbnails; stills without a thumbnail | `fill` |
+| Video open, exact and fast seek | `video` (`mpv_spike sweep` on the bundle's libmpv) |
+| Library | `library` |
+| Tidy: scan to a finished Overview, its memory, CPU at rest in Tidy, unreadable files | `tidy` (one run is about six minutes) |
+| Sync: plan and push | `sync` against the local e2e Pane View, each run into a recreated `latch_works_e2e` database as here |
+| CPU at rest in Sync, with no profile | `idle-sync` |
+| Electron Oriel's View, memory, CPU and video | `--electron`: `e2e/scripts/frame-performance.ts` once a round, interleaved as here (the first relaunch inside each round is its warm start) |
+
+What `measure` does differently from this page's drivers, on purpose:
+
+- The `footprint` tool no longer runs inside the View runs. It ran as the scroll started and as
+  the viewer steps began; the memory rows were and are the spike's own readings.
+- The warm start's footprint is read after its CPU window closes, at 90 s, rather than at 60 s
+  inside it.
+- `oriel-core-sync`'s `sync_bench` example times the plan and push on the tokio runtime the app
+  runs Sync on (`oriel_runtime::TokioRuntime`); this page's timer ran tokio's multi-thread
+  runtime.
+
+Not in `measure`: the size on disk (`du -sh` of the `.app`), the lines of code (counted as that
+section says), and the other sides of the Tidy and Sync rows, glazier-core headless through its
+own test harness (`openEngine`, as its differential test does) and the Lockstep CLI through
+`tsx src/cli.ts plan` and `push`. Their scratch timers are not kept.
+
+This page's own drivers and raw logs were under `/tmp/oriel-rs-scorecard/` on the machine that
+ran them, and they are not kept.
