@@ -40,7 +40,7 @@ use crate::general::GeneralSettings;
 use crate::quit::{QuitGuard, QuitPlatform, SystemQuit};
 use crate::welcome::{Welcome, WelcomeEvent, WelcomeModes};
 use crate::window_state::WindowState;
-use crate::{dock, menus, welcome};
+use crate::{about, dock, menus, welcome, window_state};
 
 /// Where the mode shown last is kept, Electron Oriel's `localStorage` key.
 pub const MODE_KEY: &str = "oriel.mode";
@@ -91,6 +91,8 @@ pub struct Shell {
     folder_sources: Option<[Vec<PathBuf>; 3]>,
     /// The first start's welcome while it shows, and whether its dialog is open yet.
     welcome: Option<(Entity<Welcome>, bool, Subscription)>,
+    /// `ORIEL_RS_ABOUT=1` asked for the About dialog at start, which opens once the window draws.
+    about_at_start: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -100,6 +102,7 @@ impl Shell {
     pub fn new(data: DataRoot, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let mut this = Self::build(data, Rc::new(SystemQuit), true, window, cx);
         crate::check::apply_from_environment(&this.state, cx);
+        this.about_at_start = crate::check::about_from_environment();
         if welcome::allowed_from_environment() {
             this.offer_welcome(window, cx);
         }
@@ -155,7 +158,7 @@ impl Shell {
                 oriel_ui::theme::follow_system_appearance(window, cx);
             }),
             cx.observe_window_bounds(window, |this, window, cx| {
-                this.note_window_bounds(window);
+                this.note_window_bounds(window, cx);
                 this.save_window_soon(cx);
             }),
             // However the window comes back (the Dock icon, ⌘-Tab, a file opened with the app),
@@ -237,6 +240,7 @@ impl Shell {
             save_window: None,
             folder_sources: None,
             welcome: None,
+            about_at_start: false,
             _subscriptions: subscriptions,
         };
         this.show_mode(mode, window, cx);
@@ -428,7 +432,7 @@ impl Shell {
     /// Whether the window may close now; while work runs it hides instead, and the app quits
     /// once the work ends. The window's state is written either way.
     fn allows_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        self.note_window_bounds(window);
+        self.note_window_bounds(window, cx);
         self.write_window_state();
         self.quit.update(cx, |quit, cx| quit.allows_close(cx))
     }
@@ -495,11 +499,32 @@ impl Shell {
         }
         let target = match to {
             Drawn::Settings => Some(self.settings_focus.clone()),
-            Drawn::Mode(mode) => self.mode_focus[mode.index()].take(),
+            Drawn::Mode(mode) => self.mode_focus[mode.index()]
+                .take()
+                .or_else(|| self.own_focus(mode, cx)),
         }
         .unwrap_or_else(|| self.focus_handle.clone());
         // Not during render: the focus moves once this frame is done.
         cx.defer_in(window, move |_, window, cx| target.focus(window, cx));
+    }
+
+    /// The focus a mode takes when it comes on screen with none of its own kept: View's gallery
+    /// (or its open viewer) and Sync's page, so their keys (⌘L) and menu commands (Open
+    /// Folder…, Refresh) reach them at once, before a click. Tidy takes focus itself as its
+    /// pages come.
+    fn own_focus(&self, mode: ModeId, cx: &gpui_kit::App) -> Option<FocusHandle> {
+        match mode {
+            ModeId::View => Some(self.view.focus_handle(cx)),
+            ModeId::Sync => Some(self.sync.focus_handle(cx)),
+            ModeId::Tidy => None,
+        }
+    }
+
+    /// Where the keyboard starts as the window opens: in the mode on screen where it has a place
+    /// of its own, else on the shell.
+    pub fn initial_focus(&self, cx: &gpui_kit::App) -> FocusHandle {
+        self.own_focus(self.state.read(cx).mode(), cx)
+            .unwrap_or_else(|| self.focus_handle.clone())
     }
 
     /// The window's title and the menu bar for `mode`.
@@ -508,19 +533,30 @@ impl Shell {
         menus::set(mode, cx);
     }
 
-    fn note_window_bounds(&mut self, window: &mut Window) {
+    /// Notes the window's bounds as the file keeps them: GPUI reports them relative to the
+    /// window's display, and the file keeps them across every display, as Electron does.
+    fn note_window_bounds(&mut self, window: &mut Window, cx: &gpui_kit::App) {
+        let origin = window
+            .display(cx)
+            .map(|display| window_state::display_origin(display.id()))
+            .unwrap_or_default();
+        let across_displays =
+            |bounds: Bounds<Pixels>| Bounds::new(bounds.origin + origin, bounds.size);
         let maximized = window.is_maximized();
         let state = match window.window_bounds() {
             WindowBounds::Windowed(bounds) if !maximized => {
+                let bounds = across_displays(bounds);
                 self.normal_bounds = Some(bounds);
                 WindowState::new(bounds, false)
             }
             // macOS reports a zoomed window as windowed at its zoomed size, so the size it
             // returns to is the one noted before.
             WindowBounds::Windowed(bounds) | WindowBounds::Maximized(bounds) => {
-                WindowState::new(self.normal_bounds.unwrap_or(bounds), true)
+                WindowState::new(self.normal_bounds.unwrap_or(across_displays(bounds)), true)
             }
-            bounds @ WindowBounds::Fullscreen(_) => WindowState::from_window_bounds(bounds),
+            // Electron Oriel does not keep full screen either; the window comes back at the
+            // size it left full screen from.
+            WindowBounds::Fullscreen(bounds) => WindowState::new(across_displays(bounds), false),
         };
         self.window_state = Some(state);
     }
@@ -537,16 +573,6 @@ impl Shell {
         if let Some(state) = &self.window_state {
             state.write(&self.data.shell());
         }
-    }
-
-    fn show_about(window: &mut Window, cx: &mut gpui_kit::App) {
-        window.open_alert_dialog(cx, |alert, _, _| {
-            alert.title(crate::APP_NAME).description(format!(
-                "Version {}. Oriel's View, Tidy and Sync on GPUI, an experiment beside Electron \
-                 Oriel. It keeps its own data in ~/.latch-works/oriel-rs.",
-                env!("CARGO_PKG_VERSION")
-            ))
-        });
     }
 
     fn render_settings(
@@ -603,6 +629,11 @@ impl Render for Shell {
             self.hand_over_focus(before, drawn, window, cx);
         }
         self.open_welcome_dialog(window, cx);
+        if std::mem::take(&mut self.about_at_start) {
+            cx.defer_in(window, |_, window, cx| {
+                about::show(about::LicenceIndex::of_running_app(), window, cx);
+            });
+        }
         let content = match settings {
             Some(section) => self.render_settings(section, window, cx).into_any_element(),
             None => match mode {
@@ -632,7 +663,9 @@ impl Render for Shell {
             .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
             .on_action(|_: &Minimize, window, _| window.minimize_window())
             .on_action(|_: &Zoom, window, _| window.zoom_window())
-            .on_action(|_: &About, window, cx| Self::show_about(window, cx))
+            .on_action(|_: &About, window, cx| {
+                about::show(about::LicenceIndex::of_running_app(), window, cx);
+            })
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 if this.allows_close(window, cx) {
                     window.remove_window();

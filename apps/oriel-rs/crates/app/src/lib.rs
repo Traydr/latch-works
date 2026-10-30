@@ -1,6 +1,7 @@
 //! Oriel RS: Oriel's View, Tidy and Sync modes in one native window, on GPUI Kit, with no Node
 //! process (plan 063). It keeps its own data in `~/.latch-works/oriel-rs`.
 
+pub mod about;
 pub mod actions;
 mod check;
 mod dock;
@@ -20,14 +21,14 @@ use std::path::PathBuf;
 use futures::StreamExt as _;
 use gpui_kit::component::TitleBar;
 use gpui_kit::{
-    App, AppContext as _, Bounds, Entity, Focusable as _, Global, TitlebarOptions, WeakEntity,
-    WindowBounds, WindowHandle, WindowOptions, point, px, size,
+    App, AppContext as _, Bounds, Entity, Global, TitlebarOptions, WeakEntity, WindowBounds,
+    WindowHandle, WindowOptions, point, px, size,
 };
 use oriel_core_paths::DataRoot;
 use oriel_ui::LocalStorage;
 
 use crate::shell::Shell;
-use crate::window_state::{Placement, WindowState};
+use crate::window_state::{Placement, Screen, WindowState};
 
 const APP_NAME: &str = "Oriel RS";
 
@@ -64,6 +65,9 @@ pub fn run() {
 
     app.run(move |cx| {
         gpui_kit::init(cx);
+        // Sync's HTTP runs on a tokio thread of its own, started once here rather than at the
+        // first push.
+        oriel_mode_sync::start_http(cx).expect("Oriel RS could not start its HTTP thread");
         LocalStorage::init(LocalStorage::open(&data.shell()), cx);
         oriel_ui::theme::init(cx);
         actions::init(cx);
@@ -117,16 +121,17 @@ fn with_main_window(
         .ok();
 }
 
-/// The window's options, as Electron Oriel's window: where it was last, else 1320 × 860 centred,
-/// at least 960 × 640, the window buttons inset in a transparent title bar.
+/// The window's options, as Electron Oriel's window: where it was last, on the display it was on,
+/// else 1320 × 860 centred, at least 960 × 640, the window buttons inset in a transparent title
+/// bar.
 pub fn main_window_options(data: &DataRoot, cx: &mut App) -> WindowOptions {
     let saved = WindowState::read(&data.shell());
-    let display = cx.primary_display().map(|display| display.visible_bounds());
-    let bounds = match WindowState::placement(saved.as_ref(), display) {
-        Placement::Bounds(bounds) => bounds,
-        Placement::Centered(width, height) => {
-            Bounds::centered(None, size(px(width), px(height)), cx)
-        }
+    let (display_id, bounds) = match WindowState::placement(saved.as_ref(), &Screen::all(cx)) {
+        Placement::On { display, bounds } => (display, bounds),
+        Placement::Centered(width, height) => (
+            None,
+            Bounds::centered(None, size(px(width), px(height)), cx),
+        ),
     };
     let maximized = saved.is_some_and(|state| state.is_maximized());
     WindowOptions {
@@ -136,6 +141,7 @@ pub fn main_window_options(data: &DataRoot, cx: &mut App) -> WindowOptions {
             WindowBounds::Windowed(bounds)
         }),
         window_min_size: Some(size(px(960.), px(640.))),
+        display_id,
         titlebar: Some(TitlebarOptions {
             title: Some(Shell::title(stored_mode(cx)).into()),
             appears_transparent: true,
@@ -160,10 +166,10 @@ fn open_main_window(data: DataRoot, cx: &mut App) -> Entity<Shell> {
     let options = main_window_options(&data, cx);
     let (handle, shell) = gpui_kit::open_window(options, cx, |window, cx| {
         let shell = cx.new(|cx| Shell::new(data, window, cx));
-        let focus = shell.focus_handle(cx);
+        let opened = shell.clone();
         window.defer(cx, move |window, cx| {
             if window.focused(cx).is_none() {
-                focus.focus(window, cx);
+                opened.read(cx).initial_focus(cx).focus(window, cx);
             }
         });
         shell

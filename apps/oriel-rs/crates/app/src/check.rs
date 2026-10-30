@@ -5,12 +5,19 @@
 //!   switcher's ring and dot and the Dock's progress. While a mode reports progress, quitting
 //!   waits for it, so ⌘Q twice quits.
 //! - `ORIEL_RS_SETTINGS=general` (or `view`, `tidy`, `sync`) opens Settings at that section.
+//! - `ORIEL_RS_ABOUT=1` opens the About dialog, to see the licences a bundle lists.
 
 use gpui_kit::{App, Entity};
 use oriel_ui::{ModeActivity, ModeId, SettingsSection, ShellState};
 
 pub const ACTIVITY_VARIABLE: &str = "ORIEL_RS_ACTIVITY";
 pub const SETTINGS_VARIABLE: &str = "ORIEL_RS_SETTINGS";
+pub const ABOUT_VARIABLE: &str = "ORIEL_RS_ABOUT";
+
+/// Whether `ORIEL_RS_ABOUT` asks for the About dialog at start.
+pub fn about_from_environment() -> bool {
+    std::env::var(ABOUT_VARIABLE).is_ok_and(|value| value == "1")
+}
 
 /// Applies whichever of the variables are set.
 pub fn apply_from_environment(state: &Entity<ShellState>, cx: &mut App) {

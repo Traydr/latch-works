@@ -3,13 +3,16 @@
 //! `{"bounds":{"x":…,"y":…,"width":…,"height":…},"maximized":false}` in whole points. A maximised
 //! or full-screen window keeps the bounds it returns to.
 //!
-//! GPUI places a window on a display with bounds relative to that display, so the position is
-//! the window's place on its display. With one display that is the same place Electron Oriel
-//! keeps; with several, the window comes back at the same place on the main display.
+//! The bounds are in Electron's screen coordinates: points, from the top left of the main
+//! display, across every display. GPUI places a window on one display with bounds relative to
+//! it, so the shell adds the display's place among the others when it saves ([`Screen`]), and
+//! [`WindowState::placement`] finds the display the bounds are on when the window opens, as
+//! Electron Oriel's `screen.getDisplayMatching` does. A window saved on a display since
+//! unplugged opens at its size on the main display.
 
 use std::path::Path;
 
-use gpui_kit::{Bounds, Pixels, WindowBounds, point, px, size};
+use gpui_kit::{App, Bounds, DisplayId, Pixels, Point, WindowBounds, point, px, size};
 use serde::{Deserialize, Serialize};
 
 pub const FILE_NAME: &str = "window-state.json";
@@ -31,11 +34,67 @@ struct SavedBounds {
     height: i32,
 }
 
-/// Where the window opens: the saved bounds, or a size centred on the main display.
+/// Where the window opens.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Placement {
-    Bounds(Bounds<Pixels>),
+    /// At `bounds` on `display`, relative to that display's top left, as GPUI places a window.
+    /// No display is named when none is known, as in the tests' platform.
+    On {
+        display: Option<DisplayId>,
+        bounds: Bounds<Pixels>,
+    },
+    /// A size centred on the main display.
     Centered(f32, f32),
+}
+
+/// A display as Electron's `screen` sees it: its whole area and the part windows may use (less
+/// the menu bar and the Dock), both from the top left of the main display.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Screen {
+    pub id: DisplayId,
+    pub frame: Bounds<Pixels>,
+    pub visible: Bounds<Pixels>,
+}
+
+impl Screen {
+    /// The displays GPUI knows, each at its place among the others.
+    pub fn all(cx: &App) -> Vec<Screen> {
+        cx.displays()
+            .into_iter()
+            .map(|display| {
+                let origin = display_origin(display.id());
+                let frame = display.bounds();
+                let visible = display.visible_bounds();
+                Screen {
+                    id: display.id(),
+                    frame: Bounds::new(origin, frame.size),
+                    visible: Bounds::new(origin + visible.origin, visible.size),
+                }
+            })
+            .collect()
+    }
+}
+
+/// Where a display's top left is among the displays, from the top left of the main display, in
+/// points: CoreGraphics' global display coordinates, which Electron's `screen` uses. GPUI
+/// reports only each display's size.
+pub fn display_origin(display: DisplayId) -> Point<Pixels> {
+    #[cfg(target_os = "macos")]
+    {
+        #[link(name = "CoreGraphics", kind = "framework")]
+        unsafe extern "C" {
+            fn CGDisplayBounds(display: u32) -> objc2_foundation::NSRect;
+        }
+        // SAFETY: `CGDisplayBounds` takes any display id, and returns an empty rectangle for one
+        // that is not attached.
+        let bounds = unsafe { CGDisplayBounds(u64::from(display) as u32) };
+        point(px(bounds.origin.x as f32), px(bounds.origin.y as f32))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = display;
+        point(px(0.), px(0.))
+    }
 }
 
 impl WindowState {
@@ -99,24 +158,47 @@ impl WindowState {
         }
     }
 
-    /// Where to open: the saved bounds while they overlap `display` (the main display's visible
-    /// area), else only their size, since the display that held them is gone.
-    pub fn placement(state: Option<&Self>, display: Option<Bounds<Pixels>>) -> Placement {
+    /// Where to open (`restoredBounds`): on the display that holds most of the saved bounds,
+    /// while they overlap the part of it windows may use, else only at their size, since the
+    /// display that held them is gone. With no displays known, at the bounds as they are.
+    pub fn placement(state: Option<&Self>, screens: &[Screen]) -> Placement {
         let Some(state) = state else {
             return Placement::Centered(DEFAULT_SIZE.0, DEFAULT_SIZE.1);
         };
         let bounds = state.bounds();
-        match display {
-            Some(display) if !overlaps(bounds, display) => {
-                Placement::Centered(bounds.size.width.as_f32(), bounds.size.height.as_f32())
-            }
-            _ => Placement::Bounds(bounds),
+        if screens.is_empty() {
+            return Placement::On {
+                display: None,
+                bounds,
+            };
+        }
+        let matching = screens
+            .iter()
+            .map(|screen| (screen, overlap_area(bounds, screen.frame)))
+            .filter(|(_, area)| *area > 0.)
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(screen, _)| screen);
+        match matching {
+            Some(screen) if overlap_area(bounds, screen.visible) > 0. => Placement::On {
+                display: Some(screen.id),
+                bounds: Bounds::new(
+                    point(
+                        bounds.origin.x - screen.frame.origin.x,
+                        bounds.origin.y - screen.frame.origin.y,
+                    ),
+                    bounds.size,
+                ),
+            },
+            _ => Placement::Centered(bounds.size.width.as_f32(), bounds.size.height.as_f32()),
         }
     }
 }
 
-fn overlaps(a: Bounds<Pixels>, b: Bounds<Pixels>) -> bool {
-    a.left() < b.right() && a.right() > b.left() && a.top() < b.bottom() && a.bottom() > b.top()
+/// How much of `a` lies inside `b`, in square points.
+fn overlap_area(a: Bounds<Pixels>, b: Bounds<Pixels>) -> f32 {
+    let width = (a.right().min(b.right()) - a.left().max(b.left())).as_f32();
+    let height = (a.bottom().min(b.bottom()) - a.top().max(b.top())).as_f32();
+    width.max(0.) * height.max(0.)
 }
 
 #[cfg(test)]
@@ -170,25 +252,79 @@ mod tests {
         }
     }
 
+    /// The main display, a laptop's 1728 × 1117 with a 32-point menu bar, and one to its right
+    /// that sits 200 points lower.
+    fn two_screens() -> [Screen; 2] {
+        [
+            Screen {
+                id: DisplayId::new(1),
+                frame: bounds(0., 0., 1728., 1117.),
+                visible: bounds(0., 32., 1728., 1085.),
+            },
+            Screen {
+                id: DisplayId::new(2),
+                frame: bounds(1728., 200., 2560., 1440.),
+                visible: bounds(1728., 225., 2560., 1415.),
+            },
+        ]
+    }
+
+    fn saved(x: f32, y: f32, width: f32, height: f32) -> WindowState {
+        WindowState::from_window_bounds(WindowBounds::Windowed(bounds(x, y, width, height)))
+    }
+
     #[test]
     fn opens_where_it_was_unless_that_display_is_gone() {
-        let display = bounds(0., 0., 1728., 1085.);
+        let main = &two_screens()[..1];
         assert_eq!(
-            WindowState::placement(None, Some(display)),
+            WindowState::placement(None, main),
             Placement::Centered(1320., 860.)
         );
-        let on_screen =
-            WindowState::from_window_bounds(WindowBounds::Windowed(bounds(100., 80., 1200., 800.)));
         assert_eq!(
-            WindowState::placement(Some(&on_screen), Some(display)),
-            Placement::Bounds(bounds(100., 80., 1200., 800.))
+            WindowState::placement(Some(&saved(100., 80., 1200., 800.)), main),
+            Placement::On {
+                display: Some(DisplayId::new(1)),
+                bounds: bounds(100., 80., 1200., 800.)
+            }
         );
-        let off_screen = WindowState::from_window_bounds(WindowBounds::Windowed(bounds(
-            3000., 80., 1200., 800.,
-        )));
+        // Saved on the display to the right, since unplugged: its size on the main display.
         assert_eq!(
-            WindowState::placement(Some(&off_screen), Some(display)),
+            WindowState::placement(Some(&saved(3000., 380., 1200., 800.)), main),
             Placement::Centered(1200., 800.)
+        );
+    }
+
+    #[test]
+    fn opens_on_the_display_that_held_it() {
+        let screens = two_screens();
+        // On the second display, its place there is relative to that display's top left.
+        assert_eq!(
+            WindowState::placement(Some(&saved(2000., 380., 1200., 800.)), &screens),
+            Placement::On {
+                display: Some(DisplayId::new(2)),
+                bounds: bounds(272., 180., 1200., 800.)
+            }
+        );
+        // Across both, the one holding more of it wins.
+        assert_eq!(
+            WindowState::placement(Some(&saved(1600., 300., 1200., 800.)), &screens),
+            Placement::On {
+                display: Some(DisplayId::new(2)),
+                bounds: bounds(-128., 100., 1200., 800.)
+            }
+        );
+        // Below the second display's foot, on no display at all.
+        assert_eq!(
+            WindowState::placement(Some(&saved(2000., 1700., 1200., 800.)), &screens),
+            Placement::Centered(1200., 800.)
+        );
+        // With no displays known (the tests' platform), where it was.
+        assert_eq!(
+            WindowState::placement(Some(&saved(40., 30., 1000., 700.)), &[]),
+            Placement::On {
+                display: None,
+                bounds: bounds(40., 30., 1000., 700.)
+            }
         );
     }
 }

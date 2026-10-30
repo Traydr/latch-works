@@ -214,6 +214,52 @@ fn starts_in_view_and_switches_modes_from_the_switcher_and_the_menu(cx: &mut Tes
 }
 
 #[gpui_kit::test]
+fn every_menu_item_of_the_mode_on_screen_is_lit(cx: &mut TestAppContext) {
+    let data = DataRoot::at(scratch("menus-lit").join("data")).unwrap();
+    start(cx, &data);
+    let opened = open_shell(cx, &data);
+    let handle = opened.handle;
+
+    // Each mode as it comes on screen from another, before anything in it is clicked.
+    for (key, expected) in [
+        ("cmd-2", ModeId::Tidy),
+        ("cmd-3", ModeId::Sync),
+        ("cmd-1", ModeId::View),
+    ] {
+        press(cx, handle, key);
+        assert_eq!(mode(&opened, cx), expected);
+        let greyed: Vec<String> = cx
+            .update_window(handle, |_, window, cx| {
+                let menus = cx.get_menus().expect("the menu bar is set");
+                menus
+                    .iter()
+                    .flat_map(|menu| {
+                        menu.items.iter().filter_map(|item| match item {
+                            // A text field's own commands (Cut, Copy, Paste…) are lit only while
+                            // one has focus, as in any Mac app.
+                            OwnedMenuItem::Action {
+                                name,
+                                action,
+                                os_action: None,
+                                ..
+                            } => Some((format!("{} › {name}", menu.name), action.boxed_clone())),
+                            _ => None,
+                        })
+                    })
+                    // On the focused element's path, or app-wide.
+                    .filter(|(_, action)| {
+                        !window.is_action_available(action.as_ref(), cx)
+                            && !cx.is_action_available(action.as_ref())
+                    })
+                    .map(|(name, _)| name)
+                    .collect()
+            })
+            .unwrap();
+        assert!(greyed.is_empty(), "greyed in {expected:?}: {greyed:?}");
+    }
+}
+
+#[gpui_kit::test]
 fn folds_the_sidebar_to_the_rail_and_back(cx: &mut TestAppContext) {
     let data = DataRoot::at(scratch("rail").join("data")).unwrap();
     start(cx, &data);
@@ -355,6 +401,82 @@ fn view_keeps_its_folder_while_another_mode_shows(cx: &mut TestAppContext) {
     press(cx, handle, "cmd-1");
     assert_eq!(shown(cx), (Some(real), 3));
     assert!(tile_drawn(cx));
+}
+
+/// Waits, in real time, for View to show `folder` with its scan done: View scans on threads of
+/// its own.
+fn wait_for_view_folder(cx: &mut TestAppContext, opened: &Opened, folder: &Path) {
+    let shown = |cx: &mut TestAppContext| {
+        cx.update(|cx| {
+            let view = opened.shell.read(cx).view().read(cx);
+            let scanned =
+                view.catalog().read(cx).state() == oriel_mode_view::catalog::ScanState::Done;
+            (view.folder(cx).map(|folder| folder.to_path_buf()), scanned)
+        })
+    };
+    for _ in 0..500 {
+        frame(cx, opened.handle);
+        if shown(cx) == (Some(folder.to_path_buf()), true) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(shown(cx), (Some(folder.to_path_buf()), true));
+}
+
+#[gpui_kit::test]
+fn reopens_on_the_page_it_showed_last_with_view_able_to_step_back_up(cx: &mut TestAppContext) {
+    let root = scratch("reopens-page");
+    let archive = root.join("archive");
+    write_still(&archive.join("cover.webp"), 0);
+    for ix in 0..2 {
+        write_still(&archive.join(format!("comics/page-{ix}.webp")), ix * 90);
+    }
+    let archive = std::fs::canonicalize(&archive).unwrap();
+    let comics = archive.join("comics");
+    let data = DataRoot::at(root.join("data")).unwrap();
+    start(cx, &data);
+    let first = open_shell(cx, &data);
+
+    // View opens the archive and steps into its subfolder; Tidy shows its Library.
+    cx.update_window(first.handle, |_, window, cx| {
+        first
+            .shell
+            .update(cx, |shell, cx| shell.open_in_view(&archive, window, cx));
+    })
+    .unwrap();
+    wait_for_view_folder(cx, &first, &archive);
+    let comics_item = format!("sidebar-folder:{}", comics.display());
+    cx.update_window(first.handle, |_, window, cx| {
+        window.click(gpui_kit::ElementId::Name(comics_item.into()), cx)
+    })
+    .unwrap();
+    wait_for_view_folder(cx, &first, &comics);
+    press(cx, first.handle, "cmd-2");
+    click(cx, first.handle, "tidy-Library");
+    cx.update_window(first.handle, |_, window, _| window.remove_window())
+        .unwrap();
+    cx.run_until_parked();
+
+    // A second start reads the stored state again, as the app does.
+    cx.update(|cx| LocalStorage::init(LocalStorage::open(&data.shell()), cx));
+    let second = open_shell(cx, &data);
+    assert_eq!(mode(&second, cx), ModeId::Tidy);
+    assert_eq!(title(cx, second.handle).as_deref(), Some("Tidy – Oriel RS"));
+    assert_eq!(
+        cx.update(|cx| second.shell.read(cx).tidy().read(cx).page()),
+        TidyPage::Library
+    );
+
+    // View is back in the subfolder, and the folder opened above it is still the top.
+    press(cx, second.handle, "cmd-1");
+    wait_for_view_folder(cx, &second, &comics);
+    click(cx, second.handle, "sidebar-up");
+    wait_for_view_folder(cx, &second, &archive);
+    assert!(
+        !is_drawn(cx, second.handle, "sidebar-up"),
+        "View stepped above the folder the owner opened"
+    );
 }
 
 #[gpui_kit::test]
@@ -574,6 +696,60 @@ fn voiceover_reads_the_switcher_the_sidebar_and_the_top_bar_by_name(cx: &mut Tes
         let heading = window.find("top-bar-title");
         assert_eq!(heading.role(), Some(Role::Heading));
         assert_eq!(window.find("toggle-sidebar").label(), Some("Hide sidebar"));
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn about_names_the_version_and_the_licences_the_app_carries(cx: &mut TestAppContext) {
+    let root = scratch("about");
+    let data = DataRoot::at(root.join("data")).unwrap();
+    start(cx, &data);
+    let opened = open_shell(cx, &data);
+    let handle = opened.handle;
+
+    choose_from_menu(cx, handle, "Oriel RS", "About Oriel RS");
+    assert_eq!(
+        label_of(cx, handle, "about-version"),
+        Some(format!("Version {}", oriel_rs::about::VERSION))
+    );
+    // A development build carries no notices, and says where the bundle keeps them.
+    assert!(is_drawn(cx, handle, "about-licences"));
+    assert!(!is_drawn(cx, handle, "about-show-licences"));
+    click(cx, handle, "about-ok");
+    assert!(!is_drawn(cx, handle, "about-version"));
+
+    // The bundle's index, as `xtask bundle` writes it, is listed with each licence.
+    let licenses = root.join("licenses");
+    std::fs::create_dir_all(&licenses).unwrap();
+    std::fs::write(
+        licenses.join("index.json"),
+        r#"{"app":"Oriel RS","version":"0.0.1","notices":[
+            {"folder":"oriel-rs","name":"Oriel RS","version":"0.0.1","licence":"MIT"},
+            {"folder":"media-tools","name":"ffmpeg and ffprobe","version":"9.0.2",
+             "licence":"GPL-3.0-or-later"}]}"#,
+    )
+    .unwrap();
+    cx.update_window(handle, |_, window, cx| {
+        let index = oriel_rs::about::LicenceIndex::read(&licenses);
+        oriel_rs::about::show(index, window, cx);
+    })
+    .unwrap();
+    frame(cx, handle);
+    cx.update_window(handle, |_, window, _| {
+        let list = window.find("about-licences");
+        assert_eq!(
+            (list.role(), list.label()),
+            (Some(Role::List), Some("Licences"))
+        );
+        assert_eq!(
+            window.find(("about-licence", 1usize)).label(),
+            Some("ffmpeg and ffprobe 9.0.2: GPL-3.0-or-later")
+        );
+        assert_eq!(
+            window.find("about-show-licences").label(),
+            Some("Show Licences")
+        );
     })
     .unwrap();
 }

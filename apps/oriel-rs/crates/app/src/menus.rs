@@ -11,8 +11,8 @@ use oriel_ui::commands::{
 };
 
 use crate::actions::{
-    About, CloseWindow, Hide, HideOthers, Minimize, OpenSettings, Quit, ShowAll, ShowSync,
-    ShowTidy, ShowView, ToggleFullScreen, ToggleRail, Zoom,
+    About, BringAllToFront, CloseWindow, Hide, HideOthers, Minimize, OpenSettings, Quit, ShowAll,
+    ShowSync, ShowTidy, ShowView, ToggleFullScreen, ToggleRail, Zoom,
 };
 
 /// The name of the View menu item that shows `mode`.
@@ -167,9 +167,12 @@ pub fn menus(mode: ModeId) -> Vec<Menu> {
         },
         Menu {
             name: "Window".into(),
+            // Electron's `windowMenu` role on macOS.
             items: vec![
                 MenuItem::action("Minimize", Minimize),
                 MenuItem::action("Zoom", Zoom),
+                MenuItem::separator(),
+                MenuItem::action("Bring All to Front", BringAllToFront),
             ],
             disabled: false,
         },
