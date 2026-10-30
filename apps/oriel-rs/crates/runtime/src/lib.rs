@@ -5,10 +5,12 @@
 //! - [`CancelToken`]: the cooperative cancellation jobs, tool runs and catalogs share;
 //! - [`PauseToken`]: the cooperative pause beside it, which the work waits on between steps;
 //! - [`TokioRuntime`]: a tokio runtime on its own thread, for the HTTP clients that need one;
-//! - [`Database`]: one SQLite connection per catalog, on its own thread, called from async code.
+//! - [`Database`]: one SQLite connection per catalog, on its own thread, called from async code;
+//! - [`release_free_memory`]: heavy work hands its memory back to the system when it is done.
 
 mod cancel;
 mod job;
+mod memory;
 mod pause;
 mod sqlite;
 mod tokio_runtime;
@@ -17,6 +19,7 @@ use std::any::Any;
 
 pub use cancel::{CancelCallback, CancelToken, Cancelled};
 pub use job::{Job, JobError, JobEvent, JobProgress, JobReporter, JobStatus};
+pub use memory::release_free_memory;
 pub use pause::{PauseCallback, PauseToken};
 pub use sqlite::{Database, migrate};
 pub use tokio_runtime::{TokioHandle, TokioRuntime, TokioTask};

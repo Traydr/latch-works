@@ -22,7 +22,7 @@ use std::sync::PoisonError;
 use anyhow::{Context as _, bail};
 use gpui_kit::{App, Entity, Task};
 use oriel_avif::Libavif;
-use oriel_runtime::{Job, JobReporter};
+use oriel_runtime::{Job, JobReporter, release_free_memory};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +40,8 @@ use crate::media::still::encode_still_to_avif;
 use crate::media::transcode::{TranscodeJob, encoder_capabilities, transcode_with_ffmpeg};
 use crate::optimize::CandidateHolds;
 use crate::passes::{Progress, Quiet};
+use crate::plans::encode_budget::EncodeBudget;
+pub use crate::plans::encode_budget::still_concurrency;
 use crate::plans::executor::{ExecutorDeps, apply_plan, undo_plan};
 use crate::plans::holding::{
     held_batch_paths, list_holding, mark_batches_emptied, move_to_trash, restore_held,
@@ -49,15 +51,6 @@ use crate::plans::journal::{
 };
 use crate::plans::planner::{PlanRequestError, PlannerContext, draft_steps, save_plan};
 use crate::plans::wording::{apply_label, doing_label, undo_label};
-
-/// AVIF encodes at once, as Electron Oriel sizes its encoder pool: the cores but two, between 1
-/// and 4.
-pub fn still_concurrency() -> usize {
-    std::thread::available_parallelism()
-        .map_or(2, |cores| cores.get())
-        .saturating_sub(2)
-        .clamp(1, 4)
-}
 
 /// Work glazier-core queues by itself after a change, for the caller to start with
 /// [`TidyEngine::start_follow_up`]: scans of roots whose files changed under the plan (or came
@@ -269,6 +262,7 @@ impl Inner {
             libavif: Libavif::get().map_err(|error| error.to_string()),
             svt_av1: self.svt_av1(),
             still_concurrency: still_concurrency(),
+            encode_budget: EncodeBudget::for_this_machine(),
             roots,
             progress,
         })
@@ -287,6 +281,8 @@ impl Inner {
         let deps = self.executor(progress)?;
         let outcome = apply_plan(&deps, plan_id);
         self.changed();
+        // Convert's encodes hold 30 bytes a pixel each, freed but kept by the allocator.
+        release_free_memory();
         let stale_steps = match outcome {
             Ok(result) => result.stale_steps,
             // A stopped apply settled its plan as cancelled; what it did is in the summary.
@@ -996,8 +992,7 @@ impl Inner {
             return unchanged;
         }
         let quiet = Quiet::new();
-        let mut ratios = Vec::new();
-        for (index, candidate) in sample.iter().enumerate() {
+        let ratio = |index: usize, candidate: &crate::optimize::OptimizeCandidate| {
             let source = candidate.record.abs_path();
             let extension = Path::new(&candidate.target_name)
                 .extension()
@@ -1005,13 +1000,47 @@ impl Inner {
                 .unwrap_or_default();
             let out = folder.join(format!("{index}{extension}"));
             let converted = self.convert_sample(candidate, &source, &out, quality, &quiet);
-            if converted.is_ok()
-                && let Ok(written) = fs::metadata(&out)
-            {
-                ratios.push(written.size() as f64 / (candidate.record.size.max(1)) as f64);
-            }
-        }
+            converted
+                .ok()
+                .and_then(|()| fs::metadata(&out).ok())
+                .map(|written| written.size() as f64 / (candidate.record.size.max(1)) as f64)
+        };
+        // A still's encode runs on one thread, so the eight run at once, within the memory
+        // Convert's encodes may hold; ffmpeg's conversions use every core already, so they run
+        // one after another. The ratios are sorted, so the order they come in changes nothing.
+        let mut ratios: Vec<f64> = if category == OptimizeCategory::StillToAvif {
+            let budget = EncodeBudget::for_this_machine();
+            let (budget, quiet) = (&budget, &quiet);
+            std::thread::scope(|scope| {
+                let runs: Vec<_> = sample
+                    .iter()
+                    .enumerate()
+                    .map(|(index, candidate)| {
+                        scope.spawn(move || {
+                            let pixels = candidate
+                                .record
+                                .width
+                                .zip(candidate.record.height)
+                                .map(|(width, height)| (width.max(0) * height.max(0)) as u64);
+                            let _memory = budget.reserve(pixels, quiet).ok()?;
+                            ratio(index, candidate)
+                        })
+                    })
+                    .collect();
+                runs.into_iter()
+                    .filter_map(|run| run.join().ok().flatten())
+                    .collect()
+            })
+        } else {
+            sample
+                .iter()
+                .enumerate()
+                .filter_map(|(index, candidate)| ratio(index, candidate))
+                .collect()
+        };
         let _ = fs::remove_dir_all(&folder);
+        // The encodes' buffers, 30 bytes a pixel each, would otherwise stay with the process.
+        release_free_memory();
         ratios.sort_by(f64::total_cmp);
         let at = |index: usize| ratios.get(index).copied().unwrap_or(1.0);
         OptimizeEstimate {

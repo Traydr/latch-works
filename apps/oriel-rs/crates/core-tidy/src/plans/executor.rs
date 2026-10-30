@@ -28,6 +28,7 @@ use oriel_core_format::{AudioTrackPlan, VideoTrackPlan};
 use oriel_runtime::Cancelled;
 use rusqlite::{OptionalExtension as _, params};
 
+use super::encode_budget::EncodeBudget;
 use super::holding::{
     HoldRequest, HoldingPlaces, HoldingStore, copy_times, hold_file, holding_batch_name, move_file,
     path_exists, restore_held,
@@ -83,8 +84,9 @@ pub struct ExecutorDeps<'a> {
     pub libavif: Result<&'a Libavif, String>,
     /// ffmpeg has SVT-AV1, which every AV1 encode uses.
     pub svt_av1: bool,
-    /// AVIF encodes run this many at once.
+    /// AVIF encodes run this many at once, within the memory [`EncodeBudget`] allows.
     pub still_concurrency: usize,
+    pub encode_budget: EncodeBudget,
     pub roots: Vec<Root>,
     pub progress: &'a dyn Progress,
 }
@@ -689,6 +691,11 @@ fn execute_step(
                     keep_loudness: false,
                 },
                 |temp| {
+                    let pixels = expected
+                        .width
+                        .zip(expected.height)
+                        .map(|(width, height)| (width.max(0) * height.max(0)) as u64);
+                    let _memory = deps.encode_budget.reserve(pixels, deps.progress)?;
                     encode_still_to_avif(vips, libavif, &step.from_abs(), temp)?;
                     Ok(None)
                 },

@@ -16,6 +16,10 @@ rusqlite.workspace = true
 # a socket on the runtime must find them whoever else is in the build.
 tokio = { workspace = true, features = ["rt", "net", "time"] }
 
+# The allocator calls behind `release_free_memory`.
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
 reqwest.workspace = true

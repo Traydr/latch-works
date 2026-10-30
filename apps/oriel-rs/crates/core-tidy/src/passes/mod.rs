@@ -170,6 +170,13 @@ impl PassContext<'_> {
     }
 }
 
+/// How many files a pass that keeps one core busy per file (a libvips decode, an ffmpeg run with
+/// one thread) works on at once: one per core. glazier-core's passes take 3 to 6 at once, which
+/// left most of the cores idle through the analysis (3.1 of 18 busy on the 21k fixture).
+pub fn per_core() -> usize {
+    std::thread::available_parallelism().map_or(4, std::num::NonZero::get)
+}
+
 /// Runs `work` over `items`, at most `concurrency` at a time on worker threads, reporting each
 /// item done in `phase`; see [`run_concurrently`].
 pub fn for_each_concurrent<T: Sync>(

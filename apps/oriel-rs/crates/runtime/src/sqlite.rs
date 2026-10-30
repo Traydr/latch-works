@@ -10,13 +10,14 @@ use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
+use std::time::Duration;
 
 use anyhow::Context as _;
 use futures::channel::oneshot;
 use rusqlite::config::DbConfig;
 use rusqlite::{Connection, TransactionBehavior};
 
-use crate::panic_message;
+use crate::{panic_message, release_free_memory};
 
 type Call = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -123,8 +124,14 @@ fn closed(path: &Path) -> anyhow::Error {
     anyhow::anyhow!("{} is closed", path.display())
 }
 
+/// How long a catalog's thread waits after its last call before it hands freed memory back.
+const QUIET: Duration = Duration::from_millis(250);
+
 /// The catalog's thread: opens the connection, then runs calls until every handle is gone or one
-/// closes it.
+/// closes it. A query can build and drop buffers of several megabytes (Tidy's Overview reads every
+/// file of a root), which the allocator would otherwise keep: 20 rounds of Overview's queries on
+/// the 21k fixture left 450 MB with the process. So once calls have run and the thread has been
+/// quiet for [`QUIET`], it hands that memory back, a fifth of a millisecond's work.
 fn serve(
     path: &Path,
     migrations: &[&str],
@@ -140,9 +147,29 @@ fn serve(
     };
     let _ = ready.send(Ok(()));
 
-    for message in calls {
+    let mut called = false;
+    loop {
+        let message = if called {
+            match calls.recv_timeout(QUIET) {
+                Ok(message) => message,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    release_free_memory();
+                    called = false;
+                    continue;
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+        } else {
+            match calls.recv() {
+                Ok(message) => message,
+                Err(_) => return,
+            }
+        };
         match message {
-            Message::Call(call) => call(&mut connection),
+            Message::Call(call) => {
+                call(&mut connection);
+                called = true;
+            }
             Message::Close(reply) => {
                 let _ = reply.send(connection.close().map_err(|(_, error)| error));
                 return;

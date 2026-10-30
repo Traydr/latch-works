@@ -15,8 +15,8 @@ pub use detail::{
     detail_of_still, is_variant, normalize_detail,
 };
 pub use fingerprint::{
-    Fingerprint, FingerprintError, animation_frame_times, fingerprint_animation, fingerprint_still,
-    fingerprint_video, fingerprint_video_with, sampled_pages,
+    Fingerprint, FingerprintError, SAMPLE_POSITIONS, animation_frame_times, fingerprint_animation,
+    fingerprint_still, fingerprint_video, fingerprint_video_with, sampled_pages, video_frame_hash,
 };
 pub use group::{
     ClusterKind, DisjointSets, FingerprintedFile, SimilarCluster, group_similar_files,

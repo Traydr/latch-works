@@ -60,6 +60,8 @@ pub fn run_probe_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     })?;
 
+    // glazier-core's 6. libvips reads headers no faster past about 3 at once (its loader search
+    // takes shared locks): 18 at once took 2.4 times the CPU of 6, in the same time.
     for_each_concurrent(
         &pending,
         6,

@@ -10,8 +10,8 @@ use crate::catalog::files::{SqlParams, ids_param};
 use crate::catalog::rows::to_absolute_path;
 use crate::contract::FileId;
 use crate::passes::{
-    PassContext, SAME_ROW_SQL, SelectedFile, error_text, for_each_concurrent, same_row_params,
-    still_selected,
+    PassContext, SAME_ROW_SQL, SelectedFile, error_text, for_each_concurrent, per_core,
+    same_row_params, still_selected,
 };
 use crate::similarity::{DETAIL_VERSION, detail_of_still};
 
@@ -54,7 +54,7 @@ pub fn run_detail_pass(context: &PassContext<'_>, file_ids: &[FileId]) -> anyhow
 
     for_each_concurrent(
         &pending,
-        4,
+        per_core(),
         context.progress,
         "Comparing similar versions",
         |(file, root_path)| {

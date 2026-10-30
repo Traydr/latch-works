@@ -10,7 +10,8 @@ use crate::catalog::rows::{LOUDNESS_VERSION, to_absolute_path};
 use crate::contract::{FileId, RootId};
 use crate::media::{ToolFailure, measure_peak_volume};
 use crate::passes::{
-    PassContext, SAME_ROW_SQL, SelectedFile, for_each_concurrent, same_row_params, still_selected,
+    PassContext, SAME_ROW_SQL, SelectedFile, for_each_concurrent, per_core, same_row_params,
+    still_selected,
 };
 
 /// Videos with an audio track the pass has not measured, as a condition on `files f`.
@@ -70,9 +71,10 @@ pub fn run_loudness_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     })?;
 
+    // ffmpeg decodes a soundtrack on one thread.
     for_each_concurrent(
         &pending,
-        3,
+        per_core(),
         context.progress,
         "Listening for sound",
         |(file, root_path)| {

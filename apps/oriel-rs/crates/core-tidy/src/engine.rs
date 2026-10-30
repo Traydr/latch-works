@@ -31,7 +31,7 @@ use anyhow::{Context as _, bail};
 use futures::channel::oneshot;
 use gpui_kit::{App, Entity};
 use oriel_core_paths::DataRoot;
-use oriel_runtime::{Job, JobReporter};
+use oriel_runtime::{Job, JobReporter, release_free_memory};
 use oriel_tools::MediaTools;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -782,6 +782,9 @@ impl TidyEngine {
         // A stopped fingerprint pass wrote some too.
         inner.fingerprints_changed();
         inner.changed();
+        // The decodes' buffers would otherwise stay with the process, a gigabyte after the
+        // 21k fixture.
+        release_free_memory();
         Ok(AnalysisReport {
             fingerprints,
             detail_candidates: outcome?,

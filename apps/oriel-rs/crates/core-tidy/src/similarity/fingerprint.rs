@@ -13,7 +13,7 @@ use super::{
 
 /// A video is sampled at these points of its duration; an animation at the same share of its
 /// frames' time.
-const SAMPLE_POSITIONS: [f64; 5] = [0.1, 0.3, 0.5, 0.7, 0.9];
+pub const SAMPLE_POSITIONS: [f64; 5] = [0.1, 0.3, 0.5, 0.7, 0.9];
 
 /// How long ffmpeg may take to hand back one frame, as glazier-core allows.
 const FRAME_TIMEOUT: Duration = Duration::from_secs(60);
@@ -153,7 +153,9 @@ pub fn fingerprint_animation(
 }
 
 /// Fingerprints a video from single frames ffmpeg decodes at the sample positions, with
-/// glazier-core's arguments and its timeout for each frame.
+/// glazier-core's arguments and its timeout for each frame, plus one decoding thread. FFmpeg's
+/// decoders give the same frame whatever their thread count; a threaded one also decodes frames
+/// past the one asked for, which cost a quarter of these runs' CPU on the fixture's videos.
 pub fn fingerprint_video(
     ffmpeg: &Path,
     path: &Path,
@@ -169,51 +171,62 @@ pub fn fingerprint_video_with(
     duration_ms: f64,
     cancel: Option<&CancelToken>,
 ) -> Result<Fingerprint, FingerprintError> {
-    let expected = PHASH_INPUT_SIZE * PHASH_INPUT_SIZE;
-    let mut frames = Vec::with_capacity(SAMPLE_POSITIONS.len());
-    for position in SAMPLE_POSITIONS {
-        let seconds = duration_ms * position / 1000.0;
-        let mut run = ToolRun::new(ffmpeg, FRAME_TIMEOUT)
-            .args([
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-ss",
-                &to_fixed_3(seconds),
-                "-i",
-            ])
-            .arg(path)
-            .args(["-map", "0:v:0", "-frames:v", "1", "-an", "-sn", "-vf"])
-            .arg(format!(
-                "scale={PHASH_INPUT_SIZE}:{PHASH_INPUT_SIZE}:flags=area,format=gray"
-            ))
-            .args(["-f", "rawvideo", "-pix_fmt", "gray", "pipe:1"]);
-        if let Some(token) = cancel {
-            run = run.cancel_on(token);
-        }
-        let output = match run.run() {
-            Ok(output) => output,
-            Err(error) if error.is_cancelled() => return Err(FingerprintError::Cancelled),
-            Err(error) => {
-                return Err(FingerprintError::Video(format!(
-                    "Could not run ffmpeg: {error}"
-                )));
-            }
-        };
-        if !output.success() || output.stdout.len() < expected {
-            let last = output.stderr.trim().lines().last().unwrap_or("").to_owned();
-            return Err(FingerprintError::Video(if last.is_empty() {
-                "ffmpeg returned no frame.".to_owned()
-            } else {
-                last
-            }));
-        }
-        frames.push(hash_of(&output.stdout[..expected])?);
-    }
+    let frames = SAMPLE_POSITIONS
+        .iter()
+        .map(|position| video_frame_hash(ffmpeg, path, duration_ms * position / 1000.0, cancel))
+        .collect::<Result<_, _>>()?;
     Ok(Fingerprint::Motion {
         duration_ms,
         frames,
     })
+}
+
+/// The pHash of the frame ffmpeg decodes `seconds` into the video: one of a video's prints.
+pub fn video_frame_hash(
+    ffmpeg: &Path,
+    path: &Path,
+    seconds: f64,
+    cancel: Option<&CancelToken>,
+) -> Result<Hash64, FingerprintError> {
+    let expected = PHASH_INPUT_SIZE * PHASH_INPUT_SIZE;
+    let mut run = ToolRun::new(ffmpeg, FRAME_TIMEOUT)
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-threads",
+            "1",
+            "-ss",
+            &to_fixed_3(seconds),
+            "-i",
+        ])
+        .arg(path)
+        .args(["-map", "0:v:0", "-frames:v", "1", "-an", "-sn", "-vf"])
+        .arg(format!(
+            "scale={PHASH_INPUT_SIZE}:{PHASH_INPUT_SIZE}:flags=area,format=gray"
+        ))
+        .args(["-f", "rawvideo", "-pix_fmt", "gray", "pipe:1"]);
+    if let Some(token) = cancel {
+        run = run.cancel_on(token);
+    }
+    let output = match run.run() {
+        Ok(output) => output,
+        Err(error) if error.is_cancelled() => return Err(FingerprintError::Cancelled),
+        Err(error) => {
+            return Err(FingerprintError::Video(format!(
+                "Could not run ffmpeg: {error}"
+            )));
+        }
+    };
+    if !output.success() || output.stdout.len() < expected {
+        let last = output.stderr.trim().lines().last().unwrap_or("").to_owned();
+        return Err(FingerprintError::Video(if last.is_empty() {
+            "ffmpeg returned no frame.".to_owned()
+        } else {
+            last
+        }));
+    }
+    hash_of(&output.stdout[..expected])
 }
 
 fn hash_of(pixels: &[u8]) -> Result<Hash64, FingerprintError> {
