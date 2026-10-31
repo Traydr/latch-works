@@ -1,10 +1,10 @@
-//! The catalog's schema, glazier-core's `catalog/database.ts` word for word. `sqlite_master`
-//! keeps each `CREATE` as it was written, so the text here, whitespace included, is what makes the
-//! two apps' catalogs the same file format; `tests/catalog_format.rs` compares them.
+//! The catalog's schema, which is Oriel's own. It began as glazier-core's
+//! `catalog/database.ts`, so a catalog Electron Oriel left opens and upgrades in place; with
+//! glazier-core gone, nothing else has to match it.
 
-/// Each entry upgrades the catalog by one version (`PRAGMA user_version`). Entries only append;
-/// an existing catalog replays the ones past its version. Copied from glazier-core: a change
-/// there is a change here, in the same commit as its vectors.
+/// Each entry upgrades the catalog by one version (`PRAGMA user_version`). Entries only append,
+/// and an existing catalog replays the ones past its version, so a shipped entry never changes:
+/// a new table or column is a new entry at the end.
 pub const MIGRATIONS: &[&str] = &[
     "
   CREATE TABLE roots (

@@ -12,8 +12,9 @@
 //! - [`engine`]: what the Tidy UI uses: roots, scans and analysis as `oriel-runtime` jobs, the
 //!   queries behind Overview, the Library and Duplicates, and every change with its Undo.
 //!
-//! Every rule keeps glazier-core's names and is pinned by the vectors in
-//! `conformance/glazier-core`, which glazier-core's own suite wrote before it was removed.
+//! Every rule keeps glazier-core's names. With glazier-core gone this is the only
+//! implementation: unit tests beside each rule pin it, and `tests/round_trip.rs` makes every
+//! change on an archive built at test time and checks that its Undo restores it exactly.
 
 pub mod catalog;
 pub mod collation;

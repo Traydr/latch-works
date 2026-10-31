@@ -31,6 +31,8 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
+# The archive the UI tests scan, made at test time.
+oriel-test-archive.workspace = true
 
 [lints]
 workspace = true

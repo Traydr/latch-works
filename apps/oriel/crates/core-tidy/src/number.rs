@@ -18,7 +18,7 @@ pub fn js_round(value: f64) -> f64 {
 /// computes it, the result differs from Node's in the last bit for about 3 inputs in 10,000; the
 /// platform's `ln` differs for about 1 in 100. With the fused steps below it matched Node 24.18
 /// (V8 on arm64) on 4 million inputs and on every power of two. A Windows build of Electron
-/// Oriel, unfused, can itself differ from these vectors in the last bit.
+/// Oriel, unfused, could itself differ from Node on arm64 in the last bit.
 pub fn v8_log(x: f64) -> f64 {
     const LN2_HI: f64 = f64::from_bits(0x3fe6_2e42_fee0_0000);
     const LN2_LO: f64 = f64::from_bits(0x3dea_39ef_3579_3c76);

@@ -193,12 +193,12 @@ passes, `cargo build -p oriel --target x86_64-pc-windows-gnullvm` links, and
 Each on a throwaway archive with `ORIEL_DATA_DIR` set, as plan 062 ran them for Electron Oriel:
 
 - [ ] `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`; the
-      conformance vectors, Tidy's differential runs and the GPUI tests that port the e2e cases.
+      conformance vectors, Tidy's change and Undo round trip and the GPUI tests that port the e2e cases.
       Symlink tests need developer mode.
 - [ ] **The video gate (plan 063, Phase 8): 60 fps at 1080p.** STOP and report if it fails.
       `cargo run --release -p oriel-media --example mpv_spike -- sweep` with
       `ORIEL_LIBMPV=<libmpv-2.dll>`, then the viewer on the fixture's 1080p and 4K videos.
-- [ ] Stills and AVIF in View and Tidy; fingerprints equal glazier-core's (libvips 8.18).
+- [ ] Stills and AVIF in View and Tidy; similar pictures group as on macOS (libvips 8.18).
 - [ ] **Convert to AVIF**: the staged `libavif\` loads (Settings or the log names
       `libavif-16.dll`), a still converts, and the file opens in Photos. Then without
       `libavif\`: Convert says no libavif was found.

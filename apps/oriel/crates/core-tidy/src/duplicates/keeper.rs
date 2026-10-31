@@ -224,3 +224,264 @@ impl AsRef<KeeperCandidate> for KeeperCandidate {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 1000×1000 PNG of a megabyte, in a folder of no preference: the copy every case varies.
+    fn copy(id: FileId, rel_path: &str) -> KeeperCandidate {
+        KeeperCandidate {
+            id,
+            rel_path: rel_path.into(),
+            kind: FileKind::Image,
+            format: Some(FileFormat::Png),
+            ext: "png".into(),
+            extension_mismatch: false,
+            video_codec: None,
+            width: Some(1000),
+            height: Some(1000),
+            duration_ms: None,
+            audio_state: None,
+            size: 1_000_000,
+            mtime_ms: 1_700_000_000_000.0,
+            is_preferred: false,
+            in_home_folder: false,
+        }
+    }
+
+    fn video(id: FileId, rel_path: &str) -> KeeperCandidate {
+        KeeperCandidate {
+            kind: FileKind::Video,
+            format: Some(FileFormat::Mp4),
+            ext: "mp4".into(),
+            video_codec: Some("h264".into()),
+            duration_ms: Some(30_000.0),
+            ..copy(id, rel_path)
+        }
+    }
+
+    /// The ids best first, and why the first beat the second.
+    fn ranked(candidates: &[KeeperCandidate]) -> (Vec<FileId>, Option<KeepReason>) {
+        let (ranked, reason) = rank_keepers(candidates);
+        (
+            ranked.iter().map(|candidate| candidate.id).collect(),
+            reason,
+        )
+    }
+
+    #[test]
+    fn a_preferred_folder_beats_every_other_rule() {
+        let big = KeeperCandidate {
+            width: Some(4000),
+            height: Some(3000),
+            ..copy(1, "copies/1.png")
+        };
+        let preferred = KeeperCandidate {
+            is_preferred: true,
+            ..copy(2, "copies/2.png")
+        };
+        assert_eq!(
+            ranked(&[big, preferred]),
+            (vec![2, 1], Some(KeepReason::PreferredFolder))
+        );
+    }
+
+    #[test]
+    fn a_video_you_can_hear_beats_more_pixels_and_silence_beats_no_track() {
+        let with = |id, audio_state, width| KeeperCandidate {
+            audio_state: Some(audio_state),
+            width: Some(width),
+            ..video(id, &format!("clips/{id}.mp4"))
+        };
+        assert_eq!(
+            ranked(&[
+                with(1, AudioState::None, 1920),
+                with(2, AudioState::Silent, 1920),
+                with(3, AudioState::Sound, 1280),
+                with(4, AudioState::Unmeasured, 1280),
+            ]),
+            (vec![3, 4, 2, 1], Some(KeepReason::HasSound))
+        );
+    }
+
+    #[test]
+    fn pixels_beat_bytes() {
+        let heavy = KeeperCandidate {
+            size: 3_000_000,
+            ..copy(1, "a/photo.png")
+        };
+        let sharp = KeeperCandidate {
+            width: Some(2000),
+            height: Some(2000),
+            ..copy(2, "b/photo.png")
+        };
+        assert_eq!(
+            ranked(&[heavy, sharp]),
+            (vec![2, 1], Some(KeepReason::MorePixels))
+        );
+    }
+
+    #[test]
+    fn a_longer_video_wins_only_by_half_a_second() {
+        // 30,249 ms rounds to the same half second as 30,000; 30,250 does not.
+        let long = |id, duration_ms| KeeperCandidate {
+            duration_ms: Some(duration_ms),
+            ..video(id, &format!("clips/{id}.mp4"))
+        };
+        assert_eq!(
+            ranked(&[long(1, 30_000.0), long(2, 30_249.0), long(3, 30_250.0)]),
+            (vec![3, 1, 2], Some(KeepReason::Longer))
+        );
+    }
+
+    #[test]
+    fn the_home_folder_beats_format_and_size() {
+        let home = KeeperCandidate {
+            in_home_folder: true,
+            ..copy(1, "pages/1.png")
+        };
+        let heavier_avif = KeeperCandidate {
+            format: Some(FileFormat::Avif),
+            ext: "avif".into(),
+            size: 3_000_000,
+            ..copy(2, "other/1.avif")
+        };
+        assert_eq!(
+            ranked(&[home, heavier_avif]),
+            (vec![1, 2], Some(KeepReason::HomeFolder))
+        );
+    }
+
+    #[test]
+    fn the_archive_format_beats_bytes() {
+        let png = KeeperCandidate {
+            size: 2_000_000,
+            ..copy(1, "a/photo.png")
+        };
+        let avif = KeeperCandidate {
+            format: Some(FileFormat::Avif),
+            ext: "avif".into(),
+            size: 300_000,
+            ..copy(2, "b/photo.avif")
+        };
+        assert_eq!(
+            ranked(&[png, avif]),
+            (vec![2, 1], Some(KeepReason::ArchiveFormat))
+        );
+        // MP4 counts only with a codec the archive keeps.
+        let mpeg4 = KeeperCandidate {
+            video_codec: Some("mpeg4".into()),
+            size: 2_000_000,
+            ..video(3, "a/clip.mp4")
+        };
+        assert_eq!(
+            ranked(&[mpeg4, video(4, "b/clip.mp4")]),
+            (vec![4, 3], Some(KeepReason::ArchiveFormat))
+        );
+    }
+
+    #[test]
+    fn the_formats_own_extension_beats_another_it_accepts() {
+        let m4v = KeeperCandidate {
+            ext: "m4v".into(),
+            ..video(1, "misc/loop.m4v")
+        };
+        assert_eq!(
+            ranked(&[m4v, video(2, "clips/loop.mp4")]),
+            (vec![2, 1], Some(KeepReason::RightExtension))
+        );
+    }
+
+    #[test]
+    fn at_equal_pixels_more_bytes_is_more_detail() {
+        let larger = KeeperCandidate {
+            size: 1_200_000,
+            ..copy(2, "b/photo.png")
+        };
+        assert_eq!(
+            ranked(&[copy(1, "a/photo.png"), larger]),
+            (vec![2, 1], Some(KeepReason::LargerFile))
+        );
+    }
+
+    #[test]
+    fn a_name_with_a_copy_suffix_loses_to_the_original() {
+        for suffixed in [
+            "photos/sunset (1).png",
+            "photos/sunset copy.png",
+            "photos/sunset copy 2.png",
+            "photos/sunset-copy.png",
+            "photos/sunset_copy3.png",
+            "photos/sunset 2.png",
+        ] {
+            assert_eq!(
+                ranked(&[copy(1, suffixed), copy(2, "photos/sunset.png")]),
+                (vec![2, 1], Some(KeepReason::OriginalName)),
+                "{suffixed}"
+            );
+        }
+        // Not a copy suffix: the shorter path decides instead.
+        assert_eq!(
+            ranked(&[
+                copy(1, "photos/sunset-2024.png"),
+                copy(2, "photos/sunset.png")
+            ])
+            .1,
+            Some(KeepReason::ShorterPath)
+        );
+    }
+
+    #[test]
+    fn the_oldest_wins_by_whole_milliseconds() {
+        let newer = KeeperCandidate {
+            mtime_ms: 1_700_000_000_999.9,
+            ..copy(1, "copies/1.png")
+        };
+        let older = KeeperCandidate {
+            mtime_ms: 1_700_000_000_000.1,
+            ..copy(2, "copies/2.png")
+        };
+        assert_eq!(
+            ranked(&[newer, older]),
+            (vec![2, 1], Some(KeepReason::Oldest))
+        );
+        // The same millisecond is a tie, left to the rules after.
+        let same = KeeperCandidate {
+            mtime_ms: 1_700_000_000_000.9,
+            ..copy(3, "copies/3.png")
+        };
+        assert_eq!(
+            ranked(&[copy(4, "copies/4.png"), same]),
+            (vec![3, 4], Some(KeepReason::NameOrder))
+        );
+    }
+
+    #[test]
+    fn the_shorter_path_then_name_order_break_the_last_ties() {
+        assert_eq!(
+            ranked(&[copy(1, "deep/er/path.png"), copy(2, "short/path.png")]),
+            (vec![2, 1], Some(KeepReason::ShorterPath))
+        );
+        // Natural order: 9 before 10, then case, then accents.
+        assert_eq!(
+            ranked(&[
+                copy(1, "b/photo10.png"),
+                copy(2, "b/photo9.png"),
+                copy(3, "b/Photo9.png"),
+                copy(4, "b/phöto9.png"),
+            ]),
+            (vec![2, 3, 4, 1], Some(KeepReason::NameOrder))
+        );
+    }
+
+    #[test]
+    fn copies_no_rule_tells_apart_keep_their_order() {
+        // The same path in two roots.
+        assert_eq!(
+            ranked(&[copy(1, "same/path.png"), copy(2, "same/path.png")]),
+            (vec![1, 2], Some(KeepReason::NameOrder))
+        );
+        assert_eq!(ranked(&[copy(1, "only.png")]), (vec![1], None));
+    }
+}

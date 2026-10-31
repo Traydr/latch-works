@@ -4,11 +4,8 @@
 //! while asked-for work on it waits or runs, while its background analysis is stopped for it to
 //! go.
 
-#[path = "support/report.rs"]
-mod report;
-
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -38,16 +35,11 @@ impl Scratch {
         Self(folder)
     }
 
-    /// The committed archive, copied with its dates.
-    fn archive(&self) -> PathBuf {
-        let conformance =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../conformance/glazier-core");
-        let manifest: report::Manifest =
-            serde_json::from_str(&fs::read_to_string(conformance.join("archive.json")).unwrap())
-                .unwrap();
+    /// The test archive, built here, and how many files it holds.
+    fn archive(&self) -> (PathBuf, usize) {
         let archive = self.0.join("archive");
-        report::copy_archive(&conformance.join("archive"), &manifest, &archive);
-        archive
+        let built = oriel_test_archive::build_archive(&archive);
+        (archive, built.files())
     }
 
     fn engine(&self, media: Media) -> TidyEngine {
@@ -99,7 +91,7 @@ async fn background_analysis_waits_behind_asked_for_work_that_holds_its_root(
     // The work runs on threads of its own, so the test scheduler has to be allowed to wait.
     cx.executor().allow_parking();
     let scratch = Scratch::new("queue");
-    let archive = scratch.archive();
+    let (archive, files) = scratch.archive();
     let engine = scratch.engine(Media::default());
     let root = engine.add_root(&archive).await.unwrap();
 
@@ -126,7 +118,7 @@ async fn background_analysis_waits_behind_asked_for_work_that_holds_its_root(
     scan.update(cx, |job, cx| job.resume(cx));
     until(cx, |cx| !scan.read(cx).is_running()).await;
     let report = cx.read(|cx| scan.read(cx).value().cloned());
-    assert_eq!(report.expect("the scan finished").files, 26);
+    assert_eq!(report.expect("the scan finished").files, files);
     // The analysis has the turn now, paused before it starts.
     until(cx, |cx| !analysis.read(cx).progress().is_waiting()).await;
     assert!(cx.read(|cx| analysis.read(cx).is_running()));
@@ -149,7 +141,7 @@ async fn background_analysis_waits_behind_asked_for_work_that_holds_its_root(
 async fn a_paused_scan_stops_when_cancelled(cx: &mut TestAppContext) {
     cx.executor().allow_parking();
     let scratch = Scratch::new("paused");
-    let archive = scratch.archive();
+    let (archive, _) = scratch.archive();
     let engine = scratch.engine(Media::default());
     let root = engine.add_root(&archive).await.unwrap();
 
@@ -257,8 +249,14 @@ fn background_analysis_steps_aside_for_a_scan_and_goes_on_after() {
         eprintln!("skipped: fingerprints need libvips");
         return;
     }
+    // The clips' fingerprints and loudness are the analysis's work after the stills, where it
+    // meets the waiting scan; without the pinned ffmpeg there are none, and it finishes first.
+    if media.ffmpeg.is_none() {
+        eprintln!("skipped: the analysis needs the archive's clips, which need the pinned ffmpeg");
+        return;
+    }
     let scratch = Scratch::new("step-aside");
-    let archive = scratch.archive();
+    let (archive, _) = scratch.archive();
     let engine = scratch.engine(media);
     let root = block_on(engine.add_root(&archive)).unwrap();
     let scanned = engine.scan_blocking(root.id, &Quiet::new()).unwrap();

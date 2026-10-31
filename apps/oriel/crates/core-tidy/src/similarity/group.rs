@@ -298,3 +298,144 @@ impl<K: Copy + Eq + Hash> DisjointSets<K> {
         root
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A hash `bits` bits away from zero, flipping from the lowest bit up.
+    fn bits(bits: u32) -> Hash64 {
+        Hash64(if bits == 64 {
+            u64::MAX
+        } else {
+            (1u64 << bits) - 1
+        })
+    }
+
+    fn still(id: FileId, hash: Hash64) -> FingerprintedFile {
+        FingerprintedFile {
+            id,
+            aspect: 4.0 / 3.0,
+            fingerprint: Fingerprint::Still(hash),
+        }
+    }
+
+    fn motion(id: FileId, duration_ms: f64, frames: [u32; 5]) -> FingerprintedFile {
+        FingerprintedFile {
+            id,
+            aspect: 16.0 / 9.0,
+            fingerprint: Fingerprint::Motion {
+                duration_ms,
+                frames: frames.into_iter().map(bits).collect(),
+            },
+        }
+    }
+
+    /// The groups at `level`, as each one's distance and its ids in order.
+    fn groups(files: &[FingerprintedFile], level: SimilarityLevel) -> Vec<(u32, Vec<FileId>)> {
+        group_similar_files(files, level)
+            .into_iter()
+            .map(|cluster| {
+                let mut ids = cluster.ids;
+                ids.sort_unstable();
+                (cluster.distance, ids)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn two_stills_are_one_picture_up_to_each_levels_distance() {
+        use SimilarityLevel::*;
+        // Strict takes 4 bits of 64, Balanced 8 and Loose 12.
+        for (distance, strict, balanced, loose) in [
+            (0, true, true, true),
+            (4, true, true, true),
+            (5, false, true, true),
+            (8, false, true, true),
+            (9, false, false, true),
+            (12, false, false, true),
+            (13, false, false, false),
+        ] {
+            let files = [still(1, bits(0)), still(2, bits(distance))];
+            for (level, grouped) in [(Strict, strict), (Balanced, balanced), (Loose, loose)] {
+                let expected = if grouped {
+                    vec![(distance, vec![1, 2])]
+                } else {
+                    Vec::new()
+                };
+                assert_eq!(
+                    groups(&files, level),
+                    expected,
+                    "{distance} bits at {level}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn links_chain_and_the_group_keeps_its_largest_link() {
+        // 1 and 3 are 8 bits apart, past Strict, but each is 4 from 2.
+        let files = [
+            still(1, Hash64(0x0f)),
+            still(2, Hash64(0x00)),
+            still(3, Hash64(0xf0)),
+        ];
+        assert_eq!(
+            groups(&files, SimilarityLevel::Strict),
+            [(4, vec![1, 2, 3])]
+        );
+    }
+
+    #[test]
+    fn only_pictures_of_one_shape_are_compared() {
+        let shaped = |id, aspect| FingerprintedFile {
+            aspect,
+            ..still(id, bits(0))
+        };
+        // Within about 3% of each other they can match; past it, the same hash does not.
+        assert_eq!(
+            groups(&[shaped(1, 1.5), shaped(2, 1.53)], SimilarityLevel::Loose),
+            [(0, vec![1, 2])]
+        );
+        assert!(groups(&[shaped(1, 1.5), shaped(2, 1.6)], SimilarityLevel::Loose).is_empty());
+        // No shape at all is no picture.
+        assert!(groups(&[shaped(1, 0.0), shaped(2, 0.0)], SimilarityLevel::Loose).is_empty());
+    }
+
+    #[test]
+    fn stills_never_meet_motion() {
+        let files = [
+            FingerprintedFile {
+                aspect: 16.0 / 9.0,
+                ..still(1, bits(0))
+            },
+            motion(2, 3000.0, [0; 5]),
+        ];
+        assert!(groups(&files, SimilarityLevel::Loose).is_empty());
+    }
+
+    #[test]
+    fn footage_matches_by_its_median_frame_and_a_close_length() {
+        use SimilarityLevel::*;
+        let base = motion(1, 60_000.0, [0; 5]);
+        // Two frames far off (a new intro, a watermark) and three close: the median, 5, is
+        // within Strict's 5; at 6 it is past it, and within Balanced's 9.
+        let recut = motion(2, 60_000.0, [40, 40, 5, 5, 0]);
+        assert_eq!(
+            groups(&[base.clone(), recut.clone()], Strict),
+            [(5, vec![1, 2])]
+        );
+        let worse = motion(3, 60_000.0, [40, 40, 6, 6, 0]);
+        assert!(groups(&[base.clone(), worse.clone()], Strict).is_empty());
+        assert_eq!(groups(&[base.clone(), worse], Balanced), [(6, vec![1, 3])]);
+        // Lengths may differ by 1.5 s or 3% of the longer, whichever is more: 1.8 s at a minute.
+        let trimmed = motion(4, 58_200.0, [0; 5]);
+        assert_eq!(groups(&[base.clone(), trimmed], Strict), [(0, vec![1, 4])]);
+        let shorter = motion(5, 58_100.0, [0; 5]);
+        assert!(groups(&[base, shorter], Loose).is_empty());
+        // A short clip gets the 1.5 s.
+        let clip = motion(6, 4_000.0, [0; 5]);
+        let longer = motion(7, 5_500.0, [0; 5]);
+        assert_eq!(groups(&[clip, longer], Strict), [(0, vec![6, 7])]);
+    }
+}

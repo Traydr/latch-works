@@ -240,3 +240,82 @@ pub fn is_extension_mismatch(format: FileFormat, ext: &str) -> bool {
 pub fn preferred_extension(format: FileFormat) -> Option<&'static str> {
     format_extensions(format).first().copied()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use FileFormat::*;
+
+    fn hex(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&text[index..index + 2], 16).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn leading_bytes_name_the_format() {
+        for (bytes, format) in [
+            ("", Empty),
+            ("89504e470d0a1a0a", Png),
+            // A signature cut short is no signature.
+            ("89504e470d0a", Unknown),
+            ("ffd8ffe0", Jpeg),
+            ("ffd8", Unknown),
+            ("474946383961", Gif),
+            ("52494646000000005745425056503820", Webp),
+            ("5249464600000000415649204c495354", Avi),
+            ("1a45dfa32e2e2e2e4282847765626d", Webm),
+            ("1a45dfa32e2e2e2e4282886d6174726f736b61", Matroska),
+            ("424d3600", Bmp),
+            ("4d4d002a", Tiff),
+            ("504b0304", Zip),
+            ("fffb90", Mp3),
+        ] {
+            assert_eq!(sniff_bytes(&hex(bytes)), format, "{bytes}");
+        }
+    }
+
+    #[test]
+    fn an_ftyp_box_is_read_by_its_brands() {
+        for (bytes, format) in [
+            // `avif` as the major brand.
+            ("000000186674797061766966000000006d6966316d696166", Avif),
+            // HEIF's `mif1` with `avif` among the compatible brands is AVIF; with `heic`, HEIC.
+            (
+                "0000001c667479706d696631000000006d696631617669666d696166",
+                Avif,
+            ),
+            ("00000014667479706d6966310000000068656963", Heic),
+            ("0000001c6674797069736f6d0000000069736f3261766331", Mp4),
+            ("0000001466747970717420200000000071742020", Mov),
+            ("00000014667479704d344120000000006d703432", M4a),
+        ] {
+            assert_eq!(sniff_bytes(&hex(bytes)), format, "{bytes}");
+        }
+    }
+
+    #[test]
+    fn svg_is_text_that_opens_with_an_svg_element() {
+        assert_eq!(sniff_bytes(b"  \n\t<SVG width='1'/>"), Svg);
+        assert_eq!(
+            sniff_bytes(b"<?xml version='1.0'?><svg xmlns='http://www.w3.org/2000/svg'/>"),
+            Svg
+        );
+        assert_eq!(sniff_bytes(b"<?xml version='1.0'?><html/>"), Unknown);
+    }
+
+    #[test]
+    fn an_extension_is_wrong_only_when_the_format_has_names_and_it_is_not_one() {
+        assert!(!is_extension_mismatch(Jpeg, "JPEG"));
+        assert!(is_extension_mismatch(Avif, "jpg"));
+        assert_eq!(preferred_extension(Avif), Some("avif"));
+        assert_eq!(preferred_extension(Jpeg), Some("jpg"));
+        // Zip bytes under a name of their own (a game's mod) are not wrong; under another
+        // format's name they are.
+        assert!(!is_extension_mismatch(Zip, "zipmod"));
+        assert!(is_extension_mismatch(Zip, "png"));
+        // What has no names takes any.
+        assert!(!is_extension_mismatch(Unknown, "png"));
+    }
+}

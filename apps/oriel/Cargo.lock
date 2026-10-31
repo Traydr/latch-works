@@ -5256,7 +5256,6 @@ dependencies = [
  "futures",
  "gpui-kit",
  "icu_collator",
- "image",
  "indexmap",
  "libc",
  "libloading",
@@ -5267,6 +5266,7 @@ dependencies = [
  "oriel-core-format",
  "oriel-core-paths",
  "oriel-runtime",
+ "oriel-test-archive",
  "oriel-tools",
  "rusqlite",
  "serde",
@@ -5343,6 +5343,7 @@ dependencies = [
  "oriel-core-tidy",
  "oriel-media",
  "oriel-runtime",
+ "oriel-test-archive",
  "oriel-tools",
  "oriel-ui",
  "raw-window-handle",
@@ -5384,6 +5385,15 @@ dependencies = [
  "rusqlite",
  "tokio",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "oriel-test-archive"
+version = "1.0.0"
+dependencies = [
+ "image",
+ "oriel-avif",
+ "oriel-tools",
 ]
 
 [[package]]

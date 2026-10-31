@@ -47,9 +47,8 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
-serde_json = { workspace = true, features = ["float_roundtrip"] }
-# The pure-Rust pipeline the parity example measures against libvips, and the large test PNG.
-image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
+# The archive the engine's tests scan, made at test time.
+oriel-test-archive.workspace = true
 
 [lints]
 workspace = true

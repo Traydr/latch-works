@@ -532,3 +532,322 @@ pub fn page_duplicate_sets(
             .collect(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::Catalog;
+    use crate::contract::{SimilarityLevel, is_close_call};
+    use crate::duplicates::queries::compute_similar_clusters;
+    use crate::similarity::{DETAIL_SIZE, DETAIL_VERSION};
+
+    /// A still as a catalog row: a 1000×750 PNG of a kilobyte, alone on its inode.
+    #[derive(Clone)]
+    struct Still {
+        id: FileId,
+        rel_path: &'static str,
+        sha256: &'static str,
+        /// The fingerprint's 64 bits.
+        hash: u64,
+        width: i64,
+        height: i64,
+        size: i64,
+        mtime_ms: f64,
+        ino: String,
+        /// The detail print, when Spot variants has one.
+        detail: Option<Vec<u8>>,
+    }
+
+    fn still(id: FileId, rel_path: &'static str, sha256: &'static str, hash: u64) -> Still {
+        Still {
+            id,
+            rel_path,
+            sha256,
+            hash,
+            width: 1000,
+            height: 750,
+            size: 1000,
+            mtime_ms: 1_700_000_000_000.0,
+            ino: id.to_string(),
+            detail: None,
+        }
+    }
+
+    /// A catalog in a folder of its own, removed when dropped.
+    struct Scratch {
+        catalog: Catalog,
+        folder: std::path::PathBuf,
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.folder);
+        }
+    }
+
+    fn catalog(stills: &[Still]) -> Scratch {
+        let folder = std::env::temp_dir().join(format!(
+            "oriel-tidy-sets-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&folder).unwrap();
+        let catalog = Catalog::open_blocking(folder.join("catalog.sqlite")).unwrap();
+        let stills = stills.to_vec();
+        catalog
+            .blocking(move |connection| {
+                connection.execute(
+                    "INSERT INTO roots (id, path, added_at) VALUES (1, '/archive', 0)",
+                    [],
+                )?;
+                for still in stills {
+                    let (dir, name) = still.rel_path.rsplit_once('/').unwrap_or(("", still.rel_path));
+                    connection.execute(
+                        "INSERT INTO files (id, root_id, rel_path, dir, name, ext, size, mtime_ms,
+                           ctime_ms, dev, ino, is_junk, last_seen_scan, kind, format, probe_version,
+                           width, height, frames, has_alpha, sha256, fingerprint_version, fingerprint)
+                         VALUES (?1, 1, ?2, ?3, ?4, 'png', ?5, ?6, ?6, '1', ?7, 0, 1, 'image', 'png',
+                           1, ?8, ?9, 1, 0, ?10, 1, ?11)",
+                        rusqlite::params![
+                            still.id,
+                            still.rel_path,
+                            dir,
+                            name,
+                            still.size,
+                            still.mtime_ms,
+                            still.ino,
+                            still.width,
+                            still.height,
+                            still.sha256,
+                            format!("s:{:016x}", still.hash),
+                        ],
+                    )?;
+                    if let Some(print) = still.detail {
+                        connection.execute(
+                            "INSERT INTO file_details (file_id, version, size, mtime_ms, print)
+                             VALUES (?1, ?2, ?3, ?4, ?5)",
+                            rusqlite::params![
+                                still.id,
+                                DETAIL_VERSION,
+                                still.size,
+                                still.mtime_ms,
+                                print
+                            ],
+                        )?;
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
+        Scratch { catalog, folder }
+    }
+
+    fn sets(scratch: &Scratch, level: SimilarityLevel, spot_variants: bool) -> Vec<ComputedSet> {
+        let settings = Settings {
+            spot_variants,
+            ..Settings::default()
+        };
+        scratch
+            .catalog
+            .blocking(move |connection| {
+                let clusters = compute_similar_clusters(connection, Some(1), level)?;
+                build_duplicate_sets(connection, Some(1), &settings, &clusters)
+            })
+            .unwrap()
+    }
+
+    /// Each version's file ids, best first.
+    fn versions(set: &DuplicateSet) -> Vec<Vec<FileId>> {
+        set.versions
+            .iter()
+            .map(|version| version.files.iter().map(|file| file.id).collect())
+            .collect()
+    }
+
+    #[test]
+    fn identical_bytes_on_two_inodes_are_a_set_and_hard_links_free_nothing() {
+        let original = Still {
+            mtime_ms: 1_600_000_000_000.0,
+            ..still(1, "photos/sunset.png", "aa", 0)
+        };
+        let copy = still(2, "photos/sunset (1).png", "aa", 0);
+        let link = Still {
+            ino: "1".into(),
+            ..still(3, "dup/sunset.png", "aa", 0)
+        };
+        // Two names of one file, and two empty files, are no one's duplicates.
+        let lone_link = still(4, "other/a.png", "bb", u64::MAX);
+        let lone_link_too = Still {
+            ino: "4".into(),
+            ..still(5, "other/b.png", "bb", u64::MAX)
+        };
+        // The empty files' prints are far apart, so only their bytes could join them.
+        let empty = |id, rel_path, hash| Still {
+            size: 0,
+            ..still(id, rel_path, "e3b0", hash)
+        };
+        let scratch = catalog(&[
+            original,
+            copy,
+            link,
+            lone_link,
+            lone_link_too,
+            empty(6, "blank-1.png", 0x5555_5555_5555_5555),
+            empty(7, "blank-2.png", 0xaaaa_aaaa_aaaa_aaaa),
+        ]);
+        let sets = sets(&scratch, SimilarityLevel::Balanced, false);
+        assert_eq!(sets.len(), 1, "{sets:#?}");
+        let set = &sets[0];
+        assert_eq!(set.set.kind, DuplicateKind::Exact);
+        assert_eq!(set.set.key, "exact:aa");
+        assert_eq!(versions(&set.set), [vec![1, 3, 2]]);
+        // The oldest is kept; its hard link stays with it, so only the copy goes.
+        assert_eq!(set.set.keep, [1]);
+        assert_eq!(set.set.keep_reason, KeepReason::Oldest);
+        assert_eq!(set.extra_copies, 1);
+        assert_eq!(set.set.reclaimable_bytes, 1000);
+        assert_eq!(set.set.hard_linked_ids, [1, 3]);
+        assert_eq!(set.set.distance, None);
+    }
+
+    #[test]
+    fn similar_versions_join_by_fingerprint_with_their_identical_copies() {
+        // Six bits apart: past Strict's 4, within Balanced's 8.
+        let large = still(1, "photos/sunset.png", "aa", 0);
+        let small = Still {
+            width: 500,
+            height: 375,
+            ..still(2, "photos/sunset-small.jpg", "bb", 0b11_1111)
+        };
+        let copy = still(3, "dup/sunset copy.png", "aa", 0);
+        let scratch = catalog(&[large, small, copy]);
+
+        // At Strict only the identical copies are a set.
+        let strict = sets(&scratch, SimilarityLevel::Strict, false);
+        assert_eq!(strict.len(), 1);
+        assert_eq!(strict[0].set.kind, DuplicateKind::Exact);
+
+        let balanced = sets(&scratch, SimilarityLevel::Balanced, false);
+        assert_eq!(balanced.len(), 1, "{balanced:#?}");
+        let set = &balanced[0].set;
+        assert_eq!(set.kind, DuplicateKind::Similar);
+        assert_eq!(set.distance, Some(6));
+        assert_eq!(versions(set), [vec![1, 3], vec![2]]);
+        assert_eq!(set.keep, [1]);
+        assert_eq!(set.keep_reason, KeepReason::MorePixels);
+        assert!(!is_close_call(set));
+        assert_eq!(balanced[0].extra_copies, 2);
+    }
+
+    #[test]
+    fn a_tie_broken_by_a_few_percent_more_bytes_is_a_close_call() {
+        let close = |larger| {
+            let scratch = catalog(&[
+                still(1, "a/photo.png", "aa", 0),
+                Still {
+                    size: larger,
+                    ..still(2, "b/photo.png", "bb", 0b11)
+                },
+            ]);
+            let sets = sets(&scratch, SimilarityLevel::Balanced, false);
+            let set = &sets[0].set;
+            assert_eq!(set.keep, [2]);
+            assert_eq!(set.keep_reason, KeepReason::LargerFile);
+            is_close_call(set)
+        };
+        assert!(close(1050), "5% larger is a close call");
+        assert!(!close(2000), "twice the bytes is not");
+    }
+
+    /// A detail print with structure everywhere: a diagonal ramp.
+    fn print() -> Vec<u8> {
+        (0..DETAIL_SIZE * DETAIL_SIZE)
+            .map(|index| ((index % DETAIL_SIZE) * 2 + (index / DETAIL_SIZE)) as u8)
+            .collect()
+    }
+
+    /// The print with one patch changed, as another face or a caption changes it.
+    fn print_with_patch() -> Vec<u8> {
+        let mut changed = print();
+        for row in 8..16 {
+            for column in 8..16 {
+                changed[row * DETAIL_SIZE + column] = 255;
+            }
+        }
+        changed
+    }
+
+    #[test]
+    fn spot_variants_keeps_a_copy_of_each_picture_from_the_folder_holding_most() {
+        let plain = Still {
+            detail: Some(print()),
+            ..still(1, "fanbox/101_jp.png", "aa", 0)
+        };
+        let faced = Still {
+            detail: Some(print_with_patch()),
+            ..still(2, "fanbox/101_clean.png", "bb", 0b1)
+        };
+        // Another site's copy of the plain page, larger, with its tones shifted by a re-encode:
+        // a copy of the first picture, not a picture of its own.
+        let copy = Still {
+            size: 3000,
+            detail: Some(print().iter().map(|value| value + 3).collect()),
+            ..still(3, "pixiv/900_p0.png", "cc", 0b10)
+        };
+        let scratch = catalog(&[plain, faced, copy]);
+
+        // Off, it is one set that keeps one file.
+        let off = sets(&scratch, SimilarityLevel::Balanced, false);
+        assert_eq!(off[0].set.keep, [3]);
+        assert_eq!(off[0].set.pictures, None);
+
+        let on = sets(&scratch, SimilarityLevel::Balanced, true);
+        assert_eq!(on.len(), 1, "{on:#?}");
+        let computed = &on[0];
+        let set = &computed.set;
+        // The folder that holds both pictures is home: its copy of the plain page beats the
+        // larger one elsewhere.
+        assert_eq!(versions(set), [vec![1], vec![3], vec![2]]);
+        assert_eq!(set.pictures.as_deref(), Some(&[0, 0, 1][..]));
+        assert_eq!(set.keep, [1, 2]);
+        assert_eq!(set.keep_reason, KeepReason::HomeFolder);
+        assert!(!computed.variants);
+        assert_eq!((computed.comparable, computed.compared), (3, 3));
+        assert_eq!(computed.extra_copies, 1);
+    }
+
+    #[test]
+    fn a_set_of_nothing_but_variants_keeps_every_version() {
+        let scratch = catalog(&[
+            Still {
+                detail: Some(print()),
+                ..still(1, "alt/outfit-a.png", "aa", 0)
+            },
+            Still {
+                detail: Some(print_with_patch()),
+                ..still(2, "alt/outfit-b.png", "bb", 0b1111)
+            },
+        ]);
+        let on = sets(&scratch, SimilarityLevel::Balanced, true);
+        let computed = &on[0];
+        assert!(computed.variants);
+        assert_eq!(computed.set.pictures.as_deref(), Some(&[0, 1][..]));
+        assert_eq!(computed.set.keep.len(), 2);
+        assert_eq!(computed.set.keep_reason, KeepReason::DifferentPictures);
+        assert_eq!(computed.set.reclaimable_bytes, 0);
+        // Until every version has a print there is nothing to compare, and it stays one set.
+        let unprinted = catalog(&[
+            Still {
+                detail: Some(print()),
+                ..still(1, "alt/outfit-a.png", "aa", 0)
+            },
+            still(2, "alt/outfit-b.png", "bb", 0b1111),
+        ]);
+        let on = sets(&unprinted, SimilarityLevel::Balanced, true);
+        assert_eq!(on[0].set.pictures, None);
+        assert_eq!(on[0].set.keep.len(), 1);
+    }
+}

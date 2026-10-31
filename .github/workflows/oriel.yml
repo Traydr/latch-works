@@ -2,7 +2,7 @@ name: Oriel
 
 # Formats, lints and tests the Rust workspace, and checks that the TypeScript packages Pane View,
 # the Lockstep CLI and Gather Box share still produce the conformance vectors the Rust tests read
-# (the vectors of what Electron Oriel and glazier-core made are frozen). Off by default:
+# (the few files Electron Oriel wrote are frozen). Off by default:
 # it runs only when started by hand (Actions › Oriel › Run workflow), as the owner runs
 # `pnpm oriel:check` locally.
 on:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   check:
-    # Apple silicon, as the fingerprint vectors were made with sharp's darwin-arm64 libvips.
+    # Apple silicon, the platform the pinned media tools and vendored libraries are fetched for.
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7

@@ -42,7 +42,7 @@ To install it like any app, make the DMG ([Making the app](#making-the-app)).
 | --- | --- |
 | Rust | rustup; `apps/oriel/rust-toolchain.toml` pins the toolchain, and rustup installs it on the first `cargo` command |
 | Platform tools | Xcode, or its command-line tools (`xcode-select --install`) |
-| Node and pnpm | Node 24 and pnpm 12 (`pnpm install` at the root), for the conformance vectors and for sharp's libvips, which the fingerprint tests load |
+| Node and pnpm | Node 24 and pnpm 12 (`pnpm install` at the root), for the conformance vectors, and for sharp's libvips until `xtask vendor` has copied it |
 | ffmpeg | The app's own pinned ffmpeg and ffprobe, fetched once (below); Homebrew's `ffmpeg` only for the fixture script, which needs its encoders |
 | meson, ninja, pkgconf | `brew install meson ninja pkgconf`, to build the LGPL libmpv (below); nothing else from Homebrew is installed or linked (libavif's bottles are fetched by URL and relocated, below) |
 
@@ -103,8 +103,6 @@ scripted input:
 | `ORIEL_TIDY_PICKER=1` | Tidy opens its folder picker (Add Folder…) once it is up |
 | `ORIEL_TIDY_RUN=convert,cleanup` | Once the folder on screen is scanned, Tidy starts those pages' changes; the second queues behind the first. It changes files: point it only at a copy |
 | `ORIEL_LOCATIONS_MENU=1` | Opens the sidebar's location switcher about 4 s after the window first draws |
-| `ORIEL_CHANGES_ONLY=<scenario>` | `core-tidy`'s changes test runs one differential scenario |
-| `ORIEL_CHANGES_OUT=<file>` | `core-tidy`'s changes test writes Rust's report there |
 | `ORIEL_SPIKE_PANEL=volume\|speed` | `mpv_spike` opens the player's volume or speed panel, for screenshots |
 
 View's Debug logging setting prints each thumbnail event to the terminal as a `[thumbnails] …`
@@ -191,26 +189,21 @@ ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/lockstep-core test
 Then `pnpm oriel:check` shows what Rust must change. Known differences are listed in the
 tests themselves (the 19 Han pairs in `crates/core-domain/tests/conformance.rs`).
 
-The rest is frozen: Oriel is the only implementation left, and these files are what it must
-still produce. Nothing regenerates them; change one only with the Rust change that needs it.
+A few small files are frozen: Electron Oriel wrote them, and nothing regenerates them, so change
+one only with the Rust change that needs it.
 
-- `conformance/glazier-core/` and `conformance/fingerprints/`: what glazier-core, Tidy's
-  TypeScript engine, made of the committed archives and the fingerprint corpus before it was
-  removed with Electron Oriel. Fingerprints match them only through the libvips build sharp
-  ships; the Rust tests load it from `node_modules` (`ORIEL_LIBVIPS=<dylib>` points them at
-  another).
-- `conformance/glazier-core/smoke-fixture.json`: glazier-core's last report of the smoke fixture
-  (`make-fixture.ts --profile smoke`), the baseline for a differential run on a larger archive
-  than the committed one. It matched Oriel's with 0 differences when it was frozen:
-
-  ```sh
-  cd apps/oriel && cargo run --release -p oriel-core-tidy --example tidy_differential -- \
-    ~/.latch-works/oriel-fixtures/spike-fixture-smoke /tmp/smoke-report.json \
-    conformance/glazier-core/smoke-fixture.json
-  ```
 - `conformance/media-index/view-index.*`: the View index Electron Oriel's schema made.
 - `conformance/lockstep-core/secret-storage/electron/`: a Sync profile and token Electron Oriel
   wrote, which Oriel must read.
+
+Tidy has no TypeScript twin left: glazier-core went with Electron Oriel, and Oriel's engine is
+the only implementation. Its rules are pinned by unit tests beside the code (the keeper, similar
+groups, duplicate sets and Spot variants, sniffing, fingerprints), and what it does to files by
+`crates/core-tidy/tests/round_trip.rs`, which builds an archive at test time
+(`crates/test-archive`: stills drawn in code, clips from the pinned ffmpeg), makes each change
+Tidy offers, and checks that its Undo puts every file back as it was, bytes and dates included.
+The repository holds no media for them; without the pinned ffmpeg the video cases skip, saying
+so.
 
 ## Video through libmpv
 
@@ -290,8 +283,8 @@ checks the hashes and does nothing. The pins are in `crates/xtask/src/vendor/pin
   Homebrew builds aom for macOS 15 and later only, so the set needs macOS 15.
 - The vendored libvips is byte for byte the one in `node_modules`. The app finds libvips in its
   bundle's `Contents/Frameworks`, else the file `ORIEL_LIBVIPS` names, else the vendored set,
-  else `node_modules` (`Vips::open_located` in `oriel-core-tidy`). The fingerprint tests still
-  load `node_modules`' copy unless `ORIEL_LIBVIPS` names another.
+  else `node_modules` (`Vips::open_located` in `oriel-core-tidy`). Tidy's tests find it the
+  same way.
 - `oriel-avif` loads libavif from the app bundle's `Contents/Frameworks`, else the file
   `ORIEL_LIBAVIF` names, else `.vendor/libavif/current`. Its tests skip, saying so, until the
   set is vendored.

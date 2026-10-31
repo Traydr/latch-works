@@ -1,12 +1,12 @@
-//! What the Tidy UI tests share: a copy of the archive glazier-core's differential suite scans
-//! (`apps/oriel/conformance/glazier-core/archive`, dates included) beside a data folder of its
-//! own under the temp folder, Tidy alone in a window over it, and the steps a case takes.
+//! What the Tidy UI tests share: the archive `oriel-test-archive` builds, made for each case
+//! beside a data folder of its own under the temp folder, Tidy alone in a window over it, and
+//! the steps a case takes.
 
 #![allow(dead_code)]
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
@@ -31,24 +31,6 @@ pub fn executor() -> Changes {
     Rc::new(EngineChanges)
 }
 
-pub fn conformance() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../conformance/glazier-core")
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Manifest {
-    files: Vec<ManifestFile>,
-    empty_folders: Vec<String>,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ManifestFile {
-    path: String,
-    mtime_ms: f64,
-}
-
 /// A folder of its own under the temp folder, which Tidy's sandbox admits.
 pub fn scratch(test: &str) -> PathBuf {
     let folder = std::env::temp_dir()
@@ -57,28 +39,6 @@ pub fn scratch(test: &str) -> PathBuf {
     let _ = std::fs::remove_dir_all(&folder);
     std::fs::create_dir_all(&folder).unwrap();
     std::fs::canonicalize(folder).unwrap()
-}
-
-/// The committed archive, copied with its dates and its empty folder.
-pub fn copy_archive(target: &Path) {
-    let source = conformance().join("archive");
-    let manifest: Manifest =
-        serde_json::from_str(&std::fs::read_to_string(conformance().join("archive.json")).unwrap())
-            .unwrap();
-    for folder in &manifest.empty_folders {
-        std::fs::create_dir_all(target.join(folder)).unwrap();
-    }
-    for file in &manifest.files {
-        let to = target.join(&file.path);
-        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
-        std::fs::copy(source.join(&file.path), &to).unwrap();
-        std::fs::File::options()
-            .write(true)
-            .open(&to)
-            .unwrap()
-            .set_modified(SystemTime::UNIX_EPOCH + Duration::from_millis(file.mtime_ms as u64))
-            .unwrap();
-    }
 }
 
 /// Whether this machine has what a scan's analysis needs.
@@ -137,7 +97,7 @@ pub fn launch_changing(cx: &mut TestAppContext, test: &str) -> Session {
     launch_in(cx, scratch(test), executor())
 }
 
-/// Tidy over a data folder in `root`, with the archive copied beside it.
+/// Tidy over a data folder in `root`, with the archive built beside it.
 pub fn launch_in(cx: &mut TestAppContext, root: PathBuf, changes: Changes) -> Session {
     // The engine's work runs on threads of its own, so the scheduler has to be allowed to wait.
     cx.executor().allow_parking();
@@ -146,7 +106,7 @@ pub fn launch_in(cx: &mut TestAppContext, root: PathBuf, changes: Changes) -> Se
         oriel_ui::theme::init(cx);
     });
     let archive = root.join("archive");
-    copy_archive(&archive);
+    oriel_test_archive::build_archive(&archive);
     let data = DataRoot::at(root.join("data")).unwrap();
     data.create_folders().unwrap();
     let mut parts = None;

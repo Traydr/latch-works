@@ -159,6 +159,65 @@ mod tests {
         assert_eq!(&print[..2], &[1, 0]);
     }
 
+    /// A print with structure everywhere: a diagonal ramp.
+    fn ramp() -> Vec<u8> {
+        (0..DETAIL_SIZE * DETAIL_SIZE)
+            .map(|index| ((index % DETAIL_SIZE) * 2 + (index / DETAIL_SIZE)) as u8)
+            .collect()
+    }
+
+    fn variant(left: &[u8], right: &[u8]) -> bool {
+        is_variant(&normalize_detail(left), &normalize_detail(right))
+    }
+
+    #[test]
+    fn a_changed_spot_is_a_variant_and_a_change_everywhere_is_a_copy() {
+        let ramp = ramp();
+        assert!(!variant(&ramp, &ramp));
+        // A re-encode's shifted and stretched tones cancel out.
+        let toned: Vec<u8> = ramp.iter().map(|&value| value / 2 + 20).collect();
+        assert!(!variant(&ramp, &toned));
+        // A little noise everywhere, as recompression leaves, is still the same picture.
+        let noisy: Vec<u8> = ramp
+            .iter()
+            .enumerate()
+            .map(|(index, &value)| value.saturating_add((index % 3) as u8))
+            .collect();
+        assert!(!variant(&ramp, &noisy));
+        // One block of 64 changed hard, as another face or a caption changes it, is another
+        // picture.
+        let mut patched = ramp.clone();
+        for row in 8..16 {
+            for column in 8..16 {
+                patched[row * DETAIL_SIZE + column] = 255;
+            }
+        }
+        assert!(variant(&ramp, &patched));
+    }
+
+    #[test]
+    fn between_lossless_files_a_small_spot_is_enough() {
+        let ramp = ramp();
+        // One 4×4 block nudged: nothing else differs, so a standout past 1 already counts.
+        let mut nudged = ramp.clone();
+        for row in 0..4 {
+            for column in 0..4 {
+                nudged[row * DETAIL_SIZE + column] += 2;
+            }
+        }
+        let difference = detail_difference(&normalize_detail(&ramp), &normalize_detail(&nudged));
+        assert!(difference.local < VARIANT_LOCAL, "{difference:?}");
+        assert!(difference.typical <= LOSSLESS_TYPICAL, "{difference:?}");
+        assert!(variant(&ramp, &nudged));
+        // The same nudge on a recompressed copy, which differs a little everywhere, is not.
+        let lossy: Vec<u8> = nudged
+            .iter()
+            .enumerate()
+            .map(|(index, &value)| value.saturating_add((index % 3) as u8))
+            .collect();
+        assert!(!variant(&ramp, &lossy));
+    }
+
     #[test]
     fn a_flat_print_is_left_unscaled() {
         let flat = vec![9u8; DETAIL_SIZE * DETAIL_SIZE];

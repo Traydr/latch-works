@@ -4,9 +4,6 @@
 //! A change runs as a job too, and its Undo puts things back; a file that changed since the scan
 //! is left alone; and a change in a root outside the sandbox is refused before anything moves.
 
-#[path = "support/report.rs"]
-mod report;
-
 use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,10 +19,7 @@ use oriel_core_tidy::contract::{
 use oriel_core_tidy::passes::{Media, Quiet};
 use oriel_core_tidy::{Applied, ScanReport, TidyEngine, Undone};
 use oriel_runtime::JobStatus;
-
-fn conformance() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../conformance/glazier-core")
-}
+use oriel_test_archive::Built;
 
 /// A scratch folder under the temp folder, which Tidy's sandbox admits, removed when dropped.
 struct Scratch(PathBuf);
@@ -44,14 +38,16 @@ impl Scratch {
         Self(folder)
     }
 
-    /// The committed archive, copied with its dates.
+    /// The test archive, built here.
     fn archive(&self) -> PathBuf {
-        let manifest: report::Manifest =
-            serde_json::from_str(&fs::read_to_string(conformance().join("archive.json")).unwrap())
-                .unwrap();
+        self.archive_built().0
+    }
+
+    /// The test archive, and what this machine could put in it.
+    fn archive_built(&self) -> (PathBuf, Built) {
         let archive = self.0.join("archive");
-        report::copy_archive(&conformance().join("archive"), &manifest, &archive);
-        archive
+        let built = oriel_test_archive::build_archive(&archive);
+        (archive, built)
     }
 
     fn engine(&self, media: Media) -> TidyEngine {
@@ -86,7 +82,7 @@ async fn a_scan_runs_as_a_job_that_names_its_phases(cx: &mut TestAppContext) {
     // The work runs on threads of its own, so the test scheduler has to be allowed to wait.
     cx.executor().allow_parking();
     let scratch = Scratch::new("job");
-    let archive = scratch.archive();
+    let (archive, built) = scratch.archive_built();
     // No libvips or ffmpeg: the walk, sniffing and hashing still run.
     let engine = scratch.engine(Media::default());
     let root = engine.add_root(&archive).await.unwrap();
@@ -113,7 +109,7 @@ async fn a_scan_runs_as_a_job_that_names_its_phases(cx: &mut TestAppContext) {
         JobStatus::Succeeded(report) => report.clone(),
         other => panic!("the scan did not succeed: {other:?}"),
     });
-    assert_eq!(report.files, 26);
+    assert_eq!(report.files, built.files());
     assert_eq!(report.empty_folders, 1);
     let phases = phases.borrow().clone();
     assert!(
@@ -126,7 +122,7 @@ async fn a_scan_runs_as_a_job_that_names_its_phases(cx: &mut TestAppContext) {
     );
 
     let overview = engine.overview(root.id).await.unwrap();
-    assert_eq!(overview.files, 26);
+    assert_eq!(overview.files as usize, built.files());
     assert_eq!(overview.cleanup.junk, 1);
     assert_eq!(overview.cleanup.empty_folders, 1);
     assert!(overview.last_scan_at.is_some());

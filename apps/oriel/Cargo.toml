@@ -47,6 +47,7 @@ oriel-mode-tidy = { path = "crates/mode-tidy" }
 oriel-mode-sync = { path = "crates/mode-sync" }
 oriel-runtime = { path = "crates/runtime" }
 oriel-tools = { path = "crates/tools" }
+oriel-test-archive = { path = "crates/test-archive" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

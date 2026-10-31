@@ -1,12 +1,12 @@
-//! Electron Oriel's Tidy cases (its e2e Glazier specs) as GPUI Kit headless UI tests, on
-//! a copy of the archive glazier-core's differential suite scans
-//! (`apps/oriel/conformance/glazier-core/archive`, dates included). It holds the e2e
-//! workbench's files and the Spot variants spec's pages, so its numbers are larger than the
-//! specs': 26 files, four similar sets and one identical set.
+//! Electron Oriel's Tidy cases (its e2e Glazier specs) as GPUI Kit headless UI tests, on the
+//! archive `oriel-test-archive` builds for each case: glazier-core's differential archive, drawn
+//! and encoded at test time. It holds the e2e workbench's files and the Spot variants spec's
+//! pages, so its numbers are larger than the specs': 26 files, four similar sets and one
+//! identical set.
 //!
-//! The cases that change files run on the engine's executor, in the temp folder. The scans need
-//! libvips and the pinned ffmpeg and ffprobe (`cargo run -p xtask -- vendor`,
-//! `fetch-media-tools`); without them a read-side case says so and passes.
+//! The cases that change files run on the engine's executor, in the temp folder. The archive's
+//! clips and the scans need libvips and the pinned ffmpeg and ffprobe (`cargo run -p xtask --
+//! vendor`, `fetch-media-tools`); without them a read-side case says so and passes.
 
 mod support;
 
@@ -245,8 +245,8 @@ async fn spot_variants_moves_sets_of_variants_out_of_review(cx: &mut TestAppCont
     click(cx, &session, "duplicates-spot-variants");
     settle(cx, &session).await;
     let on = counts(cx);
-    // As glazier-core's engine counts them on this archive (`differential.json`): the resized
-    // sunset turns out a variant too.
+    // As glazier-core's engine counted them on this archive: the resized sunset turns out a
+    // variant too, its hard edges recompressed at a quarter of the pixels.
     assert_eq!((on.similar, on.variants), (2, 2), "{on:?}");
     assert_eq!(
         label(cx, &session, "scope-variants").as_deref(),

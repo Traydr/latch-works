@@ -1,8 +1,8 @@
 //! The prints Tidy's similarity pass makes, as glazier-core's `similarity/` makes them: the
 //! 64-bit fingerprint that finds similar sets (`group.rs` compares it to its thresholds) and the
-//! detail print Spot variants splits those sets with (`detail.rs`). Both were tuned on the owner's
-//! library, so they must equal glazier-core's bit for bit; the conformance vectors in
-//! `apps/oriel/conformance/fingerprints` check that they do.
+//! detail print Spot variants splits those sets with (`detail.rs`). The thresholds were tuned on
+//! the owner's library with glazier-core's prints, so the arithmetic keeps its steps; a change to
+//! how a print is made bumps its version, and the catalog makes the old ones again.
 
 pub mod detail;
 pub mod fingerprint;

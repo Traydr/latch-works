@@ -1,6 +1,7 @@
 //! The engine's values, as glazier-core's `contract.ts` names them: what a file is, what a query
 //! asks for, and what Overview, the Library and Duplicates are shown. The serde forms are the
-//! TypeScript's JSON, so the conformance vectors and the differential run compare them directly.
+//! TypeScript's JSON, so the names a catalog's settings and plans store stay as glazier-core
+//! wrote them.
 
 use serde::{Deserialize, Serialize};
 
