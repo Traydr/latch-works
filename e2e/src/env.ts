@@ -15,7 +15,7 @@ const E2E_ROOT = path.join(REPO_ROOT, "e2e");
 
 export const FIXTURE_ARCHIVE_DIR = path.join(E2E_ROOT, ".fixtures", "archive");
 
-/** A second, tiny archive Oriel RS's Sync stack test pushes on top of the seeded one. */
+/** A second, tiny archive Oriel's Sync stack test pushes on top of the seeded one. */
 export const LOCKSTEP_SOURCE_DIR = path.join(E2E_ROOT, ".fixtures", "lockstep-source");
 
 export const AUTH_STATE_PATH = path.join(E2E_ROOT, ".auth", "pane-view.json");

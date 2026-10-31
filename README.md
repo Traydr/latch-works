@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/oriel/media/oriel-icon.png" alt="Latch Works" width="120" />
+  <img src="apps/oriel/assets/oriel-icon.png" alt="Latch Works" width="120" />
 </p>
 
 <p align="center">
@@ -22,7 +22,7 @@
 
 # Latch Works
 
-Latch Works is a private workshop for a personal media archive: a Chrome extension that collects, an Electron gallery that reads, a sync client that pushes, and a web viewer that serves it all back to you on any device.
+Latch Works is a private workshop for a personal media archive: a Chrome extension that collects, a native desktop app that reads and tidies, a sync client that pushes, and a web viewer that serves it all back to you on any device.
 
 The local archive is the source of truth. Nothing is public, nothing is inferred from a cloud service. Remote access is explicit, authenticated, and read-only. Lockstep is the only write path.
 
@@ -53,7 +53,7 @@ Pane View is a private web viewer for the synced archive. Galleries, videos, and
 
 ### Read it locally, first
 
-Oriel is the desktop app, with three modes. View, the gallery for local images, videos, and comics that began as Frame View, is where the UX gets decided: whatever feels right here gets ported to Pane View, not the other way around. Tidy (once Glazier) finds duplicates and converts files to the archive formats, with every change undoable.
+Oriel is the desktop app, native and written in Rust, with three modes. View, the gallery for local images, videos, and comics that began as Frame View, is where the UX gets decided: whatever feels right here gets ported to Pane View, not the other way around. Tidy (once Glazier) finds duplicates and converts files to the archive formats, with every change undoable.
 
 </td>
 </tr>
@@ -102,7 +102,7 @@ Gather Box downloads a gallery
   -> Shutter signs thumbnail and preview renditions on demand
 ```
 
-The scan, sort, grouping, and plan logic all live in `packages/`. Oriel's Sync mode and the Lockstep CLI are two front ends over one engine, and Pane View reads the same domain types, so a sorting rule changed once changes everywhere.
+The scan, sort, grouping, and plan logic all live in `packages/`. The Lockstep CLI and Pane View use them directly; Oriel ports them to Rust, and conformance vectors written by each package's tests hold its ports to the same answers, so a sorting rule changes everywhere or a check fails.
 
 ---
 
@@ -111,7 +111,7 @@ The scan, sort, grouping, and plan logic all live in `packages/`. Oriel's Sync m
 | Name | Path | What it does |
 | --- | --- | --- |
 | Pane View | [`apps/pane-view`](apps/pane-view) | Private web viewer for a synced archive. TanStack Start + PostgreSQL + S3. |
-| Oriel | [`apps/oriel`](apps/oriel) | The desktop app, in three modes. **View** (once Frame View) is the gallery for local images, videos, and comics; PDF reading is [planned](docs/plans/040-frame-view-pdf-spike.md), not shipped. **Tidy** (once Glazier) audits and tidies the local archive: exact and similar duplicates, sound, conversion to AVIF and MP4, with holding and undo. **Sync** (once the Lockstep desktop app) plans and pushes to Pane View with profiles, encrypted tokens, and run history. |
+| Oriel | [`apps/oriel`](apps/oriel) | The desktop app, in Rust on GPUI, in three modes. **View** (once Frame View) is the gallery for local images, videos, and comics; PDF reading is [planned](docs/plans/040-frame-view-pdf-spike.md), not shipped. **Tidy** (once Glazier) audits and tidies the local archive: exact and similar duplicates, sound, conversion to AVIF and MP4, with holding and undo. **Sync** (once the Lockstep desktop app) plans and pushes to Pane View with profiles, encrypted tokens, and run history. |
 | Gather Box | [`apps/gather-box`](apps/gather-box) | Chrome extension that downloads galleries and story PDFs into local folder structures. |
 | Lockstep CLI | [`apps/lockstep-cli`](apps/lockstep-cli) | Scriptable `plan` / `push` / `verify` / `doctor`. npm package `@latch-works/lockstep`. |
 | Showcase | [`apps/showcase`](apps/showcase) | Astro product site and MDX docs: pages, screenshots, getting-started guides. |
@@ -123,15 +123,14 @@ The scan, sort, grouping, and plan logic all live in `packages/`. Oriel's Sync m
 | `@latch-works/media-domain` | [`packages/media-domain`](packages/media-domain) | Media types, path helpers, gallery sort / comic grouping, Zod schemas |
 | `@latch-works/media-index` | [`packages/media-index`](packages/media-index) | Archive scanning and sync-plan generation |
 | `@latch-works/media-storage` | [`packages/media-storage`](packages/media-storage) | Content-addressed S3 object key conventions |
-| `@latch-works/lockstep-core` | [`packages/lockstep-core`](packages/lockstep-core) | Headless sync engine shared by Oriel's Sync mode and the Lockstep CLI |
-| `@latch-works/media-format` | [`packages/media-format`](packages/media-format) | Archive format policy (AVIF stills, MP4 video) and encoder settings shared by Gather Box and Oriel's Tidy mode |
-| `@latch-works/glazier-core` | [`packages/glazier-core`](packages/glazier-core) | Glazier's engine: catalog, scans, duplicates, plans, holding and the journal |
+| `@latch-works/lockstep-core` | [`packages/lockstep-core`](packages/lockstep-core) | Headless sync engine behind the Lockstep CLI, which Oriel's Sync mode ports to Rust |
+| `@latch-works/media-format` | [`packages/media-format`](packages/media-format) | Archive format policy (AVIF stills, MP4 video) and encoder settings, used by Gather Box and ported to Rust for Oriel's Tidy mode |
 
 ---
 
 ## Install
 
-Requires Node.js 24, pnpm 12 (`corepack enable`), and npm on `PATH` for Electron Forge packaging. Pane View additionally needs PostgreSQL, S3-compatible storage, and Shutter access for signed renditions.
+Requires Node.js 24 and pnpm 12 (`corepack enable`). Oriel additionally needs Rust (rustup installs the pinned toolchain) and Xcode's command-line tools; its [runbook](docs/runbooks/oriel.md) has the rest. Pane View additionally needs PostgreSQL, S3-compatible storage, and Shutter access for signed renditions.
 
 ```bash
 pnpm install
@@ -158,13 +157,14 @@ pnpm check
 ```bash
 pnpm dev:pane                                  # Pane View  → http://127.0.0.1:3000
 pnpm --filter @latch-works/showcase dev        # Showcase   → http://127.0.0.1:3100
-pnpm --filter @latch-works/oriel start         # Oriel: View, Tidy and Sync (Electron dev)
+pnpm --filter @latch-works/oriel dev           # Oriel: View, Tidy and Sync (a debug build)
 pnpm --filter @latch-works/gather-box build    # Gather Box → dist/, load unpacked in Chrome
-pnpm make:oriel                                # Oriel's DMG, or Setup.exe and an MSI on Windows
+pnpm --filter @latch-works/oriel bundle        # Oriel.app, in apps/oriel/target/release/bundle
 ```
 
-Oriel is built from source and unsigned; the [runbook](docs/runbooks/oriel.md) has each OS's
-prerequisites and how to open an unsigned build.
+Oriel is built from source and unsigned. In `apps/oriel`, `cargo run -p xtask -- dmg` makes its
+DMG and `cargo run -p xtask -- package windows` its Setup.exe on Windows; the
+[runbook](docs/runbooks/oriel.md) has each OS's prerequisites and how to open an unsigned build.
 
 ### Sync
 
@@ -191,6 +191,7 @@ pnpm lint:all    # Runs both Biome and Oxlint with the Anti-slop plugin
 pnpm test        # Tests in all packages
 pnpm typecheck   # tsc across all packages
 pnpm knip        # Unused files, exports, dependencies
+pnpm oriel:check # Oriel's Rust workspace: cargo fmt, clippy and tests
 ```
 
 ---
@@ -201,10 +202,10 @@ pnpm knip        # Unused files, exports, dependencies
 | --- | --- |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System architecture and the Shutter delivery model |
 | [`docs/runbooks/lockstep.md`](docs/runbooks/lockstep.md) | Lockstep operations runbook |
-| [`docs/runbooks/glazier.md`](docs/runbooks/glazier.md) | Tidy (Glazier): what each action does to the archive, holding, undo |
+| [`docs/runbooks/oriel.md`](docs/runbooks/oriel.md) | Oriel: building, running and packaging it; what each Tidy action does to the archive, holding, undo |
+| [`docs/runbooks/oriel-windows.md`](docs/runbooks/oriel-windows.md) | Oriel on Windows |
 | [`docs/adr/`](docs/adr) | Architecture decision records |
 | [`docs/latch-works-brand-kit.md`](docs/latch-works-brand-kit.md) | Naming, tone, and product vocabulary |
-| [`docs/electron-macos-signing.md`](docs/electron-macos-signing.md) | Signing and notarizing the Electron apps |
 | [`apps/showcase/README.md`](apps/showcase/README.md) | Showcase dev server and screenshot capture |
 
 ---

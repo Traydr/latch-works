@@ -1,13 +1,13 @@
 /*
- * Conformance vectors for lockstep-core. Oriel RS's Rust port (apps/oriel-rs/crates/core-sync)
+ * Conformance vectors for lockstep-core. Oriel's Rust port (apps/oriel/crates/core-sync)
  * must produce the same, so a plan, a hash cache, a scan and the doctor's checks cannot drift
- * between Electron Oriel's Sync and Oriel RS's (plan 063, "Keeping two implementations honest").
+ * between the Lockstep CLI and Oriel's Sync (plan 063, "Keeping two implementations honest").
  *
  * This suite checks that the TypeScript still makes the committed vectors in
- * apps/oriel-rs/conformance/lockstep-core, and `cargo test -p oriel-core-sync` checks the Rust
+ * apps/oriel/conformance/lockstep-core, and `cargo test -p oriel-core-sync` checks the Rust
  * against the same files. After a deliberate change, regenerate them and port the change:
  *
- *   ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/lockstep-core test
+ *   ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/lockstep-core test
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -49,10 +49,10 @@ import type { HashMode } from "./types.js";
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 const vectorDirectory = fileURLToPath(
-  new URL("../../../apps/oriel-rs/conformance/lockstep-core/", import.meta.url),
+  new URL("../../../apps/oriel/conformance/lockstep-core/", import.meta.url),
 );
 
-const updating = process.env.ORIEL_RS_UPDATE_VECTORS === "1";
+const updating = process.env.ORIEL_UPDATE_VECTORS === "1";
 
 /* Non-ASCII written as escapes, so the files survive any editor's normalization. */
 function writeVectors(file: string, json: string) {
@@ -81,7 +81,7 @@ function committedVectors<T>(fileName: string, schema: z.ZodType<T>, vectors: T)
 }
 
 const ABOUT =
-  "Written by packages/lockstep-core/src/conformance.test.ts; ORIEL_RS_UPDATE_VECTORS=1 rewrites it.";
+  "Written by packages/lockstep-core/src/conformance.test.ts; ORIEL_UPDATE_VECTORS=1 rewrites it.";
 
 /* A scanned file as the plan sees it: the scan's fields, and a hash when one is known. */
 function mediaItem(path: string, size: number, sha256?: string): MediaItem {

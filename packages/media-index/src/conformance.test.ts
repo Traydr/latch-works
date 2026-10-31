@@ -1,15 +1,15 @@
 /*
- * Conformance vectors for media-index. Oriel RS's Rust port (apps/oriel-rs/crates/core-index)
+ * Conformance vectors for media-index. Oriel's Rust port (apps/oriel/crates/core-index)
  * must produce the same, so the archive scan and the sync plan cannot drift between the two
  * (plan 063, "Keeping two implementations honest"). View's media index (view-index.json and
  * view-index.sqlite) came from Electron Oriel's schema; it is frozen since Electron Oriel was
  * removed, and only the Rust reads it.
  *
  * This suite checks that the TypeScript still makes the committed vectors in
- * apps/oriel-rs/conformance/media-index, and `cargo test -p oriel-core-index` checks the Rust
+ * apps/oriel/conformance/media-index, and `cargo test -p oriel-core-index` checks the Rust
  * against the same files. After a deliberate change, regenerate them and port the change:
  *
- *   ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-index test
+ *   ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-index test
  */
 import { execFileSync } from "node:child_process";
 import {
@@ -36,9 +36,9 @@ import { createSyncPlan, type RemoteEntrySnapshot } from "./sync-plan.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
-const vectorDirectory = path.join(repositoryRoot, "apps/oriel-rs/conformance/media-index");
+const vectorDirectory = path.join(repositoryRoot, "apps/oriel/conformance/media-index");
 
-const updating = process.env.ORIEL_RS_UPDATE_VECTORS === "1";
+const updating = process.env.ORIEL_UPDATE_VECTORS === "1";
 
 const temporaryFolders: string[] = [];
 
@@ -55,7 +55,7 @@ function temporaryFolder(prefix: string): string {
 }
 
 function about(source: string): string {
-  return `Made by packages/media-index/src/conformance.test.ts from ${source}; do not edit. Regenerate with ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-index test. Non-ASCII characters are escaped.`;
+  return `Made by packages/media-index/src/conformance.test.ts from ${source}; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-index test. Non-ASCII characters are escaped.`;
 }
 
 /*

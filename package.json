@@ -20,7 +20,7 @@
     "knip": "knip",
     "check:all": "pnpm run build:all && pnpm run format && pnpm run lint:all && pnpm run typecheck && pnpm run knip",
     "icons": "node scripts/generate-icons.ts",
-    "oriel-rs:check": "pnpm --filter @latch-works/oriel-rs check"
+    "oriel:check": "pnpm --filter @latch-works/oriel check"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

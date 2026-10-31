@@ -37,7 +37,7 @@
     "apps/lockstep-cli": {
       "entry": ["src/**/*.test.ts"]
     },
-    "apps/oriel-rs": {
+    "apps/oriel": {
       "entry": ["scripts/**/*.ts"],
       "ignoreBinaries": ["ffmpeg"]
     },

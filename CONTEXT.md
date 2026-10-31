@@ -57,20 +57,27 @@ The files materialized by a Gather Run. An output is either a batch of source fi
 story PDF.
 _Avoid_: Download response, popup payload
 
-**Glazier**:
-The desktop workbench that audits and tidies the authoritative local archive: inventory, exact and
-similar duplicates, sound, and conversion to the archive formats. Its changes are Glazier Plans.
-_Avoid_: File manager, cleaner, optimizer
+**Oriel**:
+The desktop app, in Rust on GPUI, with three modes over the authoritative local archive: View,
+Tidy and Sync. It keeps its own data in `~/.latch-works/oriel`, never inside the archive.
+_Avoid_: Oriel RS (its name while it was being ported), Frame View, the Lockstep desktop app
 
-**Glazier Plan**:
-A reviewed set of steps (hold, move, rename, convert, remove folder) that Glazier applies only on
-request, re-reading each file first and recording every finished step in its journal for undo.
-_Avoid_: Batch job, auto-fix
+**Tidy**:
+Oriel's mode that audits and tidies the authoritative local archive: inventory, exact and similar
+duplicates, sound, and conversion to the archive formats. Its changes are Tidy Plans. It was the
+Glazier app before Oriel.
+_Avoid_: Glazier, file manager, cleaner, optimizer
+
+**Tidy Plan**:
+A set of steps (hold, move, rename, convert, remove folder) that Tidy applies only on request,
+re-reading each file first and recording every finished step in its journal for undo.
+_Avoid_: Glazier Plan, batch job, auto-fix
 
 **Holding**:
-Where removed files and replaced originals wait, always outside their root: Glazier's data folder
-(`~/.latch-works/glazier`) when it shares the root's volume, otherwise `.latch-works/glazier/holding`
-at the top of the root's volume. Restoring moves a file back, and emptying sends it to the system Trash.
+Where removed files and replaced originals wait, always outside their root: Oriel's data folder
+(`~/.latch-works/oriel/tidy/holding`) when it shares the root's volume, otherwise
+`.latch-works/oriel/holding` at the top of the root's volume. Restoring moves a file back, and
+emptying sends it to the system Trash.
 _Avoid_: Trash, recycle bin, quarantine
 
 **Archive Format**:

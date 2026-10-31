@@ -1,14 +1,14 @@
 /*
- * Conformance vectors for media-domain. Oriel RS's Rust port (apps/oriel-rs/crates/core-domain)
+ * Conformance vectors for media-domain. Oriel's Rust port (apps/oriel/crates/core-domain)
  * must produce the same, so the order of names, the paths and the gallery's entries cannot drift
  * between the two apps (plan 063, "Keeping two implementations honest").
  *
  * This suite checks that the TypeScript still makes the committed vectors, one file per module in
- * apps/oriel-rs/conformance/media-domain, and `cargo test -p oriel-core-domain` checks the Rust
+ * apps/oriel/conformance/media-domain, and `cargo test -p oriel-core-domain` checks the Rust
  * against the same files. After a deliberate change to a module, regenerate them and port the
  * change:
  *
- *   ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test
+ *   ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -60,10 +60,10 @@ import {
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 const vectorFile = fileURLToPath(
-  new URL("../../../apps/oriel-rs/conformance/media-domain/sort.json", import.meta.url),
+  new URL("../../../apps/oriel/conformance/media-domain/sort.json", import.meta.url),
 );
 
-const updating = process.env.ORIEL_RS_UPDATE_VECTORS === "1";
+const updating = process.env.ORIEL_UPDATE_VECTORS === "1";
 
 const NamedPathSchema = z.object({ name: z.string(), path: z.string() });
 
@@ -610,7 +610,7 @@ function makeVectors(): SortVectors {
 
   return {
     about:
-      "Made by packages/media-domain/src/conformance.test.ts from sort.ts; do not edit. Regenerate with ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test. Non-ASCII characters are escaped. naturalOrder.classes lists the names in order, names that compare equal sharing a class. Where Rust knowingly differs is listed in apps/oriel-rs/crates/core-domain/tests/conformance.rs.",
+      "Made by packages/media-domain/src/conformance.test.ts from sort.ts; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test. Non-ASCII characters are escaped. naturalOrder.classes lists the names in order, names that compare equal sharing a class. Where Rust knowingly differs is listed in apps/oriel/crates/core-domain/tests/conformance.rs.",
     generatedWith: {
       node: process.versions.node,
       icu: process.versions.icu ?? "none",
@@ -736,7 +736,7 @@ function runtimeVersions(): Runtime {
 }
 
 function aboutModule(source: string): string {
-  return `Made by packages/media-domain/src/conformance.test.ts from ${source}; do not edit. Regenerate with ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test. Non-ASCII characters are escaped.`;
+  return `Made by packages/media-domain/src/conformance.test.ts from ${source}; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test. Non-ASCII characters are escaped.`;
 }
 
 /* Rewrites the file first when updating, then parses what is committed. */

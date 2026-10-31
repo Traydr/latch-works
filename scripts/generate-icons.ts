@@ -131,7 +131,7 @@ async function generateWebIcons(app: string): Promise<void> {
 
 /** Oriel: the PNG is the 1024 px master raster, ICO is Windows' icon, ICNS is macOS'. */
 async function generateDesktopIcons(): Promise<void> {
-  const base = path.join("apps", "oriel-rs", "assets", "oriel-icon");
+  const base = path.join("apps", "oriel", "assets", "oriel-icon");
   const renderAt = await loadMaster(`${base}.svg`);
   await write(`${base}.png`, await renderAt(1024));
   await writeIco(`${base}.ico`, renderAt);

@@ -3,11 +3,11 @@
 ## Project structure and module organization
 
 Latch Works is a TypeScript pnpm workspace with one Rust app. Product code lives under `apps/`:
-`pane-view` is the web viewer; `oriel-rs` is the desktop app, in Rust on GPUI (plan 063,
-`docs/runbooks/oriel-rs.md`), whose View, Tidy and Sync modes (once Frame View, Glazier and the
+`pane-view` is the web viewer; `oriel` is the desktop app, in Rust on GPUI (plan 063,
+`docs/runbooks/oriel.md`), whose View, Tidy and Sync modes (once Frame View, Glazier and the
 Lockstep desktop app) live in its `crates/mode-*`; `gather-box` is a Chrome extension;
-`lockstep-cli` is the sync CLI; and `showcase` is the Astro site. `oriel-rs` is a Cargo workspace
-outside `pnpm test`, checked with `pnpm oriel-rs:check`. Shared TypeScript code belongs in
+`lockstep-cli` is the sync CLI; and `showcase` is the Astro site. `oriel` is a Cargo workspace
+outside `pnpm test`, checked with `pnpm oriel:check`. Shared TypeScript code belongs in
 `packages/`.
 
 Keep source in each workspace's `src/`. Tests sit beside modules as `*.test.ts` or in
@@ -48,8 +48,8 @@ repository does not define a numeric coverage threshold.
 The end-to-end suite lives in `e2e/` (Playwright) and is the final check before a PR is ready:
 `pnpm e2e:pane` runs Pane View against the local compose stack, seeded through the Lockstep CLI.
 It is not part of `pnpm test`; see `docs/runbooks/e2e.md` for prerequisites and how to run one
-spec. The desktop app's end-to-end cases are GPUI headless tests in `apps/oriel-rs`, run by
-`pnpm oriel-rs:check`.
+spec. The desktop app's end-to-end cases are GPUI headless tests in `apps/oriel`, run by
+`pnpm oriel:check`.
 
 ## Commit and pull request guidelines
 

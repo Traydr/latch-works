@@ -1,0 +1,14 @@
+{
+  "name": "@latch-works/oriel",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Desktop app for a local Latch Works archive: view it, tidy it and sync it, in Rust on GPUI. A thin wrapper over cargo; it has no build or test script, so the TypeScript side builds and tests without Rust.",
+  "scripts": {
+    "dev": "cargo run -p oriel",
+    "vendor": "cargo run -p xtask -- vendor",
+    "libmpv": "cargo run -p xtask -- libmpv",
+    "bundle": "cargo run -p xtask -- bundle",
+    "check": "cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace"
+  }
+}

@@ -5,14 +5,14 @@ dist/
 .output/
 .tanstack/
 .vite/
-# Oriel RS's pinned ffmpeg and ffprobe (`cargo run -p oriel-tools --bin fetch-media-tools`).
-apps/oriel-rs/.media-tools/
-# Oriel RS's Cargo build output (plan 063).
-apps/oriel-rs/target/
-# Oriel RS's LGPL libmpv sets and vendored prebuilt libraries, made by its xtask (`cargo run -p
+# Oriel's pinned ffmpeg and ffprobe (`cargo run -p oriel-tools --bin fetch-media-tools`).
+apps/oriel/.media-tools/
+# Oriel's Cargo build output (plan 063).
+apps/oriel/target/
+# Oriel's LGPL libmpv sets and vendored prebuilt libraries, made by its xtask (`cargo run -p
 # xtask -- libmpv`, `-- vendor`).
-apps/oriel-rs/.libmpv/
-apps/oriel-rs/.vendor/
+apps/oriel/.libmpv/
+apps/oriel/.vendor/
 *.tsbuildinfo
 .env
 .env.*

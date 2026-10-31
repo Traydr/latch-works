@@ -1,14 +1,14 @@
 /*
  * Conformance vectors for media-format's policies: which file becomes what, with which settings.
- * Oriel RS's Rust port (apps/oriel-rs/crates/core-format) must decide the same, so the two
+ * Oriel's Rust port (apps/oriel/crates/core-format) must decide the same, so the two
  * apps convert an archive alike (plan 063, "Keeping two implementations honest").
  *
  * This suite checks that the TypeScript still makes the committed vectors, one file per module in
- * apps/oriel-rs/conformance/media-format, and `cargo test -p oriel-core-format` checks the Rust
+ * apps/oriel/conformance/media-format, and `cargo test -p oriel-core-format` checks the Rust
  * against the same files. After a deliberate change to a policy, regenerate them and port the
  * change:
  *
- *   ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-format test
+ *   ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-format test
  *
  * The committed files are only compared with what the TypeScript makes, never read for their
  * values, so they are not parsed into types here (this package has no schema library).
@@ -58,13 +58,13 @@ import {
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 const vectorDirectory = fileURLToPath(
-  new URL("../../../apps/oriel-rs/conformance/media-format/", import.meta.url),
+  new URL("../../../apps/oriel/conformance/media-format/", import.meta.url),
 );
 
-const updating = process.env.ORIEL_RS_UPDATE_VECTORS === "1";
+const updating = process.env.ORIEL_UPDATE_VECTORS === "1";
 
 function aboutModule(source: string): string {
-  return `Made by packages/media-format/src/conformance.test.ts from ${source}; do not edit. Regenerate with ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-format test. Non-ASCII characters are escaped.`;
+  return `Made by packages/media-format/src/conformance.test.ts from ${source}; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-format test. Non-ASCII characters are escaped.`;
 }
 
 /* Compact ASCII-only JSON, which Biome then formats as the repository does. */

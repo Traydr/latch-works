@@ -34,9 +34,9 @@ Optional environment overrides:
 
 ## Desktop token storage (Oriel's Sync mode)
 
-The desktop app is now Sync, one of Oriel RS's modes (`apps/oriel-rs`, plan 063). It stores each
+The desktop app is now Sync, one of Oriel's modes (`apps/oriel`, plan 063). It stores each
 profile's sync token encrypted with AES-256-GCM under a random key in its data folder,
-`secret-storage.key` in `sync/` (`~/.latch-works/oriel-rs/sync`), created on first use with mode
+`secret-storage.key` in `sync/` (`~/.latch-works/oriel/sync`), created on first use with mode
 0600, in the format Electron Oriel used. It uses this key file instead of the Keychain because an
 unsigned build's signature changes with each rebuild, and the Keychain would ask for access again
 after every one. The key is protected by the home folder's permissions alone, so keep it out of

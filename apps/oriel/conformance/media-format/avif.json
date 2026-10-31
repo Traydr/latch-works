@@ -1,0 +1,226 @@
+{
+  "about": "Made by packages/media-format/src/conformance.test.ts from avif.ts; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-format test. Non-ASCII characters are escaped.",
+  "quality": 70,
+  "speed": 6,
+  "lowMemorySpeed": 8,
+  "wasmPixelLimit": 64000000,
+  "options": {
+    "quality": 70,
+    "qualityAlpha": -1,
+    "denoiseLevel": 0,
+    "tileRowsLog2": 0,
+    "tileColsLog2": 0,
+    "speed": 6,
+    "subsample": 1,
+    "chromaDeltaQ": false,
+    "sharpness": 0,
+    "enableSharpYUV": false,
+    "tune": 0,
+    "bitDepth": 8
+  },
+  "sharpOptions": { "bitdepth": 8, "chromaSubsampling": "4:2:0", "effort": 3, "quality": 70 },
+  "attempts": [
+    {
+      "script": ["encodes"],
+      "calls": [
+        {
+          "quality": 70,
+          "qualityAlpha": -1,
+          "denoiseLevel": 0,
+          "tileRowsLog2": 0,
+          "tileColsLog2": 0,
+          "speed": 6,
+          "subsample": 1,
+          "chromaDeltaQ": false,
+          "sharpness": 0,
+          "enableSharpYUV": false,
+          "tune": 0,
+          "bitDepth": 8
+        }
+      ],
+      "outcome": { "kind": "encoded", "bytes": 3 }
+    },
+    {
+      "script": ["returns-nothing", "encodes"],
+      "calls": [
+        {
+          "quality": 70,
+          "qualityAlpha": -1,
+          "denoiseLevel": 0,
+          "tileRowsLog2": 0,
+          "tileColsLog2": 0,
+          "speed": 6,
+          "subsample": 1,
+          "chromaDeltaQ": false,
+          "sharpness": 0,
+          "enableSharpYUV": false,
+          "tune": 0,
+          "bitDepth": 8
+        },
+        {
+          "quality": 70,
+          "qualityAlpha": -1,
+          "denoiseLevel": 0,
+          "tileRowsLog2": 0,
+          "tileColsLog2": 0,
+          "speed": 8,
+          "subsample": 1,
+          "chromaDeltaQ": false,
+          "sharpness": 0,
+          "enableSharpYUV": false,
+          "tune": 0,
+          "bitDepth": 8
+        }
+      ],
+      "outcome": { "kind": "encoded", "bytes": 3 }
+    },
+    {
+      "script": ["throws", "encodes"],
+      "calls": [
+        {
+          "quality": 70,
+          "qualityAlpha": -1,
+          "denoiseLevel": 0,
+          "tileRowsLog2": 0,
+          "tileColsLog2": 0,
+          "speed": 6,
+          "subsample": 1,
+          "chromaDeltaQ": false,
+          "sharpness": 0,
+          "enableSharpYUV": false,
+          "tune": 0,
+          "bitDepth": 8
+        },
+        {
+          "quality": 70,
+          "qualityAlpha": -1,
+          "denoiseLevel": 0,
+          "tileRowsLog2": 0,
+          "tileColsLog2": 0,
+          "speed": 8,
+          "subsample": 1,
+          "chromaDeltaQ": false,
+          "sharpness": 0,
+          "enableSharpYUV": false,
+          "tune": 0,
+          "bitDepth": 8
+        }
+      ],
+      "outcome": { "kind": "encoded", "bytes": 3 }
+    },
+    {
+      "script": ["returns-nothing", "returns-nothing"],
+      "calls": [
+        {
+          "quality": 70,
+          "qualityAlpha": -1,
+          "denoiseLevel": 0,
+          "tileRowsLog2": 0,
+          "tileColsLog2": 0,
+          "speed": 6,
+          "subsample": 1,
+          "chromaDeltaQ": false,
+          "sharpness": 0,
+          "enableSharpYUV": false,
+          "tune": 0,
+          "bitDepth": 8
+        },
+        {
+          "quality": 70,
+          "qualityAlpha": -1,
+          "denoiseLevel": 0,
+          "tileRowsLog2": 0,
+          "tileColsLog2": 0,
+          "speed": 8,
+          "subsample": 1,
+          "chromaDeltaQ": false,
+          "sharpness": 0,
+          "enableSharpYUV": false,
+          "tune": 0,
+          "bitDepth": 8
+        }
+      ],
+      "outcome": {
+        "kind": "failed",
+        "name": "MediaEncodeError",
+        "message": "The AVIF encoder did not produce an image."
+      }
+    },
+    {
+      "script": ["throws", "throws"],
+      "calls": [
+        {
+          "quality": 70,
+          "qualityAlpha": -1,
+          "denoiseLevel": 0,
+          "tileRowsLog2": 0,
+          "tileColsLog2": 0,
+          "speed": 6,
+          "subsample": 1,
+          "chromaDeltaQ": false,
+          "sharpness": 0,
+          "enableSharpYUV": false,
+          "tune": 0,
+          "bitDepth": 8
+        },
+        {
+          "quality": 70,
+          "qualityAlpha": -1,
+          "denoiseLevel": 0,
+          "tileRowsLog2": 0,
+          "tileColsLog2": 0,
+          "speed": 8,
+          "subsample": 1,
+          "chromaDeltaQ": false,
+          "sharpness": 0,
+          "enableSharpYUV": false,
+          "tune": 0,
+          "bitDepth": 8
+        }
+      ],
+      "outcome": {
+        "kind": "failed",
+        "name": "MediaEncodeError",
+        "message": "memory access out of bounds"
+      }
+    },
+    {
+      "script": ["returns-nothing", "throws"],
+      "calls": [
+        {
+          "quality": 70,
+          "qualityAlpha": -1,
+          "denoiseLevel": 0,
+          "tileRowsLog2": 0,
+          "tileColsLog2": 0,
+          "speed": 6,
+          "subsample": 1,
+          "chromaDeltaQ": false,
+          "sharpness": 0,
+          "enableSharpYUV": false,
+          "tune": 0,
+          "bitDepth": 8
+        },
+        {
+          "quality": 70,
+          "qualityAlpha": -1,
+          "denoiseLevel": 0,
+          "tileRowsLog2": 0,
+          "tileColsLog2": 0,
+          "speed": 8,
+          "subsample": 1,
+          "chromaDeltaQ": false,
+          "sharpness": 0,
+          "enableSharpYUV": false,
+          "tune": 0,
+          "bitDepth": 8
+        }
+      ],
+      "outcome": {
+        "kind": "failed",
+        "name": "MediaEncodeError",
+        "message": "memory access out of bounds"
+      }
+    }
+  ]
+}

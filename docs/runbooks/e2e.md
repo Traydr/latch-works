@@ -2,8 +2,8 @@
 
 The `e2e/` workspace drives the built Pane View with Playwright. It is the final check before a
 PR is marked ready and is **not** part of `pnpm test`; it takes minutes and needs the local stack.
-Oriel RS's end-to-end cases are GPUI headless tests in its own workspace instead (see
-[Oriel RS](#oriel-rs) below).
+Oriel's end-to-end cases are GPUI headless tests in its own workspace instead (see
+[Oriel](#oriel) below).
 
 ## Prerequisites
 
@@ -59,13 +59,13 @@ expected order and count from it.
 The bucket gets a CORS rule for the app origin during setup: images load cross-origin without
 one, but the PDF viewer `fetch`es the signed original, which rustfs refuses without a rule.
 
-## Oriel RS
+## Oriel
 
-Oriel RS has no Playwright project. The cases the Electron app's specs covered (the shell, View's
+Oriel has no Playwright project. The cases the Electron app's specs covered (the shell, View's
 gallery, Tidy's workbench, Spot variants, Shrink and Tidy up, and Sync) are GPUI headless tests in
-`apps/oriel-rs` (`crates/app/tests`, `crates/mode-view/tests/gallery.rs`,
+`apps/oriel` (`crates/app/tests`, `crates/mode-view/tests/gallery.rs`,
 `crates/mode-tidy/tests`, `crates/mode-sync/tests`), and run with `cargo test --workspace` (see
-the [Oriel RS runbook](oriel-rs.md)).
+the [Oriel runbook](oriel.md)).
 
 Two of its tests use this suite's stack and are ignored by default: `oriel-mode-sync`'s and
 `oriel-core-sync`'s `stack` tests push into the e2e Pane View that `scripts/start-pane-view.ts`

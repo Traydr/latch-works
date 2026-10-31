@@ -1,0 +1,86 @@
+{
+  "about": "Made by packages/media-index/src/conformance.test.ts from Electron Oriel's View index schema (its mediaIndexService.ts), with view-index.sqlite beside it; do not edit. Frozen when Electron Oriel was removed (plan 063): the media-index suite no longer makes it, and Oriel must still read it. Non-ASCII characters are escaped.",
+  "userVersion": [{ "user_version": 0 }],
+  "sqliteMaster": [
+    {
+      "type": "index",
+      "name": "idx_media_last_seen",
+      "tbl_name": "media_index",
+      "sql": "CREATE INDEX idx_media_last_seen\n        ON media_index(last_seen_scan_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_media_root_path",
+      "tbl_name": "media_index",
+      "sql": "CREATE INDEX idx_media_root_path\n        ON media_index(root_path)"
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_media_index_1",
+      "tbl_name": "media_index",
+      "sql": null
+    },
+    {
+      "type": "table",
+      "name": "media_index",
+      "tbl_name": "media_index",
+      "sql": "CREATE TABLE media_index (\n          path TEXT PRIMARY KEY,\n          root_path TEXT NOT NULL,\n          name TEXT NOT NULL,\n          extension TEXT NOT NULL,\n          media_type TEXT NOT NULL,\n          size INTEGER NOT NULL,\n          mtime_ms INTEGER NOT NULL,\n          width INTEGER,\n          height INTEGER,\n          duration_ms INTEGER,\n          codec TEXT,\n          last_seen_scan_id INTEGER NOT NULL,\n          updated_at_ms INTEGER NOT NULL\n        )"
+    },
+    {
+      "type": "table",
+      "name": "scan_runs",
+      "tbl_name": "scan_runs",
+      "sql": "CREATE TABLE scan_runs (\n          id INTEGER PRIMARY KEY AUTOINCREMENT,\n          root_path TEXT NOT NULL,\n          recursive INTEGER NOT NULL,\n          started_at_ms INTEGER NOT NULL,\n          completed_at_ms INTEGER,\n          status TEXT NOT NULL\n        )"
+    },
+    {
+      "type": "table",
+      "name": "sqlite_sequence",
+      "tbl_name": "sqlite_sequence",
+      "sql": "CREATE TABLE sqlite_sequence(name,seq)"
+    }
+  ],
+  "scanRuns": [
+    {
+      "id": 1,
+      "root_path": "/archive",
+      "recursive": 1,
+      "started_at_ms": 1767268800000,
+      "completed_at_ms": 1767268801000,
+      "status": "done"
+    }
+  ],
+  "mediaIndex": [
+    {
+      "path": "/archive/b.jpg",
+      "root_path": "/archive",
+      "name": "b.jpg",
+      "extension": "jpg",
+      "media_type": "image",
+      "size": 2048,
+      "mtime_ms": 1767268800123.4568,
+      "mtime_type": "real",
+      "width": null,
+      "height": null,
+      "duration_ms": null,
+      "codec": null,
+      "last_seen_scan_id": 1,
+      "updated_at_ms": 1767268801000
+    },
+    {
+      "path": "/archive/clips/\u00e9t\u00e9.mp4",
+      "root_path": "/archive",
+      "name": "\u00e9t\u00e9.mp4",
+      "extension": "mp4",
+      "media_type": "video",
+      "size": 1048576,
+      "mtime_ms": 1767268860000,
+      "mtime_type": "integer",
+      "width": 1920,
+      "height": 1080,
+      "duration_ms": 4000,
+      "codec": "h264",
+      "last_seen_scan_id": 1,
+      "updated_at_ms": 1767268801000
+    }
+  ]
+}

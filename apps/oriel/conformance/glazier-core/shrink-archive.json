@@ -1,0 +1,18 @@
+{
+  "about": "Made by glazier-core's engine/differential.test.ts; do not edit. Frozen when Electron Oriel and glazier-core were removed (plan 063): Oriel's engine is the only implementation, and this is what it must still produce. The clips Shrink's scenario changes, with the dates a copy carries.",
+  "files": [
+    {
+      "path": "clips/busy.mp4",
+      "mtimeMs": 1793237018334
+    },
+    {
+      "path": "clips/lean.mp4",
+      "mtimeMs": 1793237018545
+    },
+    {
+      "path": "clips/tiny.mp4",
+      "mtimeMs": 1793237018596
+    }
+  ],
+  "emptyFolders": []
+}

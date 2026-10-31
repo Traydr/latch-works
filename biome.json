@@ -22,10 +22,10 @@
       "!apps/pane-view/dither-kit.json",
       "!apps/gather-box",
       "!tools/oxlint/anti-slop",
-      "!apps/oriel-rs/target",
-      "!apps/oriel-rs/.libmpv",
-      "!apps/oriel-rs/.vendor",
-      "!apps/oriel-rs/crates"
+      "!apps/oriel/target",
+      "!apps/oriel/.libmpv",
+      "!apps/oriel/.vendor",
+      "!apps/oriel/crates"
     ]
   },
   "formatter": {

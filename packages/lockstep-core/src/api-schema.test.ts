@@ -1,12 +1,12 @@
 /*
  * Pane View's sync API as this package's zod schemas describe it, written out as JSON Schema for
- * Oriel RS. Its Rust client (apps/oriel-rs/crates/core-sync) builds its request and response types
- * from apps/oriel-rs/conformance/lockstep-core/api-schema.json with typify, so the two clients
+ * Oriel. Its Rust client (apps/oriel/crates/core-sync) builds its request and response types
+ * from apps/oriel/conformance/lockstep-core/api-schema.json with typify, so the two clients
  * cannot drift apart (plan 063, "Keeping two implementations honest"). This suite fails when the
  * committed file no longer matches the schemas; after a deliberate change, rewrite it and rebuild
  * the Rust:
  *
- *   ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/lockstep-core test
+ *   ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/lockstep-core test
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -30,10 +30,10 @@ import { RemoteEntrySchema, RemoteSnapshotResponseSchema } from "./remote-snapsh
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 const schemaFile = fileURLToPath(
-  new URL("../../../apps/oriel-rs/conformance/lockstep-core/api-schema.json", import.meta.url),
+  new URL("../../../apps/oriel/conformance/lockstep-core/api-schema.json", import.meta.url),
 );
 
-const updating = process.env.ORIEL_RS_UPDATE_VECTORS === "1";
+const updating = process.env.ORIEL_UPDATE_VECTORS === "1";
 
 /** Every schema the client sends or reads, under the name its Rust type takes. */
 const API_SCHEMAS = {
@@ -103,7 +103,7 @@ function apiSchemaDocument(): ApiSchemaDocument {
   };
 }
 
-describe("Pane View sync API schema for Oriel RS", () => {
+describe("Pane View sync API schema for Oriel", () => {
   it("matches the committed api-schema.json", () => {
     const document = apiSchemaDocument();
 
@@ -120,7 +120,7 @@ describe("Pane View sync API schema for Oriel RS", () => {
 
     expect(
       committed,
-      "api-schema.json is stale: rerun with ORIEL_RS_UPDATE_VECTORS=1 and rebuild Oriel RS",
+      "api-schema.json is stale: rerun with ORIEL_UPDATE_VECTORS=1 and rebuild Oriel",
     ).toEqual(document);
   });
 });

@@ -7,9 +7,9 @@ tracing, texture, bevels, and cast shadows.
 | --- | --- |
 | Latch Works showcase | `apps/showcase/public/favicon.svg` |
 | Pane View | `apps/pane-view/public/favicon.svg` |
-| Oriel: a bay window onto the view | `apps/oriel-rs/assets/oriel-icon.svg` |
-| Oriel on macOS 26 and later: the same art as two Liquid Glass layers (the window's frame and the view) over the plate's fill, in `icon.json`; the app bundle does not compile it yet | `apps/oriel-rs/assets/oriel.icon/` |
-| Oriel's DMG background (rendered with resvg; see the Oriel RS runbook's DMG section) | `apps/oriel-rs/crates/xtask/installer/dmg-background.svg` |
+| Oriel: a bay window onto the view | `apps/oriel/assets/oriel-icon.svg` |
+| Oriel on macOS 26 and later: the same art as two Liquid Glass layers (the window's frame and the view) over the plate's fill, in `icon.json`; the app bundle does not compile it yet | `apps/oriel/assets/oriel.icon/` |
+| Oriel's DMG background (rendered with sharp or resvg; see the Oriel runbook's DMG section) | `apps/oriel/crates/xtask/installer/dmg-background.svg` |
 | Gather Box | `apps/gather-box/assets/icons/gather-box-icon.svg` |
 
 The [approved artwork comparison](https://vellum.traydr.dev/01a080ab-f279-724d-90a1-e214fdb18574)
@@ -28,7 +28,7 @@ Lanczos. It overwrites the PNG, ICO, and ICNS files of every master that still s
 PNGs and the DMG background are not touched.
 
 The `.icon` bundle is its own master: edit its two SVG layers, or open it in Xcode's Icon Composer.
-Electron Oriel's packaging compiled it with `actool` on macOS 26 and later; Oriel RS's bundle
+Electron Oriel's packaging compiled it with `actool` on macOS 26 and later; Oriel's bundle
 carries the `.icns` only.
 
 Web pages use the SVG directly for logos and favicons. The only rasters they keep are
@@ -45,4 +45,4 @@ and ICNS filenames. Every raster is generated from the SVG masters; do not edit 
 3. Build Gather Box and load its `dist/` folder as an unpacked extension. Check the extension
    icon in Chrome.
 4. Package Oriel on the target platform (`cargo run -p xtask -- dmg` or `-- package` in
-   `apps/oriel-rs`). Check the installer, application, Dock or taskbar, and window icons.
+   `apps/oriel`). Check the installer, application, Dock or taskbar, and window icons.

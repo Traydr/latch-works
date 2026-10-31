@@ -19,8 +19,8 @@ type PushStage = "deleting" | "hashing" | "registering" | "uploading";
 
 /*
  * The bodies this client posts and the answers it reads, as zod schemas: the request types below
- * are inferred from them, and Oriel RS generates its Rust client's types from the same schemas
- * (`api-schema.test.ts` writes them to apps/oriel-rs/conformance/lockstep-core/api-schema.json).
+ * are inferred from them, and Oriel generates its Rust client's types from the same schemas
+ * (`api-schema.test.ts` writes them to apps/oriel/conformance/lockstep-core/api-schema.json).
  */
 
 /** A plan's counts, which a sync run records. */
