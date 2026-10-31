@@ -31,6 +31,7 @@ once their outcome is recorded below; recover full text with `git log --diff-fil
 | [061](061-spot-variants.md) | Spot variants: a 64×64 detail print tells alternate versions (a face, an outfit, a caption's language) from copies, keeps each picture once in the folder with the rest of its set; Keep suggestions removed, Duplicates' options in the top bar | P2 | M | 058 | IN REVIEW (2026-10-26) |
 | [062](062-tidy-on-windows.md) | Tidy on Windows: pin a current ffmpeg with SVT-AV1 for win32-x64, measure Shrink there, and check open files, drives, long paths, hard links and sync on a throwaway archive | P2 | M | 060, 061 | TODO |
 | [063](063-oriel-rs.md) | Oriel RS, an experiment: Oriel's three modes and their engines ported to Rust on GPUI with GPUI Kit, no Node process, its own data folder and a Tidy sandbox, kept honest by conformance vectors and differential Tidy runs, ending in a scorecard against Electron Oriel | P3 | XL (Phase 0 gate: L) | none | IN PROGRESS (`agent/063-0-spike`; D1 settled: A; Phases 0 and 1 done 2026-10-28, [reports](../research/oriel-rs/README.md); Phase 2 next) |
+| [064](064-oriel-windows.md) | Oriel 1.0.0 on the owner's Windows machine: the install script builds Setup.exe and replaces Electron Oriel, then an agent checks the MSVC build, the 1080p60 video gate, AVIF, Tidy's plan 062 behaviours, the shell and the installer | P2 | L | 063 | TODO |
 
 Recommended order (2026-08-17 review):
 

@@ -1,18 +1,36 @@
 # Oriel on Windows
 
 Oriel on Windows is best effort (plan 063, decision 21): the workspace builds for Windows and
-packages from here, and an agent on the owner's Windows machine finishes it. This runbook is that
-agent's handoff. The macOS runbook is [oriel.md](oriel.md); its rules hold here too: every
-check runs with `ORIEL_DATA_DIR` set to a scratch folder, on throwaway archives, and never
-reads or writes the owner's data folder, `%USERPROFILE%\.latch-works\oriel`.
+packages from here, and an agent on the owner's Windows machine finishes it, working through
+[plan 064](../plans/064-oriel-windows.md). This runbook describes each Windows piece. The macOS
+runbook is [oriel.md](oriel.md); its rules hold here too: every check runs with `ORIEL_DATA_DIR`
+set to a scratch folder, on throwaway archives, and never reads or writes the owner's data
+folder, `%USERPROFILE%\.latch-works\oriel`.
+
+## Install on Windows
+
+From a clone of the repository, in PowerShell 7 or Windows PowerShell 5.1:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File apps\oriel\scripts\install-windows.ps1
+```
+
+[`install-windows.ps1`](../../apps/oriel/scripts/install-windows.ps1) installs whatever of the
+prerequisites below is missing through winget, asking for administrator rights only for the Build
+Tools and the .NET SDK. It builds Setup.exe with `package windows`, then uninstalls Electron
+Oriel if it is installed, moving its old data folder aside to
+`%USERPROFILE%\.latch-works\oriel-electron-<date>`. Last, it installs Oriel and starts it. A
+second run skips what is done; `-BuildOnly`, `-NoLaunch`, `-SkipPrerequisites` and `-Clean`
+(which removes the build folder, tens of GB) are in its usage block. It has not run yet: plan
+064's step 1 runs it first.
 
 ## Prerequisites
 
 | | Windows 11 x64 |
 | --- | --- |
-| Rust | rustup (`rustup-init.exe`); `apps/oriel/rust-toolchain.toml` pins the toolchain and its default host, `x86_64-pc-windows-msvc` |
+| Rust | rustup (`rustup-init.exe`); `apps/oriel/rust-toolchain.toml` pins the toolchain; the host must be `x86_64-pc-windows-msvc`, rustup's default on x64 Windows |
 | C toolchain | Visual Studio 2022 Build Tools: "Desktop development with C++", with the MSVC compiler and a Windows 11 SDK. rusqlite builds SQLite and libwebp-sys builds libwebp with it; GPUI's release build compiles its shaders with the SDK's `fxc.exe` (`GPUI_FXC_PATH` names another) and embeds its manifest with `rc.exe` |
-| vpk | The .NET 8 SDK or later, then `dotnet tool install -g vpk --version 1.3.39-g8d2844f`, the version Electron Oriel packs with and the `velopack` crate the app links |
+| vpk | The .NET 8 SDK or later, then `dotnet tool install -g vpk --version 1.3.39-g8d2844f`, the version `package.rs` pins and the `velopack` crate the app links |
 | curl, tar | Windows' own, in `System32` (Windows 10 1803 and later); the xtask fetches with them |
 | Node and pnpm | Only for the conformance vectors and the e2e suite, as on macOS |
 
@@ -56,8 +74,9 @@ Then `vpk pack --packId Oriel --packVersion <version> --packTitle "Oriel" --pack
 --runtime win-x64 --packDir <stage> --mainExe oriel.exe --icon apps\oriel\assets\oriel-icon.ico
 --outputDir target\release\package\windows\velopack`, Electron Oriel's arguments less the MSI and
 the splash, and the files are renamed `Oriel-<version>-win-x64-Setup.exe` and
-`-Portable.zip`. The pack id and title are Electron Oriel's, `Oriel`. Downloads are
-cached in `apps\oriel\target\vendor\downloads`, each checked against its SHA-256.
+`-Portable.zip`. The pack id and title are Electron Oriel's, `Oriel`, so Setup.exe installs where
+it did. Downloads are cached in `apps\oriel\target\vendor\downloads`, each checked against its
+SHA-256.
 
 The app answers Velopack's hooks first thing in `main` (`VelopackApp::build().run()`): Velopack's
 docs say the app must, and kill an app that has not exited within 15 to 30 seconds of a hook. It
@@ -87,8 +106,8 @@ So all of it is compile-checked only:
   file for its attributes (sharing everything) and reads `ChangeTime` from `FILE_BASIC_INFO`;
   `fs_meta::identity` reads it with the volume serial and file index in one open. Tidy's walk,
   its executor's checks, its hash check, and the Sync scan's fingerprints
-  (`ArchiveFileFingerprint::of`) use it, so the ctimes in Electron Oriel's catalogs and hash
-  cache match.
+  (`ArchiveFileFingerprint::of`) use it, so they match what Node records, as the Lockstep CLI
+  does.
   View's catalog and thumbnail keys use mtime and size only. Sync's push still records none
   there until `core-sync-push.rs.patch` (2026-10-31, windows-2) lands.
 - **Paths as Node writes them**: `oriel_runtime::paths::canonicalize` is `fs.realpath`: std's
@@ -99,7 +118,7 @@ So all of it is compile-checked only:
   std's own file calls add the prefix themselves; ffmpeg handled long paths in plan 062.
 - **Roots' names**: the overlap check and `is_within` ignore case on Windows, as `path.relative`
   does there. Reserved names (`CON`, `NUL`, …) and names ending in a dot or a space are not
-  handled, as Electron Oriel does not handle them.
+  handled, as Electron Oriel did not handle them.
 - **Holding on another drive**: a root on `D:\Photos` with the data on `C:` holds in
   `D:\.latch-works\oriel\holding`, by rename; a whole drive (`D:\`) holds in the data folder,
   by copy (`HoldingPlaces::on_volume`, by volume serial, as glazier-core by `dev`). A sandboxed
@@ -184,8 +203,7 @@ Each on a throwaway archive with `ORIEL_DATA_DIR` set, as plan 062 ran them for 
       `libavif-16.dll`), a still converts, and the file opens in Photos. Then without
       `libavif\`: Convert says no libavif was found.
 - [ ] **ctime**: `fs.statSync(f).ctimeMs` in Node equals the catalog's `ctime_ms` after a scan
-      (whole milliseconds); `attrib +r` alone moves it; a scan of a catalog Electron Oriel made
-      hashes nothing again.
+      (whole milliseconds); `attrib +r` alone moves it; a second scan hashes nothing again.
 - [ ] **Recycle Bin**: Empty Holding puts each batch in the Recycle Bin, restorable; a batch on a
       drive with the Recycle Bin off fails with a message and stays in holding.
 - [ ] **Logging off during a push**: Windows' screen names Oriel with the reason; the app
