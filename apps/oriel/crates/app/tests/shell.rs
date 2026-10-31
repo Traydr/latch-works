@@ -203,15 +203,15 @@ fn starts_in_view_and_switches_modes_from_the_switcher_and_the_menu(cx: &mut Tes
 
     // ⌘1–3 switch too, and the menu holds the mode's own File items.
     for (key, expected) in [
-        ("cmd-2", ModeId::Tidy),
-        ("cmd-3", ModeId::Sync),
-        ("cmd-1", ModeId::View),
+        ("secondary-2", ModeId::Tidy),
+        ("secondary-3", ModeId::Sync),
+        ("secondary-1", ModeId::View),
     ] {
         press(cx, handle, key);
         assert_eq!(mode(&opened, cx), expected, "after {key}");
     }
     menu_item(cx, "File", "Open Folder…");
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     menu_item(cx, "File", "Add Folder…");
     menu_item(cx, "View", "Library");
 }
@@ -225,9 +225,9 @@ fn every_menu_item_of_the_mode_on_screen_is_lit(cx: &mut TestAppContext) {
 
     // Each mode as it comes on screen from another, before anything in it is clicked.
     for (key, expected) in [
-        ("cmd-2", ModeId::Tidy),
-        ("cmd-3", ModeId::Sync),
-        ("cmd-1", ModeId::View),
+        ("secondary-2", ModeId::Tidy),
+        ("secondary-3", ModeId::Sync),
+        ("secondary-1", ModeId::View),
     ] {
         press(cx, handle, key);
         assert_eq!(mode(&opened, cx), expected);
@@ -272,7 +272,7 @@ fn folds_the_sidebar_to_the_rail_and_back(cx: &mut TestAppContext) {
         |cx: &mut TestAppContext| cx.update(|cx| opened.shell.read(cx).state().read(cx).rail());
     assert!(!rail(cx));
 
-    press(cx, handle, "cmd-\\");
+    press(cx, handle, "secondary-\\");
     assert!(rail(cx));
     // The rail's switcher keeps the modes' names for VoiceOver.
     assert_eq!(label_of(cx, handle, "mode-Sync").as_deref(), Some("Sync"));
@@ -286,8 +286,8 @@ fn reopens_in_the_mode_it_showed_last_with_its_sidebar_and_theme(cx: &mut TestAp
     let data = DataRoot::at(scratch("reopens").join("data")).unwrap();
     start(cx, &data);
     let first = open_shell(cx, &data);
-    press(cx, first.handle, "cmd-3");
-    press(cx, first.handle, "cmd-\\");
+    press(cx, first.handle, "secondary-3");
+    press(cx, first.handle, "secondary-\\");
     click(cx, first.handle, "settings-item");
     click(cx, first.handle, "settings-section-general");
     click(cx, first.handle, "theme-dark");
@@ -326,13 +326,13 @@ fn a_hidden_mode_keeps_its_page_and_draws_nothing(cx: &mut TestAppContext) {
         !is_drawn(cx, handle, "tidy-Library"),
         "Tidy is drawn while hidden"
     );
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     click(cx, handle, "tidy-Library");
     assert_eq!(page(cx), TidyPage::Library);
 
-    press(cx, handle, "cmd-1");
+    press(cx, handle, "secondary-1");
     assert!(!is_drawn(cx, handle, "tidy-Library"));
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     assert_eq!(mode(&opened, cx), ModeId::Tidy);
     assert_eq!(page(cx), TidyPage::Library);
 }
@@ -363,7 +363,7 @@ fn view_keeps_its_folder_while_another_mode_shows(cx: &mut TestAppContext) {
     let handle = opened.handle;
 
     // A folder handed to the app, from Tidy: View shows it.
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     cx.update_window(handle, |_, window, cx| {
         opened
             .shell
@@ -388,7 +388,7 @@ fn view_keeps_its_folder_while_another_mode_shows(cx: &mut TestAppContext) {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    let real = std::fs::canonicalize(&archive).unwrap();
+    let real = oriel_runtime::paths::canonicalize(&archive).unwrap();
     assert_eq!(shown(cx), (Some(real.clone()), 3));
     let tile = gpui_kit::ElementId::Path(real.join("still-0.webp").into());
     let tile_drawn = |cx: &mut TestAppContext| {
@@ -399,9 +399,9 @@ fn view_keeps_its_folder_while_another_mode_shows(cx: &mut TestAppContext) {
     };
     assert!(tile_drawn(cx));
 
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     assert!(!tile_drawn(cx), "View's tiles are drawn while Tidy shows");
-    press(cx, handle, "cmd-1");
+    press(cx, handle, "secondary-1");
     assert_eq!(shown(cx), (Some(real), 3));
     assert!(tile_drawn(cx));
 }
@@ -435,7 +435,7 @@ fn reopens_on_the_page_it_showed_last_with_view_able_to_step_back_up(cx: &mut Te
     for ix in 0..2 {
         write_still(&archive.join(format!("comics/page-{ix}.webp")), ix * 90);
     }
-    let archive = std::fs::canonicalize(&archive).unwrap();
+    let archive = oriel_runtime::paths::canonicalize(&archive).unwrap();
     let comics = archive.join("comics");
     let data = DataRoot::at(root.join("data")).unwrap();
     start(cx, &data);
@@ -455,7 +455,7 @@ fn reopens_on_the_page_it_showed_last_with_view_able_to_step_back_up(cx: &mut Te
     })
     .unwrap();
     wait_for_view_folder(cx, &first, &comics);
-    press(cx, first.handle, "cmd-2");
+    press(cx, first.handle, "secondary-2");
     click(cx, first.handle, "tidy-Library");
     cx.update_window(first.handle, |_, window, _| window.remove_window())
         .unwrap();
@@ -472,7 +472,7 @@ fn reopens_on_the_page_it_showed_last_with_view_able_to_step_back_up(cx: &mut Te
     );
 
     // View is back in the subfolder, and the folder opened above it is still the top.
-    press(cx, second.handle, "cmd-1");
+    press(cx, second.handle, "secondary-1");
     wait_for_view_folder(cx, &second, &comics);
     click(cx, second.handle, "sidebar-up");
     wait_for_view_folder(cx, &second, &archive);
@@ -508,12 +508,18 @@ fn one_settings_page_at_the_section_of_the_mode_on_screen(cx: &mut TestAppContex
     assert!(is_drawn(cx, handle, "settings-item"));
 
     // ⌘, opens the section of whichever mode shows.
-    press(cx, handle, "cmd-3");
-    choose_from_menu(cx, handle, "Oriel", "Settings…");
+    press(cx, handle, "secondary-3");
+    // The app menu holds Settings… on macOS; File does elsewhere.
+    let settings_menu = if cfg!(target_os = "macos") {
+        "Oriel"
+    } else {
+        "File"
+    };
+    choose_from_menu(cx, handle, settings_menu, "Settings…");
     assert_eq!(heading(cx).as_deref(), Some("Sync"));
     press(cx, handle, "escape");
     assert!(!is_drawn(cx, handle, "settings-back"));
-    press(cx, handle, "cmd-,");
+    press(cx, handle, "secondary-,");
     assert_eq!(heading(cx).as_deref(), Some("Sync"));
 
     // Choosing another mode's section shows that mode underneath; Escape closes Settings.
@@ -570,7 +576,7 @@ fn quitting_waits_for_running_work_with_the_window_hidden(cx: &mut TestAppContex
 
     // A scan does not hold the quit up.
     report(cx, Some(ModeActivity::Working));
-    press(cx, handle, "cmd-q");
+    press(cx, handle, "secondary-q");
     assert_eq!((platform.hides.get(), platform.quits.get()), (0, 1));
 
     // A push does: ⌘Q hides the window, and the app quits when the push ends.
@@ -581,7 +587,7 @@ fn quitting_waits_for_running_work_with_the_window_hidden(cx: &mut TestAppContex
     report(cx, Some(ModeActivity::Progress(0.3)));
     // The system's own quits (the Dock's Quit, logging out) read this to wait too.
     assert!(holds(cx));
-    press(cx, handle, "cmd-q");
+    press(cx, handle, "secondary-q");
     assert!(!holds(cx), "a second quit while hidden must go ahead");
     assert_eq!((platform.hides.get(), platform.quits.get()), (1, 1));
     assert!(cx.update(|cx| opened.shell.read(cx).quit().read(cx).is_waiting()));
@@ -607,8 +613,8 @@ fn quitting_waits_for_running_work_with_the_window_hidden(cx: &mut TestAppContex
     assert_eq!(platform.quits.get(), 2, "a called-off quit happened anyway");
 
     report(cx, Some(ModeActivity::Progress(0.5)));
-    press(cx, handle, "cmd-q");
-    press(cx, handle, "cmd-q");
+    press(cx, handle, "secondary-q");
+    press(cx, handle, "secondary-q");
     assert_eq!((platform.hides.get(), platform.quits.get()), (3, 3));
 
     // With nothing running, closing the window goes ahead.
@@ -650,9 +656,9 @@ fn the_switcher_shows_the_work_of_modes_not_on_screen(cx: &mut TestAppContext) {
     assert!(!is_drawn(cx, handle, "mode-View-activity"));
 
     // The rail draws the marks too; going to the mode clears its own.
-    press(cx, handle, "cmd-\\");
+    press(cx, handle, "secondary-\\");
     assert!(is_drawn(cx, handle, "mode-Tidy-activity"));
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     assert!(!is_drawn(cx, handle, "mode-Tidy-activity"));
     assert!(is_drawn(cx, handle, "mode-View-activity"));
 }
@@ -716,9 +722,9 @@ fn every_modes_jobs_show_in_one_place_at_the_bottom_right(cx: &mut TestAppContex
         Some("1 queued")
     );
     // In every mode, and over Settings too.
-    press(cx, handle, "cmd-3");
+    press(cx, handle, "secondary-3");
     assert!(is_drawn(cx, handle, "activity-indicator"));
-    press(cx, handle, "cmd-,");
+    press(cx, handle, "secondary-,");
     assert!(is_drawn(cx, handle, "activity-indicator"));
     press(cx, handle, "escape");
 
@@ -763,7 +769,7 @@ fn voiceover_reads_the_switcher_the_sidebar_and_the_top_bar_by_name(cx: &mut Tes
     start(cx, &data);
     let opened = open_shell(cx, &data);
     let handle = opened.handle;
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
 
     cx.update_window(handle, |_, window, _| {
         let switcher = window.find("mode-switcher");
@@ -814,7 +820,13 @@ fn about_names_the_version_and_the_licences_the_app_carries(cx: &mut TestAppCont
     let opened = open_shell(cx, &data);
     let handle = opened.handle;
 
-    choose_from_menu(cx, handle, "Oriel", "About Oriel");
+    // The app menu holds About on macOS; Help does elsewhere.
+    let about_menu = if cfg!(target_os = "macos") {
+        "Oriel"
+    } else {
+        "Help"
+    };
+    choose_from_menu(cx, handle, about_menu, "About Oriel");
     assert_eq!(
         label_of(cx, handle, "about-version"),
         Some(format!("Version {}", oriel::about::VERSION))
@@ -910,6 +922,6 @@ fn the_keyboard_reaches_the_switcher_and_presses_it(cx: &mut TestAppContext) {
     assert_eq!(mode(&opened, cx), ModeId::Tidy);
 
     // The keys still reach the shell once the button pressed is no longer drawn.
-    press(cx, handle, "cmd-3");
+    press(cx, handle, "secondary-3");
     assert_eq!(mode(&opened, cx), ModeId::Sync);
 }

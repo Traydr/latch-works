@@ -102,10 +102,8 @@ async fn the_library_selects_as_finder_does(cx: &mut TestAppContext) {
     // A click selects one file; ⌘ adds another; ⇧ extends from the last one clicked.
     click(cx, &session, ("library-row", 0usize));
     assert_eq!(selection(cx, &session), ids(cx, &session, &[0]));
-    let command = Modifiers {
-        platform: true,
-        ..Modifiers::default()
-    };
+    // ⌘ on macOS, Ctrl elsewhere, which is what the table leaves to the Library.
+    let command = cx.update(|cx| Modifiers::secondary_key(cx));
     click_with(cx, &session, 2, command);
     assert_eq!(selection(cx, &session), ids(cx, &session, &[0, 2]));
     let shift = Modifiers {
@@ -335,7 +333,7 @@ async fn quick_look_shows_a_file_without_deciding_anything(cx: &mut TestAppConte
     click(cx, &session, ("set-row", 0usize));
     let forest = std::fs::canonicalize(session.archive.join("photos/forest.png")).ok();
     let shown = || last_quick_look().and_then(|shown| std::fs::canonicalize(shown).ok());
-    press(cx, &session, "cmd-y");
+    press(cx, &session, "secondary-y");
     assert_eq!(shown(), forest);
     press(cx, &session, "space");
     assert_eq!(shown(), forest);

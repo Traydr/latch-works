@@ -222,7 +222,10 @@ mod tests {
             };
             let ((ours, mono), (theirs, _)) = (shown(oriel), shown(kit));
             assert_eq!(ours, theirs, "{mode:?}");
-            assert_eq!(mono.as_ref(), "Menlo");
+            // Off macOS, `show` is `Theme::change` itself, probe and all.
+            if cfg!(target_os = "macos") {
+                assert_eq!(mono.as_ref(), "Menlo");
+            }
         }
     }
 

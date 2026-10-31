@@ -57,7 +57,7 @@ fn a_folder_tidy_tidies_is_offered_to_view_and_the_modes_hand_files_and_folders_
     let handle = opened.handle;
 
     // Tidy takes the archive and scans it.
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     wait_until(cx, handle, "Tidy's engine", |cx| tidy_ready(&opened, cx));
     let tidy = cx.update(|cx| opened.shell.read(cx).tidy().clone());
     cx.update_window(handle, |_, window, cx| {
@@ -69,7 +69,7 @@ fn a_folder_tidy_tidies_is_offered_to_view_and_the_modes_hand_files_and_folders_
     });
 
     // View has no folder of its own yet, so it offers the one Tidy tidies.
-    press(cx, handle, "cmd-1");
+    press(cx, handle, "secondary-1");
     let offered = offered_folder_id(&archive);
     assert_eq!(
         label_of(cx, handle, offered.clone()).as_deref(),
@@ -109,10 +109,10 @@ fn a_folder_tidy_tidies_is_offered_to_view_and_the_modes_hand_files_and_folders_
         assert_eq!(library.filters().dir.as_deref(), Some("bulk"));
     });
     // View stays as it was underneath; close its viewer, so the next step has to open it.
-    press(cx, handle, "cmd-1");
+    press(cx, handle, "secondary-1");
     press(cx, handle, "escape");
     assert!(!is_drawn(cx, handle, "viewer"));
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
 
     // Tidy's Inspector opens the file in View's viewer.
     cx.update(|cx| {
@@ -140,7 +140,7 @@ fn a_folder_tidy_tidies_is_offered_to_view_and_the_modes_hand_files_and_folders_
     assert!(!is_drawn(cx, handle, "viewer"));
 
     // Tidy's Overview opens the whole folder in View.
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     click(cx, handle, "tidy-Overview");
     click(cx, handle, "overview-open-in-view");
     assert_eq!(title(cx, handle).as_deref(), Some("View – Oriel"));
@@ -150,7 +150,7 @@ fn a_folder_tidy_tidies_is_offered_to_view_and_the_modes_hand_files_and_folders_
     assert_eq!(heading(cx, handle).as_deref(), Some("archive"));
 
     // Tidy's Overview starts a Sync profile for the folder it tidies.
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     click(cx, handle, "overview-sync-folder");
     assert_eq!(title(cx, handle).as_deref(), Some("Sync – Oriel"));
     cx.update(|cx| {
@@ -196,7 +196,7 @@ fn a_folder_tidy_tidies_is_offered_to_view_and_the_modes_hand_files_and_folders_
             ("", None)
         );
     });
-    press(cx, handle, "cmd-3");
+    press(cx, handle, "secondary-3");
     choose_profile_action(cx, handle, "Open in View");
     assert_eq!(mode(&opened, cx), ModeId::View);
     assert_eq!(heading(cx, handle).as_deref(), Some("archive"));
@@ -237,7 +237,9 @@ fn tidy_takes_only_folders_inside_its_sandbox(cx: &mut TestAppContext) {
 
     // View's folder lies outside the sandbox and the temp folder (this crate's own source,
     // which View only reads), so Tidy's empty state does not offer it.
-    let outside = std::fs::canonicalize(env!("CARGO_MANIFEST_DIR")).unwrap();
+    let outside =
+        oriel_runtime::paths::canonicalize(std::path::Path::new(env!("CARGO_MANIFEST_DIR")))
+            .unwrap();
     assert!(!data.admits_tidy_root(&outside));
     cx.update_window(handle, |_, window, cx| {
         opened
@@ -248,7 +250,7 @@ fn tidy_takes_only_folders_inside_its_sandbox(cx: &mut TestAppContext) {
     wait_until(cx, handle, "View to open its folder", |cx| {
         cx.update(|cx| opened.shell.read(cx).state().read(cx).known_folders().len() == 1)
     });
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     assert!(
         is_drawn(cx, handle, "choose-folder"),
         "Tidy shows its welcome"
@@ -289,7 +291,7 @@ fn tidy_takes_only_folders_inside_its_sandbox(cx: &mut TestAppContext) {
     wait_until(cx, handle, "View to open the archive", |cx| {
         view_shows(&opened, &inside, cx)
     });
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     let offered = offered_folder_id(&inside);
     assert_eq!(
         label_of(cx, handle, offered.clone()).as_deref(),
@@ -346,7 +348,7 @@ fn every_mode_switches_location_from_one_shared_list(cx: &mut TestAppContext) {
     let handle = opened.handle;
 
     // A folder added in Tidy is Tidy's location, in its switcher and its menu.
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     wait_until(cx, handle, "Tidy's engine", |cx| tidy_ready(&opened, cx));
     let tidy = cx.update(|cx| opened.shell.read(cx).tidy().clone());
     cx.update_window(handle, |_, window, cx| {
@@ -368,7 +370,7 @@ fn every_mode_switches_location_from_one_shared_list(cx: &mut TestAppContext) {
     press(cx, handle, "escape");
 
     // View, with no folder of its own, offers it at the same place and size; picking it opens it.
-    press(cx, handle, "cmd-1");
+    press(cx, handle, "secondary-1");
     assert_eq!(
         label_of(cx, handle, SWITCHER_ID).as_deref(),
         Some("No folder open")
@@ -393,7 +395,7 @@ fn every_mode_switches_location_from_one_shared_list(cx: &mut TestAppContext) {
     press(cx, handle, "escape");
 
     // Sync offers it too, and picking it starts a profile for it; Sync's selection stays its own.
-    press(cx, handle, "cmd-3");
+    press(cx, handle, "secondary-3");
     assert_eq!(
         label_of(cx, handle, SWITCHER_ID).as_deref(),
         Some("No profile yet")
@@ -419,7 +421,7 @@ fn every_mode_switches_location_from_one_shared_list(cx: &mut TestAppContext) {
     frame(cx, handle);
     let tile = switcher(cx, handle).size;
     assert!(tile.width < size.width);
-    for key in ["cmd-1", "cmd-2"] {
+    for key in ["secondary-1", "secondary-2"] {
         press(cx, handle, key);
         assert_eq!(switcher(cx, handle).size, tile, "{key}");
     }

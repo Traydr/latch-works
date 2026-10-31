@@ -30,7 +30,7 @@ pub fn scratch(test: &str) -> PathBuf {
         .join(format!("{test}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&folder);
     std::fs::create_dir_all(&folder).unwrap();
-    std::fs::canonicalize(folder).unwrap()
+    oriel_runtime::paths::canonicalize(&folder).unwrap()
 }
 
 /// A small WebP still of one colour at `path`.

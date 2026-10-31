@@ -21,7 +21,13 @@ use support::*;
 #[gpui_kit::test]
 async fn a_folder_outside_the_sandbox_is_not_offered(cx: &mut TestAppContext) {
     // A data folder outside the temp folder, whose sandbox is the only place Tidy may work.
-    let root = PathBuf::from("/private/tmp/oriel-mode-tidy-tests")
+    let outside_temp = if cfg!(windows) {
+        PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+    } else {
+        PathBuf::from("/private/tmp")
+    };
+    let root = outside_temp
+        .join("oriel-mode-tidy-tests")
         .join(format!("sandbox-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();

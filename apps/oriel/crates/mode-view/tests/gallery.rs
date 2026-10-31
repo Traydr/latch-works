@@ -219,8 +219,9 @@ impl Fixture {
                 .set_modified(modified)
                 .unwrap();
         }
-        // View resolves the folder it opens, and the temp folder is behind a symlink on macOS.
-        let archive = std::fs::canonicalize(archive).unwrap();
+        // View resolves the folder it opens, and the temp folder is behind a symlink on macOS;
+        // on Windows it resolves as Node does, without the `\?\` prefix.
+        let archive = oriel_runtime::paths::canonicalize(&archive).unwrap();
         Self {
             root,
             archive,
@@ -233,7 +234,9 @@ impl Fixture {
         if path.is_empty() {
             self.archive.clone()
         } else {
-            self.archive.join(path)
+            // Segment by segment, so the path reads as the scan's does on Windows too.
+            path.split('/')
+                .fold(self.archive.clone(), |folder, name| folder.join(name))
         }
     }
 

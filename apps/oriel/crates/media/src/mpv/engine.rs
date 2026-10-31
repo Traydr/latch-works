@@ -477,7 +477,7 @@ mod tests {
             eprintln!("skipped: no libmpv (cargo run -p xtask -- libmpv)");
             return;
         }
-        let engine = Engine::take(MpvRender::OpenGl).expect("an engine starts");
+        let engine = Engine::take(MpvRender::from_env()).expect("an engine starts");
         play(&engine, &first);
         engine.core.set_flag(c"mute", true);
         engine.core.set_double(c"volume", 40.);
@@ -497,7 +497,7 @@ mod tests {
                 .any(|waiting| Arc::ptr_eq(&waiting.engine.core, &core))
         });
 
-        let engine = Engine::take(MpvRender::OpenGl).expect("the idle engine");
+        let engine = Engine::take(MpvRender::from_env()).expect("the idle engine");
         assert!(
             Arc::ptr_eq(&engine.core, &core),
             "the same engine plays the next file"
@@ -529,7 +529,7 @@ mod tests {
             eprintln!("skipped: no libmpv (cargo run -p xtask -- libmpv)");
             return;
         }
-        let mut engine = Engine::start(MpvRender::OpenGl).expect("an engine starts");
+        let mut engine = Engine::start(MpvRender::from_env()).expect("an engine starts");
         assert!(engine.prime(&prime), "the engine primes");
         assert!(engine.used, "its renderer has drawn");
         {
@@ -569,7 +569,7 @@ mod tests {
                 engine.core.get_string(c"current-ao"),
             )
         };
-        let engine = Engine::start(MpvRender::OpenGl).expect("an engine starts");
+        let engine = Engine::start(MpvRender::from_env()).expect("an engine starts");
         engine.load(preview.to_str().unwrap().to_owned(), false);
         wait_until("the preview loads", || {
             engine.core.observed().picture_size().is_some()

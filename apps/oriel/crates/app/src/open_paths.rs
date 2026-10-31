@@ -30,17 +30,19 @@ mod tests {
 
     #[test]
     fn takes_local_paths_from_urls() {
+        // A file URL is a local path only with a drive on Windows.
+        let drive = if cfg!(windows) { "C:" } else { "" };
         let urls = [
-            "file:///Users/someone/Pictures/Holiday%202024/".to_string(),
+            format!("file:///{drive}/Users/someone/Pictures/Holiday%202024/"),
             "https://example.com/photo.jpg".to_string(),
-            "file:///tmp/a.jpg".to_string(),
+            format!("file:///{drive}/tmp/a.jpg"),
             "not a url".to_string(),
         ];
         assert_eq!(
             from_urls(&urls),
             [
-                PathBuf::from("/Users/someone/Pictures/Holiday 2024/"),
-                PathBuf::from("/tmp/a.jpg"),
+                PathBuf::from(format!("{drive}/Users/someone/Pictures/Holiday 2024/")),
+                PathBuf::from(format!("{drive}/tmp/a.jpg")),
             ]
         );
     }
