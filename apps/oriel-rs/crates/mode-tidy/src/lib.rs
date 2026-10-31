@@ -10,8 +10,9 @@
 //! modes, and takes from them, goes through the shell as [`TidyEvent`]s and
 //! [`TidyMode::show_hand_off`] ([`links`]).
 //!
-//! Tidy changes files only in a root under the sandbox (`DataRoot::sandbox()`) or the temp folder
-//! while Oriel RS is an experiment (plan 063), so its folder picker offers only those.
+//! Tidy changes files in any folder the owner adds, as Electron Oriel's does (plan 063, decision
+//! 18). A sandboxed run (`ORIEL_RS_DATA_DIR` set, for checks and agents) keeps to roots under
+//! `DataRoot::sandbox()` or the temp folder, and its folder picker and welcome say so.
 
 mod actions;
 pub mod changes;
@@ -110,8 +111,8 @@ impl EventEmitter<TidyEvent> for TidyMode {}
 
 impl TidyMode {
     /// Tidy for the shell, keeping its catalog in this run's data folder (`ORIEL_RS_DATA_DIR`, or
-    /// `~/.latch-works/oriel-rs`), changing files through the engine's executor. The sandbox still
-    /// holds: the engine refuses any root outside it (plan 063, ground rules).
+    /// `~/.latch-works/oriel-rs`), changing files through the engine's executor. With the variable
+    /// set, the engine refuses any root outside the sandbox.
     pub fn new(shell: &Entity<ShellState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let data = DataRoot::from_environment().expect("Oriel RS needs a data folder");
         let mut tidy = Self::with_data(shell, &data, Rc::new(EngineChanges), window, cx);
@@ -150,7 +151,7 @@ impl TidyMode {
         let cleanup = cx.new(|cx| CleanupPage::new(&state, &thumbs, cx));
         let shrink = cx.new(|cx| ShrinkPage::new(&state, &thumbs, cx));
         let library = cx.new(|cx| LibraryPage::new(&state, &thumbs, window, cx));
-        let history = cx.new(|cx| HistoryPage::new(&state, cx));
+        let history = cx.new(|cx| HistoryPage::new(&state, &thumbs, cx));
         let holding = cx.new(|cx| HoldingPage::new(&state, &thumbs, cx));
         let settings = cx.new(|_| settings::SettingsSection::new(&state));
         let focus = cx.focus_handle();
@@ -319,7 +320,9 @@ impl TidyMode {
 
     fn render_welcome(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        let rule = links::sandbox_rule(self.state.read(cx).data());
+        let data = self.state.read(cx).data();
+        // Only a sandboxed run says where Tidy may work; the owner's takes any folder.
+        let rule = data.is_sandboxed().then(|| links::sandbox_rule(data));
         div()
             .flex()
             .flex_1()
@@ -384,7 +387,7 @@ impl TidyMode {
                     )
                     .child(widgets::caption("or drop a folder here", cx).mt_3())
                     .children(self.render_offered(cx))
-                    .child(
+                    .children(rule.map(|rule| {
                         div()
                             .mt_6()
                             .flex()
@@ -395,15 +398,14 @@ impl TidyMode {
                             .text_xs()
                             .text_color(theme.muted_foreground)
                             .child(Icon::new(IconName::Lock).size(px(14.)).flex_shrink_0())
-                            .child(div().flex_1().min_w_0().child(rule)),
-                    ),
+                            .child(div().flex_1().min_w_0().child(rule))
+                    })),
             )
             .into_any_element()
     }
 
-    /// The folders View and Sync work on, offered while Tidy has none of its own. Tidy works only
-    /// inside the sandbox while Oriel RS is an experiment, so only folders there are offered; the
-    /// note under them says so.
+    /// The folders View and Sync work on, offered while Tidy has none of its own. A sandboxed run
+    /// offers only folders inside the sandbox; the note under them says so.
     fn render_offered(&self, cx: &gpui_kit::App) -> Option<OfferedFolders> {
         let data = self.state.read(cx).data().clone();
         let folders: Vec<_> = self
@@ -593,7 +595,7 @@ pub(crate) fn open_add_folder(
             .and_then(|root| root.parent().map(PathBuf::from)),
         select: root,
         within: None,
-        sandbox: Some(data),
+        sandbox: data.is_sandboxed().then_some(data),
     };
     let state = state.clone();
     folder_picker::open(options, window, cx, move |folder, window, cx| {

@@ -391,10 +391,20 @@ impl TidyState {
             .chain(preview.warnings.iter().cloned())
             .filter(|part| !part.is_empty())
             .collect();
-        let mut toast = if plan.failed > 0 {
-            Toast::error(plan.title.clone())
+        // A stopped change says how far it got; its finished steps stay done and can be undone.
+        let message = if plan.status == PlanStatus::Cancelled {
+            format!(
+                "Stopped after {} of {}",
+                format::count(plan.done),
+                format::count(plan.steps)
+            )
         } else {
-            Toast::done(plan.title.clone())
+            plan.title.clone()
+        };
+        let mut toast = if plan.failed > 0 {
+            Toast::error(message)
+        } else {
+            Toast::done(message)
         };
         if !detail.is_empty() {
             toast = toast.detail(detail.join(" · "));
@@ -564,7 +574,7 @@ impl TidyState {
     }
 
     /// Undoes plans newest first, as one Undo.
-    fn undo_all(
+    pub(crate) fn undo_all(
         &mut self,
         plans: Vec<PlanSummary>,
         title: String,

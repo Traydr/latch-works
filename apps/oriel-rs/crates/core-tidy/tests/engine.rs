@@ -1,8 +1,8 @@
 //! The engine as the Tidy UI drives it: a scan runs as an `oriel-runtime` job whose progress
-//! names its phases, a stopped scan stops, a root outside the sandbox is refused, and the
-//! Library's filters answer from the catalog the scan made. A change runs as a job too, and its
-//! Undo puts things back; a file that changed since the scan is left alone; and a change in a
-//! root outside the sandbox is refused before anything moves.
+//! names its phases, a stopped scan stops, a root outside the sandbox is refused in a sandboxed
+//! run and taken in the owner's, and the Library's filters answer from the catalog the scan made.
+//! A change runs as a job too, and its Undo puts things back; a file that changed since the scan
+//! is left alone; and a change in a root outside the sandbox is refused before anything moves.
 
 #[path = "support/report.rs"]
 mod report;
@@ -162,7 +162,10 @@ fn a_root_outside_the_sandbox_is_refused() {
 
     // A link inside the temp folder to a folder outside it resolves outside, so it is refused.
     let link = scratch.0.join("link");
+    #[cfg(unix)]
     std::os::unix::fs::symlink(outside, &link).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir(outside, &link).unwrap();
     assert!(block_on(engine.add_root(&link)).is_err());
     assert!(block_on(engine.roots()).unwrap().is_empty());
 
@@ -171,6 +174,41 @@ fn a_root_outside_the_sandbox_is_refused() {
     fs::create_dir_all(archive.join("inner")).unwrap();
     block_on(engine.add_root(&archive)).unwrap();
     assert!(block_on(engine.add_root(archive.join("inner"))).is_err());
+}
+
+#[test]
+fn the_owners_run_takes_a_root_anywhere_with_electrons_refusals() {
+    // The owner's own data root (no ORIEL_RS_DATA_DIR) is not sandboxed (decision 18), so a
+    // folder outside the sandbox and the temp folder is a root. Only added, never scanned: it is
+    // this crate's source.
+    let scratch = Scratch::new("owner");
+    let data = DataRoot::under_home(&scratch.0).unwrap();
+    assert!(!data.is_sandboxed());
+    let engine = block_on(TidyEngine::open_with(
+        data.clone(),
+        data.tidy().join("catalog.sqlite"),
+        Media::default(),
+    ))
+    .unwrap();
+    let outside = fs::canonicalize(env!("CARGO_MANIFEST_DIR")).unwrap();
+    let root = block_on(engine.add_root(&outside)).unwrap();
+    assert_eq!(Path::new(&root.path), outside);
+
+    // Electron Oriel's refusals still hold: roots never nest, either way round, and a missing
+    // folder or a file is no root.
+    for refused in [
+        outside.join("src"),
+        outside.parent().unwrap().to_path_buf(),
+        outside.join("no-such-folder"),
+        outside.join("Cargo.toml"),
+    ] {
+        assert!(
+            block_on(engine.add_root(&refused)).is_err(),
+            "{} was added",
+            refused.display()
+        );
+    }
+    assert_eq!(block_on(engine.roots()).unwrap().len(), 1);
 }
 
 #[test]
@@ -380,8 +418,18 @@ fn a_file_that_changed_since_the_scan_is_left_alone() {
     let mode = fs::metadata(&copy_path).unwrap().permissions();
     fs::set_permissions(&copy_path, mode).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(5));
-    use std::os::unix::fs::PermissionsExt as _;
-    fs::set_permissions(&copy_path, fs::Permissions::from_mode(0o600)).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        fs::set_permissions(&copy_path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    // Windows has no mode bits; the read-only attribute is the change of attributes alone.
+    #[cfg(windows)]
+    {
+        let mut read_only = fs::metadata(&copy_path).unwrap().permissions();
+        read_only.set_readonly(true);
+        fs::set_permissions(&copy_path, read_only).unwrap();
+    }
 
     let performed = engine
         .perform_blocking(

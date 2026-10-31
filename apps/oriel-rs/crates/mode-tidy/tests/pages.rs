@@ -1,13 +1,14 @@
 //! Tidy's pages beyond the e2e cases, as GPUI Kit headless UI tests on the same archive: the
 //! Library's selection, its grid, its rename field and its menu, Quick Look, the job card's
-//! pause and queue, and Settings' encoders. Quick Look and the native menu need a real window,
+//! pause and queue, Settings' encoders, Overview's arrows, History's sets of a run of duplicate
+//! decisions and Holding's arrows. Quick Look and the native menu need a real window,
 //! so these check what was asked of them ([`last_quick_look`], [`last_menu`]).
 
 mod support;
 
 use std::path::Path;
 
-use gpui_kit::test::TestWindowExt as _;
+use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{AppContext as _, Entity, Focusable as _, Modifiers, TestAppContext};
 use oriel_core_tidy::contract::FileId;
 use oriel_mode_tidy::{
@@ -427,4 +428,90 @@ async fn settings_list_the_encoders_when_one_is_missing(cx: &mut TestAppContext)
     assert_eq!(listed(cx), missing, "{summary}");
     click(cx, &session, "tidy-settings-encoders");
     assert_eq!(listed(cx), !missing, "{summary}");
+}
+
+#[gpui_kit::test]
+async fn overviews_arrows_move_between_its_rows_and_return_opens_one(cx: &mut TestAppContext) {
+    let session = launch(cx, "overview-rows");
+    add_archive(cx, &session).await;
+    go(cx, &session, TidyPage::Overview);
+    settle(cx, &session).await;
+    // ↓ rests on the first row, Clean up's; ↩ opens its page.
+    press(cx, &session, "down");
+    press(cx, &session, "enter");
+    assert_eq!(
+        cx.read(|cx| session.state.read(cx).page()),
+        TidyPage::CleanUp
+    );
+}
+
+/// Holding's tiles, in the order shown, and whether each is picked.
+fn held_tiles(cx: &mut TestAppContext, session: &Session) -> Vec<(u64, bool)> {
+    cx.update_window(session.handle, |_, window, _| {
+        window
+            .elements()
+            .into_iter()
+            .filter_map(|element| match element.path().last() {
+                Some(gpui_kit::ElementId::NamedInteger(name, id)) if name.as_ref() == "held" => {
+                    Some((*id, element.selected().unwrap_or(false)))
+                }
+                _ => None,
+            })
+            .collect()
+    })
+    .unwrap()
+}
+
+#[gpui_kit::test]
+async fn history_lists_each_decision_of_a_run_and_holdings_arrows_pick_tiles(
+    cx: &mut TestAppContext,
+) {
+    let session = launch_changing(cx, "history-sets");
+    add_archive(cx, &session).await;
+    go(cx, &session, TidyPage::Duplicates);
+    settle(cx, &session).await;
+    // Two similar sets decided one after the other read as one entry of History.
+    for _ in 0..2 {
+        press(cx, &session, "enter");
+        wait_for_change(cx, &session).await;
+    }
+    go(cx, &session, TidyPage::History);
+    settle(cx, &session).await;
+    assert_eq!(
+        label(cx, &session, "history-2").as_deref(),
+        Some("Resolved 2 duplicate sets")
+    );
+    assert_eq!(
+        label(cx, &session, "history-undo-2").as_deref(),
+        Some("Undo all 2")
+    );
+    // Opened, it lists each set with its own Undo.
+    click(cx, &session, "history-2");
+    settle(cx, &session).await;
+    for plan in [1u64, 2] {
+        assert!(
+            label(cx, &session, ("history-set", plan)).is_some(),
+            "set {plan}"
+        );
+        assert!(label(cx, &session, format!("history-undo-set-{plan}")).is_some());
+    }
+
+    // In Holding the arrows move from tile to tile, picking each, and ⇧ picks the run.
+    go(cx, &session, TidyPage::Holding);
+    settle(cx, &session).await;
+    let tiles = held_tiles(cx, &session);
+    assert!(tiles.len() >= 2, "{tiles:?}");
+    press(cx, &session, "right");
+    let picked = |cx: &mut TestAppContext| -> Vec<u64> {
+        held_tiles(cx, &session)
+            .into_iter()
+            .filter(|(_, picked)| *picked)
+            .map(|(id, _)| id)
+            .collect()
+    };
+    assert_eq!(picked(cx), [tiles[0].0]);
+    press(cx, &session, "shift-right");
+    assert_eq!(picked(cx), [tiles[0].0, tiles[1].0]);
+    press(cx, &session, "left");
+    assert_eq!(picked(cx), [tiles[0].0]);
 }

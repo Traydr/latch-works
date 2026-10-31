@@ -29,6 +29,8 @@ pub struct Windowed<K> {
     heights: HashMap<K, f32>,
     /// The key of each child the last frame drew, or none for a room.
     drawn: Vec<Option<K>>,
+    /// An item the next plan scrolls into view, as the keyboard's cursor moves onto it.
+    reveal: Option<usize>,
 }
 
 impl<K: Clone + Eq + Hash> Default for Windowed<K> {
@@ -37,6 +39,7 @@ impl<K: Clone + Eq + Hash> Default for Windowed<K> {
             scroll: ScrollHandle::new(),
             heights: HashMap::new(),
             drawn: Vec::new(),
+            reveal: None,
         }
     }
 }
@@ -45,6 +48,12 @@ impl<K: Clone + Eq + Hash> Windowed<K> {
     /// The scroll the column's element tracks.
     pub fn scroll(&self) -> &ScrollHandle {
         &self.scroll
+    }
+
+    /// Scrolls the item at `index` into view on the next [`Self::plan`], as little as it takes
+    /// (`scrollIntoView({ block: "nearest" })`).
+    pub fn reveal(&mut self, index: usize) {
+        self.reveal = Some(index);
     }
 
     /// What to draw of `keys`, in order, given each item's guessed height until one is learned:
@@ -83,6 +92,23 @@ impl<K: Clone + Eq + Hash> Windowed<K> {
         } else {
             before + content
         };
+        if let Some(index) = self.reveal.take().filter(|index| *index < keys.len())
+            && bounds > 0.
+        {
+            let start = before + (0..index).map(height).sum::<f32>();
+            let end = start + height(index);
+            let shown = -f32::from(self.scroll.offset().y);
+            let wanted = if start < shown {
+                start
+            } else if end > shown + bounds {
+                end - bounds
+            } else {
+                shown
+            };
+            let mut offset = self.scroll.offset();
+            offset.y = px(-wanted.clamp(0., most));
+            self.scroll.set_offset(offset);
+        }
         let top = (-f32::from(self.scroll.offset().y)).clamp(0., most) - before;
         let bottom = top + screen;
         let mut pieces = Vec::new();

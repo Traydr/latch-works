@@ -3,11 +3,12 @@
 //! the places beside it. ↑ ↓ highlight a folder, ↩ opens it, ↩ on nothing highlighted (or ⌘↩)
 //! chooses, ⌘↑ goes to the enclosing folder.
 //!
-//! While Oriel RS is an experiment, Tidy changes files only inside its sandbox or the temp folder
-//! (plan 063). A picker for a folder to tidy offers those first, lists Electron Oriel's places
-//! (the home folder, its usual folders, the drives) under them as unavailable, with the rule as
-//! their caption and in each one's tooltip, and cannot choose a folder outside them. A picker
-//! `within` a root (Move to…, a preferred folder) stays inside that root.
+//! A picker for a folder to tidy lists Electron Oriel's places (the home folder, its usual
+//! folders, the drives) and chooses any folder, as Electron's does. In a sandboxed run
+//! (`ORIEL_RS_DATA_DIR` set), where Tidy changes files only inside its sandbox or the temp folder,
+//! it offers those two first, lists the rest as unavailable, with the rule as their caption and in
+//! each one's tooltip, and cannot choose a folder outside them. A picker `within` a root (Move
+//! to…, a preferred folder) stays inside that root.
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -36,7 +37,8 @@ pub struct PickOptions {
     pub select: Option<PathBuf>,
     /// Keeps the picker inside this folder, which the path field names by the second value.
     pub within: Option<(PathBuf, String)>,
-    /// The sandbox a folder to tidy must lie in, while it holds.
+    /// The sandbox a folder to tidy must lie in, in a sandboxed run (`ORIEL_RS_DATA_DIR` set);
+    /// `None` in the owner's run, which takes any folder.
     pub sandbox: Option<DataRoot>,
 }
 
@@ -114,7 +116,7 @@ struct Place {
 }
 
 /// The places beside the list, under their headings, as Electron Oriel's `folderPlaces` finds
-/// them, after Oriel RS's own two while the sandbox holds.
+/// them, after Oriel RS's own two in a sandboxed run.
 fn places_for(sandbox: Option<&DataRoot>) -> Vec<(SharedString, Vec<Place>)> {
     let admits = |path: &Path| sandbox.is_none_or(|data| data.admits_tidy_root(path));
     let mut groups = Vec::new();
@@ -685,8 +687,8 @@ impl Render for FolderPicker {
                                     .text_xs()
                                     .text_color(theme.muted_foreground)
                                     .child(
-                                        "Tidy works only in the sandbox and the temp folder \
-                                         while Oriel RS is an experiment",
+                                        "With ORIEL_RS_DATA_DIR set, Tidy works only in the \
+                                         sandbox and the temp folder",
                                     ),
                             )
                         })
@@ -778,12 +780,10 @@ impl Render for FolderPicker {
                 .as_ref()
                 .map(|(_, name)| format!("Choose a folder inside {name}."))
         } else if self.options.sandbox.is_some() && chosen.is_some() && !admitted {
-            self.options.sandbox.as_ref().map(|data| {
-                format!(
-                    "While Oriel RS is an experiment, Tidy works only inside {} or the temp folder.",
-                    data.sandbox().display()
-                )
-            })
+            self.options
+                .sandbox
+                .as_ref()
+                .map(crate::links::sandbox_rule)
         } else {
             None
         };

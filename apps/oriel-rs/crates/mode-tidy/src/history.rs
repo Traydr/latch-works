@@ -1,6 +1,8 @@
 //! History (`views/HistoryView.tsx`): every change Tidy made to the folder, newest first, by
 //! day, with what it did and its Undo. Duplicate decisions made one after another read as one
-//! entry. An entry opens to list its steps; U undoes the entry in focus.
+//! entry, which opens to list its sets, each with a picture of what stayed and its own Undo
+//! (`ResolveSets`); any other entry opens to list its first steps, and all of them on asking
+//! (`PlanSteps`). U undoes the entry in focus, all of its changes at once.
 //!
 //! The log is drawn a screen at a time ([`crate::windowed`]): a day's heading, each entry, and
 //! the button for earlier changes are items of one column, each entry drawing its part of its
@@ -12,25 +14,26 @@ use std::rc::Rc;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui_kit::{
     AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement as _,
     IntoElement, KeyDownEvent, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
-    prelude::FluentBuilder as _, px,
+    StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription,
+    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
 use oriel_core_tidy::contract::RootId;
-use oriel_ui::{Toast, TopBar};
+use oriel_ui::TopBar;
 
 use crate::actions::{PerformOptions, describe_plan};
 use crate::changes::{
-    PlanId, PlanKind, PlanListRequest, PlanStatus, PlanStep, PlanStepPage, PlanStepsRequest,
-    PlanSummary, StepStatus, can_undo,
+    HoldingItem, HoldingRequest, PlanId, PlanKind, PlanListRequest, PlanStatus, PlanStepAction,
+    PlanStepPage, PlanStepsRequest, PlanSummary, StepStatus, can_undo,
 };
 use crate::format;
 use crate::loaded::Loaded;
 use crate::pages::TidyPage;
 use crate::state::TidyState;
+use crate::thumbs::{Thumb, Thumbs};
 use crate::widgets;
 use crate::windowed::{Piece, Windowed};
 
@@ -39,8 +42,14 @@ const PAGE: usize = 200;
 /// Duplicate decisions made within this long of each other read as one session.
 const SESSION_GAP_MS: f64 = 10. * 60_000.;
 
-/// Steps listed when an entry opens.
-const STEP_LIMIT: usize = 100;
+/// Steps an entry lists when it opens, before "Show all".
+const PREVIEW_STEPS: usize = 8;
+
+/// Steps read at a time once all are asked for.
+const STEP_PAGE: usize = 500;
+
+/// Held files read to find what each set of a run of duplicate decisions kept.
+const HELD_LIMIT: i64 = 500;
 
 /// One row of the log: a plan, or a run of duplicate decisions made in one sitting.
 struct Entry {
@@ -185,6 +194,52 @@ fn entry_detail(entry: &Entry) -> String {
     }
 }
 
+/// What a step did, in its row's first column (`ACTION_LABELS`).
+fn action_label(action: PlanStepAction) -> &'static str {
+    match action {
+        PlanStepAction::Hold => "To holding",
+        PlanStepAction::Move => "Moved",
+        PlanStepAction::Rename => "Renamed",
+        PlanStepAction::ConvertAvif => "To AVIF",
+        PlanStepAction::ConvertAnimation | PlanStepAction::ConvertVideo => "To MP4",
+        PlanStepAction::RemoveFolder => "Folder removed",
+    }
+}
+
+/// How a step ended, where it is not simply done (`STEP_STATUS`).
+fn step_status(status: StepStatus) -> Option<&'static str> {
+    match status {
+        StepStatus::Pending => Some("Not run"),
+        StepStatus::Done => None,
+        StepStatus::Skipped => Some("Skipped"),
+        StepStatus::Failed => Some("Failed"),
+        StepStatus::Undone => Some("Undone"),
+    }
+}
+
+/// `path` inside the root, or as it is when it lies elsewhere (`relativeTo`).
+fn relative_to(root: &str, path: &str) -> String {
+    path.strip_prefix(root)
+        .filter(|rest| rest.starts_with(['/', '\\']))
+        .map(|rest| rest.trim_start_matches(['/', '\\']).to_string())
+        .unwrap_or_else(|| path.to_string())
+}
+
+fn file_name(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
+fn folder_of(rel_path: &str) -> &str {
+    rel_path
+        .rfind(['/', '\\'])
+        .map_or("", |cut| &rel_path[..cut])
+}
+
+/// The path a duplicate's hold reason names as the copy that stayed: "Duplicate of a/b.jpg".
+fn keeper_of(reason: &str) -> Option<&str> {
+    reason.strip_prefix("Duplicate of ")
+}
+
 fn status_label(status: PlanStatus) -> Option<&'static str> {
     match status {
         PlanStatus::Draft => Some("Draft"),
@@ -198,6 +253,7 @@ fn status_label(status: PlanStatus) -> Option<&'static str> {
 
 pub struct HistoryPage {
     state: Entity<TidyState>,
+    thumbs: Entity<Thumbs>,
     focus: FocusHandle,
     plans: Loaded<Vec<PlanSummary>>,
     /// The answer as the log shows it.
@@ -205,22 +261,35 @@ pub struct HistoryPage {
     wanted: usize,
     expanded: HashSet<String>,
     steps: HashMap<PlanId, PlanStepPage>,
+    /// How many steps each plan whose steps were all asked for lists, a page at a time.
+    showing: HashMap<PlanId, usize>,
+    /// The first held file of each plan, which names the copy a duplicate decision kept.
+    held: HashMap<PlanId, HoldingItem>,
+    /// Entries and sets being undone, whose Undo waits.
+    undoing: HashSet<String>,
     focused: Option<String>,
     seen: (Option<RootId>, u64),
     _subscriptions: Vec<Subscription>,
 }
 
 impl HistoryPage {
-    pub fn new(state: &Entity<TidyState>, cx: &mut Context<Self>) -> Self {
-        let subscriptions = vec![cx.observe(state, |this, _, cx| this.sync(cx))];
+    pub fn new(state: &Entity<TidyState>, thumbs: &Entity<Thumbs>, cx: &mut Context<Self>) -> Self {
+        let subscriptions = vec![
+            cx.observe(state, |this, _, cx| this.sync(cx)),
+            cx.observe(thumbs, |_, _, cx| cx.notify()),
+        ];
         Self {
             state: state.clone(),
+            thumbs: thumbs.clone(),
             focus: cx.focus_handle(),
             plans: Loaded::default(),
             log: None,
             wanted: PAGE,
             expanded: HashSet::new(),
             steps: HashMap::new(),
+            showing: HashMap::new(),
+            held: HashMap::new(),
+            undoing: HashSet::new(),
             focused: None,
             seen: (None, 0),
             _subscriptions: subscriptions,
@@ -255,45 +324,113 @@ impl HistoryPage {
         self.plans
             .load_then(plans, |this| &mut this.plans, Self::loaded, cx);
         self.steps.clear();
+        self.held.clear();
+        // What was being undone has been: the catalog changed, which is why this reads again.
+        self.undoing.clear();
         cx.notify();
     }
 
-    fn loaded(&mut self, _: &mut Context<Self>) {
+    fn loaded(&mut self, cx: &mut Context<Self>) {
         self.log = self.plans.data().map(|plans| Rc::new(Log::of(plans)));
+        // The entries open before the answer came read their steps again, as they now are.
+        let open: Vec<Rc<Entry>> = self
+            .log
+            .as_ref()
+            .map(|log| {
+                log.entries
+                    .iter()
+                    .filter(|entry| self.expanded.contains(&entry.key))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        for entry in open {
+            self.read_steps(&entry, cx);
+        }
+    }
+
+    /// Reads what an open entry lists: a set's first step each, and what each set held, for a
+    /// run of duplicate decisions; the first steps, or as many as were asked for, for a change.
+    fn read_steps(&mut self, entry: &Entry, cx: &mut Context<Self>) {
+        let state = self.state.read(cx);
+        let changes = state.changes.clone();
+        let (Some(engine), Some(root_id)) = (state.engine().cloned(), state.root_id()) else {
+            return;
+        };
+        let sets = entry.plans.len() > 1;
+        if sets {
+            let held = changes.list_holding(
+                &engine,
+                HoldingRequest {
+                    root_id,
+                    offset: 0,
+                    limit: HELD_LIMIT,
+                },
+            );
+            cx.spawn(async move |this, cx| {
+                let held = held.await;
+                this.update(cx, |this, cx| {
+                    if let Ok(held) = held {
+                        for item in held.items {
+                            if let Some(plan_id) = item.plan_id {
+                                this.held.entry(plan_id).or_insert(item);
+                            }
+                        }
+                    }
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
+        }
+        for plan in &entry.plans {
+            let id = plan.id;
+            let limit = if sets {
+                1
+            } else {
+                self.showing.get(&id).copied().unwrap_or(PREVIEW_STEPS)
+            };
+            let request = PlanStepsRequest {
+                plan_id: id,
+                offset: 0,
+                limit: limit as i64,
+            };
+            let steps = changes.plan_steps(&engine, request);
+            cx.spawn(async move |this, cx| {
+                let steps = steps.await;
+                this.update(cx, |this, cx| {
+                    if let Ok(steps) = steps {
+                        this.steps.insert(id, steps);
+                    }
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
+        }
+    }
+
+    /// "Show all": every step of the plan, a page at a time.
+    fn show_more_steps(&mut self, entry: &Entry, cx: &mut Context<Self>) {
+        if let Some(plan) = entry.plans.first() {
+            let showing = self.showing.get(&plan.id).copied().unwrap_or(0);
+            self.showing
+                .insert(plan.id, showing.max(PREVIEW_STEPS) + STEP_PAGE);
+            self.read_steps(entry, cx);
+        }
     }
 
     fn toggle(&mut self, entry: &Entry, cx: &mut Context<Self>) {
         if !self.expanded.remove(&entry.key) {
             self.expanded.insert(entry.key.clone());
-            let changes = self.state.read(cx).changes.clone();
-            let Some(engine) = self.state.read(cx).engine().cloned() else {
-                return;
-            };
-            for plan in &entry.plans {
-                let id = plan.id;
-                let request = PlanStepsRequest {
-                    plan_id: id,
-                    offset: 0,
-                    limit: STEP_LIMIT as i64,
-                };
-                let steps = changes.plan_steps(&engine, request);
-                cx.spawn(async move |this, cx| {
-                    let steps = steps.await;
-                    this.update(cx, |this, cx| {
-                        if let Ok(steps) = steps {
-                            this.steps.insert(id, steps);
-                        }
-                        cx.notify();
-                    })
-                    .ok();
-                })
-                .detach();
-            }
+            self.read_steps(entry, cx);
         }
         self.focused = Some(entry.key.clone());
         cx.notify();
     }
 
+    /// Undoes every change of the entry that can be, newest first as ⌘Z would take them back,
+    /// with one toast for them all (`undoEntry`).
     fn undo(&mut self, entry: &Entry, window: &mut Window, cx: &mut Context<Self>) {
         let undoable: Vec<PlanSummary> = entry
             .plans
@@ -301,8 +438,10 @@ impl HistoryPage {
             .filter(|plan| can_undo(plan))
             .cloned()
             .collect();
+        if undoable.is_empty() || !self.undoing.insert(entry.key.clone()) {
+            return;
+        }
         match undoable.as_slice() {
-            [] => {}
             [only] => {
                 let only = only.clone();
                 self.state.update(cx, |state, cx| {
@@ -310,21 +449,26 @@ impl HistoryPage {
                 });
             }
             _ => {
-                // Newest first, one after another, as ⌘Z would take them back.
                 let title = entry_title(entry);
-                crate::widgets::show_toast(
-                    window,
-                    Toast::info(format!("Undoing “{title}”"))
-                        .detail(format!("{} changes, newest first", undoable.len())),
-                    cx,
-                );
-                if let Some(first) = undoable.first().cloned() {
-                    self.state.update(cx, |state, cx| {
-                        state.undo_plan(first, PerformOptions::default(), window, cx);
-                    });
-                }
+                // Oldest first, as `undo_all` takes them back from the end.
+                let plans: Vec<PlanSummary> = undoable.into_iter().rev().collect();
+                self.state.update(cx, |state, cx| {
+                    state.undo_all(plans, title, window, cx);
+                });
             }
         }
+        cx.notify();
+    }
+
+    /// Undoes one set of a run of duplicate decisions (`undoOne`).
+    fn undo_set(&mut self, plan: PlanSummary, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.undoing.insert(plan.id.to_string()) {
+            return;
+        }
+        self.state.update(cx, |state, cx| {
+            state.undo_plan(plan, PerformOptions::default(), window, cx);
+        });
+        cx.notify();
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -370,53 +514,312 @@ impl HistoryPage {
         cx.stop_propagation();
     }
 
-    fn render_steps(&self, entry: &Entry, cx: &App) -> AnyElement {
-        let theme = cx.theme();
-        let steps: Vec<PlanStep> = entry
-            .plans
-            .iter()
-            .filter_map(|plan| self.steps.get(&plan.id))
-            .flat_map(|page| page.steps.iter().cloned())
-            .collect();
-        if steps.is_empty() {
+    /// What an open entry lists under it: its sets, for a run of duplicate decisions, or its
+    /// steps.
+    fn render_steps(&self, entry: &Rc<Entry>, cx: &mut Context<Self>) -> AnyElement {
+        if entry.plans.len() > 1 {
+            return self.render_sets(entry, cx);
+        }
+        let Some(plan) = entry.plans.first() else {
+            return div().into_any_element();
+        };
+        let Some(page) = self.steps.get(&plan.id) else {
             return div()
-                .px_4()
-                .py_2()
+                .h(px(36.))
+                .pl(px(60.))
+                .flex()
+                .items_center()
                 .child(Spinner::new().small())
                 .into_any_element();
-        }
+        };
+        let root = self.root_path(cx);
+        let theme = cx.theme();
+        let (border, muted, warning) = (theme.border, theme.muted_foreground, theme.warning);
+        let rows = page.steps.iter().map(|step| {
+            let status = step_status(step.status);
+            let target = step
+                .to_path
+                .as_deref()
+                .filter(|_| step.action != PlanStepAction::Hold)
+                .map(|to| (file_name(to).to_string(), to.to_string()));
+            div()
+                .id(("history-step", step.id as u64))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_3()
+                .h(px(36.))
+                .pl(px(60.))
+                .pr_4()
+                .border_t_1()
+                .border_color(border)
+                .text_size(px(13.))
+                .child(
+                    div()
+                        .w(px(96.))
+                        .flex_shrink_0()
+                        .text_xs()
+                        .text_color(muted)
+                        .child(action_label(step.action)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis_start()
+                        .child(relative_to(&root, &step.from_path)),
+                )
+                .children(target.map(|(name, full)| {
+                    div()
+                        .id(("history-step-target", step.id as u64))
+                        .max_w(gpui_kit::relative(0.35))
+                        .flex_shrink_0()
+                        .truncate()
+                        .text_xs()
+                        .text_color(muted)
+                        .tooltip(move |window, cx| {
+                            gpui_kit::component::tooltip::Tooltip::new(full.clone())
+                                .build(window, cx)
+                        })
+                        .child(format!("→ {name}"))
+                }))
+                .children(status.map(|status| {
+                    let message = step.message.clone();
+                    div()
+                        .id(("history-step-status", step.id as u64))
+                        .flex_shrink_0()
+                        .text_xs()
+                        .text_color(match step.status {
+                            StepStatus::Failed | StepStatus::Skipped => warning,
+                            _ => muted,
+                        })
+                        .when_some(message, |this, message| {
+                            this.tooltip(move |window, cx| {
+                                gpui_kit::component::tooltip::Tooltip::new(message.clone())
+                                    .build(window, cx)
+                            })
+                        })
+                        .child(status)
+                }))
+                .into_any_element()
+        });
+        let listed = page.steps.len() as i64;
+        let more = (page.total > listed).then(|| {
+            let entry = entry.clone();
+            let label = if self.showing.contains_key(&plan.id) {
+                "Show more".to_string()
+            } else {
+                format!("Show all {}", format::count(page.total))
+            };
+            div()
+                .h(px(36.))
+                .pl(px(52.))
+                .flex()
+                .items_center()
+                .border_t_1()
+                .border_color(border)
+                .child(
+                    Button::new(SharedString::from(format!("history-show-all-{}", plan.id)))
+                        .ghost()
+                        .small()
+                        .label(label)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.show_more_steps(&entry, cx);
+                        })),
+                )
+        });
         div()
             .flex()
             .flex_col()
-            .px_4()
-            .pb_3()
-            .children(steps.into_iter().map(|step| {
-                let to = step.to_path.clone().unwrap_or_default();
+            .border_t_1()
+            .border_color(border)
+            .bg(theme.muted.opacity(0.3))
+            .children(rows)
+            .children(more)
+            .into_any_element()
+    }
+
+    /// The sets of a run of duplicate decisions, one row each with its own Undo. Each set is its
+    /// own plan; what stayed comes from the hold reason of the copies it put in holding
+    /// (`ResolveSets`).
+    fn render_sets(&self, entry: &Entry, cx: &mut Context<Self>) -> AnyElement {
+        let root = self.root_path(cx);
+        let root_name = self
+            .state
+            .read(cx)
+            .root()
+            .map_or_else(|| "the top folder".to_string(), |root| root.name.clone());
+        let rows: Vec<AnyElement> = entry
+            .plans
+            .iter()
+            .map(|plan| {
+                let held = self.held.get(&plan.id);
+                let keeper = held.and_then(|held| keeper_of(&held.reason));
+                let removed = self
+                    .steps
+                    .get(&plan.id)
+                    .and_then(|page| page.steps.first())
+                    .map(|step| step.from_path.clone());
+                // The copy that stayed is on disk; the held one, or a removed one, stands in.
+                let picture = match keeper {
+                    Some(keeper) if !root.is_empty() => {
+                        Some(format!("{}/{keeper}", root.trim_end_matches(['/', '\\'])))
+                    }
+                    _ => held.map(|held| held.hold_path.clone()).or(removed.clone()),
+                };
+                let name = keeper
+                    .map(|keeper| file_name(keeper).to_string())
+                    .or_else(|| removed.as_deref().map(|path| file_name(path).to_string()))
+                    .unwrap_or_else(|| plan.title.clone());
+                let full = keeper.map(String::from).or(removed.clone());
+                let detail: Vec<String> = [
+                    (plan.count > 1).then(|| format::plural(plan.count, "set")),
+                    keeper.map(|keeper| {
+                        let folder = folder_of(keeper);
+                        format!(
+                            "kept {}",
+                            if folder.is_empty() {
+                                root_name.as_str()
+                            } else {
+                                folder
+                            }
+                        )
+                    }),
+                    (plan.held.files > 0)
+                        .then(|| format!("removed {}", format::count(plan.held.files))),
+                    (plan.status == PlanStatus::Undone).then(|| "undone".to_string()),
+                ]
+                .into_iter()
+                .flatten()
+                .collect();
+                self.render_set(plan, picture, name, full, detail.join(" · "), cx)
+            })
+            .collect();
+        let theme = cx.theme();
+        div()
+            .flex()
+            .flex_col()
+            .border_t_1()
+            .border_color(theme.border)
+            .bg(theme.muted.opacity(0.3))
+            .children(rows)
+            .into_any_element()
+    }
+
+    fn render_set(
+        &self,
+        plan: &PlanSummary,
+        picture: Option<String>,
+        name: String,
+        full: Option<String>,
+        detail: String,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let video = picture.as_deref().is_some_and(|path| {
+            oriel_core_domain::detect_media_type(file_name(path))
+                == oriel_core_domain::MediaType::Video
+        });
+        let thumb = picture.as_deref().map_or(Thumb::Unavailable, |path| {
+            self.thumbs.update(cx, |thumbs, cx| {
+                thumbs.path(std::path::Path::new(path), video, 96, cx)
+            })
+        });
+        let theme = cx.theme();
+        let undone = plan.status == PlanStatus::Undone;
+        let picture: AnyElement = match thumb {
+            Thumb::Ready(image) => gpui_kit::img(image)
+                .size_full()
+                .object_fit(gpui_kit::ObjectFit::Cover)
+                .into_any_element(),
+            Thumb::Pending => div().size_full().into_any_element(),
+            Thumb::Unavailable => div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_color(theme.muted_foreground)
+                .child(Icon::new(IconName::File).size(px(14.)))
+                .into_any_element(),
+        };
+        let busy = self.undoing.contains(&plan.id.to_string());
+        let undo = can_undo(plan).then(|| {
+            let plan = plan.clone();
+            Button::new(SharedString::from(format!("history-undo-set-{}", plan.id)))
+                .outline()
+                .small()
+                .label("Undo")
+                .loading(busy)
+                .disabled(busy)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    cx.stop_propagation();
+                    this.undo_set(plan.clone(), window, cx);
+                }))
+        });
+        div()
+            .id(("history-set", plan.id as u64))
+            .test_support()
+            .aria_label(SharedString::from(name.clone()))
+            .group("history-set")
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_3()
+            .h(px(48.))
+            .pl(px(60.))
+            .pr_4()
+            .border_t_1()
+            .border_color(theme.border)
+            .child(
+                div()
+                    .size_8()
+                    .flex_shrink_0()
+                    .rounded(px(6.))
+                    .overflow_hidden()
+                    .bg(theme.muted)
+                    .child(picture),
+            )
+            .child(
                 div()
                     .flex()
-                    .flex_row()
-                    .gap_2()
-                    .h(px(28.))
-                    .items_center()
-                    .text_xs()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
                     .child(
                         div()
-                            .w(px(64.))
-                            .flex_shrink_0()
-                            .text_color(match step.status {
-                                StepStatus::Failed => theme.danger,
-                                StepStatus::Skipped | StepStatus::Undone => theme.muted_foreground,
-                                _ => theme.foreground,
+                            .id(("history-set-name", plan.id as u64))
+                            .truncate()
+                            .text_size(px(13.))
+                            .when(undone, |this| this.text_color(theme.muted_foreground))
+                            .when_some(full, |this, full| {
+                                this.tooltip(move |window, cx| {
+                                    gpui_kit::component::tooltip::Tooltip::new(full.clone())
+                                        .build(window, cx)
+                                })
                             })
-                            .child(format!("{:?}", step.status)),
+                            .child(name),
                     )
-                    .child(div().flex_1().min_w_0().truncate().child(if to.is_empty() {
-                        step.from_path.clone()
-                    } else {
-                        format!("{} → {to}", step.from_path)
-                    }))
+                    .child(widgets::caption(detail, cx).truncate()),
+            )
+            .children(undo.map(|undo| {
+                div()
+                    .invisible()
+                    .group_hover("history-set", |style| style.visible())
+                    .when(busy, |this| this.visible())
+                    .child(undo)
             }))
             .into_any_element()
+    }
+
+    /// The folder's own path, which steps are shown inside.
+    fn root_path(&self, cx: &App) -> String {
+        self.state
+            .read(cx)
+            .root()
+            .map(|root| root.path.clone())
+            .unwrap_or_default()
     }
 }
 
@@ -518,13 +921,18 @@ impl HistoryPage {
     }
 
     /// The steps listed under an open entry, once read.
+    /// The rows listed under an open entry once read: its sets, or its steps and "Show all".
     fn step_count(&self, entry: &Entry) -> usize {
+        if entry.plans.len() > 1 {
+            return entry.plans.len();
+        }
         entry
             .plans
-            .iter()
-            .filter_map(|plan| self.steps.get(&plan.id))
-            .map(|page| page.steps.len())
-            .sum()
+            .first()
+            .and_then(|plan| self.steps.get(&plan.id))
+            .map_or(0, |page| {
+                page.steps.len() + usize::from(page.total > page.steps.len() as i64)
+            })
     }
 
     /// An entry, as its part of its day's card: the card's top edge over its first entry, its
@@ -548,7 +956,9 @@ impl HistoryPage {
         let open = self.expanded.contains(&entry.key);
         let focused = self.focused.as_ref() == Some(&entry.key);
         let first = entry.plans.first().cloned();
-        let undoable = entry.plans.iter().any(can_undo);
+        let undoable_count = entry.plans.iter().filter(|plan| can_undo(plan)).count();
+        let undoable = undoable_count > 0;
+        let undoing = self.undoing.contains(&entry.key);
         let status = first.as_ref().and_then(|plan| status_label(plan.status));
         let title = entry_title(entry);
         let detail = entry_detail(entry);
@@ -627,7 +1037,13 @@ impl HistoryPage {
                                     }
                                 })
                                 .small()
-                                .label("Undo")
+                                .label(if undoable_count > 1 {
+                                    format!("Undo all {undoable_count}")
+                                } else {
+                                    "Undo".to_string()
+                                })
+                                .loading(undoing)
+                                .disabled(undoing)
                                 .tooltip("Undo  U")
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
@@ -665,7 +1081,7 @@ fn guess(key: &ItemKey) -> f32 {
         ItemKey::Day(true) => 36.,
         ItemKey::Day(false) => 44.,
         ItemKey::Entry { last, steps, .. } => {
-            53. + f32::from(u8::from(*last)) + 28. * *steps as f32
+            53. + f32::from(u8::from(*last)) + 36. * *steps as f32
         }
         ItemKey::More => 40.,
     }
@@ -695,7 +1111,7 @@ impl Render for HistoryPage {
                 "history-empty",
                 Some(IconName::RotateCcw),
                 "No changes yet",
-                Some("What Tidy changes shows here, with its Undo.".into_any_element()),
+                Some("Every change you make shows up here with an Undo.".into_any_element()),
                 Vec::new(),
                 cx,
             )

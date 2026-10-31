@@ -1,7 +1,9 @@
 //! Holding (`views/HoldingView.tsx`): what Tidy's changes moved aside, grouped by the change that
 //! held them, until the owner restores them (⌘⌫) or empties holding to the Trash (⇧⌘⌫). Click
-//! picks one, ⌘-click adds or removes one, ⇧-click picks a run; Escape clears. Space or a
-//! double-click shows a held file in Quick Look.
+//! picks one, ⌘-click adds or removes one, ⇧-click picks a run; the arrows move a cursor from
+//! tile to tile, across the changes' headings, picking the tile or with ⇧ the run from the
+//! anchor; Escape clears. Space or a double-click shows a held file in Quick Look, and each tile
+//! has its own Restore.
 //!
 //! Holding is drawn a screen at a time ([`crate::windowed`]): each change's heading and each
 //! line of its tiles are items of one column, broken into lines as the tiles would wrap.
@@ -128,6 +130,12 @@ pub struct HoldingPage {
     wanted: usize,
     selected: BTreeSet<HoldingId>,
     anchor: Option<HoldingId>,
+    /// The keyboard cursor: the tile the arrows move from, Space looks at, and the ring marks.
+    cursor: Option<HoldingId>,
+    /// The cursor moved by key, so the next frame scrolls its tile into view.
+    reveal_cursor: bool,
+    /// Tiles to a line as last laid out, which ↑ ↓ move across.
+    columns: usize,
     busy: bool,
     seen: (Option<RootId>, u64),
     /// How much narrower than the window the column was when last laid out, and the window's
@@ -153,6 +161,9 @@ impl HoldingPage {
             wanted: PAGE,
             selected: BTreeSet::new(),
             anchor: None,
+            cursor: None,
+            reveal_cursor: false,
+            columns: 1,
             busy: false,
             seen: (None, 0),
             margin: None,
@@ -234,6 +245,7 @@ impl HoldingPage {
     }
 
     fn select(&mut self, id: HoldingId, command: bool, shift: bool, cx: &mut Context<Self>) {
+        self.cursor = Some(id);
         let held = self.held.clone();
         let ordered = held
             .as_ref()
@@ -253,6 +265,73 @@ impl HoldingPage {
         } else {
             self.selected = BTreeSet::from([id]);
             self.anchor = Some(id);
+        }
+        cx.notify();
+    }
+
+    /// Where an arrow moves the cursor: the next or previous tile for ← →; for ↑ ↓ the tile in
+    /// the line above or below, the nearest to the cursor's column, across a change's heading
+    /// (`verticalNeighbour`). The first tile when there is no cursor yet.
+    fn neighbour(&self, key: &str) -> Option<HoldingId> {
+        let held = self.held.as_ref()?;
+        let ordered = &held.ordered;
+        let Some(at) = self
+            .cursor
+            .and_then(|cursor| ordered.iter().position(|item| item.id == cursor))
+        else {
+            return ordered.first().map(|item| item.id);
+        };
+        let columns = self.columns.max(1);
+        let target = match key {
+            "right" => (at + 1).min(ordered.len() - 1),
+            "left" => at.saturating_sub(1),
+            "down" | "up" => {
+                // Each change's tiles wrap on their own, so lines are counted within a group.
+                let lines: Vec<std::ops::Range<usize>> = held
+                    .groups
+                    .iter()
+                    .flat_map(|(_, files)| {
+                        files
+                            .clone()
+                            .step_by(columns)
+                            .map(move |start| start..(start + columns).min(files.end))
+                    })
+                    .collect();
+                let line = lines.iter().position(|line| line.contains(&at))?;
+                let column = at - lines[line].start;
+                let next = if key == "down" {
+                    lines.get(line + 1)
+                } else {
+                    line.checked_sub(1).and_then(|line| lines.get(line))
+                };
+                match next {
+                    Some(next) => (next.start + column).min(next.end - 1),
+                    None => at,
+                }
+            }
+            _ => return None,
+        };
+        ordered.get(target).map(|item| item.id)
+    }
+
+    /// Moves the cursor to a tile, picking it alone or, with ⇧, the run from the anchor.
+    fn move_cursor(&mut self, target: HoldingId, extend: bool, cx: &mut Context<Self>) {
+        let start = self.anchor.or(self.cursor).unwrap_or(target);
+        self.cursor = Some(target);
+        self.reveal_cursor = true;
+        if extend {
+            let ordered = self.ordered();
+            let position = |id: HoldingId| ordered.iter().position(|item| item.id == id);
+            if let (Some(from), Some(to)) = (position(start), position(target)) {
+                self.selected = ordered[from.min(to)..=from.max(to)]
+                    .iter()
+                    .map(|item| item.id)
+                    .collect();
+            }
+            self.anchor = Some(start);
+        } else {
+            self.selected = BTreeSet::from([target]);
+            self.anchor = Some(target);
         }
         cx.notify();
     }
@@ -350,15 +429,22 @@ impl HoldingPage {
         } else if keys.key == "escape" && !self.selected.is_empty() {
             self.selected.clear();
             cx.notify();
+        } else if matches!(keys.key.as_str(), "left" | "right" | "up" | "down")
+            && !(keys.modifiers.platform || keys.modifiers.control || keys.modifiers.alt)
+        {
+            let Some(target) = self.neighbour(&keys.key) else {
+                return;
+            };
+            self.move_cursor(target, keys.modifiers.shift, cx);
         } else if keys.key == "space" && !keys.modifiers.modified() {
-            // The file last clicked, else the first chosen, as Finder's Space previews it.
+            // The cursor's file, else the first chosen, as Finder's Space previews it.
             let held = self.held.clone();
             let ordered = held
                 .as_ref()
                 .map_or(&[][..], |held| held.ordered.as_slice());
             let target = self
-                .anchor
-                .and_then(|anchor| ordered.iter().find(|item| item.id == anchor))
+                .cursor
+                .and_then(|cursor| ordered.iter().find(|item| item.id == cursor))
                 .or_else(|| ordered.iter().find(|item| self.selected.contains(&item.id)));
             let Some(target) = target else {
                 return;
@@ -378,6 +464,8 @@ impl HoldingPage {
         });
         let theme = cx.theme();
         let selected = self.selected.contains(&item.id);
+        // The keyboard cursor's tile carries the screen's one ring in the accent colour.
+        let current = self.cursor == Some(item.id);
         let picture: AnyElement = match thumb {
             Thumb::Ready(image) => gpui_kit::img(image)
                 .size_full()
@@ -412,15 +500,19 @@ impl HoldingPage {
             .flex_col()
             .p_1()
             .rounded(theme.radius_lg)
+            .relative()
+            .group("held-tile")
             .border_2()
-            .border_color(if selected {
+            .border_color(if current {
+                theme.ring
+            } else if selected {
                 theme.primary
             } else {
                 theme.transparent
             })
             .cursor_pointer()
             .tooltip({
-                let tooltip = SharedString::from(relative);
+                let tooltip = SharedString::from(format!("{relative}\n{}", item.reason));
                 move |window, cx| {
                     gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(window, cx)
                 }
@@ -443,6 +535,25 @@ impl HoldingPage {
                     .overflow_hidden()
                     .bg(theme.muted)
                     .child(picture),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(10.))
+                    .right(px(10.))
+                    .invisible()
+                    .group_hover("held-tile", |style| style.visible())
+                    .child(
+                        Button::new(("restore-held", id as u64))
+                            .outline()
+                            .xsmall()
+                            .label("Restore")
+                            .disabled(self.busy)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                cx.stop_propagation();
+                                this.restore(vec![id], window, cx);
+                            })),
+                    ),
             )
             .child(
                 div()
@@ -509,6 +620,7 @@ impl HoldingPage {
         let rem = f32::from(window.rem_size());
         let (inner, gap) = (window_width - margin - 2.5 * rem, 0.75 * rem);
         let columns = (((inner + gap) / (TILE + gap)).floor() as usize).max(1);
+        self.columns = columns;
         let mut items = Vec::new();
         for (group, (_, files)) in held.groups.iter().enumerate() {
             items.push(Item::Title(group));
@@ -536,7 +648,21 @@ impl HoldingPage {
                 Item::Note => ItemKey::Note,
             })
             .collect();
+        // The line the cursor moved onto by key comes into view, as little as it takes.
+        let cursor_line = std::mem::take(&mut self.reveal_cursor)
+            .then(|| {
+                let at = self
+                    .cursor
+                    .and_then(|cursor| held.ordered.iter().position(|item| item.id == cursor))?;
+                items.iter().position(
+                    |item| matches!(item, Item::Line { files, .. } if files.contains(&at)),
+                )
+            })
+            .flatten();
         let (pieces, near) = column.update(cx, |column, _| {
+            if let Some(line) = cursor_line {
+                column.reveal(line);
+            }
             column.plan(&keys, |index| guess(&keys[index]), 0., NEAR, window)
         });
         // The lines just past the screen: their pictures are asked for after those on it.
@@ -773,18 +899,12 @@ impl Render for HoldingPage {
                         .border_color(border)
                         .shadow_lg()
                         .child(
-                            widgets::caption(
-                                format!("{} selected", format::count(chosen.len() as i64)),
-                                cx,
-                            )
-                            .px_2(),
-                        )
-                        .child(
                             Button::new("holding-restore")
                                 .primary()
                                 .small()
-                                .label("Restore")
-                                .tooltip("⌘⌫")
+                                .label(format!("Restore {}", format::count(chosen.len() as i64)))
+                                .loading(self.busy)
+                                .tooltip("Restore  ⌘⌫")
                                 .disabled(self.busy)
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.restore(ids.clone(), window, cx);
@@ -807,7 +927,7 @@ impl Render for HoldingPage {
                                 .small()
                                 .icon(Icon::new(IconName::Close))
                                 .accessibility_label("Clear selection")
-                                .tooltip("Esc")
+                                .tooltip("Clear selection  Esc")
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.selected.clear();
                                     cx.notify();

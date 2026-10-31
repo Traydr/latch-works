@@ -108,6 +108,10 @@ pub struct OverviewPage {
     saved: Option<(RootId, f64)>,
     keepers: Loaded<DuplicateSetPage>,
     seen: (Option<RootId>, u64),
+    /// The hero card's rows as last drawn, which ↑ ↓ move between, and the one they rest on: its
+    /// ring shows, and ↩ or → open its page.
+    shown_steps: Vec<(StepId, TidyPage)>,
+    focused_step: Option<StepId>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -125,6 +129,8 @@ impl OverviewPage {
             saved: None,
             keepers: Loaded::default(),
             seen: (None, 0),
+            shown_steps: Vec::new(),
+            focused_step: None,
             _subscriptions: subscriptions,
         }
     }
@@ -133,6 +139,8 @@ impl OverviewPage {
     fn sync(&mut self, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
         if state.page() != TidyPage::Overview {
+            // A row's ring is for this visit only, as a focused button's is.
+            self.focused_step = None;
             cx.notify();
             return;
         }
@@ -333,6 +341,38 @@ impl OverviewPage {
                 state.open_duplicates(DuplicateScope::Similar, cx);
             });
             cx.stop_propagation();
+        } else if !keys.modifiers.modified() && self.move_between_steps(&keys.key, cx) {
+            cx.stop_propagation();
+        }
+    }
+
+    /// ↑ ↓ move between the hero card's rows, from the first or the last; ↩ and → open the page of
+    /// the row they rest on, as Electron's arrows move the focus between its row buttons.
+    fn move_between_steps(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        let at = self
+            .focused_step
+            .and_then(|focused| self.shown_steps.iter().position(|(id, _)| *id == focused));
+        match key {
+            "down" | "up" if !self.shown_steps.is_empty() => {
+                let last = self.shown_steps.len() - 1;
+                let next = match (at, key) {
+                    (None, "down") => 0,
+                    (None, _) => last,
+                    (Some(at), "down") => (at + 1).min(last),
+                    (Some(at), _) => at.saturating_sub(1),
+                };
+                self.focused_step = Some(self.shown_steps[next].0);
+                cx.notify();
+                true
+            }
+            "enter" | "right" => {
+                let Some((_, page)) = at.map(|at| self.shown_steps[at]) else {
+                    return false;
+                };
+                self.state.update(cx, |state, cx| state.go(page, cx));
+                true
+            }
+            _ => false,
         }
     }
 
@@ -575,6 +615,8 @@ impl OverviewPage {
                     label,
                     progress.done(),
                     progress.total(),
+                    // Tidy up runs its steps one after another, so it stops but never pauses.
+                    None,
                     move |_, _, cx| stopper.update(cx, |state, cx| state.stop_change(cx)),
                     cx,
                 )
@@ -587,12 +629,16 @@ impl OverviewPage {
                 .into_any_element(),
         };
 
-        let rows: Vec<AnyElement> = steps
+        let shown: Vec<(Step, StepState)> = steps
             .into_iter()
             .zip(states)
             .filter(|(step, row_state)| {
                 step.todo || kept.contains(&step.id) || *row_state == StepState::Running
             })
+            .collect();
+        self.shown_steps = shown.iter().map(|(step, _)| (step.id, step.open)).collect();
+        let rows: Vec<AnyElement> = shown
+            .into_iter()
             .enumerate()
             .map(|(index, (step, row_state))| self.render_step(index, step, row_state, tidying, cx))
             .collect();
@@ -665,6 +711,7 @@ impl OverviewPage {
             step.caption.clone()
         };
         let (id, open) = (step.id, step.open);
+        let focused = self.focused_step == Some(id);
         div()
             .id(SharedString::from(format!(
                 "overview-step-{}",
@@ -686,6 +733,9 @@ impl OverviewPage {
                 this.border_t_1().border_color(theme.border)
             })
             .hover(|style| style.bg(theme.accent))
+            .when(focused, |this| {
+                this.bg(theme.accent).border_1().border_color(theme.ring)
+            })
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.state.update(cx, |state, cx| state.go(open, cx));

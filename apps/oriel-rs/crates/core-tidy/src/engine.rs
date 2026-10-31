@@ -277,6 +277,10 @@ impl TidyEngine {
                 Ok(())
             })
             .await?;
+        // The owner's run holds a root on another volume on that volume, as glazier-core does; a
+        // sandboxed one keeps every held file in its own data folder.
+        let places =
+            crate::plans::holding::HoldingPlaces::new(data_dir).on_volumes(!data.is_sandboxed());
         Ok(Self {
             inner: Arc::new(Inner {
                 catalog,
@@ -288,7 +292,7 @@ impl TidyEngine {
                 sets: Mutex::new(None),
                 fingerprints: AtomicU64::new(0),
                 clusters: Mutex::new(HashMap::new()),
-                places: crate::plans::holding::HoldingPlaces::new(data_dir),
+                places,
                 capabilities: OnceLock::new(),
                 estimates: Mutex::new(HashMap::new()),
                 overviews: Mutex::new(HashMap::new()),
@@ -327,8 +331,9 @@ impl TidyEngine {
         self.query(|_, connection| list_roots(connection))
     }
 
-    /// Adds a folder as a root, refusing one outside Tidy's sandbox or overlapping another root.
-    /// Scanning it is the caller's next step ([`TidyEngine::start_scan`]).
+    /// Adds a folder as a root, refusing one that is missing, a file or overlapping another root,
+    /// and in a sandboxed run one outside the sandbox. Scanning it is the caller's next step
+    /// ([`TidyEngine::start_scan`]).
     pub fn add_root(
         &self,
         folder: impl AsRef<Path>,

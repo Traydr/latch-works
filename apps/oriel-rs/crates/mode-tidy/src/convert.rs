@@ -247,6 +247,12 @@ impl ConvertPage {
         let state = self.state.read(cx);
         let (files, bytes) = group.totals(tidy);
         let estimate = state.estimate(group.categories());
+        // Electron's test, `!video.avc && !ffmpeg`: Oriel RS encodes video only through ffmpeg.
+        let no_video_encoder = group == ConvertGroup::Videos
+            && state
+                .capabilities()
+                .is_some_and(|found| !found.video.avc && !found.ffmpeg);
+        let warning = cx.theme().warning;
         let ratio = estimate.ratio();
         let rows: Vec<FileRow> = self
             .slot(group)
@@ -298,6 +304,14 @@ impl ConvertPage {
                                 group.target()
                             )),
                     )
+                    .when(no_video_encoder, |this| {
+                        this.child(
+                            div()
+                                .text_xs()
+                                .text_color(warning)
+                                .child("No H.264 encoder on this machine"),
+                        )
+                    })
                     .child(div().flex_1())
                     .child(widgets::caption(estimate.describe(bytes as f64), cx)),
             )
@@ -374,6 +388,9 @@ impl Focusable for ConvertPage {
 
 impl Render for ConvertPage {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // The videos' section says when this machine has no encoder for them.
+        self.state
+            .update(cx, |state, cx| state.ask_capabilities(cx));
         let state = self.state.read(cx);
         let shell = state.shell.clone();
         let tidy = state.overview.data().cloned();

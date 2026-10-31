@@ -10,12 +10,11 @@
 //! [`FollowUp`] for the caller to start with [`TidyEngine::start_follow_up`], so a change's ring
 //! on the switcher ends when the change does, as Electron Oriel's does.
 //!
-//! The sandbox holds here too: a plan with a step in a root Tidy's sandbox does not admit is
-//! refused before anything is touched (plan 063, ground rules).
+//! A sandboxed run (`ORIEL_RS_DATA_DIR` set) holds here too: a plan with a step in a root outside
+//! the sandbox is refused before anything is touched.
 
 use std::collections::HashSet;
 use std::fs;
-use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
 
@@ -195,8 +194,8 @@ impl Inner {
         })
     }
 
-    /// Saves a request as a draft plan, refusing a move into a folder the sandbox does not
-    /// admit.
+    /// Saves a request as a draft plan, refusing, in a sandboxed run, a move into a folder outside
+    /// the sandbox.
     fn preview(
         &self,
         connection: &mut Connection,
@@ -206,8 +205,8 @@ impl Inner {
             let target = std::path::absolute(target_dir)?;
             if !self.data.admits_tidy_root(&target) {
                 bail!(PlanRequestError(format!(
-                    "While Tidy's sandbox holds, files move only into folders under {} or the \
-                     temp folder.",
+                    "With ORIEL_RS_DATA_DIR set, files move only into folders under {} or \
+                     the temp folder.",
                     self.data.sandbox().display()
                 )));
             }
@@ -218,7 +217,7 @@ impl Inner {
         Ok(preview)
     }
 
-    /// Refuses a plan with a step in a root the sandbox does not admit (plan 063's STOP rule).
+    /// Refuses, in a sandboxed run, a plan with a step in a root outside the sandbox.
     fn check_plan_roots(&self, plan_id: PlanId) -> anyhow::Result<Vec<RootId>> {
         let (root_ids, roots) = self.catalog.blocking(move |connection| {
             Ok((plan_root_ids(connection, plan_id)?, list_roots(connection)?))
@@ -1003,7 +1002,7 @@ impl Inner {
             converted
                 .ok()
                 .and_then(|()| fs::metadata(&out).ok())
-                .map(|written| written.size() as f64 / (candidate.record.size.max(1)) as f64)
+                .map(|written| written.len() as f64 / (candidate.record.size.max(1)) as f64)
         };
         // A still's encode runs on one thread, so the eight run at once, within the memory
         // Convert's encodes may hold; ffmpeg's conversions use every core already, so they run

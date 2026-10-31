@@ -95,8 +95,18 @@ line on stderr; Performance monitoring adds a Timings group to View's Diagnostic
 
 ## The sandbox
 
-Tidy changes files only in a root under `~/.latch-works/oriel-rs/sandbox/` or the temp folder,
-until the owner lifts the sandbox (plan 063, ground rules). Make test archives there:
+Tidy takes any folder Electron Oriel's Tidy takes, and changes files in it, when the app runs on
+the owner's own data in `~/.latch-works/oriel-rs` (plan 063, decision 18). It keeps Electron's
+refusals: a folder that is missing, a file, or one that holds or lies in another root. A root on
+another volume holds its files on that volume, in `.latch-works/oriel-rs/holding/` at its top,
+as glazier-core holds in `.latch-works/glazier/holding/`.
+
+A run with `ORIEL_RS_DATA_DIR` set (every check, test and agent run) is sandboxed: Tidy takes
+only a root under that data folder's `sandbox/` or the temp folder, refuses a Move to… outside
+them, and holds every file in its own data folder. The folder picker, the welcome, Settings and
+a refused hand-off say so; the owner's run shows none of it. Agents change only archives under
+`~/.latch-works/oriel-rs/sandbox/` or `/tmp`, and copy what they need there. Make test archives
+there:
 
 ```sh
 node apps/oriel-rs/scripts/fixture/make-fixture.ts --profile smoke   # about 250 files, 200 MB

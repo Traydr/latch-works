@@ -95,6 +95,14 @@ pub struct DuplicatesPage {
     hover_row: Option<usize>,
     looking: bool,
     zoomed: bool,
+    /// The loupe's stage, which scrolls at actual size, and where to zoom in next: the point
+    /// clicked or under the pointer, as shares of the picture, kept across flips.
+    loupe_scroll: ScrollHandle,
+    zoom_at: Option<(f32, f32)>,
+    /// The pointer over the loupe's picture, as shares of it, for Z.
+    pointer_at: Option<(f32, f32)>,
+    /// A zoom that waits to centre its point, once the stage has its actual-size picture.
+    center_zoom: bool,
     sound_on: bool,
     overrides: HashMap<String, Vec<FileId>>,
     skipped: HashSet<String>,
@@ -139,6 +147,10 @@ impl DuplicatesPage {
             hover_row: None,
             looking: false,
             zoomed: false,
+            loupe_scroll: ScrollHandle::new(),
+            zoom_at: None,
+            pointer_at: None,
+            center_zoom: false,
             sound_on: true,
             overrides: HashMap::new(),
             skipped: HashSet::new(),
@@ -766,7 +778,7 @@ impl DuplicatesPage {
         }
         let muted = !self.sound_on;
         let path = Path::new(&file.abs_path).to_path_buf();
-        self.video = Some((file.id, cx.new(|_| TileVideo::new(path, muted))));
+        self.video = Some((file.id, cx.new(|cx| TileVideo::new(path, muted, cx))));
         cx.notify();
     }
 
@@ -931,9 +943,9 @@ impl DuplicatesPage {
                     if !self.looking {
                         self.focused_row = self.target();
                     }
-                    self.zoomed = !self.looking || !self.zoomed;
+                    let zooming = !self.looking || !self.zoomed;
                     self.looking = true;
-                    cx.notify();
+                    self.toggle_zoom(zooming, self.pointer_at, cx);
                 }
             }
             "m" => self.toggle_sound(cx),
@@ -1537,7 +1549,8 @@ impl DuplicatesPage {
                                 ))
                             }),
                     )
-                    .when(video, |this| {
+                    // Once it plays, the video's own controls take over from this button.
+                    .when(video && playing.is_none(), |this| {
                         this.child(
                             div().absolute().bottom_2().left_2().child(
                                 Button::new(("play-version", file.id as u64))
@@ -1598,6 +1611,12 @@ impl DuplicatesPage {
             .into_any_element()
     }
 
+    /// Byte-identical copies (`CopyList`): there is nothing to compare, so the picture shows once
+    /// (a video plays, with its sound) and the choice is where the file stays. Clicking a place
+    /// (or pressing its number) keeps the copy there and moves on; checking several (or
+    /// ⇧-clicking) keeps the copy in each, for when one file belongs in more than one folder. Each
+    /// place leads with its whole folder path, then the date (the oldest copy is the usual pick),
+    /// and opens in Finder from its folder button. Below 680 px the list goes under the picture.
     fn render_copies(
         &mut self,
         set: &DuplicateSet,
@@ -1606,31 +1625,75 @@ impl DuplicatesPage {
         reason: &str,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let theme = cx.theme();
-        let (border, primary, muted, accent) = (
-            theme.border,
-            theme.primary,
-            theme.muted_foreground,
-            theme.accent,
-        );
+        let Some(first) = rows.first().map(|row| row.file.clone()) else {
+            return div().flex_1().into_any_element();
+        };
         let read_only = self.dismissed_mode;
         let focus = self.keyboard_focus.then(|| self.focus_row());
-        let first = rows.first().map(|row| row.file.clone());
-        let (radius_lg, ground) = (theme.radius_lg, theme.muted);
-        let preview = first.map(|file| {
-            div()
-                .h(px(220.))
-                .rounded(radius_lg)
-                .overflow_hidden()
-                .bg(ground)
-                .child(thumbs::picture(
-                    &self.thumbs,
-                    &file,
-                    768,
-                    ObjectFit::Contain,
-                    cx,
-                ))
+        let same_name = rows.iter().all(|row| row.file.name == first.name);
+        // When two copies share a minute, "the oldest" needs the seconds to be seen to be true.
+        let minutes: HashSet<String> = rows
+            .iter()
+            .map(|row| format::date_time(row.file.mtime_ms))
+            .collect();
+        let seconds = minutes.len() < rows.len();
+        let aspect = match (first.width, first.height) {
+            (Some(w), Some(h)) if w > 0 && h > 0 => w as f32 / h as f32,
+            _ => 4. / 3.,
+        };
+        let shows =
+            matches!(first.kind, FileKind::Image | FileKind::Video) && first.probe_error.is_none();
+        let playing = self
+            .video
+            .as_ref()
+            .filter(|(id, _)| *id == first.id)
+            .map(|(_, video)| video.clone());
+        let picture: AnyElement = match playing {
+            Some(video) => video.into_any_element(),
+            None => thumbs::picture(&self.thumbs, &first, 1024, ObjectFit::Contain, cx),
+        };
+        let theme = cx.theme();
+        let (border, accent, muted, radius_lg, ground) = (
+            theme.border,
+            theme.accent,
+            theme.muted_foreground,
+            theme.radius_lg,
+            theme.muted,
+        );
+        let play = (shows && first.kind == FileKind::Video && self.video.is_none()).then(|| {
+            let file = first.clone();
+            div().absolute().bottom_2().left_2().child(
+                Button::new("play-copy")
+                    .xsmall()
+                    .icon(Icon::new(IconName::Play))
+                    .accessibility_label("Play")
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.play(&file, window, cx);
+                    })),
+            )
         });
+        let well = div()
+            .relative()
+            .flex_1()
+            .min_w(px(320.))
+            .max_h_full()
+            .aspect_ratio(aspect)
+            .rounded(radius_lg)
+            .overflow_hidden()
+            .bg(ground)
+            .child(picture)
+            .children(play);
+        let summary = [
+            same_name.then(|| first.name.clone()),
+            Some(format::format_label(first.format).to_string()),
+            Some(format::details(&first)).filter(|details| !details.is_empty()),
+            Some(format!("{} each", format::bytes(first.size as f64))),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" · ");
         let linked = &set.hard_linked_ids;
         let lines: Vec<AnyElement> = rows
             .iter()
@@ -1644,21 +1707,59 @@ impl DuplicatesPage {
                 } else {
                     file.dir.clone()
                 };
+                let check_tip: SharedString = if is_kept {
+                    if reason.is_empty() {
+                        format!("Keeping the copy in {place}").into()
+                    } else {
+                        reason.to_string().into()
+                    }
+                } else {
+                    format!("Keep the copy in {place} as well  ⇧{}", index + 1).into()
+                };
+                let row_tip: SharedString = format!(
+                    "{}\nClick to keep only this copy and go on  {}",
+                    file.rel_path,
+                    index + 1
+                )
+                .into();
+                let date = if seconds {
+                    format::date_time_seconds(file.mtime_ms)
+                } else {
+                    format::date_time(file.mtime_ms)
+                };
+                let note = [
+                    Some(date),
+                    (!same_name).then(|| file.name.clone()),
+                    linked
+                        .contains(&file.id)
+                        .then(|| "a hard link, so it frees nothing".to_string()),
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" · ");
                 div()
                     .id(("version", file.id as u64))
                     .test_support()
                     .aria_label(SharedString::from(file.name.clone()))
                     .aria_selected(is_kept)
+                    .group("copy")
                     .flex()
                     .flex_row()
                     .items_center()
                     .gap_3()
                     .min_h(px(52.))
-                    .px_3()
+                    .pl_3()
+                    .pr_2()
+                    .py_2()
                     .when(index > 0, |this| this.border_t_1().border_color(border))
                     .when(focus == Some(index), |this| this.bg(accent))
                     .when(!read_only, |this| {
                         this.cursor_pointer().hover(|style| style.bg(accent))
+                    })
+                    .tooltip(move |window, cx| {
+                        gpui_kit::component::tooltip::Tooltip::new(row_tip.clone())
+                            .build(window, cx)
                     })
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         if *hovered {
@@ -1678,56 +1779,68 @@ impl DuplicatesPage {
                             }
                         }),
                     )
-                    .when(!read_only, |this| {
-                        this.child(
-                            Checkbox::new(("keep-version", file.id as u64))
-                                .checked(is_kept)
-                                .accessibility_label(SharedString::from(format!(
-                                    "Keep copy {}",
-                                    index + 1
-                                )))
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.toggle_keep(index, cx);
-                                })),
-                        )
-                    })
-                    .child(badge((index + 1).to_string().into(), false, cx))
+                    .child(
+                        div()
+                            .id(("keep-copy-tip", file.id as u64))
+                            .tooltip(move |window, cx| {
+                                gpui_kit::component::tooltip::Tooltip::new(check_tip.clone())
+                                    .build(window, cx)
+                            })
+                            .child(
+                                Checkbox::new(("keep-version", file.id as u64))
+                                    .checked(is_kept)
+                                    .disabled(read_only)
+                                    .accessibility_label(SharedString::from(format!(
+                                        "Keep the copy in {place}"
+                                    )))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.toggle_keep(index, cx);
+                                    })),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .min_w(px(20.))
+                            .h(px(20.))
+                            .px_1()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(5.))
+                            .border_1()
+                            .border_color(border)
+                            .text_xs()
+                            .text_color(muted)
+                            .child((index + 1).to_string()),
+                    )
                     .child(
                         div()
                             .flex()
                             .flex_col()
                             .flex_1()
                             .min_w_0()
-                            .child(div().truncate().text_size(px(13.)).child(
-                                if file.dir.is_empty() {
-                                    "The top folder".to_string()
-                                } else {
-                                    file.dir.clone()
-                                },
-                            ))
-                            .child(div().truncate().text_xs().text_color(muted).child(format!(
-                                "{} · {}{}",
-                                file.name,
-                                format::date_time(file.mtime_ms),
-                                if linked.contains(&file.id) {
-                                    " · a hard link, so it frees nothing"
-                                } else {
-                                    ""
-                                }
-                            ))),
+                            .child(
+                                div()
+                                    .text_size(px(13.))
+                                    .line_height(px(18.))
+                                    .line_clamp(3)
+                                    .child(if file.dir.is_empty() {
+                                        "The top folder".to_string()
+                                    } else {
+                                        file.dir.clone()
+                                    }),
+                            )
+                            .child(widgets::caption(note, cx).truncate()),
                     )
-                    .when(is_kept, |this| {
+                    .when(!is_kept && !read_only, |this| {
                         this.child(
                             div()
-                                .px_2()
-                                .py_0p5()
-                                .rounded(px(6.))
-                                .bg(primary)
-                                .text_color(gpui_kit::white())
-                                .text_xs()
-                                .font_weight(FontWeight::MEDIUM)
-                                .child("Keep"),
+                                .flex_shrink_0()
+                                .invisible()
+                                .group_hover("copy", |style| style.visible())
+                                .child(widgets::caption("Keep only this", cx)),
                         )
                     })
                     .child(
@@ -1757,6 +1870,44 @@ impl DuplicatesPage {
                     .into_any_element()
             })
             .collect();
+        let list = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w(px(320.))
+            .child(
+                div()
+                    .text_size(px(15.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(format::plural_as(
+                        rows.len() as i64,
+                        "identical copy",
+                        "identical copies",
+                    )),
+            )
+            .child(widgets::caption(summary, cx).mt_1())
+            .child(
+                div()
+                    .mt_5()
+                    .mb_2()
+                    .flex()
+                    .flex_row()
+                    .flex_wrap()
+                    .items_baseline()
+                    .justify_between()
+                    .gap_x_3()
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(muted)
+                            .child("Keep the copy in"),
+                    )
+                    .when(!read_only, |this| {
+                        this.child(widgets::caption("Check more than one to keep several", cx))
+                    }),
+            )
+            .child(widgets::card(cx).overflow_hidden().children(lines));
         div()
             .id("copy-list")
             .flex_1()
@@ -1764,29 +1915,72 @@ impl DuplicatesPage {
             .overflow_y_scroll()
             .child(
                 div()
-                    .mx_auto()
-                    .w_full()
-                    .max_w(px(760.))
                     .flex()
-                    .flex_col()
-                    .gap_4()
-                    .px_6()
-                    .pt_5()
-                    .pb(px(96.))
-                    .children(preview)
-                    .child(widgets::caption(reason.to_string(), cx))
-                    .child(widgets::card(cx).overflow_hidden().children(lines)),
+                    .flex_row()
+                    .flex_wrap()
+                    .items_start()
+                    .gap_6()
+                    .px_5()
+                    .pt_4()
+                    .pb(px(76.))
+                    .child(well)
+                    .child(list),
             )
             .into_any_element()
     }
 
+    /// Actual size at `at` (shares of the picture; its centre when none), or fitted again.
+    fn toggle_zoom(&mut self, zoomed: bool, at: Option<(f32, f32)>, cx: &mut Context<Self>) {
+        self.zoomed = zoomed;
+        if zoomed {
+            self.zoom_at = at;
+            self.center_zoom = true;
+        }
+        cx.notify();
+    }
+
+    /// Where `position` falls on the fitted picture of `file` in the loupe's stage, as shares
+    /// of the picture.
+    fn share_of_picture(
+        &self,
+        file: &FileRow,
+        position: gpui_kit::Point<gpui_kit::Pixels>,
+    ) -> Option<(f32, f32)> {
+        let bounds = self.loupe_scroll.bounds();
+        let (width, height) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+        if width <= 0. || height <= 0. {
+            return None;
+        }
+        let aspect = match (file.width, file.height) {
+            (Some(w), Some(h)) if w > 0 && h > 0 => w as f32 / h as f32,
+            _ => width / height,
+        };
+        let (shown_w, shown_h) = if width / height > aspect {
+            (height * aspect, height)
+        } else {
+            (width, width / aspect)
+        };
+        let left = f32::from(bounds.origin.x) + (width - shown_w) / 2.;
+        let top = f32::from(bounds.origin.y) + (height - shown_h) / 2.;
+        Some((
+            ((f32::from(position.x) - left) / shown_w).clamp(0., 1.),
+            ((f32::from(position.y) - top) / shown_h).clamp(0., 1.),
+        ))
+    }
+
+    /// One version at a time over the page, as Lightroom's Loupe is used for culling (`Loupe`):
+    /// ← and → flip between versions drawn in the same place at the same size, the next ones
+    /// decoded ahead so a flip never blinks. A click on the picture (or Z) shows actual size at
+    /// that point, from the file itself, and the pan is kept across flips: every version is drawn
+    /// at the largest one's width, so the same region stays in view. Always dark, so a photo is
+    /// judged on a neutral surround in either theme.
     fn render_loupe(
         &mut self,
         set: &DuplicateSet,
         rows: &[SetRow],
         kept: &[FileId],
         reason: &model::Reason,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let focus = self.focus_row();
@@ -1804,23 +1998,144 @@ impl DuplicatesPage {
             .as_ref()
             .filter(|(id, _)| *id == file.id)
             .map(|(_, video)| video.clone());
-        let fit = if self.zoomed {
-            ObjectFit::None
-        } else {
-            ObjectFit::Contain
-        };
+        let is_video = file.kind == FileKind::Video && file.probe_error.is_none();
+        // The largest version's width, which every version is drawn at when zoomed.
+        let widest = rows
+            .iter()
+            .filter_map(|row| row.file.width)
+            .max()
+            .unwrap_or(0);
+        let zoomed = self.zoomed && !is_video && widest > 0;
         let picture: AnyElement = match playing {
             Some(video) => video.into_any_element(),
-            None => thumbs::picture(&self.thumbs, &file, 2048, fit, cx),
+            None if zoomed => {
+                let longest = file.width.max(file.height).unwrap_or(2048).max(1) as u32;
+                let (w, h) = match (file.width, file.height) {
+                    (Some(w), Some(h)) if w > 0 => {
+                        (widest as f32, widest as f32 * h as f32 / w as f32)
+                    }
+                    _ => (widest as f32, widest as f32),
+                };
+                div()
+                    .w(px(w))
+                    .h(px(h))
+                    .flex_shrink_0()
+                    .child(thumbs::picture(
+                        &self.thumbs,
+                        &file,
+                        longest,
+                        ObjectFit::Fill,
+                        cx,
+                    ))
+                    .into_any_element()
+            }
+            None => thumbs::picture(&self.thumbs, &file, 2048, ObjectFit::Contain, cx),
         };
+        // The versions either side, so a flip finds its picture decoded.
+        let neighbours: Vec<FileRow> = [focus.wrapping_sub(1), focus + 1]
+            .into_iter()
+            .filter_map(|index| rows.get(index))
+            .map(|row| row.file.clone())
+            .collect();
+        self.thumbs.update(cx, |thumbs, cx| {
+            for file in &neighbours {
+                thumbs.get(file, 2048, cx);
+            }
+        });
+        // Entering actual size centres the chosen point; flipping keeps the pan as it is.
+        if zoomed && std::mem::take(&mut self.center_zoom) {
+            let bounds = self.loupe_scroll.bounds();
+            let (bw, bh) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+            let h = file
+                .width
+                .zip(file.height)
+                .filter(|(w, _)| *w > 0)
+                .map_or(widest as f32, |(w, h)| widest as f32 * h as f32 / w as f32);
+            let (x, y) = self.zoom_at.unwrap_or((0.5, 0.5));
+            let left = (x * widest as f32 - bw / 2.).clamp(0., (widest as f32 - bw).max(0.));
+            let top = (y * h - bh / 2.).clamp(0., (h - bh).max(0.));
+            self.loupe_scroll
+                .set_offset(gpui_kit::point(px(-left), px(-top)));
+        }
         let keeper = keeper_of(set, rows, focus, kept)
             .cloned()
             .unwrap_or_else(|| file.clone());
-        let facts: Vec<String> = facts_of(&file, &keeper)
-            .into_iter()
-            .map(|fact| fact.text)
-            .collect();
+        let facts = facts_of(&file, &keeper);
         let close_call = reason.close_call;
+        let wide = f32::from(window.viewport_size().width) >= 1024.;
+        let amber = gpui_kit::rgb(0xfc_d3_4d);
+        let mut caption = div()
+            .flex()
+            .flex_row()
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .text_xs()
+            .opacity(0.7);
+        for (position, fact) in facts.into_iter().enumerate() {
+            if position > 0 {
+                caption = caption.child(div().flex_shrink_0().child(" · "));
+            }
+            caption = caption.child(
+                div()
+                    .flex_shrink_0()
+                    .when(fact.worse, |this| {
+                        this.text_color(amber).font_weight(FontWeight::MEDIUM)
+                    })
+                    .child(fact.text),
+            );
+        }
+        if !is_kept {
+            caption = caption.child(
+                div()
+                    .flex_shrink_0()
+                    .child(format!(" · Suggested: {suggested}")),
+            );
+        }
+        let badge = is_kept.then(|| {
+            div()
+                .flex_shrink_0()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .px_2()
+                .py_0p5()
+                .rounded(px(6.))
+                .text_xs()
+                .font_weight(FontWeight::MEDIUM)
+                .map(|this| {
+                    if close_call {
+                        this.bg(gpui_kit::white().opacity(0.1)).child("Suggested")
+                    } else {
+                        this.bg(cx.theme().primary)
+                            .child(Icon::new(IconName::Check).size(px(14.)))
+                            .child("Keep")
+                    }
+                })
+        });
+        let stage_file = file.clone();
+        let hover_file = file.clone();
+        let play_file = file.clone();
+        let start_play = (is_video && self.video.as_ref().is_none_or(|(id, _)| *id != file.id))
+            .then(|| {
+                div()
+                    .absolute()
+                    .bottom(px(84.))
+                    .left_0()
+                    .right_0()
+                    .flex()
+                    .justify_center()
+                    .child(
+                        Button::new("loupe-play")
+                            .small()
+                            .icon(Icon::new(IconName::Play))
+                            .label("Play")
+                            .tooltip("Play  Space")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.play(&play_file, window, cx);
+                            })),
+                    )
+            });
         div()
             .id("loupe")
             .test_support()
@@ -1833,45 +2148,52 @@ impl DuplicatesPage {
             .inset_0()
             .flex()
             .flex_col()
-            .bg(gpui_kit::black())
-            .text_color(gpui_kit::white())
+            .bg(gpui_kit::rgb(0x09_09_0b))
+            .text_color(gpui_kit::rgb(0xf4_f4_f5))
             .child(
                 div()
                     .flex()
                     .flex_row()
                     .items_center()
                     .gap_3()
-                    .h(px(44.))
-                    .px_4()
+                    .h(px(52.))
+                    .pl_5()
+                    .pr_3()
                     .child(
                         div()
-                            .text_size(px(13.))
+                            .flex_shrink_0()
+                            .min_w(px(48.))
+                            .flex()
+                            .justify_center()
+                            .px_2()
+                            .py_0p5()
+                            .rounded(px(6.))
+                            .bg(gpui_kit::white().opacity(0.1))
+                            .text_xs()
                             .font_weight(FontWeight::MEDIUM)
                             .child(format!("{} of {}", focus + 1, rows.len())),
                     )
+                    .children(badge)
                     .child(
                         div()
+                            .flex()
+                            .flex_col()
                             .flex_1()
                             .min_w_0()
-                            .truncate()
-                            .text_xs()
-                            .opacity(0.7)
-                            .child(format!("{} · {}", file.rel_path, facts.join(" · "))),
+                            .child(
+                                div()
+                                    .truncate()
+                                    .text_size(px(13.))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(file.rel_path.clone()),
+                            )
+                            .child(caption),
                     )
-                    .when(is_kept, |this| {
-                        this.child(div().text_xs().child(if close_call {
-                            "Suggested".to_string()
-                        } else {
-                            "Keep".to_string()
-                        }))
-                    })
-                    .when(!is_kept, |this| {
-                        this.child(
-                            div()
-                                .text_xs()
-                                .opacity(0.7)
-                                .child(format!("Suggested: {suggested}")),
-                        )
+                    .when(wide, |this| {
+                        this.child(div().flex_shrink_0().text_xs().opacity(0.7).child(format!(
+                            "← → flip · 1–{} or ↩ keep · Z or click: actual size",
+                            rows.len()
+                        )))
                     })
                     .child(
                         Button::new("loupe-reveal")
@@ -1904,24 +2226,46 @@ impl DuplicatesPage {
                             .ghost()
                             .xsmall()
                             .icon(Icon::new(IconName::Close))
-                            .accessibility_label("Close")
-                            .tooltip("Esc")
+                            .accessibility_label("Back to the grid")
+                            .tooltip("Back to the grid  Esc")
                             .on_click(cx.listener(|this, _, _, cx| this.close_loupe(cx))),
                     ),
             )
             .child(
                 div()
                     .id("loupe-picture")
+                    .relative()
                     .flex_1()
                     .min_h_0()
-                    .overflow_hidden()
-                    .pb(px(76.))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.zoomed = !this.zoomed;
-                        cx.notify();
-                    }))
+                    .track_scroll(&self.loupe_scroll)
+                    .map(|this| {
+                        if zoomed {
+                            this.overflow_scroll().cursor(gpui_kit::CursorStyle::Arrow)
+                        } else {
+                            this.mx_5().mb(px(76.)).overflow_hidden()
+                        }
+                    })
+                    .on_mouse_move(cx.listener(
+                        move |this, event: &gpui_kit::MouseMoveEvent, _, _| {
+                            if !this.zoomed {
+                                this.pointer_at =
+                                    this.share_of_picture(&hover_file, event.position);
+                            }
+                        },
+                    ))
+                    .on_click(
+                        cx.listener(move |this, event: &gpui_kit::ClickEvent, _, cx| {
+                            if this.zoomed {
+                                this.toggle_zoom(false, None, cx);
+                            } else {
+                                let at = this.share_of_picture(&stage_file, event.position());
+                                this.toggle_zoom(true, at, cx);
+                            }
+                        }),
+                    )
                     .child(picture),
             )
+            .children(start_play)
             .into_any_element()
     }
 

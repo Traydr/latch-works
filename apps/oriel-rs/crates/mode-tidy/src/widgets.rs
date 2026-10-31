@@ -117,13 +117,17 @@ pub fn primary_action(
     Button::new(id).primary().label(label).child(key_hint(keys))
 }
 
+/// A running change's Pause, or Resume once paused, for [`run_progress`].
+pub type OnPause = Box<dyn Fn(&gpui_kit::ClickEvent, &mut gpui_kit::Window, &mut App)>;
+
 /// What a running change shows where its button was (`RunProgress`): what it does, how far it
-/// has got, and Stop.
+/// has got, Pause where the page allows it (`pause`, and whether it is paused now), and Stop.
 pub fn run_progress(
     id: &'static str,
     label: SharedString,
     done: u64,
     total: u64,
+    pause: Option<(bool, OnPause)>,
     on_stop: impl Fn(&gpui_kit::ClickEvent, &mut gpui_kit::Window, &mut App) + 'static,
     cx: &App,
 ) -> Div {
@@ -159,6 +163,19 @@ pub fn run_progress(
                         .loading(total == 0),
                 ),
         )
+        .children(pause.map(|(paused, on_pause)| {
+            Button::new(SharedString::from(format!("{id}-pause")))
+                .ghost()
+                .small()
+                .icon(Icon::new(if paused {
+                    IconName::Play
+                } else {
+                    IconName::Pause
+                }))
+                .accessibility_label(if paused { "Resume" } else { "Pause" })
+                .tooltip(if paused { "Resume" } else { "Pause" })
+                .on_click(on_pause)
+        }))
         .child(
             Button::new(SharedString::from(format!("{id}-stop")))
                 .ghost()
@@ -244,12 +261,17 @@ pub fn change_progress(
         progress.phase().clone()
     };
     let stopper = state.clone();
+    let pauser = state.clone();
+    let pause: OnPause = Box::new(move |_, _, cx| {
+        pauser.update(cx, |state, cx| state.toggle_change_pause(cx));
+    });
     Some(
         run_progress(
             id,
             label,
             progress.done(),
             progress.total(),
+            Some((progress.is_paused(), pause)),
             move |_, _, cx| stopper.update(cx, |state, cx| state.stop_change(cx)),
             cx,
         )

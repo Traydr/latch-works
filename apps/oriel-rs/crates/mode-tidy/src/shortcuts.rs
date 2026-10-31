@@ -29,7 +29,13 @@ const EVERYWHERE: (&str, &[Shortcut]) = (
     ],
 );
 
-const OVERVIEW: (&str, &[Shortcut]) = ("Overview", &[("Review similar versions", "D", None)]);
+const OVERVIEW: (&str, &[Shortcut]) = (
+    "Overview",
+    &[
+        ("Move between rows", "↑ ↓", None),
+        ("Open a row", "↩", None),
+    ],
+);
 
 const DUPLICATES: (&str, &[Shortcut]) = (
     "Duplicates",
@@ -43,9 +49,10 @@ const DUPLICATES: (&str, &[Shortcut]) = (
         ),
         ("Keep both (not duplicates)", "N", None),
         ("Skip", "S", None),
-        ("Next, previous", "J K", None),
+        ("Previous", "K", None),
         ("Move between versions", "← →", None),
         ("Look closer", "Space", None),
+        ("Flip versions", "← →", None),
         ("Keep the one shown", "↩", None),
         ("Actual size", "Z", None),
         ("Quick Look", "⌘Y", None),

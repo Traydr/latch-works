@@ -5,8 +5,10 @@
 //! `lockstep.json`, `hash-cache`). Every path the app keeps comes from [`DataRoot`], so a path
 //! that leaves the root is a bug here rather than a stray write somewhere else.
 //!
-//! Tidy changes files only in a root inside [`DataRoot::sandbox`] or the temp folder, until the
-//! owner lifts the sandbox (plan 063, ground rules).
+//! Tidy changes files in any folder the owner adds, as Electron Oriel's does (plan 063, decision
+//! 18). A run with [`DATA_DIR_VARIABLE`] set (the checks, the tests, agents) is sandboxed instead:
+//! Tidy takes only roots inside [`DataRoot::sandbox`] or the temp folder, so nothing a check
+//! runs can change the owner's archive.
 
 use std::{
     env, io,
@@ -38,11 +40,14 @@ pub const ORIEL_ENTRIES: [&str; 6] = [
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DataRoot {
     root: PathBuf,
+    /// Whether Tidy keeps to [`Self::sandbox`] and the temp folder: true for a root chosen by
+    /// [`DATA_DIR_VARIABLE`] or [`Self::at`], false for the owner's own root.
+    sandboxed: bool,
 }
 
 impl DataRoot {
-    /// The root for this run: [`DATA_DIR_VARIABLE`] when it is set, else
-    /// `~/.latch-works/oriel-rs`.
+    /// The root for this run: [`DATA_DIR_VARIABLE`] when it is set, sandboxed, else
+    /// `~/.latch-works/oriel-rs`, where Tidy takes any folder.
     pub fn from_environment() -> io::Result<Self> {
         if let Some(chosen) = env::var_os(DATA_DIR_VARIABLE).filter(|value| !value.is_empty()) {
             return Self::at(PathBuf::from(chosen));
@@ -52,16 +57,18 @@ impl DataRoot {
         Self::under_home(&home)
     }
 
-    /// The root under `home`: `home/.latch-works/oriel-rs`.
+    /// The owner's root under `home`, `home/.latch-works/oriel-rs`, where Tidy takes any folder.
     pub fn under_home(home: &Path) -> io::Result<Self> {
-        Self::at(
+        let mut data = Self::at(
             home.join(LATCH_WORKS_DIRECTORY_NAME)
                 .join(APP_DIRECTORY_NAME),
-        )
+        )?;
+        data.sandboxed = false;
+        Ok(data)
     }
 
-    /// A root at `root`, which must be absolute and must not be one of Electron Oriel's folders
-    /// or inside one.
+    /// A sandboxed root at `root`, for checks and tests, which must be absolute and must not be
+    /// one of Electron Oriel's folders or inside one.
     pub fn at(root: PathBuf) -> io::Result<Self> {
         if !root.is_absolute() {
             return Err(invalid(format!(
@@ -76,7 +83,10 @@ impl DataRoot {
                 root.display()
             )));
         }
-        Ok(Self { root })
+        Ok(Self {
+            root,
+            sandboxed: true,
+        })
     }
 
     pub fn root(&self) -> &Path {
@@ -108,7 +118,7 @@ impl DataRoot {
         self.root.join("hash-cache")
     }
 
-    /// The only place, with the temp folder, a Tidy root may be while the sandbox holds.
+    /// The only place, with the temp folder, a Tidy root may be in a sandboxed run.
     pub fn sandbox(&self) -> PathBuf {
         self.root.join("sandbox")
     }
@@ -134,11 +144,21 @@ impl DataRoot {
         path.is_absolute() && normalize(path).starts_with(&self.root)
     }
 
-    /// Whether Tidy may change files in `root` while the sandbox holds: inside
-    /// [`Self::sandbox`] or the temp folder, and never the sandbox or the temp folder itself.
+    /// Whether Tidy keeps to [`Self::sandbox`] and the temp folder in this run.
+    pub fn is_sandboxed(&self) -> bool {
+        self.sandboxed
+    }
+
+    /// Whether Tidy may change files in `root`. Any absolute folder in the owner's run; in a
+    /// sandboxed one, only inside [`Self::sandbox`] or the temp folder, and never the sandbox or
+    /// the temp folder itself. Electron Oriel's own refusals (a folder that is missing, a file,
+    /// or one overlapping another root) are the catalog's to make, in either run.
     pub fn admits_tidy_root(&self, root: &Path) -> bool {
         if !root.is_absolute() {
             return false;
+        }
+        if !self.sandboxed {
+            return true;
         }
         let root = normalize(root);
         let temp = normalize(&env::temp_dir());
@@ -251,8 +271,9 @@ mod tests {
     }
 
     #[test]
-    fn tidy_roots_stay_in_the_sandbox_or_the_temp_folder() {
-        let data = DataRoot::under_home(&home()).unwrap();
+    fn a_sandboxed_run_keeps_tidy_roots_in_the_sandbox_or_the_temp_folder() {
+        let data = DataRoot::at(home().join("scratch/data")).unwrap();
+        assert!(data.is_sandboxed());
         assert!(data.admits_tidy_root(&data.sandbox().join("archive")));
         assert!(data.admits_tidy_root(&env::temp_dir().join("glazier-run/archive")));
         assert!(!data.admits_tidy_root(&data.sandbox()));
@@ -260,5 +281,15 @@ mod tests {
         assert!(!data.admits_tidy_root(&home().join("Pictures")));
         assert!(!data.admits_tidy_root(&data.sandbox().join("../view")));
         assert!(!data.admits_tidy_root(Path::new("sandbox/archive")));
+    }
+
+    #[test]
+    fn the_owners_run_takes_any_absolute_tidy_root() {
+        let data = DataRoot::under_home(&home()).unwrap();
+        assert!(!data.is_sandboxed());
+        assert!(data.admits_tidy_root(&home().join("Pictures")));
+        assert!(data.admits_tidy_root(Path::new("/Volumes/Archive")));
+        assert!(data.admits_tidy_root(&data.sandbox().join("archive")));
+        assert!(!data.admits_tidy_root(Path::new("Pictures")));
     }
 }

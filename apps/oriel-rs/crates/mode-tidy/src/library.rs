@@ -694,10 +694,20 @@ impl TableDelegate for CatalogRows {
                 .min_w_0()
                 .child(div().truncate().child(format::format_label(row.format)))
                 .when(row.extension_mismatch, |this| {
+                    let why = SharedString::from(format!(
+                        "The file is {} but its extension is .{}",
+                        format::format_label(row.format),
+                        row.ext
+                    ));
                     this.child(
                         div()
+                            .id(("wrong-extension", row.id as u64))
                             .truncate()
                             .text_color(theme.warning)
+                            .tooltip(move |window, cx| {
+                                gpui_kit::component::tooltip::Tooltip::new(why.clone())
+                                    .build(window, cx)
+                            })
                             .child(format!(".{}", row.ext)),
                     )
                 })

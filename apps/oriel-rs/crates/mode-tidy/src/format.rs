@@ -110,6 +110,7 @@ struct Local {
     day: u32,
     hour: u32,
     minute: u32,
+    second: u32,
 }
 
 #[cfg(target_os = "macos")]
@@ -127,6 +128,7 @@ fn local(ms: f64) -> Local {
         day: tm.tm_mday as u32,
         hour: tm.tm_hour as u32,
         minute: tm.tm_min as u32,
+        second: tm.tm_sec as u32,
     }
 }
 
@@ -150,6 +152,7 @@ fn local(ms: f64) -> Local {
         day,
         hour: (rest / 3600) as u32,
         minute: (rest / 60 % 60) as u32,
+        second: (rest % 60) as u32,
     }
 }
 
@@ -173,6 +176,23 @@ pub fn time(ms: impl Number) -> String {
 /// `formatDateTime`: "Oct 29, 2026, 2:31 AM".
 pub fn date_time(ms: impl Number) -> String {
     format!("{}, {}", date(ms), time(ms))
+}
+
+/// `formatDateTimeSeconds`: "Oct 29, 2026, 2:31:05 AM", for telling apart times that share a
+/// minute.
+pub fn date_time_seconds(ms: impl Number) -> String {
+    let at = local(ms.value());
+    let hour = match at.hour % 12 {
+        0 => 12,
+        hour => hour,
+    };
+    let half = if at.hour < 12 { "AM" } else { "PM" };
+    format!(
+        "{}, {hour}:{:02}:{:02} {half}",
+        date(ms),
+        at.minute,
+        at.second
+    )
 }
 
 /// `formatDay`: "Today", "Yesterday", or the date, for grouping by day.
@@ -320,6 +340,26 @@ pub fn convert_label(convertible: i64, files: i64) -> String {
     } else {
         format!("Convert {}", count(convertible))
     }
+}
+
+/// A file's pixels, codec and length, or its frames (`describeDetails`).
+pub fn details(row: &FileRow) -> String {
+    let mut parts = Vec::new();
+    if let Some(dimensions) = dimensions(row) {
+        parts.push(dimensions);
+    }
+    if row.kind == FileKind::Video {
+        let codec = codec_label(row.video_codec.as_deref());
+        if !codec.is_empty() {
+            parts.push(codec);
+        }
+        if row.duration_ms.is_some() {
+            parts.push(duration(row.duration_ms));
+        }
+    } else if row.frames.unwrap_or(1) > 1 {
+        parts.push(format!("{} frames", row.frames.unwrap_or(1)));
+    }
+    parts.join(" · ")
 }
 
 /// Pixels as "640×480", when known.

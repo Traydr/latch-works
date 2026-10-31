@@ -61,10 +61,10 @@ impl std::fmt::Display for RootError {
 
 impl std::error::Error for RootError {}
 
-/// Resolves a folder the way glazier-core's `addRoot` does (absolute, symlinks resolved), and
-/// refuses it unless Tidy may change files there while the sandbox holds (plan 063): inside
-/// [`DataRoot::sandbox`] or the temp folder. The resolved path is what is checked, so a symlink in
-/// the sandbox pointing elsewhere is refused too.
+/// Resolves a folder the way glazier-core's `addRoot` does (absolute, symlinks resolved), refusing
+/// a missing folder or a file as it does. In a sandboxed run (`ORIEL_RS_DATA_DIR` set) it also
+/// refuses a folder outside [`DataRoot::sandbox`] and the temp folder; the resolved path is what
+/// is checked, so a symlink in the sandbox pointing elsewhere is refused too.
 pub fn resolve_root_folder(data: &DataRoot, folder: &Path) -> Result<PathBuf, RootError> {
     let absolute = if folder.is_absolute() {
         folder.to_path_buf()
@@ -83,8 +83,8 @@ pub fn resolve_root_folder(data: &DataRoot, folder: &Path) -> Result<PathBuf, Ro
     }
     if !data.admits_tidy_root(&resolved) {
         return Err(RootError(format!(
-            "{} is outside Tidy's sandbox. While the sandbox holds, Tidy looks after folders \
-             only under {} or the temp folder.",
+            "{} is outside Tidy's sandbox. With ORIEL_RS_DATA_DIR set, Tidy looks after \
+             folders only under {} or the temp folder.",
             resolved.display(),
             data.sandbox().display()
         )));

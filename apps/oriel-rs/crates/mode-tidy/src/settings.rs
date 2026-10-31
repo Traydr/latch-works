@@ -1,7 +1,8 @@
 //! Tidy's section of Settings (`views/SettingsView.tsx`): how duplicates are chosen (preferred
 //! folders, similar versions, Spot variants) and converted (video quality, the tools found), and
 //! background analysis. Preferred folders belong to the folder being tidied, so they show only
-//! once there is one. Oriel RS adds a line on the sandbox Tidy works in.
+//! once there is one. A sandboxed run (`ORIEL_RS_DATA_DIR` set) adds a line on the sandbox Tidy
+//! works in.
 
 use std::path::Path;
 
@@ -299,7 +300,8 @@ impl SettingsSection {
             return div().into_any_element();
         };
         let root = state.root().cloned();
-        let sandbox = state.data().sandbox();
+        let data = state.data().clone();
+        let sandboxed = data.is_sandboxed();
         let capabilities = state.capabilities().copied();
         let vips = state
             .engine()
@@ -445,13 +447,13 @@ impl SettingsSection {
                     ),
             )
         };
-        let sandbox_group = SettingsGroup::new("Sandbox").child(
-            SettingsRow::new("Tidy changes files only in its sandbox").description(format!(
-                "While Oriel RS is an experiment, Tidy looks after folders only inside {} or the \
-                 temp folder, so it never changes the archive Electron Oriel tidies.",
-                sandbox.display()
-            )),
-        );
+        // Only a sandboxed run (checks, agents) keeps Tidy to its sandbox, and says so here.
+        let sandbox_group = sandboxed.then(|| {
+            SettingsGroup::new("Sandbox").child(
+                SettingsRow::new("Tidy changes files only in its sandbox")
+                    .description(crate::links::sandbox_rule(&data)),
+            )
+        });
 
         div()
             .flex()
@@ -459,7 +461,7 @@ impl SettingsSection {
             .child(duplicates)
             .child(convert)
             .child(analysis)
-            .child(sandbox_group)
+            .children(sandbox_group)
             .into_any_element()
     }
 }

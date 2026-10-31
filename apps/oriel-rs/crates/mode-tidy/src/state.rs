@@ -356,7 +356,8 @@ impl TidyState {
         self.capabilities.as_ref()
     }
 
-    /// Asks the engine once what this machine can encode with, for Settings' Encoders row.
+    /// Asks the engine once what this machine can encode with, for Settings' Encoders row and
+    /// Convert's videos.
     pub fn ask_capabilities(&mut self, cx: &mut Context<Self>) {
         if self.capabilities_asked {
             return;
@@ -807,6 +808,14 @@ impl TidyState {
     }
 
     /// Pauses or resumes the work the card shows (`pauseJob`); the step in flight finishes.
+    /// Pauses the running change, or resumes it, from the page that started it (`RunProgress`).
+    pub fn toggle_change_pause(&mut self, cx: &mut Context<Self>) {
+        if let Some(change) = &self.change {
+            let paused = change.progress(cx).is_paused();
+            change.set_paused(!paused, cx);
+        }
+    }
+
     pub fn toggle_pause(&mut self, cx: &mut Context<Self>) {
         fn toggle<T: 'static>(job: &Entity<Job<T>>, cx: &mut App) {
             job.update(cx, |job, cx| {

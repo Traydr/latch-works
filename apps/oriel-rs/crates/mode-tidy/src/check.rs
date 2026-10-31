@@ -4,7 +4,8 @@
 //! - `ORIEL_RS_TIDY_ROOT=<folder>` adds the folder as a root, if it is not one yet, shows it and
 //!   scans it;
 //! - `ORIEL_RS_TIDY_PAGE=<page>` opens a page by its `oriel.tidy.view` name (`overview`,
-//!   `duplicates`, `convert`, `cleanup`, `shrink`, `library`, `history`, `holding`);
+//!   `duplicates`, `convert`, `cleanup`, `shrink`, `library`, `history`, `holding`), and
+//!   `duplicates:identical` opens Duplicates on its identical copies;
 //! - `ORIEL_RS_QUICK_LOOK=<file>` shows the file in Quick Look once Tidy is up;
 //! - `ORIEL_RS_TIDY_PICKER=1` opens the folder picker (Add Folder…) once Tidy is up.
 
@@ -31,7 +32,9 @@ pub fn apply_from_environment(
     window: &mut Window,
     cx: &mut Context<TidyMode>,
 ) -> Option<Subscription> {
-    let page = variable(PAGE_VARIABLE).and_then(|key| TidyPage::from_key(&key));
+    let asked = variable(PAGE_VARIABLE);
+    let identical = asked.as_deref() == Some("duplicates:identical");
+    let page = asked.and_then(|key| TidyPage::from_key(key.split(':').next().unwrap_or("")));
     let root = variable(ROOT_VARIABLE).map(PathBuf::from);
     let look = variable(QUICK_LOOK_VARIABLE).map(PathBuf::from);
     let picker = variable(PICKER_VARIABLE).is_some();
@@ -77,6 +80,9 @@ pub fn apply_from_environment(
                 if let Some(page) = page {
                     state.go(page, cx);
                 }
+            }
+            if identical {
+                state.open_duplicates(oriel_core_tidy::contract::DuplicateScope::Exact, cx);
             }
         });
     }))

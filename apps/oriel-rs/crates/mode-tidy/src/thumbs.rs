@@ -1,9 +1,10 @@
 //! The pictures Tidy's tiles and rows show, as Electron Oriel's `glazier-media://thumb/` serves
 //! them: a still decoded by ImageIO at the size asked for, a video's frame from the pinned ffmpeg.
 //!
-//! They are kept in memory only, the most recently drawn few hundred, and an image that goes is
-//! released from GPUI's sprite atlas too, since GPUI keeps every image it was handed otherwise
-//! (plan 063, Phase 0's findings).
+//! They are kept in memory only: the most recently drawn, up to a few hundred and about 200 MB of
+//! pixels (plan 063, decision 23), whichever comes first. An image that goes is released from
+//! GPUI's sprite atlas too, since GPUI keeps every image it was handed otherwise (Phase 0's
+//! findings), and a tile whose image went shows its ground until it is decoded again.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,11 @@ use oriel_tools::{MediaTools, ToolRun};
 
 /// The most decoded pictures kept; more than any page draws at once.
 const CAPACITY: usize = 400;
+
+/// The most bytes of decoded pixels kept (decision 23). Duplicates' tiles are 768 px, about 2 MB
+/// each, so 400 of them came to some 660 MB; at this cap a revisited set decodes again, which
+/// takes under a second.
+const CAPACITY_BYTES: u64 = 200 << 20;
 
 /// Electron Oriel's media tools' timeout.
 const FRAME_TIMEOUT: Duration = Duration::from_secs(12);
@@ -241,6 +247,8 @@ impl Thumbs {
                                 }
                                 None => Entry::Failed,
                             };
+                            // The bytes grew, so the least recently drawn may have to go.
+                            this.make_room(0, cx);
                         }
                         _ => {
                             if let Some(image) = image {
@@ -257,12 +265,12 @@ impl Thumbs {
         }
     }
 
-    /// Drops the least recently drawn until there is room for `more` pictures. What the last
-    /// frame drew stays, even past [`CAPACITY`], so a page that draws more than that never
-    /// decodes its own pictures over and over.
+    /// Drops the least recently drawn until there is room for `more` pictures and the pixels
+    /// held fit [`CAPACITY_BYTES`]. What the last frame drew stays, even past either cap, so a
+    /// page that draws more than that never decodes its own pictures over and over.
     fn make_room(&mut self, more: usize, cx: &mut App) {
         let mut evicted = Vec::new();
-        while self.held.len() + more > CAPACITY {
+        while self.held.len() + more > CAPACITY || self.bytes > CAPACITY_BYTES {
             let frame = self.frame;
             let Some(oldest) = self
                 .held

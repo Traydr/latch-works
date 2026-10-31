@@ -5,8 +5,8 @@
 //! [`TidyEvent`], which [`crate::TidyMode`] passes on to the shell. A file or folder another mode
 //! hands Tidy is shown by [`take`]: at the Library, filtered to it, in the folder of Tidy's that
 //! holds it. A folder no folder of Tidy's holds is added, once the owner agrees for a file's
-//! folder; while Oriel RS is an experiment only folders inside the sandbox can be, so for any
-//! other Tidy says why instead.
+//! folder. In a sandboxed run (`ORIEL_RS_DATA_DIR` set) only folders inside the sandbox can be,
+//! so for any other Tidy says why instead.
 
 use std::path::{Path, PathBuf};
 
@@ -140,8 +140,8 @@ fn confirm_adding(state: &Entity<TidyState>, folder: PathBuf, window: &mut Windo
     });
 }
 
-/// Tidy changes files only inside the sandbox while Oriel RS is an experiment, so a folder
-/// outside it is refused with the reason, rather than offered and then refused.
+/// A sandboxed run changes files only inside the sandbox, so a folder outside it is refused with
+/// the reason, rather than offered and then refused. The owner's run never gets here.
 fn explain_sandbox(folder: &Path, data: &DataRoot, window: &mut Window, cx: &mut App) {
     widgets::show_toast(
         window,
@@ -150,11 +150,10 @@ fn explain_sandbox(folder: &Path, data: &DataRoot, window: &mut Window, cx: &mut
     );
 }
 
-/// Where Tidy may work while the sandbox holds, in one sentence.
+/// Where Tidy may work in a sandboxed run, in one sentence, for wherever a folder is refused.
 pub fn sandbox_rule(data: &DataRoot) -> String {
     format!(
-        "While Oriel RS is an experiment, Tidy works only on folders inside {} or the temp \
-         folder.",
+        "With ORIEL_RS_DATA_DIR set, Tidy works only on folders inside {} or the temp folder.",
         data.sandbox().display()
     )
 }

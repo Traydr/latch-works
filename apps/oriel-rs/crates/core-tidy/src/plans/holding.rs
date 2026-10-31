@@ -5,19 +5,22 @@
 //! cloud drive) sees what is held. It is Tidy's data folder (`tidy/holding/<id>-<name>`), and
 //! holding a file there is a rename when the root shares the data folder's volume. glazier-core
 //! holds a root on another volume at the top of that volume instead
-//! (`<volume>/.latch-works/glazier/holding`); Oriel RS does not while Tidy's sandbox holds,
-//! since that folder is outside `~/.latch-works/oriel-rs`, so such a root holds in the data
-//! folder too, by copying across and checking the copy.
+//! (`<volume>/.latch-works/glazier/holding`), and so does Oriel RS, in `oriel-rs` rather than
+//! Electron Oriel's `glazier` ([`HoldingPlaces`]). A sandboxed run (`ORIEL_RS_DATA_DIR` set)
+//! writes nothing outside its data folder and its roots, so there such a root holds in the data
+//! folder, by copying across and checking the copy.
 
 use std::collections::HashMap;
 use std::fs;
 use std::io;
-use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context as _, bail};
+#[cfg(target_os = "macos")]
+use anyhow::Context as _;
+use anyhow::bail;
+use oriel_runtime::fs_meta::MetadataExt as _;
 use rusqlite::{Connection, OptionalExtension as _, params};
 
 use crate::catalog::rows::to_absolute_path;
@@ -53,10 +56,16 @@ pub fn root_folder_name(root_id: RootId, root_path: &str) -> String {
     format!("{root_id}-{name}")
 }
 
-/// Where each root's held files go: `<data>/holding/<id>-<name>`, chosen once per root.
+/// Where each root's held files go, chosen once per root (glazier-core's `HoldingPlaces`):
+/// `<data>/holding/<id>-<name>` when the root shares the data folder's volume, so holding is a
+/// rename. With [`Self::on_volumes`], a root on another volume holds at the top of that volume,
+/// in `.latch-works/oriel-rs/holding/<id>-<name>`, still a rename; glazier-core's folder there is
+/// `glazier`, which Oriel RS leaves to Electron Oriel. A root that is a whole volume, or a volume
+/// that takes no folder, holds in the data folder by copying across.
 #[derive(Debug)]
 pub struct HoldingPlaces {
     data_dir: PathBuf,
+    on_volumes: bool,
     folders: Mutex<HashMap<RootId, PathBuf>>,
 }
 
@@ -64,8 +73,16 @@ impl HoldingPlaces {
     pub fn new(data_dir: impl Into<PathBuf>) -> Self {
         Self {
             data_dir: data_dir.into(),
+            on_volumes: false,
             folders: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Holds a root on another volume on that volume. Off in a sandboxed run, which writes
+    /// nothing outside its data folder and its roots.
+    pub fn on_volumes(mut self, on_volumes: bool) -> Self {
+        self.on_volumes = on_volumes;
+        self
     }
 
     pub fn data_dir(&self) -> &Path {
@@ -79,12 +96,43 @@ impl HoldingPlaces {
             return Ok(folder.clone());
         }
         fs::create_dir_all(&self.data_dir)?;
+        let name = root_folder_name(root_id, root_path);
         let folder = self
-            .data_dir
-            .join("holding")
-            .join(root_folder_name(root_id, root_path));
+            .on_volume(Path::new(root_path), &name)
+            .unwrap_or_else(|| self.data_dir.join("holding").join(&name));
         folders.insert(root_id, folder.clone());
         Ok(folder)
+    }
+
+    /// The holding folder at the top of the root's own volume, when the root is on another
+    /// volume than the data folder and is not that whole volume.
+    #[cfg(unix)]
+    fn on_volume(&self, root: &Path, name: &str) -> Option<PathBuf> {
+        if !self.on_volumes {
+            return None;
+        }
+        let device = fs::metadata(root).ok()?.dev();
+        if fs::metadata(&self.data_dir).ok()?.dev() == device {
+            return None;
+        }
+        let mount_point = mount_point_of(root, device);
+        if mount_point == root {
+            return None;
+        }
+        let folder = mount_point
+            .join(oriel_core_domain::LATCH_WORKS_DIRECTORY_NAME)
+            .join("oriel-rs")
+            .join("holding")
+            .join(name);
+        fs::create_dir_all(&folder).ok()?;
+        Some(folder)
+    }
+
+    /// Windows has no device numbers to compare here; its drives are plan 062's.
+    #[cfg(not(unix))]
+    fn on_volume(&self, _root: &Path, _name: &str) -> Option<PathBuf> {
+        let _ = self.on_volumes;
+        None
     }
 
     /// The folder a root's held files go to if it has been chosen already this run.
@@ -97,6 +145,20 @@ impl HoldingPlaces {
     }
 }
 
+/// The folder `path`'s volume is mounted at: its highest ancestor still on `device`
+/// (`mountPointOf`).
+#[cfg(unix)]
+fn mount_point_of(path: &Path, device: u64) -> PathBuf {
+    let mut current = path.to_path_buf();
+    while let Some(parent) = current.parent() {
+        if fs::metadata(parent).map(|meta| meta.dev()).ok() != Some(device) {
+            break;
+        }
+        current = parent.to_path_buf();
+    }
+    current
+}
+
 /// Local time's fields, from the C library, as JavaScript's `Date` getters read them.
 fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
     let seconds = at
@@ -105,7 +167,12 @@ fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
     // SAFETY: `tm` is plain data; `localtime_r` fills it from `seconds` and is thread-safe.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     // SAFETY: both pointers are valid for the call.
+    #[cfg(unix)]
     let filled = unsafe { !libc::localtime_r(&seconds, &mut tm).is_null() };
+    // The CRT's thread-safe form, with its arguments the other way round.
+    // SAFETY: both pointers are valid for the call.
+    #[cfg(windows)]
+    let filled = unsafe { libc::localtime_s(&mut tm, &seconds) == 0 };
     if !filled {
         return (1970, 1, 1, 0, 0, 0);
     }
