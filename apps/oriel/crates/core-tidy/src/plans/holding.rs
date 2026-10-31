@@ -241,9 +241,10 @@ fn mount_point_of(path: &Path, device: u64) -> PathBuf {
     current
 }
 
-/// Local time's fields, from the C library, as JavaScript's `Date` getters read them.
+/// Local time's fields (year, month, day, hour, minute, second), from the C library, as
+/// JavaScript's `Date` getters read them. Holding's batch names and Tidy's dates use it.
 #[cfg(unix)]
-fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
+pub fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
     let seconds = at
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs()) as libc::time_t;
@@ -268,7 +269,7 @@ fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
 /// shows, as JavaScript's `Date` getters read them there. The C library's `localtime_s` would
 /// read a `TZ` variable as POSIX spells it, which Node does not.
 #[cfg(windows)]
-fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
+pub fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
     use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
     use windows_sys::Win32::System::Time::{
         DYNAMIC_TIME_ZONE_INFORMATION, FileTimeToSystemTime, GetDynamicTimeZoneInformation,

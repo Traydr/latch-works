@@ -1,6 +1,8 @@
 //! How Tidy writes numbers, sizes, lengths, dates and the catalog's values, as Electron Oriel's
 //! `lib/format.ts` and `components/library/labels.ts` write them.
 
+use std::time::{Duration, UNIX_EPOCH};
+
 use oriel_core_tidy::contract::{AudioState, FileFlag, FileFormat, FileKind, FileRow};
 
 const BYTE_UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
@@ -113,46 +115,18 @@ struct Local {
     second: u32,
 }
 
-#[cfg(target_os = "macos")]
+/// The local time of `ms`, in the zone and with the daylight saving rules the system's clock
+/// shows, as the batch names in Holding read it.
 fn local(ms: f64) -> Local {
-    let seconds = (ms / 1000.).floor() as libc::time_t;
-    // SAFETY: `localtime_r` writes only into the `tm` it is given, which is plain data.
-    let tm = unsafe {
-        let mut tm = std::mem::zeroed::<libc::tm>();
-        libc::localtime_r(&seconds, &mut tm);
-        tm
-    };
+    let at = UNIX_EPOCH + Duration::from_millis(ms.max(0.) as u64);
+    let (year, month, day, hour, minute, second) = oriel_core_tidy::plans::holding::local_time(at);
     Local {
-        year: i64::from(tm.tm_year) + 1900,
-        month: tm.tm_mon as u32 + 1,
-        day: tm.tm_mday as u32,
-        hour: tm.tm_hour as u32,
-        minute: tm.tm_min as u32,
-        second: tm.tm_sec as u32,
-    }
-}
-
-/// Elsewhere, UTC until Phase 8 brings a time zone.
-#[cfg(not(target_os = "macos"))]
-fn local(ms: f64) -> Local {
-    let total = (ms / 1000.).floor() as i64;
-    let days = total.div_euclid(86_400);
-    let rest = total.rem_euclid(86_400);
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    Local {
-        year: yoe + era * 400 + i64::from(month <= 2),
-        month,
-        day,
-        hour: (rest / 3600) as u32,
-        minute: (rest / 60 % 60) as u32,
-        second: (rest % 60) as u32,
+        year: i64::from(year),
+        month: month as u32,
+        day: day as u32,
+        hour: hour as u32,
+        minute: minute as u32,
+        second: second as u32,
     }
 }
 
