@@ -7,7 +7,8 @@
 //!   not entered, and its junk files (`.DS_Store`, `._*`, `Thumbs.db`, …) are skipped;
 //! - a symlink is neither a file nor a folder, so it is skipped and never followed;
 //! - folders are read, and files stated and hashed, through two bounded pools (plan 035): four
-//!   at once by default, one to sixteen when asked;
+//!   at once by default, one to sixteen when asked. On macOS a folder's read gives each file's
+//!   size and times as `stat` would (`getattrlistbulk`), so its files need no `stat` of their own;
 //! - items and skipped entries come out sorted by path as `localeCompare` sorts them, whatever
 //!   order the pools finished in, so a scan gives the same result at any concurrency.
 //!
@@ -35,6 +36,7 @@ use oriel_runtime::CancelToken;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
+use crate::folder::{EntryKind, FileStat, read_entries};
 use crate::pool::{self, run_queue};
 
 /// Node's `createReadStream` reads 64 KiB at a time, and progress is reported per read.
@@ -54,10 +56,14 @@ pub struct ArchiveFileFingerprint {
 impl ArchiveFileFingerprint {
     /// The fingerprint `fs.stat` gives, with the times truncated.
     pub fn of(metadata: &fs::Metadata) -> Self {
+        Self::from_stat(FileStat::of(metadata))
+    }
+
+    fn from_stat(stat: FileStat) -> Self {
         Self {
-            ctime_ms: change_time_ms(metadata).map(f64::trunc),
-            mtime_ms: modified_ms(metadata).trunc(),
-            size: metadata.len(),
+            ctime_ms: stat.changed_ms.map(f64::trunc),
+            mtime_ms: stat.modified_ms.trunc(),
+            size: stat.size,
         }
     }
 
@@ -79,17 +85,6 @@ pub fn modified_ms(metadata: &fs::Metadata) -> f64 {
         .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
         .map(|since| since.as_secs() as f64 * 1e3 + f64::from(since.subsec_nanos()) / 1e6)
         .unwrap_or(0.0)
-}
-
-#[cfg(unix)]
-fn change_time_ms(metadata: &fs::Metadata) -> Option<f64> {
-    use std::os::unix::fs::MetadataExt as _;
-    Some(metadata.ctime() as f64 * 1e3 + metadata.ctime_nsec() as f64 / 1e6)
-}
-
-#[cfg(not(unix))]
-fn change_time_ms(_: &fs::Metadata) -> Option<f64> {
-    None
 }
 
 /// `fingerprintsMatch`: the same size and the same whole-millisecond modified time, and the same
@@ -238,39 +233,44 @@ impl<'a> ScanArchive<'a> {
             self.cancel,
             |current: PathBuf, queue| {
                 check(self.cancel)?;
-                let mut entries: Vec<(String, fs::FileType)> = fs::read_dir(&current)
-                    .with_context(|| format!("cannot read {}", current.display()))?
-                    .map(|entry| {
-                        let entry = entry?;
-                        Ok((
-                            entry.file_name().to_string_lossy().into_owned(),
-                            entry.file_type()?,
-                        ))
-                    })
-                    .collect::<std::io::Result<_>>()
-                    .with_context(|| format!("cannot read {}", current.display()))?;
+                // On macOS the read also gives each file's size and times, so the files need no
+                // `stat` of their own below.
+                let mut entries: Vec<(String, EntryKind, Option<FileStat>)> =
+                    read_entries(&current)
+                        .with_context(|| format!("cannot read {}", current.display()))?
+                        .map(|entry| {
+                            let entry = entry?;
+                            Ok((
+                                entry.name.to_string_lossy().into_owned(),
+                                entry.kind,
+                                entry.stat,
+                            ))
+                        })
+                        .collect::<std::io::Result<_>>()
+                        .with_context(|| format!("cannot read {}", current.display()))?;
                 check(self.cancel)?;
                 if !queue.is_running() {
                     return Ok(());
                 }
                 entries.sort_by(|left, right| locale_compare(&left.0, &right.0));
 
-                for (name, file_type) in entries {
+                let mut found = Vec::new();
+                for (name, kind, stat) in entries {
                     check(self.cancel)?;
                     if !queue.is_running() {
                         return Ok(());
                     }
                     let absolute_path = current.join(&name);
-                    // `DirEntry::file_type` does not follow a symlink, as `readdir`'s dirents do
-                    // not, so a link is neither and is skipped.
-                    if file_type.is_dir() {
+                    // The entry's type does not follow a symlink, as `readdir`'s dirents do not,
+                    // so a link is neither and is skipped.
+                    if kind == EntryKind::Folder {
                         if !is_system_junk_directory(&name) {
                             queue.add(absolute_path);
                         }
                         continue;
                     }
                     let relative_path = archive_path(&root, &absolute_path);
-                    if !file_type.is_file() {
+                    if kind != EntryKind::File {
                         skip(relative_path, SkipReason::NotARegularFile);
                         continue;
                     }
@@ -292,15 +292,18 @@ impl<'a> ScanArchive<'a> {
                         });
                         continue;
                     }
-                    candidates
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .push(Candidate {
-                            absolute_path,
-                            name,
-                            path: relative_path,
-                        });
+                    found.push(Candidate {
+                        absolute_path,
+                        name,
+                        key: sort_key(&relative_path),
+                        path: relative_path,
+                        stat,
+                    });
                 }
+                candidates
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .append(&mut found);
                 Ok(())
             },
         )?;
@@ -311,61 +314,75 @@ impl<'a> ScanArchive<'a> {
         let mut skipped_entries = skipped_entries
             .into_inner()
             .unwrap_or_else(PoisonError::into_inner);
-        candidates.sort_by(|left, right| locale_compare(&left.path, &right.path));
+        sort_candidates(&mut candidates);
         skipped_entries.sort_by(|left, right| locale_compare(&left.path, &right.path));
         let skipped = skipped_entries.len();
 
-        let indexed = Mutex::new(HashMap::<String, (MediaItem, ArchiveFileFingerprint)>::new());
-        run_queue(
-            file_concurrency,
-            candidates.iter().collect(),
-            self.cancel,
-            |candidate: &Candidate, queue| {
-                check(self.cancel)?;
-                let metadata = fs::metadata(&candidate.absolute_path).with_context(|| {
-                    format!("cannot stat {}", candidate.absolute_path.display())
-                })?;
-                let fingerprint = ArchiveFileFingerprint::of(&metadata);
-                check(self.cancel)?;
-                if !queue.is_running() {
-                    return Ok(());
-                }
-                let item = MediaItem {
-                    id: candidate.path.clone(),
-                    path: candidate.path.clone(),
-                    parent_path: get_parent_path(&candidate.path),
-                    name: candidate.name.clone(),
-                    extension: get_extension(&candidate.name),
-                    media_type: detect_media_type(&candidate.name),
-                    size: fingerprint.size,
-                    mtime_ms: fingerprint.mtime_ms,
-                    sha256: None,
-                    width: None,
-                    height: None,
-                    duration_ms: None,
-                    page_count: None,
-                    thumbnail_url: None,
-                    original_url: None,
-                };
-                let files_found = {
-                    let mut indexed = indexed.lock().unwrap_or_else(PoisonError::into_inner);
-                    indexed.insert(candidate.path.clone(), (item, fingerprint));
-                    indexed.len()
-                };
-                progress(ScanArchiveProgress::Scanning {
-                    files_found,
-                    path: Some(candidate.path.clone()),
-                    skipped,
-                });
-                Ok(())
-            },
-        )?;
+        // Each candidate's item, in the candidates' order. Those the folder reads gave facts for
+        // are made here; the rest are stated through the file pool.
+        let mut found: Vec<Option<(MediaItem, ArchiveFileFingerprint)>> =
+            Vec::with_capacity(candidates.len());
+        let mut unstated = Vec::new();
+        let mut files_found = 0;
+        for (ix, candidate) in candidates.iter().enumerate() {
+            let Some(stat) = candidate.stat else {
+                found.push(None);
+                unstated.push(ix);
+                continue;
+            };
+            check(self.cancel)?;
+            found.push(Some(
+                candidate.indexed(ArchiveFileFingerprint::from_stat(stat)),
+            ));
+            files_found += 1;
+            progress(ScanArchiveProgress::Scanning {
+                files_found,
+                path: Some(candidate.path.clone()),
+                skipped,
+            });
+        }
 
-        let mut indexed = indexed.into_inner().unwrap_or_else(PoisonError::into_inner);
-        let mut fingerprints = HashMap::with_capacity(indexed.len());
-        let mut items = Vec::with_capacity(indexed.len());
-        for candidate in &candidates {
-            if let Some((item, fingerprint)) = indexed.remove(&candidate.path) {
+        if !unstated.is_empty() {
+            let stated = Mutex::new((files_found, Vec::with_capacity(unstated.len())));
+            run_queue(
+                file_concurrency,
+                unstated,
+                self.cancel,
+                |ix: usize, queue| {
+                    let candidate = &candidates[ix];
+                    check(self.cancel)?;
+                    let metadata = fs::metadata(&candidate.absolute_path).with_context(|| {
+                        format!("cannot stat {}", candidate.absolute_path.display())
+                    })?;
+                    let fingerprint = ArchiveFileFingerprint::of(&metadata);
+                    check(self.cancel)?;
+                    if !queue.is_running() {
+                        return Ok(());
+                    }
+                    let files_found = {
+                        let mut stated = stated.lock().unwrap_or_else(PoisonError::into_inner);
+                        stated.0 += 1;
+                        stated.1.push((ix, candidate.indexed(fingerprint)));
+                        stated.0
+                    };
+                    progress(ScanArchiveProgress::Scanning {
+                        files_found,
+                        path: Some(candidate.path.clone()),
+                        skipped,
+                    });
+                    Ok(())
+                },
+            )?;
+            let (_, stated) = stated.into_inner().unwrap_or_else(PoisonError::into_inner);
+            for (ix, indexed) in stated {
+                found[ix] = Some(indexed);
+            }
+        }
+
+        let mut fingerprints = HashMap::with_capacity(candidates.len());
+        let mut items = Vec::with_capacity(candidates.len());
+        for (candidate, indexed) in candidates.iter().zip(found) {
+            if let Some((item, fingerprint)) = indexed {
                 fingerprints.insert(candidate.path.clone(), fingerprint);
                 items.push(item);
             }
@@ -395,6 +412,34 @@ struct Candidate {
     absolute_path: PathBuf,
     name: String,
     path: String,
+    /// The path's sort key, which orders it among the others.
+    key: Box<[u8]>,
+    /// The size and times the folder's read gave, if it did.
+    stat: Option<FileStat>,
+}
+
+impl Candidate {
+    /// The candidate's item, as `scanArchive` makes it from the file's fingerprint.
+    fn indexed(&self, fingerprint: ArchiveFileFingerprint) -> (MediaItem, ArchiveFileFingerprint) {
+        let item = MediaItem {
+            id: self.path.clone(),
+            path: self.path.clone(),
+            parent_path: get_parent_path(&self.path),
+            name: self.name.clone(),
+            extension: get_extension(&self.name),
+            media_type: detect_media_type(&self.name),
+            size: fingerprint.size,
+            mtime_ms: fingerprint.mtime_ms,
+            sha256: None,
+            width: None,
+            height: None,
+            duration_ms: None,
+            page_count: None,
+            thumbnail_url: None,
+            original_url: None,
+        };
+        (item, fingerprint)
+    }
 }
 
 /// `hashArchiveItems`: the items of a scan with their SHA-256 as their id. Items that already
@@ -601,6 +646,37 @@ static LOCALE_COLLATOR: LazyLock<CollatorBorrowed<'static>> = LazyLock::new(|| {
     CollatorBorrowed::try_new(CollatorPreferences::default(), CollatorOptions::default())
         .expect("the compiled collation data has the root locale")
 });
+
+/// The collator's sort key of `path`: comparing two keys as bytes orders their paths as
+/// [`locale_compare`] does.
+fn sort_key(path: &str) -> Box<[u8]> {
+    let mut key = Vec::with_capacity(path.len() * 2);
+    let Ok(()) = LOCALE_COLLATOR.write_sort_key_to(path, &mut key);
+    key.into_boxed_slice()
+}
+
+/// Sorts the candidates by path as `localeCompare` orders them, keeping those it calls equal in
+/// the order they came, as a stable sort through [`locale_compare`] does.
+///
+/// A scan sorts tens of thousands of paths, so each one's sort key is made as its folder is read,
+/// on the folder pool's threads, and the keys are compared as bytes. The order is then checked
+/// pair by pair against the collator itself, and should the two ever disagree the candidates are
+/// sorted through the collator instead, so the result is always its order.
+fn sort_candidates(candidates: &mut [Candidate]) {
+    candidates.sort_by(|left, right| left.key.cmp(&right.key));
+    let agrees = candidates.windows(2).all(|pair| {
+        match locale_compare(&pair[0].path, &pair[1].path) {
+            Ordering::Less => true,
+            // Equal keys kept the order they came in; unequal ones may not have.
+            Ordering::Equal => pair[0].key == pair[1].key,
+            Ordering::Greater => false,
+        }
+    });
+    if !agrees {
+        log::warn!("the collator's sort keys disagree with it; sorting the scan through it");
+        candidates.sort_by(|left, right| locale_compare(&left.path, &right.path));
+    }
+}
 
 /// `a.localeCompare(b)`, in the root locale.
 pub fn locale_compare(a: &str, b: &str) -> Ordering {

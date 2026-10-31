@@ -19,18 +19,19 @@ pub mod preview;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
-    App, AppContext as _, ClickEvent, Context, ElementId, Entity, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement as _, IntoElement, KeyBinding, ObjectFit, ParentElement as _,
-    Render, Resource, Role, ScrollStrategy, SharedString, StatefulInteractiveElement as _,
-    Styled as _, StyledImage as _, Subscription, Task, TestSupportExt as _,
-    UniformListScrollHandle, Window, actions, div, img, linear_color_stop, linear_gradient, point,
-    prelude::FluentBuilder as _, px, uniform_list,
+    App, AppContext as _, Bounds, ClickEvent, Context, DispatchPhase, ElementId, Entity,
+    EventEmitter, FocusHandle, Focusable, Hitbox, HitboxBehavior, InteractiveElement as _,
+    IntoElement, KeyBinding, MouseMoveEvent, ParentElement as _, Render, Role, ScrollStrategy,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
+    TestSupportExt as _, UniformListScrollHandle, WeakEntity, Window, actions, canvas, div,
+    linear_color_stop, linear_gradient, point, prelude::FluentBuilder as _, px, size, uniform_list,
 };
 use oriel_core_domain::format_bytes;
 use oriel_ui::layout::{RAIL_WIDTH, SIDEBAR_WIDTH};
@@ -40,17 +41,22 @@ use crate::browser::{Comic, Tile};
 use crate::listing::MediaEntry;
 use crate::media_tools::{VideoProbe, ViewMediaTools};
 use crate::thumbnails::{THUMBNAIL_SIZE, Thumbnail, ThumbnailService};
-use images::TileImages;
+use images::{TileImages, TilePicture, tile_picture};
 use metrics::{GridMetrics, OVERSCAN_ROWS, TileAspect};
 pub use preview::{HOVER_DELAY, PreviewSettings, TilePreview};
 
-/// The group a media tile's hover caption shows with.
-const TILE_GROUP: &str = "media-tile";
 /// How many videos ffprobe reads at once for their captions (`MAX_PROBE_CONCURRENCY`).
 const PROBES_AT_ONCE: usize = 2;
 
+/// How long the gallery stays still, drawing nothing and making no thumbnails, before the memory
+/// its scroll and thumbnails freed goes back to the system.
+const SETTLE: Duration = Duration::from_secs(2);
+
 /// The id of the grid's scroll region.
 pub const GALLERY_ID: &str = "gallery";
+
+/// The id of the hover caption, which one tile at most shows.
+pub const CAPTION_ID: &str = "tile-caption";
 
 const KEY_CONTEXT: &str = "Gallery";
 
@@ -168,6 +174,12 @@ pub struct Gallery {
     /// The video tile under the pointer, and its preview once that plays.
     hover: Option<Hover>,
     probes: VideoProbes,
+    /// Frames drawn and thumbnails finished, counted so a quiet spell can be told.
+    activity: u64,
+    /// Whether a wait for [`SETTLE`] is under way, after which freed memory goes back.
+    settling: bool,
+    /// The media tile under the pointer, by position, whose hover caption shows.
+    captioned: Option<usize>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -213,7 +225,11 @@ impl Gallery {
         let images = TileImages::new(0, cx);
         let subscriptions = vec![
             cx.observe(shell, |_, _, cx| cx.notify()),
-            cx.observe(&thumbnails, |_, _, cx| cx.notify()),
+            cx.observe(&thumbnails, |this, _, cx| {
+                this.note_activity(cx);
+                cx.notify();
+            }),
+            cx.observe(&images, |_, _, cx| cx.notify()),
         ];
         Self {
             shell: shell.clone(),
@@ -237,7 +253,55 @@ impl Gallery {
             preview_settings: PreviewSettings::default(),
             hover: None,
             probes: VideoProbes::default(),
+            activity: 0,
+            settling: false,
+            captioned: None,
             _subscriptions: subscriptions,
+        }
+    }
+
+    /// Notes a frame drawn or a thumbnail finished. Once the gallery has been still for
+    /// [`SETTLE`], the memory the scroll's decodes and the thumbnail workers freed goes back to
+    /// the system: macOS's allocator keeps freed regions dirty for reuse, and they would stay in
+    /// View's footprint at rest.
+    fn note_activity(&mut self, cx: &mut Context<Self>) {
+        self.activity += 1;
+        if self.settling {
+            return;
+        }
+        self.settling = true;
+        cx.spawn(async move |this, cx| {
+            let mut seen = None;
+            loop {
+                let Ok(now) = this.update(cx, |this, _| this.activity) else {
+                    return;
+                };
+                if seen == Some(now) {
+                    break;
+                }
+                seen = Some(now);
+                cx.background_executor().timer(SETTLE).await;
+            }
+            this.update(cx, |this, _| this.settling = false).ok();
+            cx.background_spawn(async { oriel_runtime::release_free_memory() })
+                .await;
+        })
+        .detach();
+    }
+
+    /// The pointer came onto (`hovered`) or left the media tile at `position`, as its caption
+    /// sees it ([`CaptionProbe`]).
+    fn caption_hovered(&mut self, position: usize, hovered: bool, cx: &mut Context<Self>) {
+        let captioned = if hovered {
+            Some(position)
+        } else if self.captioned == Some(position) {
+            None
+        } else {
+            return;
+        };
+        if self.captioned != captioned {
+            self.captioned = captioned;
+            cx.notify();
         }
     }
 
@@ -493,6 +557,8 @@ impl Gallery {
         self.media = media;
         self.aspect = aspect;
         self.wanted = None;
+        // The next paint finds the tile under the pointer in the new listing.
+        self.captioned = None;
         // A preview follows its tile to wherever the new listing has it, or stops.
         let moved = self.hover.as_ref().map(|hover| {
             self.tiles.iter().position(
@@ -740,22 +806,34 @@ impl Gallery {
         &mut self,
         rows: Range<usize>,
         metrics: GridMetrics,
-        window: &Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<gpui_kit::AnyElement> {
         self.note_drawn(rows.clone(), window, cx);
+        self.note_activity(cx);
         let mut complete = true;
         let mut elements = Vec::with_capacity(rows.len());
         for row in rows {
             let items = metrics.items_in(row..row + 1, self.tiles.len());
             let mut tiles = Vec::with_capacity(items.len());
+            let probe = CaptionProbe {
+                gallery: cx.entity().downgrade(),
+                first: items.start,
+                media: self.tiles[items.clone()]
+                    .iter()
+                    .map(|tile| matches!(tile, Tile::Media { .. }))
+                    .collect(),
+                captioned: self.captioned,
+                metrics,
+            };
             for position in items {
-                let (tile, drawn) = self.render_tile(position, metrics, cx);
+                let (tile, drawn) = self.render_tile(position, metrics, window, cx);
                 complete &= drawn;
                 tiles.push(tile);
             }
             elements.push(
                 div()
+                    .relative()
                     .flex()
                     .flex_row()
                     .gap(px(metrics::GRID_GAP))
@@ -763,6 +841,7 @@ impl Gallery {
                     .h(px(metrics.row_stride()))
                     .mx_auto()
                     .children(tiles)
+                    .child(probe.element())
                     .into_any_element(),
             );
         }
@@ -775,26 +854,27 @@ impl Gallery {
         &self,
         position: usize,
         metrics: GridMetrics,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> (gpui_kit::AnyElement, bool) {
         let tile = &self.tiles[position];
         let thumbnail = tile
             .thumbnail_source()
             .map(|source| self.thumbnails.read(cx).thumbnail(source));
-        let drawn = match &thumbnail {
-            Some(Thumbnail::Ready(path)) => self
-                .images
-                .read(cx)
-                .is_loaded(&Resource::Path(path.clone())),
-            Some(Thumbnail::Unavailable) | None => true,
-            Some(Thumbnail::Pending) => false,
+        let (picture, drawn) = match thumbnail {
+            Some(Thumbnail::Ready(path)) => {
+                let picture = self
+                    .images
+                    .update(cx, |images, cx| images.picture(&path, window, cx))
+                    .map(|picture| (path, picture));
+                let drawn = picture.is_some();
+                (picture, drawn)
+            }
+            Some(Thumbnail::Unavailable) | None => (None, true),
+            Some(Thumbnail::Pending) => (None, false),
         };
         let selected = self.selected.as_ref() == Some(tile.key());
         let theme = cx.theme();
-        let picture = match thumbnail {
-            Some(Thumbnail::Ready(path)) => Some(path),
-            _ => None,
-        };
         let id = match tile {
             Tile::Media { media, .. } => ElementId::Path(media.path().clone()),
             _ => ElementId::Name(tile.key().clone()),
@@ -854,7 +934,9 @@ impl Gallery {
                 ),
             Tile::Comic { comic, .. } => card
                 .bg(theme.muted)
-                .when_some(picture, |card, path| card.child(self.picture(path)))
+                .when_some(picture, |card, (path, picture)| {
+                    card.child(self.picture(path, picture))
+                })
                 .child(caption(
                     comic.name().clone(),
                     format!("{} pages", comic.pages().len()).into(),
@@ -867,11 +949,15 @@ impl Gallery {
                     .and_then(|hover| hover.preview.clone());
                 let hover_plays = media.is_video() && self.preview_settings.autoplay;
                 let path = media.path().clone();
-                card.group(TILE_GROUP)
-                    .bg(theme.muted)
-                    .when_some(picture, |card, path| card.child(self.picture(path)))
+                let captioned = self.captioned == Some(position);
+                card.bg(theme.muted)
+                    .when_some(picture, |card, (path, picture)| {
+                        card.child(self.picture(path, picture))
+                    })
                     .when_some(preview, |card, preview| card.child(preview))
-                    .child(hover_caption(media, self.probes.facts.get(media.key())))
+                    .when(captioned, |card| {
+                        card.child(hover_caption(media, self.probes.facts.get(media.key())))
+                    })
                     .when(media.is_video(), |card| card.child(video_badge()))
                     .when(hover_plays, |card| {
                         card.on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
@@ -884,16 +970,11 @@ impl Gallery {
         (card.into_any_element(), drawn)
     }
 
-    /// A tile's thumbnail, through the gallery's own bounded cache. The cache goes on each
-    /// image, not on an `image_cache()` element around the list: `uniform_list` lays its rows
-    /// out in prepaint, where that element's cache is not in force, and an `img()` without one
-    /// keeps its image in the App's asset cache for good. Scrolling 20,000 tiles held 11 GB that
-    /// way.
-    fn picture(&self, path: Arc<Path>) -> impl IntoElement {
-        img(path)
-            .image_cache(&self.images)
-            .size_full()
-            .object_fit(ObjectFit::Cover)
+    /// A tile's thumbnail, from the gallery's own bounded cache ([`images`]) rather than
+    /// `img()`'s: an `img()` without a cache of its own keeps its image in the App's asset cache
+    /// for good, which held 11 GB once 20,000 tiles had scrolled by.
+    fn picture(&self, path: Arc<Path>, picture: TilePicture) -> impl IntoElement {
+        tile_picture(&self.images, path, picture)
     }
 }
 
@@ -921,6 +1002,74 @@ fn video_badge() -> impl IntoElement {
         .child("VIDEO")
 }
 
+/// Finds the media tile under the pointer in one row, for its hover caption: what `group_hover`
+/// on each tile told before, with the same hit test on each tile's bounds, at each paint and each
+/// mouse move. Only the tile it finds is given a caption to lay out, rather than every tile drawn
+/// having one hidden: laying out and shaping those was a fifth of a scroll's frame. The caption
+/// shows one frame after the pointer reaches the tile, as the change is drawn in the next frame.
+struct CaptionProbe {
+    gallery: WeakEntity<Gallery>,
+    /// The position of the row's first tile.
+    first: usize,
+    /// Which of the row's tiles are media, the ones with a caption.
+    media: Vec<bool>,
+    /// The tile whose caption the row was drawn with.
+    captioned: Option<usize>,
+    metrics: GridMetrics,
+}
+
+impl CaptionProbe {
+    /// The row's tiles' hitboxes, over the row: each tile's border box, where the flex row puts
+    /// it.
+    fn element(self) -> impl IntoElement {
+        let metrics = self.metrics;
+        let count = self.media.len();
+        canvas(
+            move |bounds, window, _| {
+                let stride = metrics.card_width() + metrics::GRID_GAP;
+                let tile = size(px(metrics.card_width()), px(metrics.card_height()));
+                (0..count)
+                    .map(|ix| {
+                        let origin =
+                            point(bounds.origin.x + px(ix as f32 * stride), bounds.origin.y);
+                        window.insert_hitbox(Bounds::new(origin, tile), HitboxBehavior::Normal)
+                    })
+                    .collect::<Vec<Hitbox>>()
+            },
+            move |_, hitboxes, window, cx| {
+                let probe = Rc::new((self, hitboxes));
+                probe.0.check(&probe.1, window, cx);
+                window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, cx| {
+                    if phase == DispatchPhase::Bubble {
+                        probe.0.check(&probe.1, window, cx);
+                    }
+                });
+            },
+        )
+        .absolute()
+        .inset_0()
+    }
+
+    /// Tells the gallery of each media tile whose hover differs from how the row was drawn.
+    fn check(&self, hitboxes: &[Hitbox], window: &Window, cx: &mut App) {
+        for (ix, hitbox) in hitboxes.iter().enumerate() {
+            let position = self.first + ix;
+            let hovered = hitbox.is_hovered(window);
+            if !self.media[ix] || hovered == (self.captioned == Some(position)) {
+                continue;
+            }
+            let gallery = self.gallery.clone();
+            cx.defer(move |cx| {
+                gallery
+                    .update(cx, |gallery, cx| {
+                        gallery.caption_hovered(position, hovered, cx)
+                    })
+                    .ok();
+            });
+        }
+    }
+}
+
 /// A media tile's name and size, and a video's picture size once known, over the bottom of the
 /// picture while the pointer is on the tile (`MediaTile`'s caption).
 fn hover_caption(media: &MediaEntry, probe: Option<&VideoProbe>) -> impl IntoElement {
@@ -929,6 +1078,8 @@ fn hover_caption(media: &MediaEntry, probe: Option<&VideoProbe>) -> impl IntoEle
         detail.push_str(&format!(" · {width}×{height}"));
     }
     div()
+        .id(CAPTION_ID)
+        .test_support()
         .absolute()
         .inset_0()
         .flex()
@@ -941,8 +1092,6 @@ fn hover_caption(media: &MediaEntry, probe: Option<&VideoProbe>) -> impl IntoEle
             linear_color_stop(gpui_kit::black().opacity(0.7), 0.),
             linear_color_stop(gpui_kit::black().opacity(0.), 0.5),
         ))
-        .opacity(0.)
-        .group_hover(TILE_GROUP, |style| style.opacity(1.))
         .child(
             div()
                 .truncate()

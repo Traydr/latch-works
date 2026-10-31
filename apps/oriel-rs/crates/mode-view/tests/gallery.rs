@@ -24,7 +24,7 @@ use oriel_core_domain::{GallerySortMode, NamedPath, SortableMediaItem, compare_b
 use oriel_core_paths::DataRoot;
 use oriel_media::still::{Still, WebpSettings};
 use oriel_mode_view::browser::Tile;
-use oriel_mode_view::gallery::HOVER_DELAY;
+use oriel_mode_view::gallery::{CAPTION_ID, HOVER_DELAY};
 use oriel_mode_view::listing::MediaEntry;
 use oriel_mode_view::thumbnails::Thumbnail;
 use oriel_mode_view::{CapsulePanel, CapsulePlayer, Listing, ViewEvent, ViewMode, viewer};
@@ -1236,6 +1236,55 @@ fn a_video_tile_plays_under_the_pointer_and_stops_when_it_leaves(cx: &mut TestAp
     settle(cx, &session);
     assert_eq!(preview(cx), None, "autoplay on hover is off");
     cx.update(|cx| assert_eq!(gallery.read(cx).hovered_video(), None));
+}
+
+/// `MediaTile`'s hover caption: the tile under the pointer shows its name and size over the
+/// bottom of its picture, and no other tile shows one, the pointer moving from tile to tile or
+/// off the grid.
+#[gpui_kit::test]
+fn only_the_tile_under_the_pointer_shows_its_caption(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("caption");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("comics/alpha"));
+    let caption = |cx: &mut TestAppContext| {
+        cx.update_window(session.handle, |_, window, _| {
+            window.try_find(CAPTION_ID).map(|caption| caption.bounds())
+        })
+        .unwrap()
+    };
+    let tile = |cx: &mut TestAppContext, path: &Path| {
+        cx.update_window(session.handle, |_, window, _| {
+            window.find(tile_id(path)).bounds()
+        })
+        .unwrap()
+    };
+    assert_eq!(caption(cx), None, "no tile is under the pointer");
+
+    for name in ["1.jpg", "2.jpg"] {
+        let path = fixture.absolute(&format!("comics/alpha/{name}"));
+        cx.update_window(session.handle, |_, window, cx| {
+            window.hover(tile_id(&path), cx)
+        })
+        .unwrap();
+        settle(cx, &session);
+        let shown = caption(cx).expect("the tile under the pointer shows its caption");
+        let tile = tile(cx, &path);
+        let (inside, corner) = (shown.origin, shown.bottom_right());
+        assert!(
+            inside.x >= tile.origin.x
+                && inside.y >= tile.origin.y
+                && corner.x <= tile.bottom_right().x
+                && corner.y <= tile.bottom_right().y,
+            "{name}'s caption {shown:?} is over its tile {tile:?}"
+        );
+    }
+
+    cx.update_window(session.handle, |_, window, cx| {
+        window.hover("open-folder", cx)
+    })
+    .unwrap();
+    settle(cx, &session);
+    assert_eq!(caption(cx), None, "the pointer left the grid");
 }
 
 #[gpui_kit::test]

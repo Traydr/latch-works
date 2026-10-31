@@ -1,19 +1,22 @@
-//! A folder's entries with each file's size and modification time, read in a few calls through
-//! macOS's `getattrlistbulk` rather than a `stat` per file. On a folder of thousands of stills that
-//! is the difference between thousands of path lookups and a handful of calls, which is most of a
-//! scan's time.
+//! A folder's entries with each file's size, modification and change times, read in a few calls
+//! through macOS's `getattrlistbulk` rather than a `stat` per file. On a folder of thousands of
+//! stills that is the difference between thousands of path lookups and a handful of calls, which
+//! is most of a scan's time.
 //!
-//! The facts are the ones `stat` gives a regular file: the length of its data and its
-//! modification time to the nanosecond, so a file's id and thumbnail key are the same either way.
-//! A symlink is read as itself, as `readdir`'s type reads it, and the entries come in the
+//! The facts are the ones `stat` gives a regular file: the length of its data and its times to
+//! the nanosecond, so a file's id, fingerprint and thumbnail key are the same either way. A
+//! symlink is read as itself, as `readdir`'s type reads it, and the entries come in the
 //! directory's own order, which on APFS and HFS+ is `readdir`'s.
 
 use std::ffi::{CString, OsStr, c_void};
+use std::fs;
 use std::io;
 use std::mem::size_of;
 use std::os::fd::{FromRawFd as _, OwnedFd};
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::Path;
+
+use super::{DirEntry, EntryKind, FileStat};
 
 /// `ATTR_CMN_ERROR`, which `libc` does not define: a per-entry error code.
 const ATTR_CMN_ERROR: libc::attrgroup_t = 0x2000_0000;
@@ -23,26 +26,8 @@ const VDIR: u32 = 2;
 /// Room for about a thousand entries a call.
 const BUFFER_SIZE: usize = 128 * 1024;
 
-/// What an entry is, as `readdir`'s type tells it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Kind {
-    File,
-    Folder,
-    /// A symlink, a socket or anything else the scan leaves out.
-    Other,
-}
-
-#[derive(Debug)]
-pub(super) struct Entry {
-    pub(super) name: Box<OsStr>,
-    pub(super) kind: Kind,
-    /// A file's size and `mtimeMs`; `None` for the rest, and for a file the call could not
-    /// read, which the scan then states itself.
-    pub(super) stat: Option<(u64, f64)>,
-}
-
 /// Every entry of `folder`.
-pub(super) fn read(folder: &Path) -> io::Result<Vec<Entry>> {
+pub(super) fn read(folder: &Path) -> io::Result<Vec<DirEntry>> {
     let path = CString::new(folder.as_os_str().as_bytes())?;
     // SAFETY: a NUL-terminated path and plain flags.
     let fd = unsafe {
@@ -64,7 +49,8 @@ pub(super) fn read(folder: &Path) -> io::Result<Vec<Entry>> {
         | ATTR_CMN_ERROR
         | libc::ATTR_CMN_NAME
         | libc::ATTR_CMN_OBJTYPE
-        | libc::ATTR_CMN_MODTIME;
+        | libc::ATTR_CMN_MODTIME
+        | libc::ATTR_CMN_CHGTIME;
     list.fileattr = libc::ATTR_FILE_DATALENGTH;
 
     let mut buffer = vec![0u8; BUFFER_SIZE];
@@ -93,15 +79,15 @@ pub(super) fn read(folder: &Path) -> io::Result<Vec<Entry>> {
         let mut at = 0;
         for _ in 0..count {
             let length = read_u32(&buffer, at)? as usize;
-            entries.push(parse(&buffer[at..at + length])?);
+            entries.push(parse(folder, &buffer[at..at + length])?);
             at += length;
         }
     }
 }
 
 /// One entry's attributes, packed in the order asked for: the returned set, the error, the
-/// name's reference, the type, the time, then the file's length.
-fn parse(group: &[u8]) -> io::Result<Entry> {
+/// name's reference, the type, the two times, then the file's length.
+fn parse(folder: &Path, group: &[u8]) -> io::Result<DirEntry> {
     let mut at = size_of::<u32>();
     let returned: libc::attribute_set_t = field(group, at)?;
     at += size_of::<libc::attribute_set_t>();
@@ -114,6 +100,8 @@ fn parse(group: &[u8]) -> io::Result<Entry> {
     at += size_of::<u32>();
     let modified: libc::timespec = field(group, at)?;
     at += size_of::<libc::timespec>();
+    let changed: libc::timespec = field(group, at)?;
+    at += size_of::<libc::timespec>();
 
     let start = usize::try_from(name_at as isize + name.attr_dataoffset as isize)
         .map_err(|_| malformed())?;
@@ -122,23 +110,50 @@ fn parse(group: &[u8]) -> io::Result<Entry> {
         .ok_or_else(malformed)?;
     // The length counts the terminating NUL.
     let bytes = bytes.strip_suffix(&[0]).unwrap_or(bytes);
-    let name: Box<OsStr> = OsStr::from_bytes(bytes).into();
+    let name = OsStr::from_bytes(bytes).to_os_string();
 
+    if returned.commonattr & libc::ATTR_CMN_OBJTYPE == 0 {
+        // The call could not say what the entry is (an entry with an error carries only its
+        // name): ask as `readdir` does when its type is unknown, with an `lstat`, and state the
+        // file as the scans would. If that fails too, the entry goes to the scan as a file with
+        // no facts, whose own `stat` reports it, rather than failing the folder's other entries.
+        let Ok(metadata) = fs::symlink_metadata(folder.join(&name)) else {
+            return Ok(DirEntry {
+                name,
+                kind: EntryKind::File,
+                stat: None,
+            });
+        };
+        let file_type = metadata.file_type();
+        let (kind, stat) = if file_type.is_file() {
+            (EntryKind::File, Some(FileStat::of(&metadata)))
+        } else if file_type.is_dir() {
+            (EntryKind::Folder, None)
+        } else {
+            (EntryKind::Other, None)
+        };
+        return Ok(DirEntry { name, kind, stat });
+    }
     let kind = match kind {
-        VREG => Kind::File,
-        VDIR => Kind::Folder,
-        _ => Kind::Other,
+        VREG => EntryKind::File,
+        VDIR => EntryKind::Folder,
+        _ => EntryKind::Other,
     };
-    let readable = kind == Kind::File
+    let readable = kind == EntryKind::File
         && error == 0
         && returned.commonattr & libc::ATTR_CMN_MODTIME != 0
+        && returned.commonattr & libc::ATTR_CMN_CHGTIME != 0
         && returned.fileattr & libc::ATTR_FILE_DATALENGTH != 0;
     // Only a file's group carries its length.
     let stat = readable
         .then(|| field::<libc::off_t>(group, at).ok())
         .flatten()
-        .map(|length| (u64::try_from(length).unwrap_or(0), modified_ms(&modified)));
-    Ok(Entry { name, kind, stat })
+        .map(|length| FileStat {
+            size: u64::try_from(length).unwrap_or(0),
+            modified_ms: modified_ms(&modified),
+            changed_ms: Some(changed_ms(&changed)),
+        });
+    Ok(DirEntry { name, kind, stat })
 }
 
 /// `fs::Metadata::modified` read as `scan::modified_ms` reads it: whole seconds in milliseconds
@@ -147,6 +162,11 @@ fn modified_ms(time: &libc::timespec) -> f64 {
     if time.tv_sec < 0 {
         return 0.0;
     }
+    time.tv_sec as f64 * 1e3 + time.tv_nsec as f64 / 1e6
+}
+
+/// `ctimeMs` as `FileStat::of` reads it from `stat`'s seconds and nanoseconds.
+fn changed_ms(time: &libc::timespec) -> f64 {
     time.tv_sec as f64 * 1e3 + time.tv_nsec as f64 / 1e6
 }
 
@@ -173,14 +193,15 @@ mod tests {
     use std::fs;
     use std::time::{Duration, SystemTime};
 
+    use std::ffi::OsString;
+
     use super::*;
-    use crate::scan::modified_ms as stat_modified_ms;
 
     /// An entry as both reads give it.
-    type Read = (Box<OsStr>, Kind, Option<(u64, f64)>);
+    type Read = (OsString, EntryKind, Option<FileStat>);
 
     /// Each entry reads as `readdir` and `stat` read it: the same names in the same order, the
-    /// same kinds, and a file's size and time to the nanosecond.
+    /// same kinds, and a file's size and times to the nanosecond.
     #[test]
     fn reads_what_readdir_and_stat_read() {
         let folder = std::env::temp_dir()
@@ -212,17 +233,15 @@ mod tests {
                 let entry = entry.unwrap();
                 let kind = entry.file_type().unwrap();
                 let kind = if kind.is_file() {
-                    Kind::File
+                    EntryKind::File
                 } else if kind.is_dir() {
-                    Kind::Folder
+                    EntryKind::Folder
                 } else {
-                    Kind::Other
+                    EntryKind::Other
                 };
-                let stat = (kind == Kind::File).then(|| {
-                    let metadata = fs::metadata(entry.path()).unwrap();
-                    (metadata.len(), stat_modified_ms(&metadata))
-                });
-                (entry.file_name().into_boxed_os_str(), kind, stat)
+                let stat = (kind == EntryKind::File)
+                    .then(|| FileStat::of(&fs::metadata(entry.path()).unwrap()));
+                (entry.file_name(), kind, stat)
             })
             .collect();
         let bulk: Vec<Read> = bulk

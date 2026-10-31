@@ -14,6 +14,7 @@
 //! `apps/oriel-rs/conformance/media-index/`, and this crate's tests check the Rust against them.
 
 pub mod catalog;
+mod folder;
 pub mod media_index;
 mod pool;
 pub mod scan;

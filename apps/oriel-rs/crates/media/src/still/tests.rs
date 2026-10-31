@@ -12,7 +12,7 @@ use objc2_core_graphics::{
 };
 use objc2_image_io::{CGImageDestination, kCGImagePropertyOrientation};
 
-use super::{Still, WebpSettings, decode, decode_bytes};
+use super::{Still, WebpSettings, decode, decode_bytes, decode_webp, webp};
 
 /// A folder of its own under the temp folder for one test.
 fn scratch(test: &str) -> PathBuf {
@@ -206,6 +206,45 @@ fn webp_reads_back_with_or_without_alpha() {
             pixel(&decoded, 4, 12)
         );
     }
+}
+
+/// The gallery's tiles decode through libwebp, and must come out byte for byte as GPUI's own
+/// decoder (the `image` crate's) makes them, or a tile would look different in Oriel RS than an
+/// `img()` drew it: lossy and lossless, opaque and not, at the thumbnails' settings.
+#[test]
+fn tiles_decode_as_gpuis_own_decoder_decodes_them() {
+    let (width, height) = (301u32, 197u32);
+    for (opaque, settings) in [
+        (true, WebpSettings::lossy(92.0, 5)),
+        (false, WebpSettings::lossy(92.0, 5)),
+        (true, WebpSettings::lossy(82.0, 4)),
+        (true, WebpSettings::lossless(0)),
+        (false, WebpSettings::lossless(0)),
+    ] {
+        // Gradients in every channel, so the chroma upsampling and the alpha show.
+        let mut bgra = Vec::with_capacity(width as usize * height as usize * 4);
+        for y in 0..height {
+            for x in 0..width {
+                let alpha = if opaque {
+                    255
+                } else {
+                    ((x * 7 + y * 3) % 256) as u8
+                };
+                bgra.extend_from_slice(&[x as u8, y as u8, (x * y) as u8, alpha]);
+            }
+        }
+        let still = Still::from_bgra(width, height, bgra, opaque).unwrap();
+        let bytes = still.encode_webp(settings).unwrap();
+        let tile = decode_webp(&bytes).unwrap();
+        let gpui = webp::decode_as_gpui(&bytes).unwrap();
+        assert_eq!(
+            (tile.width(), tile.height()),
+            (width, height),
+            "{settings:?}"
+        );
+        assert!(tile.bgra() == gpui.bgra(), "{settings:?}, opaque {opaque}");
+    }
+    assert!(decode_webp(b"RIFF\0\0\0\0WEBPVP8 ").is_err());
 }
 
 #[test]

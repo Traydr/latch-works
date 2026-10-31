@@ -23,12 +23,9 @@ use oriel_core_domain::{FolderNode, get_extension, is_system_junk_directory, is_
 use oriel_runtime::CancelToken;
 use serde::{Deserialize, Serialize};
 
+use crate::folder::{DirEntry, EntryKind, FileStat, read_entries};
 use crate::media_index::{MediaIndex, ScanWrites, ScanWritesEnd};
 use crate::pool::run_queue;
-use crate::scan::modified_ms;
-
-#[cfg(target_os = "macos")]
-mod bulk;
 
 /// Items sent to the gallery, and written to the index, at a time (`CATALOG_BATCH_SIZE`).
 pub const BATCH_SIZE: usize = 300;
@@ -250,8 +247,8 @@ impl CatalogScan {
                 });
             }
         };
-        // A cancel is recorded once what was queued before it has run, so a scan started next
-        // finds the index as this one left it.
+        // A cancel skips the batches still queued and is recorded behind the one being written,
+        // so a scan started next finds the index as this one left it, without waiting on them.
         let cancelled = |writes: Option<ScanWrites>, emit: &mut dyn FnMut(CatalogEvent)| {
             report_failure(&writes, emit);
             emit(CatalogEvent::Cancelled { run_id });
@@ -594,65 +591,13 @@ impl ReadAhead {
     }
 }
 
-#[cfg(target_os = "macos")]
-use bulk::Kind as EntryKind;
-
-#[cfg(not(target_os = "macos"))]
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum EntryKind {
-    File,
-    Folder,
-    Other,
-}
-
-/// One entry of a folder: its name, what it is as `readdir` types it, and a file's size and
-/// time when the read gave them.
-struct DirEntry {
-    name: std::ffi::OsString,
-    kind: EntryKind,
-    stat: Option<(u64, f64)>,
-}
-
-/// A folder's entries in its own order. On macOS one call reads many entries with each file's
-/// size and time ([`bulk`]); elsewhere `readdir`, and the scan states each file.
-#[cfg(target_os = "macos")]
-fn read_entries(folder: &Path) -> io::Result<impl Iterator<Item = io::Result<DirEntry>>> {
-    Ok(bulk::read(folder)?.into_iter().map(|entry| {
-        Ok(DirEntry {
-            name: entry.name.into(),
-            kind: entry.kind,
-            stat: entry.stat,
-        })
-    }))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn read_entries(folder: &Path) -> io::Result<impl Iterator<Item = io::Result<DirEntry>>> {
-    Ok(fs::read_dir(folder)?.map(|entry| {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-        let kind = if file_type.is_dir() {
-            EntryKind::Folder
-        } else if file_type.is_file() {
-            EntryKind::File
-        } else {
-            EntryKind::Other
-        };
-        Ok(DirEntry {
-            name: entry.file_name(),
-            kind,
-            stat: None,
-        })
-    }))
-}
-
 struct Candidate {
     full_path: PathBuf,
     name: String,
     extension: String,
     media_type: CatalogMediaType,
-    /// The size and time the folder's read gave, if it did.
-    stat: Option<(u64, f64)>,
+    /// The size and times the folder's read gave, if it did.
+    stat: Option<FileStat>,
 }
 
 enum Stat {
@@ -669,18 +614,18 @@ fn stat_candidates(candidates: Vec<Candidate>, cancel: &CancelToken) -> Vec<Stat
             return Stat::Cancelled;
         }
         let path = candidate.full_path.to_string_lossy().into_owned();
-        let stat = candidate.stat.map(Ok).unwrap_or_else(|| {
-            fs::metadata(&candidate.full_path)
-                .map(|metadata| (metadata.len(), modified_ms(&metadata)))
-        });
+        let stat = candidate
+            .stat
+            .map(Ok)
+            .unwrap_or_else(|| fs::metadata(&candidate.full_path).map(|m| FileStat::of(&m)));
         match stat {
-            Ok((size, mtime_ms)) => Stat::Item(CatalogItem::new(
+            Ok(stat) => Stat::Item(CatalogItem::new(
                 path,
                 candidate.name.clone(),
                 candidate.extension.clone(),
                 candidate.media_type,
-                size,
-                mtime_ms,
+                stat.size,
+                stat.modified_ms,
             )),
             Err(_) => Stat::Failed(path),
         }
