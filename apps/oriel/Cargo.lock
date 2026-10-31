@@ -5302,6 +5302,7 @@ dependencies = [
  "oriel-core-tidy",
  "oriel-tools",
  "smallvec",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
