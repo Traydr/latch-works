@@ -130,7 +130,7 @@ roots under `<data>/sandbox` or the temp folder.
 | "Choose your media archive" when Tidy has no folder | Done | It takes a dropped folder; a sandboxed run names the sandbox | 7 |
 | Tidy's own folder picker (a typed path, the usual folders, drives, keys), and a dropped folder | Done | In a sandboxed run, places outside the sandbox are shown but locked | 7 |
 | Overview: what tidying would do, Tidy up (⌘↩), Check now | Done | | 7 |
-| Duplicates: the queue (Similar, Identical, Variants, Not duplicates), the version grid with playing tiles, the copy list, the loupe | Done | Cleaned up at the owner's request (see [where Oriel RS differs](#where-oriel-rs-differs-on-purpose)); tiles play through libmpv and stop out of sight; the loupe shows actual pixels, up to 16384 px | 7 |
+| Duplicates: the queue (Similar, Identical, Variants, Not duplicates), the version grid with playing tiles, the copy list, the loupe | Done | No Not duplicates list, at the owner's request: N marks a set, and Undo brings it back. Cleaned up at the owner's request (see [where Oriel RS differs](#where-oriel-rs-differs-on-purpose)); tiles play through libmpv and stop out of sight; the loupe shows actual pixels, up to 16384 px | 7 |
 | Duplicates' keys: Return, 1–9, ⇧1–9, N, S, Space, ⌘Y Quick Look, ⇧⌘R, P, ⌘Z; Undo toasts; the Spot variants switch | Done | Quick Look shows one file at a time; Electron's Duplicates has no ⌘Return, so the row drops it | 7 |
 | Convert | Done | | 7 |
 | Clean up | Done | | 7 |
@@ -138,7 +138,7 @@ roots under `<data>/sandbox` or the temp folder.
 | The Library's search, Filter menu, list or grid, Inspector (I), rename field, selection bar and More… | Done | The native menu writes its shortcuts into the item text | 7 |
 | History, with Undo | Done | A run of duplicate decisions lists each with its own Undo, and Undo all N; kind icons, relative times | 7 |
 | Holding: Restore (⌘⌫) and Empty to Trash (⇧⌘⌫) | Done | Arrow keys and a Restore on each tile; Empty to Trash goes through NSFileManager, or the Recycle Bin on Windows | 7 |
-| The job card at the sidebar's foot: progress, pause, stop | Done | Pause and Resume, "N more queued" and "In the background"; Convert, Clean up and Shrink pause in place too | 7 |
+| The job card at the sidebar's foot: progress, pause, stop | Done | Replaced at the owner's request by the shell's activity panel at the bottom right, for every mode, with Pause, Stop and a queue | 7 |
 | Tidy's menu items (Add Folder… ⌘O, Rescan ⌘R, Undo ⌘Z, Select All, Find ⌘F) and the shortcut sheet (?) | Done | | 7 |
 
 ## Sync
@@ -186,7 +186,7 @@ roots under `<data>/sandbox` or the temp folder.
 | Its native libraries inside the app | Done | An LGPL libmpv built from pinned sources, sharp's libvips and Homebrew's libavif, in `Contents/Frameworks` | after 1 |
 | About in the app menu: the name and the version | Done | About is a GPUI dialog; it also lists each bundled component's licence | 2 |
 | Signed ad hoc, or with `ORIEL_MACOS_SIGN_IDENTITY` | Done | Ad hoc; the owner wants no real identity (decision 19) | after 1 |
-| A designed DMG and a ZIP, from `pnpm make:oriel` | Done | A plain DMG with the app and an Applications link, from `cargo run -p xtask -- dmg`; no background art or ZIP (decision 19) | parity round |
+| A designed DMG and a ZIP, from `pnpm make:oriel` | Done | Laid out like Electron's (its art, volume icon, 128 px icons, 660 × 400), from `cargo run -p xtask -- dmg`; no ZIP | parity round |
 | An offer to move to Applications when started from elsewhere | Done | Copies itself, relaunches, and trashes the old copy unless it is on a read-only volume; paths compared by device and inode | parity round |
 | A build workflow that makes the DMG and Setup.exe as artifacts | Left on purpose | GitHub runs only a typecheck (decision 20); `oriel-rs.yml` runs the checks when started by hand | none |
 
@@ -312,8 +312,7 @@ e2e library.
 - Tidy's "Tidy “name”?" question is a GPUI Kit alert dialog, not a native sheet.
 - About lists the licences of every bundled part, read from `Contents/Resources/licenses/`.
 - Duplicates was cleaned up at the owner's request (2026-10-31): a line saying why a version is
-  kept; the decision bar saying what goes to holding and what it frees; a scope list (Similar,
-  Variants, Identical, then Not duplicates) instead of tabs and a top-bar toggle; one "Matching"
+  kept; a scope list (Similar, Variants, Identical) instead of tabs and a top-bar toggle; one "Matching"
   popover for the similarity level and Spot variants; fact lanes that line tiles up; a fate line
   per tile ("Keep", "Suggested", "Goes to holding"); one `…` menu and a right-click menu with
   Prefer this folder. N reads "Keep both" or "Keep all" everywhere, and Spot variants' note reads
@@ -326,3 +325,13 @@ e2e library.
 - Empty Holding marks a batch emptied when its folder is already gone, where Electron's Trash call
   fails and leaves it held, so an imported batch whose files never arrived can be cleared.
 - Off macOS, Quick Look reads "Open in Default App", and the Library's menu shows only Open.
+- After the owner's first install (2026-10-31): one activity panel at the window's bottom right
+  shows every mode's running and queued work, with Pause and Stop, in place of Tidy's job card, the
+  pages' in-place progress, Sync's running panel and View's scanning pill. Tidy's changes queue
+  behind one another instead of being refused.
+- Every mode's sidebar is headed by one location switcher, Tidy's, whose dropdown offers every
+  folder any mode uses, marked with the modes that use it. Sync's profiles live in it.
+- Duplicates has no Not duplicates list and no "goes to holding" summary; its buttons are larger
+  and centred.
+- Video sound goes to the output as float stereo, as macOS's CoreAudio refused FFmpeg's planar
+  AAC; surround sound is downmixed.
