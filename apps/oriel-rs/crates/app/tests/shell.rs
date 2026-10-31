@@ -695,7 +695,10 @@ fn voiceover_reads_the_switcher_the_sidebar_and_the_top_bar_by_name(cx: &mut Tes
         );
         let heading = window.find("top-bar-title");
         assert_eq!(heading.role(), Some(Role::Heading));
-        assert_eq!(window.find("toggle-sidebar").label(), Some("Hide sidebar"));
+        assert_eq!(
+            window.find("toggle-sidebar").label(),
+            Some("Compact sidebar")
+        );
     })
     .unwrap();
 }

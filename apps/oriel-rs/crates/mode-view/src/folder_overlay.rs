@@ -10,6 +10,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Icon, Sizable as _,
     button::{Button, ButtonVariants as _},
+    tooltip::Tooltip,
 };
 use gpui_kit::{
     App, AppContext as _, ClickEvent, Context, ElementId, EventEmitter, FocusHandle, Focusable,
@@ -168,6 +169,10 @@ impl FolderOverlay {
         let browse_path = path.clone();
         let browse_name = name.clone();
         let toggle_path = path.clone();
+        let hint = SharedString::from(format!(
+            "Click to browse into, double-click to open\n{}",
+            folder.path
+        ));
 
         div()
             .flex()
@@ -185,6 +190,7 @@ impl FolderOverlay {
                     .role(Role::Button)
                     .test_support()
                     .aria_label(name.clone())
+                    .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
                     .flex()
                     .flex_col()
                     .items_center()

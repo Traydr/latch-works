@@ -53,10 +53,19 @@ impl RenderOnce for TopBar {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let shell = self.shell.clone();
         let rail = self.shell.read(cx).rail();
-        let (toggle_label, toggle_tooltip) = if rail {
-            ("Show sidebar", "Show sidebar  ⌘\\")
+        // `SidebarToggle`'s words and icons: the sidebar compacts to the rail and expands back.
+        let (toggle_label, toggle_tooltip, toggle_icon) = if rail {
+            (
+                "Expand sidebar",
+                "Expand sidebar  ⌘\\",
+                gpui_kit::assets::IconName::PanelLeftOpen,
+            )
         } else {
-            ("Hide sidebar", "Hide sidebar  ⌘\\")
+            (
+                "Compact sidebar",
+                "Compact sidebar  ⌘\\",
+                gpui_kit::assets::IconName::PanelLeftClose,
+            )
         };
 
         DragStrip::new("top-bar")
@@ -74,7 +83,7 @@ impl RenderOnce for TopBar {
                 Button::new("toggle-sidebar")
                     .ghost()
                     .small()
-                    .icon(Icon::new(gpui_kit::assets::IconName::PanelLeft))
+                    .icon(Icon::new(toggle_icon))
                     .accessibility_label(toggle_label)
                     .tooltip(toggle_tooltip)
                     .on_click(move |_, _, cx| shell.update(cx, |shell, cx| shell.toggle_rail(cx))),

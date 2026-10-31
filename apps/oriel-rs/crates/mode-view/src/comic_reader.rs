@@ -1,7 +1,8 @@
 //! The comic reader (`ComicReader.tsx`): a comic's pages one under another, as wide as the
 //! window allows up to 980 px, on the viewer's dark ground. → or E and ← or Q go a page on or
 //! back, Escape or Close returns to the gallery; the top bar has the page count, Scroll to top and
-//! Reveal in folder.
+//! Reveal in folder. The top bar fades after 2.5 s without the pointer moving, a key or a scroll,
+//! with the pointer, and comes back with any of them, as the viewer's does (`useViewerChromeIdle`).
 //!
 //! Pages decode through ImageIO (GPUI's own decoder reads neither AVIF nor HEIC) at the width
 //! they show at, the ones near the page in view first; pages further away are released, so a
@@ -9,6 +10,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
@@ -16,14 +18,16 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants as _},
 };
 use gpui_kit::{
-    App, AppContext as _, Context, EventEmitter, FocusHandle, Focusable, InteractiveElement as _,
-    IntoElement, KeyBinding, ObjectFit, ParentElement as _, Render, RenderImage, Role,
-    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _,
-    Subscription, Task, TestSupportExt as _, Window, actions, div, img, linear_color_stop,
-    linear_gradient, px,
+    App, AppContext as _, Context, DispatchPhase, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement as _, IntoElement, KeyBinding, MouseMoveEvent, ObjectFit,
+    ParentElement as _, Render, RenderImage, Role, ScrollHandle, SharedString,
+    StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Task,
+    TestSupportExt as _, Window, actions, canvas, div, img, linear_color_stop, linear_gradient,
+    prelude::FluentBuilder as _, px,
 };
 
 use crate::browser::Comic;
+use crate::viewer::{CHROME_IDLE, on_any_key};
 
 actions!(
     comic_reader,
@@ -75,6 +79,14 @@ pub struct ComicReader {
     scroll: ScrollHandle,
     pages: HashMap<usize, Page>,
     current: usize,
+    /// Whether the top bar shows.
+    chrome_visible: bool,
+    /// When the pointer last moved, a key was pressed or the pages scrolled.
+    last_activity: Instant,
+    /// Hides the top bar once it has been left alone for [`CHROME_IDLE`].
+    _idle: Option<Task<()>>,
+    /// Every key brings the top bar back, the page keys too.
+    _keys: Subscription,
     _release: Subscription,
 }
 
@@ -94,6 +106,10 @@ impl ComicReader {
             scroll: ScrollHandle::new(),
             pages: HashMap::new(),
             current: 0,
+            chrome_visible: true,
+            last_activity: cx.background_executor().now(),
+            _idle: None,
+            _keys: on_any_key(cx, Self::reveal_chrome),
             // Decoded pages live in GPUI's sprite atlas until released there.
             _release: cx.on_release(|reader, cx| {
                 for (_, page) in reader.pages.drain() {
@@ -104,7 +120,50 @@ impl ComicReader {
             }),
         };
         reader.decode_near(window, cx);
+        reader.reveal_chrome(window, cx);
         reader
+    }
+
+    /// Whether the top bar shows.
+    pub fn is_chrome_visible(&self) -> bool {
+        self.chrome_visible
+    }
+
+    /// `revealChrome`: the top bar shows, and fades again once left alone.
+    pub fn reveal_chrome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The executor's clock, which a test can move on.
+        self.last_activity = cx.background_executor().now();
+        if !self.chrome_visible {
+            self.chrome_visible = true;
+            cx.notify();
+        }
+        if self._idle.is_some() {
+            return;
+        }
+        self._idle = Some(cx.spawn_in(window, async move |this, cx| {
+            loop {
+                let Ok(wait) = this.update(cx, |this, cx| {
+                    let idle = cx
+                        .background_executor()
+                        .now()
+                        .saturating_duration_since(this.last_activity);
+                    CHROME_IDLE.saturating_sub(idle)
+                }) else {
+                    return;
+                };
+                if wait.is_zero() {
+                    break;
+                }
+                cx.background_executor().timer(wait).await;
+            }
+            this.update(cx, |this, cx| {
+                this._idle = None;
+                this.chrome_visible = false;
+                oriel_media::video::hide_pointer_until_it_moves();
+                cx.notify();
+            })
+            .ok();
+        }));
     }
 
     pub fn comic(&self) -> &Arc<Comic> {
@@ -243,6 +302,7 @@ impl Render for ComicReader {
             .map(|ix| self.render_page(ix, width).into_any_element())
             .collect();
         let cover = self.comic.cover().path().clone();
+        let reader = cx.entity().downgrade();
 
         div()
             .id("comic-reader")
@@ -270,7 +330,10 @@ impl Render for ComicReader {
                     .size_full()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
-                    .on_scroll(cx.listener(|_, _, _, cx| cx.notify()))
+                    .on_scroll(cx.listener(|this, _, window, cx| {
+                        this.reveal_chrome(window, cx);
+                        cx.notify();
+                    }))
                     .px_3()
                     .pt_3()
                     .pb_6()
@@ -280,69 +343,91 @@ impl Render for ComicReader {
                     .gap_3()
                     .children(pages),
             )
+            // The pointer moving anywhere over the reader brings the top bar back.
             .child(
-                // macOS draws the window buttons over the top left, so the title starts to their
-                // right, as the reader pads it.
-                div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .right_0()
-                    .flex()
-                    .flex_row()
-                    .items_start()
-                    .gap_3()
-                    .pt_4()
-                    .pb_10()
-                    .pr_3()
-                    .pl(px(88.))
-                    .bg(linear_gradient(
-                        180.,
-                        linear_color_stop(gpui_kit::black().opacity(0.7), 0.),
-                        linear_color_stop(gpui_kit::black().opacity(0.), 1.),
-                    ))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_w_0()
-                            .child(div().truncate().text_sm().child(self.comic.name().clone()))
-                            .child(
-                                div()
-                                    .id("comic-page-count")
-                                    .role(Role::Status)
-                                    .test_support()
-                                    .aria_label(format!("{}/{count} pages", self.current + 1))
-                                    .text_xs()
-                                    .text_color(gpui_kit::white().opacity(0.7))
-                                    .child(format!("{}/{count} pages", self.current + 1)),
-                            ),
-                    )
-                    .child(
-                        Button::new("comic-scroll-top")
-                            .ghost()
-                            .icon(Icon::new(IconName::ArrowUp))
-                            .tooltip("Scroll to top")
-                            .accessibility_label("Scroll to top")
-                            .on_click(cx.listener(|this, _, window, cx| this.go_to(0, window, cx))),
-                    )
-                    .child(
-                        Button::new("comic-reveal")
-                            .ghost()
-                            .icon(Icon::new(IconName::FolderOpen))
-                            .tooltip("Reveal in folder")
-                            .accessibility_label("Reveal in folder")
-                            .on_click(move |_, _, cx| cx.reveal_path(&cover)),
-                    )
-                    .child(
-                        Button::new("comic-close")
-                            .ghost()
-                            .icon(Icon::new(IconName::Close))
-                            .tooltip("Close")
-                            .accessibility_label("Close")
-                            .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
-                    ),
+                canvas(
+                    |_, _, _| {},
+                    move |_, _, window, _| {
+                        let reader = reader.clone();
+                        window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, cx| {
+                            if phase == DispatchPhase::Bubble {
+                                reader
+                                    .update(cx, |reader, cx| reader.reveal_chrome(window, cx))
+                                    .ok();
+                            }
+                        });
+                    },
+                )
+                .absolute()
+                .size_full(),
             )
+            .when(self.chrome_visible, |this| {
+                this.child(
+                    // macOS draws the window buttons over the top left, so the title starts to their
+                    // right, as the reader pads it.
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .flex()
+                        .flex_row()
+                        .items_start()
+                        .gap_3()
+                        .pt_4()
+                        .pb_10()
+                        .pr_3()
+                        .pl(px(88.))
+                        .bg(linear_gradient(
+                            180.,
+                            linear_color_stop(gpui_kit::black().opacity(0.7), 0.),
+                            linear_color_stop(gpui_kit::black().opacity(0.), 1.),
+                        ))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .min_w_0()
+                                .child(div().truncate().text_sm().child(self.comic.name().clone()))
+                                .child(
+                                    div()
+                                        .id("comic-page-count")
+                                        .role(Role::Status)
+                                        .test_support()
+                                        .aria_label(format!("{}/{count} pages", self.current + 1))
+                                        .text_xs()
+                                        .text_color(gpui_kit::white().opacity(0.7))
+                                        .child(format!("{}/{count} pages", self.current + 1)),
+                                ),
+                        )
+                        .child(
+                            Button::new("comic-scroll-top")
+                                .ghost()
+                                .icon(Icon::new(IconName::ArrowUp))
+                                .tooltip("Scroll to top")
+                                .accessibility_label("Scroll to top")
+                                .on_click(
+                                    cx.listener(|this, _, window, cx| this.go_to(0, window, cx)),
+                                ),
+                        )
+                        .child(
+                            Button::new("comic-reveal")
+                                .ghost()
+                                .icon(Icon::new(IconName::FolderOpen))
+                                .tooltip("Reveal in folder")
+                                .accessibility_label("Reveal in folder")
+                                .on_click(move |_, _, cx| cx.reveal_path(&cover)),
+                        )
+                        .child(
+                            Button::new("comic-close")
+                                .ghost()
+                                .icon(Icon::new(IconName::Close))
+                                .tooltip("Close")
+                                .accessibility_label("Close")
+                                .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
+                        ),
+                )
+            })
     }
 }

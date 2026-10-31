@@ -115,8 +115,13 @@ impl ViewMode {
                             }),
                     )
                     .child(
+                        // Where the folder is, cut from the start when long so the nearest
+                        // folders stay (`StartTruncate`).
                         div()
-                            .truncate()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .when(opened.is_some(), |this| this.text_ellipsis_start())
+                            .when(opened.is_none(), |this| this.text_ellipsis())
                             .text_xs()
                             .text_color(theme.muted_foreground)
                             .child(match &opened {

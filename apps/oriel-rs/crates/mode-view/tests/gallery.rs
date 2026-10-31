@@ -1084,6 +1084,16 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
     assert!(!read_player(cx, &session, CapsulePlayer::is_muted));
     assert!(read_player(cx, &session, CapsulePlayer::is_looping));
 
+    // Another mode on screen pauses the video, as Electron Oriel pauses a hidden mode's media,
+    // and it is still paused back in View.
+    press(cx, &session, "space");
+    assert!(read_player(cx, &session, CapsulePlayer::is_playing));
+    for mode in [ModeId::Tidy, ModeId::View] {
+        cx.update(|cx| session.shell.update(cx, |shell, cx| shell.go(mode, cx)));
+        settle(cx, &session);
+    }
+    assert!(!read_player(cx, &session, CapsulePlayer::is_playing));
+
     // Show in Tidy asks the app to hand the file to Tidy.
     let asked = Rc::new(RefCell::new(Vec::new()));
     let _subscription = cx.update(|cx| {
@@ -1129,8 +1139,11 @@ fn the_viewer_controls_fade_when_left_alone_but_stay_over_a_paused_video(cx: &mu
     settle(cx, &session);
     assert!(!chrome(cx), "a still's controls fade");
     assert_eq!(label(cx, &session, "viewer-close"), None);
-    press(cx, &session, "x");
-    assert!(chrome(cx), "a key brings them back");
+    press(cx, &session, "right");
+    assert!(
+        chrome(cx),
+        "a key brings them back, one bound to a step too"
+    );
     press(cx, &session, "escape");
 
     if !fixture.videos {
@@ -1494,6 +1507,88 @@ fn folders_open_from_their_tiles_and_step_back_up_to_the_opened_one(cx: &mut Tes
         );
     })
     .unwrap();
+}
+
+/// `useGalleryKeyboardNavigation`: the arrows wrap past either end of the list, with ⇧ held too,
+/// and ⇧S opens the first folder when the tile selected is not one. Escape closes the sort menu,
+/// as `GalleryToolbar` listens for it.
+#[gpui_kit::test]
+fn the_gallery_keys_wrap_at_the_ends_and_shift_s_finds_a_folder(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("wrap");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.archive);
+    let tiles = tile_paths(cx, &session);
+    let selected = |cx: &mut TestAppContext| {
+        cx.update(|cx| session.view.read(cx).gallery().read(cx).selected_index())
+    };
+    click(
+        cx,
+        &session,
+        ElementId::Name(format!("folder:{}", tiles[0].display()).into()),
+    );
+    assert_eq!(selected(cx), Some(0));
+    press(cx, &session, "left");
+    assert_eq!(
+        selected(cx),
+        Some(tiles.len() - 1),
+        "← on the first tile selects the last"
+    );
+    press(cx, &session, "shift-right");
+    assert_eq!(
+        selected(cx),
+        Some(0),
+        "→ on the last wraps, with ⇧ held too"
+    );
+
+    click(cx, &session, "sort");
+    assert_eq!(label(cx, &session, "sort-menu").as_deref(), Some("Sort"));
+    press(cx, &session, "escape");
+    assert_eq!(label(cx, &session, "sort-menu"), None);
+
+    // The last tile is the folder's one image, so ⇧S opens the first folder.
+    press(cx, &session, "a");
+    assert_eq!(selected(cx), Some(tiles.len() - 1));
+    press(cx, &session, "shift-s");
+    cx.update(|cx| {
+        assert_eq!(
+            session.view.read(cx).folder(cx).as_deref(),
+            Some(tiles[0].as_path())
+        )
+    });
+}
+
+/// The reader's top bar fades when left alone, as the viewer's does, and a key brings it back.
+#[gpui_kit::test]
+fn the_comic_readers_top_bar_fades_when_left_alone(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("reader-chrome");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("comics"));
+    click(cx, &session, "comic");
+    let alpha = format!("comic:{}", fixture.absolute("comics/alpha").display());
+    double_click(cx, &session, ElementId::Name(alpha.into()));
+    let chrome = |cx: &mut TestAppContext| {
+        cx.update(|cx| {
+            session
+                .view
+                .read(cx)
+                .comic_reader()
+                .unwrap()
+                .read(cx)
+                .is_chrome_visible()
+        })
+    };
+    assert!(chrome(cx));
+    cx.executor()
+        .advance_clock(viewer::CHROME_IDLE + Duration::from_millis(100));
+    settle(cx, &session);
+    assert!(!chrome(cx), "the top bar fades");
+    assert_eq!(label(cx, &session, "comic-close"), None);
+    press(cx, &session, "right");
+    assert!(chrome(cx), "a key brings it back");
+    assert_eq!(
+        label(cx, &session, "comic-page-count").as_deref(),
+        Some("2/5 pages")
+    );
 }
 
 #[gpui_kit::test]

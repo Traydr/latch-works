@@ -31,7 +31,6 @@ icon_assets!(
         Maximize2,
         Monitor,
         MousePointerClick,
-        PanelLeft,
         Pause,
         Play,
         RefreshCcw,

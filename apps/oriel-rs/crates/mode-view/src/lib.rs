@@ -43,9 +43,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, ExternalPaths, FocusHandle,
-    Focusable as _, Global, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
-    PathPromptOptions, Render, SharedString, Styled as _, Subscription, Task, Window, div,
-    prelude::FluentBuilder as _,
+    Focusable as _, Global, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton,
+    ParentElement as _, PathPromptOptions, Render, SharedString, Styled as _, Subscription, Task,
+    Window, div, prelude::FluentBuilder as _,
 };
 use oriel_core_domain::GallerySortMode;
 use oriel_core_paths::DataRoot;
@@ -187,12 +187,16 @@ impl ViewMode {
             }),
             // Back on screen with the viewer or the reader open, View gives it the keys again,
             // so Escape and the arrows reach it: another mode may have taken them meanwhile.
+            // Leaving the screen, it pauses the viewer's video, as Electron Oriel pauses a
+            // hidden mode's media.
             cx.observe_in(shell, window, {
                 let mut shown = shell.read(cx).mode() == ModeId::View;
                 move |this, shell, window, cx| {
                     let now = shell.read(cx).mode() == ModeId::View;
                     if now && !shown {
                         this.focus_overlay(window, cx);
+                    } else if shown && !now {
+                        this.pause_video(window, cx);
                     }
                     shown = now;
                 }
@@ -873,6 +877,17 @@ impl ViewMode {
         }
     }
 
+    /// Pauses the video the viewer shows, if it plays.
+    fn pause_video(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let player = self
+            .viewer
+            .as_ref()
+            .and_then(|viewer| viewer.read(cx).player().cloned());
+        if let Some(player) = player {
+            player.update(cx, |player, cx| player.pause(window, cx));
+        }
+    }
+
     /// Opens the viewer on item `ix` of the gallery's media.
     pub fn open_viewer(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         let entries = self.gallery.read(cx).media().clone();
@@ -1057,7 +1072,18 @@ impl Render for ViewMode {
                 if let Some(path) = paths.paths().first() {
                     this.open_path(path.clone(), window, cx);
                 }
-            }));
+            }))
+            // Escape closes the sort menu, as `GalleryToolbar` listens for it while the menu is
+            // open; the gallery's own keys have no Escape for it to shadow.
+            .when(self.sort_menu_open, |this| {
+                this.on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                    if event.keystroke.key == "escape" {
+                        this.sort_menu_open = false;
+                        cx.stop_propagation();
+                        cx.notify();
+                    }
+                }))
+            });
         if let Some(viewer) = &self.viewer {
             return commands.child(viewer.clone()).into_any_element();
         }

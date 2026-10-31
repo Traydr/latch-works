@@ -102,6 +102,16 @@ impl ViewMode {
                     .ghost()
                     .icon(Icon::new(IconName::ArrowUpDown))
                     .label(sort_label)
+                    // The menu opens upward, so the chevron points up, and down while it is open.
+                    .child(
+                        Icon::new(if self.sort_menu_open {
+                            IconName::ChevronDown
+                        } else {
+                            IconName::ChevronUp
+                        })
+                        .size(px(14.))
+                        .text_color(theme.muted_foreground),
+                    )
                     .tooltip("Sort")
                     .selected(self.sort_menu_open)
                     .on_click(cx.listener(|this, _, _, cx| {

@@ -341,6 +341,15 @@ impl CapsulePlayer {
         self.command(window, cx, AnyPlayer::toggle_playback);
     }
 
+    /// Pauses the video, as Electron Oriel pauses a hidden mode's media; it stays paused when
+    /// the mode shows again.
+    pub fn pause(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.end_hold(window, cx);
+        if self.is_playing() {
+            self.command(window, cx, AnyPlayer::pause);
+        }
+    }
+
     pub fn skip_back(&mut self, _: &SkipBack, window: &mut Window, cx: &mut Context<Self>) {
         self.skip(-SKIP_SECONDS, window, cx);
     }

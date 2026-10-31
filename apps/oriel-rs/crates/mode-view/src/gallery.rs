@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui_kit::assets::IconName;
-use gpui_kit::component::{ActiveTheme as _, Icon};
+use gpui_kit::component::{ActiveTheme as _, Icon, tooltip::Tooltip};
 use gpui_kit::{
     App, AppContext as _, Bounds, ClickEvent, Context, DispatchPhase, ElementId, Entity,
     EventEmitter, FocusHandle, Focusable, Hitbox, HitboxBehavior, InteractiveElement as _,
@@ -73,7 +73,7 @@ actions!(
         SelectDown,
         /// Opens the selected tile (Return or F).
         ActivateSelected,
-        /// Opens the selected folder (⇧S).
+        /// Opens the selected folder, or the first one listed when a folder is not selected (⇧S).
         OpenSelectedFolder,
         /// The parent folder (⇧W).
         OpenParentFolder,
@@ -85,17 +85,23 @@ actions!(
 );
 
 /// The gallery's keys, as `hotkeys.ts` binds them. They reach the gallery only while it has
-/// focus, so never while the viewer, the reader or another mode shows.
+/// focus, so never while the viewer, the reader or another mode shows. The arrows move with ⇧
+/// held too, as Electron Oriel's handler ignores it for them; ⇧ with A, D, W and S steps between
+/// folders instead.
 pub(crate) fn bind_keys(cx: &mut App) {
     let context = Some(KEY_CONTEXT);
     cx.bind_keys([
         KeyBinding::new("left", SelectLeft, context),
+        KeyBinding::new("shift-left", SelectLeft, context),
         KeyBinding::new("a", SelectLeft, context),
         KeyBinding::new("right", SelectRight, context),
+        KeyBinding::new("shift-right", SelectRight, context),
         KeyBinding::new("d", SelectRight, context),
         KeyBinding::new("up", SelectUp, context),
+        KeyBinding::new("shift-up", SelectUp, context),
         KeyBinding::new("w", SelectUp, context),
         KeyBinding::new("down", SelectDown, context),
+        KeyBinding::new("shift-down", SelectDown, context),
         KeyBinding::new("s", SelectDown, context),
         KeyBinding::new("enter", ActivateSelected, context),
         KeyBinding::new("f", ActivateSelected, context),
@@ -684,14 +690,27 @@ impl Gallery {
         cx.notify();
     }
 
-    /// Moves the selection by `delta` tiles, clamped to the ends.
+    /// Moves the selection by `delta` tiles, wrapping past either end as
+    /// `useGalleryKeyboardNavigation`'s `wrapIndex` does: → on the last tile selects the first,
+    /// and ↓ on the last row lands as far into the list as it went past the end.
     fn move_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
         if self.tiles.is_empty() {
             return;
         }
         let current = self.selected_index().unwrap_or(0) as isize;
-        let next = (current + delta).clamp(0, self.tiles.len() as isize - 1) as usize;
+        let next = (current + delta).rem_euclid(self.tiles.len() as isize) as usize;
         self.select_position(next, cx);
+    }
+
+    /// ⇧S: the selected folder, else the first folder listed, if there is one.
+    fn folder_to_open(&self) -> Option<usize> {
+        self.selected_index()
+            .filter(|position| matches!(self.tiles.get(*position), Some(Tile::Folder { .. })))
+            .or_else(|| {
+                self.tiles
+                    .iter()
+                    .position(|tile| matches!(tile, Tile::Folder { .. }))
+            })
     }
 
     fn activate(&mut self, position: usize, cx: &mut Context<Self>) {
@@ -896,7 +915,9 @@ impl Gallery {
             }));
 
         let card = match tile {
-            Tile::Folder { name, .. } => card
+            // A folder's tile names its path, and a comic's its folder, under the pointer.
+            Tile::Folder { name, path, .. } => card
+                .tooltip(path_tooltip(path))
                 .flex()
                 .flex_col()
                 .justify_between()
@@ -933,6 +954,7 @@ impl Gallery {
                         .child(name.clone()),
                 ),
             Tile::Comic { comic, .. } => card
+                .tooltip(path_tooltip(comic.folder_path()))
                 .bg(theme.muted)
                 .when_some(picture, |card, (path, picture)| {
                     card.child(self.picture(path, picture))
@@ -984,6 +1006,12 @@ struct Autoscroll {
     started: Option<Instant>,
     frames: Vec<Instant>,
     finished: bool,
+}
+
+/// A tooltip with a folder's whole path (`title={entry.path}`), built only when it shows.
+fn path_tooltip(path: &Path) -> impl Fn(&mut Window, &mut App) -> gpui_kit::AnyView + 'static {
+    let text = SharedString::from(path.display().to_string());
+    move |window, cx| Tooltip::new(text.clone()).build(window, cx)
 }
 
 /// The badge on a video's tile. It sits on the picture rather than on a themed surface, so it is
@@ -1168,9 +1196,7 @@ impl Render for Gallery {
                 }
             }))
             .on_action(cx.listener(|this, _: &OpenSelectedFolder, _, cx| {
-                if let Some(position) = this.selected_index()
-                    && matches!(this.tiles.get(position), Some(Tile::Folder { .. }))
-                {
+                if let Some(position) = this.folder_to_open() {
                     this.activate(position, cx);
                 }
             }))

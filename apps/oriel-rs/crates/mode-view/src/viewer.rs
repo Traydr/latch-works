@@ -98,6 +98,29 @@ pub(crate) fn bind_keys(cx: &mut App) {
     cx.bind_keys(player::key_bindings(KEY_CONTEXT));
 }
 
+/// Calls `reveal` on the entity whenever a key is pressed while focus is inside it, before the key
+/// does anything else, as `useViewerKeyboardControls` and the reader's key listener reveal the
+/// controls first. A key listener would miss the keys bound to actions, which GPUI hands to the
+/// action alone.
+pub(crate) fn on_any_key<T: Focusable + 'static>(
+    cx: &mut Context<T>,
+    reveal: fn(&mut T, &mut Window, &mut Context<T>),
+) -> Subscription {
+    let entity = cx.entity().downgrade();
+    cx.intercept_keystrokes(move |_, window, cx| {
+        let Some(entity) = entity.upgrade() else {
+            return;
+        };
+        if entity
+            .read(cx)
+            .focus_handle(cx)
+            .contains_focused(window, cx)
+        {
+            entity.update(cx, |this, cx| reveal(this, window, cx));
+        }
+    })
+}
+
 /// Neighbours decoded ahead: one behind and two ahead, so stepping on in either direction finds
 /// its still ready, and at most four screen-sized stills are held.
 const BEHIND: usize = 1;
@@ -150,6 +173,8 @@ pub struct Viewer {
     /// When the last step was asked for, until its still is drawn.
     step_started: Option<Instant>,
     step_times: Vec<Duration>,
+    /// Every key brings the controls back, the bound ones too.
+    _keys: Subscription,
     _release: Subscription,
 }
 
@@ -197,6 +222,7 @@ impl Viewer {
             _idle: None,
             step_started: None,
             step_times: Vec::new(),
+            _keys: on_any_key(cx, Self::reveal_chrome),
             // The decoded stills are in GPUI's sprite atlas until released there; dropping the
             // last handle alone would leave their textures behind.
             _release: cx.on_release(|viewer, cx| {
@@ -664,8 +690,6 @@ impl Render for Viewer {
                     player.on_key_up(event, window, cx);
                 });
             }))
-            // Any key brings the controls back, as `useViewerKeyboardControls` does first.
-            .capture_key_down(cx.listener(|this, _, window, cx| this.reveal_chrome(window, cx)))
             .relative()
             .size_full()
             .bg(gpui_kit::black())
