@@ -1,13 +1,13 @@
-//! Duplicates (`views/DuplicatesView.tsx`): the queue of sets on the left (Similar, Variants,
-//! Identical, and the ones marked Not duplicates), the set on the stage (similar versions as the
-//! version grid with playing video tiles, identical copies as the copy list), the loupe, and the
-//! decision bar.
+//! Duplicates (`views/DuplicatesView.tsx`): the queue of sets on the left (Similar, Variants and
+//! Identical), the set on the stage (similar versions as the version grid with playing video
+//! tiles, identical copies as the copy list), the loupe, and the decision bar.
 //!
 //! Return keeps the suggestion and moves on; 1–9 keep only that version; ⇧1–9 keep it as well;
-//! N marks the set as not duplicates; S skips; ↑ ↓ (J K) move through the queue and ← → (H L)
-//! through the versions; Space or C looks closer, Z shows actual size, M turns sound on or off,
-//! P prefers the version's folder, ⌘Y shows it in Quick Look and ⇧⌘R in Finder. Each decision
-//! says what it did in a toast with its own Undo.
+//! N keeps every version and marks the set as not duplicates, which only its Undo (the toast's,
+//! or ⌘Z) brings back, as the owner left out Electron Oriel's list of such sets; S skips; ↑ ↓
+//! (J K) move through the queue and ← → (H L) through the versions; Space or C looks closer, Z
+//! shows actual size, M turns sound on or off, P prefers the version's folder, ⌘Y shows it in
+//! Quick Look and ⇧⌘R in Finder. Each decision says what it did in a toast with its own Undo.
 
 pub mod model;
 mod video;
@@ -23,14 +23,14 @@ use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::kbd::Kbd;
 use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::popover::Popover;
-use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui_kit::{
     Anchor, AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable, FontWeight,
     Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, Keystroke, MouseButton, ObjectFit,
-    ParentElement as _, Render, Role, ScrollHandle, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, TestSupportExt as _, UniformListScrollHandle, WeakEntity, Window,
-    div, prelude::FluentBuilder as _, px, rems, uniform_list,
+    ParentElement as _, Pixels, Render, Role, ScrollHandle, SharedString,
+    StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription,
+    TestSupportExt as _, UniformListScrollHandle, WeakEntity, Window, div, img,
+    prelude::FluentBuilder as _, px, rems, uniform_list,
 };
 use oriel_core_tidy::contract::{
     DuplicateKind, DuplicateScope, DuplicateSet, DuplicateSetPage, DuplicateSetRequest, FileId,
@@ -46,13 +46,13 @@ use crate::loaded::Loaded;
 use crate::pages::TidyPage;
 use crate::quick_look::{QUICK_LOOK_LABEL, quick_look};
 use crate::state::TidyState;
-use crate::thumbs::{self, Thumbs};
+use crate::thumbs::{self, Thumb, Thumbs};
 use crate::widgets;
 
 pub use model::SetRow;
 use model::{
     Lane, Standing, copy_of_number, decision_label, facts_of, files_of, freed_bytes, has_video,
-    holding_summary, keep_every_label, keeper_of, kept_ids, reason_of, removal_of, rows_of,
+    keep_every_label, keeper_of, kept_ids, reason_of, removal_of, rows_of,
 };
 use video::TileVideo;
 
@@ -67,8 +67,13 @@ const FITS: usize = 6;
 
 /// The height of a line of versions once the grid scrolls, which the grid's own arithmetic
 /// (`lines_to_draw`) needs in pixels. The space between lines, above the first and below the
-/// last is a rem (`gap_4`, `pt_4`, `pb_4`).
-const LINE: f32 = 300.;
+/// last is a rem (`gap_4`, `pt_4`, `pb_4`). It holds the tallest facts a tile shows (a video's
+/// lanes, its name and a note: about 210 px) above a picture of [`PICTURE_LEAST`].
+const LINE: f32 = 320.;
+
+/// The least height of a version's picture, in rems: a stage too short to give every tile that
+/// much over its facts scrolls, rather than letting the facts cover the picture.
+const PICTURE_LEAST: f32 = 6.;
 
 /// The loupe's surround: always this near-black, with light text, so a picture is judged on a
 /// neutral ground in either theme; and the amber its losses read in on it.
@@ -104,7 +109,6 @@ pub struct DuplicatesPage {
     focus: FocusHandle,
     /// The tab the owner chose; `None` until the first answer picks one.
     chosen_scope: Option<DuplicateScope>,
-    dismissed_mode: bool,
     queue: Loaded<Queue>,
     wanted: usize,
     active_index: usize,
@@ -139,7 +143,6 @@ pub struct DuplicatesPage {
         Option<RootId>,
         u64,
         Option<DuplicateScope>,
-        bool,
         Option<SimilarityLevel>,
     ),
     queue_scroll: UniformListScrollHandle,
@@ -157,7 +160,6 @@ impl DuplicatesPage {
             thumbs: thumbs.clone(),
             focus: cx.focus_handle(),
             chosen_scope: None,
-            dismissed_mode: false,
             queue: Loaded::default(),
             wanted: PAGE,
             active_index: 0,
@@ -180,7 +182,7 @@ impl DuplicatesPage {
             active_key: None,
             video: None,
             grid_scroll: None,
-            seen: (None, 0, None, false, None),
+            seen: (None, 0, None, None),
             queue_scroll: UniformListScrollHandle::new(),
             _subscriptions: subscriptions,
         }
@@ -202,10 +204,6 @@ impl DuplicatesPage {
             Some(scope) => scope,
             None => DuplicateScope::Similar,
         }
-    }
-
-    pub fn is_dismissed_mode(&self) -> bool {
-        self.dismissed_mode
     }
 
     /// The counts the queue's tabs show, once read.
@@ -264,9 +262,7 @@ impl DuplicatesPage {
     /// The decision button's label.
     pub fn decision(&self) -> Option<String> {
         let set = self.active()?;
-        Some(if self.dismissed_mode {
-            "Restore".into()
-        } else if self.looking {
+        Some(if self.looking {
             format!("Keep {}", self.focus_row() + 1)
         } else {
             decision_label(&rows_of(set), &self.kept())
@@ -316,7 +312,6 @@ impl DuplicatesPage {
             state.root_id(),
             state.catalog_version(),
             Some(self.scope(cx)),
-            self.dismissed_mode,
             level,
         );
         if visible && key != self.seen {
@@ -348,7 +343,7 @@ impl DuplicatesPage {
                 .settings()
                 .map_or(SimilarityLevel::Balanced, |settings| settings.similarity),
             scope: self.scope(cx),
-            dismissed: self.dismissed_mode,
+            dismissed: false,
         };
         let answer = engine.duplicate_sets(request);
         self.queue.load_then(
@@ -416,14 +411,6 @@ impl DuplicatesPage {
 
     pub fn change_scope(&mut self, scope: DuplicateScope, cx: &mut Context<Self>) {
         self.chosen_scope = Some(scope);
-        self.active_index = 0;
-        self.looking = false;
-        self.wanted = PAGE;
-        self.sync(cx);
-    }
-
-    pub fn show_dismissed(&mut self, dismissed: bool, cx: &mut Context<Self>) {
-        self.dismissed_mode = dismissed;
         self.active_index = 0;
         self.looking = false;
         self.wanted = PAGE;
@@ -583,8 +570,8 @@ impl DuplicatesPage {
         cx.notify();
     }
 
-    /// N, Keep both or Keep all: keeps every version and moves the set to Not duplicates, with
-    /// Undo.
+    /// N, Keep both or Keep all: keeps every version and marks the set as not duplicates, so it
+    /// leaves review. Its Undo, in the toast or on ⌘Z, brings it back; nothing else lists it.
     fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(set) = self.active().cloned() else {
             return;
@@ -622,9 +609,14 @@ impl DuplicatesPage {
                         state.update(cx, |state, _| state.push_undo(move |_, _, cx| restore(cx)))
                     };
                     let undo_state = state.clone();
+                    let message = if set.kind == DuplicateKind::Exact {
+                        "Kept every copy"
+                    } else {
+                        "Marked as not duplicates"
+                    };
                     crate::widgets::show_toast(
                         window,
-                        Toast::done("Moved to Not duplicates").action("Undo", move |_, cx| {
+                        Toast::done(message).action("Undo", move |_, cx| {
                             undo_state.update(cx, |state, _| state.drop_undo(undo));
                             restore(cx);
                         }),
@@ -649,50 +641,11 @@ impl DuplicatesPage {
         .detach();
     }
 
-    /// Return in Not duplicates: the set goes back to review.
-    fn restore_dismissed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(set) = self.active().cloned() else {
-            return;
-        };
-        let (Some(engine), Some(dismissal_id)) =
-            (self.state.read(cx).engine().cloned(), set.dismissal_id)
-        else {
-            return;
-        };
-        self.hide(&set.key, u64::MAX);
-        self.follow_active(cx);
-        let restored = engine.restore_duplicate_set(dismissal_id);
-        cx.spawn_in(window, async move |this, cx| {
-            let restored = restored.await;
-            this.update_in(cx, |this, window, cx| match restored {
-                Ok(()) => {
-                    let version = this.state.read(cx).catalog_version();
-                    this.hide(&set.key, version);
-                    this.state.update(cx, |state, cx| state.changed(cx));
-                }
-                Err(error) => {
-                    this.unhide(&set.key, cx);
-                    crate::widgets::show_toast(
-                        window,
-                        Toast::error("Couldn't restore the set").detail(format!("{error:#}")),
-                        cx,
-                    );
-                }
-            })
-            .ok();
-        })
-        .detach();
-    }
-
     /// Return: the keepers, or "keep every version" when all are kept.
     pub fn decide(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(set) = self.active().cloned() else {
             return;
         };
-        if self.dismissed_mode {
-            self.restore_dismissed(window, cx);
-            return;
-        }
         let kept = self.kept();
         if removal_of(&set, &kept).is_empty() {
             self.dismiss(window, cx);
@@ -707,9 +660,7 @@ impl DuplicatesPage {
         else {
             return;
         };
-        if !self.dismissed_mode {
-            self.resolve_with(set, vec![row.file.id], window, cx);
-        }
+        self.resolve_with(set, vec![row.file.id], window, cx);
     }
 
     fn click_keep(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -724,9 +675,6 @@ impl DuplicatesPage {
         else {
             return;
         };
-        if self.dismissed_mode {
-            return;
-        }
         let kept = self.kept();
         let next: Vec<FileId> = if kept.contains(&row.file.id) {
             kept.into_iter().filter(|id| *id != row.file.id).collect()
@@ -944,7 +892,7 @@ impl DuplicatesPage {
             return;
         }
         if let Some(digit) = digit {
-            if !self.dismissed_mode && digit <= rows.len() {
+            if digit <= rows.len() {
                 if modifiers.shift {
                     self.toggle_keep(digit - 1, cx);
                     self.focused_row = digit - 1;
@@ -978,15 +926,9 @@ impl DuplicatesPage {
                 }
             }
             "s" => self.skip(cx),
-            "n" => {
-                if !self.dismissed_mode {
-                    self.dismiss(window, cx);
-                }
-            }
+            "n" => self.dismiss(window, cx),
             "p" => {
-                if let Some(row) = rows.get(self.target())
-                    && !self.dismissed_mode
-                {
+                if let Some(row) = rows.get(self.target()) {
                     crate::settings::prefer_folder(&self.state, row.file.dir.clone(), window, cx);
                 }
             }
@@ -1034,69 +976,14 @@ impl DuplicatesPage {
 
     // Drawing.
 
-    /// What the analysis has left to do for this page, and what that means: fingerprints first,
-    /// then, with Spot variants, the similar pictures still to compare. While the comparing runs,
-    /// the job counts what is left, as Electron Oriel's note does, since the sets are rebuilt
-    /// only when it ends.
-    fn analysis_note(&self, cx: &App) -> Option<(String, &'static str)> {
-        let page = self.page()?;
-        if page.fingerprinted < page.fingerprintable {
-            return Some((
-                format!(
-                    "Checking {} of {}",
-                    format::count(page.fingerprinted),
-                    format::count(page.fingerprintable)
-                ),
-                "Similar versions appear as each picture and video is checked",
-            ));
-        }
-        if page.compared < page.comparable {
-            let running = self.state.read(cx).analysis().and_then(|analysis| {
-                let progress = analysis.job.read(cx).progress();
-                (progress.phase().starts_with("Comparing") && progress.total() > 0)
-                    .then(|| (progress.done() as i64, progress.total() as i64))
-            });
-            let (done, total) = running.unwrap_or((page.compared, page.comparable));
-            return Some((
-                format!(
-                    "Comparing {} of {}",
-                    format::count(done),
-                    format::count(total)
-                ),
-                "Spot variants compares each similar picture with the rest of its set",
-            ));
-        }
-        None
-    }
-
+    /// The page's title and what counts as a duplicate. How far the analysis has got (checking
+    /// fingerprints, comparing similar pictures) is in the activity panel with the job's other
+    /// work.
     fn render_top_bar(&self, cx: &mut Context<Self>) -> TopBar {
-        let state = self.state.read(cx);
-        let theme = cx.theme();
-        let analysing = state.analysis().is_some() || state.scan().is_some();
-        let shell = state.shell.clone();
-        let note = self.analysis_note(cx);
+        let shell = self.state.read(cx).shell.clone();
         // What counts as similar matters only where similar versions are shown.
-        let matching = !self.dismissed_mode && self.scope(cx) != DuplicateScope::Exact;
+        let matching = self.scope(cx) != DuplicateScope::Exact;
         TopBar::new(&shell, "Duplicates")
-            .when_some(note, |bar, (note, tooltip)| {
-                bar.trailing(
-                    div()
-                        .id("duplicates-analysis-note")
-                        .test_support()
-                        .aria_label(SharedString::from(note.clone()))
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap_2()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .when(analysing, |this| this.child(Spinner::new().small()))
-                        .child(note)
-                        .tooltip(move |window, cx| {
-                            gpui_kit::component::tooltip::Tooltip::new(tooltip).build(window, cx)
-                        }),
-                )
-            })
             .when(matching, |bar| bar.trailing(self.render_matching(cx)))
     }
 
@@ -1143,8 +1030,7 @@ impl DuplicatesPage {
     }
 
     /// The queue's scopes as rows, in the pattern of the sidebar's: Similar, Variants (with Spot
-    /// variants on), Identical, and apart from them, the list of sets marked Not duplicates.
-    /// A row with nothing in it is dimmed, but stays where it is.
+    /// variants on) and Identical. A row with nothing in it is dimmed, but stays where it is.
     fn render_scope_list(&self, cx: &mut Context<Self>) -> AnyElement {
         let counts = self.page().map(|page| page.counts);
         let scope = self.scope(cx);
@@ -1169,67 +1055,39 @@ impl DuplicatesPage {
             counts.map(|counts| counts.exact),
         ));
         let this = cx.entity().downgrade();
-        let theme = cx.theme();
-        let (muted, border) = (theme.muted_foreground, theme.border);
-        let row = |id: SharedString,
-                   icon: IconName,
-                   label: &'static str,
-                   count: Option<i64>,
-                   current: bool,
-                   on_click: Box<dyn Fn(&mut App)>| {
+        let muted = cx.theme().muted_foreground;
+        let rows = scopes.into_iter().map(|(value, label, icon, count)| {
+            let this = this.clone();
+            let current = value == scope;
             let shown = count.map(format::count);
             div()
                 .when(count == Some(0) && !current, |this| this.opacity(0.5))
                 .child(
-                    NavItem::new(id, Icon::new(icon), label)
-                        .accessibility_label(match &shown {
-                            Some(shown) => format!("{label} {shown}"),
-                            None => label.to_string(),
-                        })
-                        .current(current)
-                        .when_some(shown, |item, shown| {
-                            item.trailing(
-                                div()
-                                    .flex_shrink_0()
-                                    .text_xs()
-                                    .text_color(muted)
-                                    .child(shown),
-                            )
-                        })
-                        .on_click(move |_, _, cx| on_click(cx)),
-                )
-        };
-        let rows: Vec<_> = scopes
-            .into_iter()
-            .map(|(value, label, icon, count)| {
-                let this = this.clone();
-                row(
-                    SharedString::from(format!("scope-{value}")),
-                    icon,
-                    label,
-                    count,
-                    !self.dismissed_mode && value == scope,
-                    Box::new(move |cx| {
-                        this.update(cx, |this, cx| {
-                            this.dismissed_mode = false;
-                            this.change_scope(value, cx);
-                        })
-                        .ok();
+                    NavItem::new(
+                        SharedString::from(format!("scope-{value}")),
+                        Icon::new(icon),
+                        label,
+                    )
+                    .accessibility_label(match &shown {
+                        Some(shown) => format!("{label} {shown}"),
+                        None => label.to_string(),
+                    })
+                    .current(current)
+                    .when_some(shown, |item, shown| {
+                        item.trailing(
+                            div()
+                                .flex_shrink_0()
+                                .text_xs()
+                                .text_color(muted)
+                                .child(shown),
+                        )
+                    })
+                    .on_click(move |_, _, cx| {
+                        this.update(cx, |this, cx| this.change_scope(value, cx))
+                            .ok();
                     }),
                 )
-            })
-            .collect();
-        let dismissed = row(
-            "scope-dismissed".into(),
-            IconName::EyeOff,
-            "Not duplicates",
-            counts.map(|counts| counts.dismissed),
-            self.dismissed_mode,
-            Box::new(move |cx| {
-                this.update(cx, |this, cx| this.show_dismissed(true, cx))
-                    .ok();
-            }),
-        );
+        });
         div()
             .id("duplicates-scopes")
             .test_support()
@@ -1239,8 +1097,6 @@ impl DuplicatesPage {
             .flex_col()
             .gap_0p5()
             .children(rows)
-            .child(div().mx_2().my_1p5().h(px(1.)).bg(border))
-            .child(dismissed)
             .into_any_element()
     }
 
@@ -1297,8 +1153,7 @@ impl DuplicatesPage {
         let kept = self.kept();
         let overridden = self.overrides.contains_key(&set.key);
         let reason = reason_of(&set, &rows, &kept, overridden);
-        let line = (!self.dismissed_mode && !reason.text.is_empty())
-            .then(|| render_decision_line(&reason, cx));
+        let line = (!reason.text.is_empty()).then(|| render_decision_line(&reason, cx));
         let body = if set.kind == DuplicateKind::Exact {
             self.render_copies(&set, &rows, &kept, &reason.text, cx)
         } else {
@@ -1431,7 +1286,7 @@ impl DuplicatesPage {
                     .flex()
                     .flex_row()
                     .gap_4()
-                    .when(!scrolls, |this| this.flex_1().min_h_0())
+                    .when(!scrolls, |this| this.flex_1())
                     .when(scrolls, |this| this.h(px(LINE)).flex_shrink_0())
                     .children(tiles)
                     .children((0..missing).map(|_| div().flex_1()))
@@ -1462,7 +1317,8 @@ impl DuplicatesPage {
             .px_5()
             .pt_4()
             .pb_4()
-            .when(scrolls, |this| this.overflow_y_scroll())
+            // A few versions fill the stage; on a stage too short for their least, they scroll.
+            .overflow_y_scroll()
             .when_some(scroll, |this, scroll| this.track_scroll(&scroll))
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
                 if !*hovered {
@@ -1492,13 +1348,15 @@ impl DuplicatesPage {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = cx.theme();
-        let (primary, foreground, border, muted, ground, radius, inner_radius, card) = (
+        // The picture sits 6 px in from the tile's edge (its 2 px ring and 4 px padding), so
+        // the tile's corners are the theme's radius plus that, and the picture's the radius
+        // itself: concentric at the default 12 and 6 px.
+        let (primary, foreground, border, muted, radius, inner_radius, card) = (
             theme.primary,
             theme.foreground,
             theme.border,
             theme.muted_foreground,
-            theme.muted,
-            theme.radius_lg,
+            theme.radius + px(6.),
             theme.radius,
             theme.group_box,
         );
@@ -1506,7 +1364,6 @@ impl DuplicatesPage {
         let number = index + 1;
         let is_kept = kept.contains(&file.id);
         let suggested = reason.close_call && is_kept && !self.overrides.contains_key(&set.key);
-        let read_only = self.dismissed_mode;
         let lanes = facts_of(&file, keeper, layout.video);
         let copy_of = copy_of_number(set, index);
         let notes = tile_notes(set, row, index);
@@ -1522,7 +1379,7 @@ impl DuplicatesPage {
             .is_some_and(|video| video.read(cx).is_playing());
         let picture: AnyElement = match &playing {
             Some(video) => video.clone().into_any_element(),
-            None => thumbs::picture(&self.thumbs, &file, 768, ObjectFit::Contain, cx),
+            None => rounded_picture(&self.thumbs, &file, 768, inner_radius, cx),
         };
         let ring: Hsla = if is_kept {
             if suggested {
@@ -1535,14 +1392,10 @@ impl DuplicatesPage {
         } else {
             border
         };
-        let tooltip = if read_only {
-            file.rel_path.clone()
-        } else {
-            format!(
-                "{}\nClick to keep only this one and go on  {number}",
-                file.rel_path
-            )
-        };
+        let tooltip = format!(
+            "{}\nClick to keep only this one and go on  {number}",
+            file.rel_path
+        );
         let play_file = file.clone();
         let menu = VersionMenu {
             page: cx.entity().downgrade(),
@@ -1550,19 +1403,16 @@ impl DuplicatesPage {
             index,
             file: file.clone(),
             similar: set.kind == DuplicateKind::Similar,
-            read_only,
         };
         let context_menu = menu.clone();
         // What deciding does to this version: the icon, its colour, the words, and whether it
         // stays (which reads stronger).
-        let fate: Option<(IconName, Hsla, &'static str, bool)> = if read_only {
-            None
-        } else if suggested {
-            Some((IconName::Check, foreground, "Suggested", true))
+        let (fate_icon, fate_color, fate, strong) = if suggested {
+            (IconName::Check, foreground, "Suggested", true)
         } else if is_kept {
-            Some((IconName::Check, foreground, "Keep", true))
+            (IconName::Check, foreground, "Keep", true)
         } else {
-            Some((IconName::Archive, muted, "Goes to holding", false))
+            (IconName::Archive, muted, "Goes to holding", false)
         };
         let tile = div()
             .id(("version", file.id as u64))
@@ -1582,7 +1432,6 @@ impl DuplicatesPage {
             .flex_col()
             .flex_1()
             .min_w_0()
-            .min_h_0()
             .p_1()
             .rounded(radius)
             .border_2()
@@ -1598,7 +1447,7 @@ impl DuplicatesPage {
             .on_click(
                 cx.listener(move |this, event: &gpui_kit::ClickEvent, window, cx| {
                     // A double-click's second click must not decide the next set, now under it.
-                    if this.dismissed_mode || event.click_count() > 1 {
+                    if event.click_count() > 1 {
                         return;
                     }
                     if event.modifiers().shift {
@@ -1609,13 +1458,15 @@ impl DuplicatesPage {
                 }),
             )
             .child(
+                // The picture's place takes what the facts leave, but never less than its
+                // least, so the facts below never cover it: a short window scrolls the grid
+                // instead. The picture is fitted and rounded on its own, so the place shows no
+                // ground of its own around it.
                 div()
                     .relative()
                     .flex_1()
-                    .min_h_0()
-                    .rounded(inner_radius)
+                    .min_h(rems(PICTURE_LEAST))
                     .overflow_hidden()
-                    .bg(ground)
                     .child(picture)
                     .child(
                         div()
@@ -1626,26 +1477,24 @@ impl DuplicatesPage {
                             .flex_row()
                             .items_center()
                             .gap_1p5()
-                            .when(!read_only, |this| {
-                                this.child(
-                                    Checkbox::new(("keep-version", file.id as u64))
-                                        .checked(is_kept)
-                                        .accessibility_label(SharedString::from(format!(
-                                            "Keep version {number}"
-                                        )))
-                                        .tooltip(if !is_kept {
-                                            format!("Keep this one as well  ⇧{number}")
-                                        } else if several {
-                                            format!("Don't keep this one  ⇧{number}")
-                                        } else {
-                                            "Kept. Check another to keep more than one".into()
-                                        })
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            cx.stop_propagation();
-                                            this.toggle_keep(index, cx);
-                                        })),
-                                )
-                            })
+                            .child(
+                                Checkbox::new(("keep-version", file.id as u64))
+                                    .checked(is_kept)
+                                    .accessibility_label(SharedString::from(format!(
+                                        "Keep version {number}"
+                                    )))
+                                    .tooltip(if !is_kept {
+                                        format!("Keep this one as well  ⇧{number}")
+                                    } else if several {
+                                        format!("Don't keep this one  ⇧{number}")
+                                    } else {
+                                        "Kept. Check another to keep more than one".into()
+                                    })
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.toggle_keep(index, cx);
+                                    })),
+                            )
                             .child(number_badge(number, cx)),
                     )
                     .child(
@@ -1696,20 +1545,19 @@ impl DuplicatesPage {
                     .px_2()
                     .pt_2()
                     .pb_1p5()
-                    .when_some(fate, |this, (icon, color, fate, strong)| {
-                        this.child(
-                            div()
-                                .flex()
-                                .flex_row()
-                                .items_center()
-                                .gap_1p5()
-                                .text_sm()
-                                .when(strong, |this| this.font_weight(FontWeight::MEDIUM))
-                                .when(!strong, |this| this.text_color(muted))
-                                .child(Icon::new(icon).small().text_color(color))
-                                .child(fate),
-                        )
-                    })
+                    .flex_shrink_0()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_1p5()
+                            .text_sm()
+                            .when(strong, |this| this.font_weight(FontWeight::MEDIUM))
+                            .when(!strong, |this| this.text_color(muted))
+                            .child(Icon::new(fate_icon).small().text_color(fate_color))
+                            .child(fate),
+                    )
                     .child(
                         // Two lines for the folder, always, so pictures keep one height.
                         div()
@@ -1762,7 +1610,6 @@ impl DuplicatesPage {
         let Some(first) = rows.first().map(|row| row.file.clone()) else {
             return div().flex_1().into_any_element();
         };
-        let read_only = self.dismissed_mode;
         let focus = self.keyboard_focus.then(|| self.focus_row());
         let same_name = rows.iter().all(|row| row.file.name == first.name);
         // When two copies share a minute, "the oldest" needs the seconds to be seen to be true.
@@ -1782,19 +1629,13 @@ impl DuplicatesPage {
             .as_ref()
             .filter(|(id, _)| *id == first.id)
             .map(|(_, video)| video.clone());
+        let radius = cx.theme().radius;
         let picture: AnyElement = match playing {
             Some(video) => video.into_any_element(),
-            None => thumbs::picture(&self.thumbs, &first, 1024, ObjectFit::Contain, cx),
+            None => rounded_picture(&self.thumbs, &first, 1024, radius, cx),
         };
         let theme = cx.theme();
-        let (border, accent, muted, radius, radius_lg, ground) = (
-            theme.border,
-            theme.accent,
-            theme.muted_foreground,
-            theme.radius,
-            theme.radius_lg,
-            theme.muted,
-        );
+        let (border, accent, muted) = (theme.border, theme.accent, theme.muted_foreground);
         let play = (shows && first.kind == FileKind::Video && self.video.is_none()).then(|| {
             let file = first.clone();
             div().absolute().bottom_2().left_2().child(
@@ -1816,9 +1657,7 @@ impl DuplicatesPage {
             .min_w_80()
             .max_w(rems(32. * aspect))
             .aspect_ratio(aspect)
-            .rounded(radius_lg)
             .overflow_hidden()
-            .bg(ground)
             .child(picture)
             .children(play);
         let summary = [
@@ -1844,7 +1683,6 @@ impl DuplicatesPage {
                     index,
                     file: file.clone(),
                     similar: false,
-                    read_only,
                 };
                 let context_menu = menu.clone();
                 let place = if file.dir.is_empty() {
@@ -1899,9 +1737,8 @@ impl DuplicatesPage {
                     .py_2()
                     .when(index > 0, |this| this.border_t_1().border_color(border))
                     .when(focus == Some(index), |this| this.bg(accent))
-                    .when(!read_only, |this| {
-                        this.cursor_pointer().hover(|style| style.bg(accent))
-                    })
+                    .cursor_pointer()
+                    .hover(|style| style.bg(accent))
                     .tooltip(move |window, cx| {
                         gpui_kit::component::tooltip::Tooltip::new(row_tip.clone())
                             .build(window, cx)
@@ -1914,7 +1751,7 @@ impl DuplicatesPage {
                     }))
                     .on_click(
                         cx.listener(move |this, event: &gpui_kit::ClickEvent, window, cx| {
-                            if this.dismissed_mode || event.click_count() > 1 {
+                            if event.click_count() > 1 {
                                 return;
                             }
                             if event.modifiers().shift {
@@ -1934,7 +1771,6 @@ impl DuplicatesPage {
                             .child(
                                 Checkbox::new(("keep-version", file.id as u64))
                                     .checked(is_kept)
-                                    .disabled(read_only)
                                     .accessibility_label(SharedString::from(format!(
                                         "Keep the copy in {place}"
                                     )))
@@ -1973,16 +1809,14 @@ impl DuplicatesPage {
                             }))
                             .child(widgets::caption(note, cx).truncate()),
                     )
-                    .when(!read_only, |this| {
-                        this.child(
-                            div()
-                                .flex_shrink_0()
-                                .text_xs()
-                                .when(is_kept, |this| this.font_weight(FontWeight::MEDIUM))
-                                .when(!is_kept, |this| this.text_color(muted))
-                                .child(if is_kept { "Keep" } else { "Goes to holding" }),
-                        )
-                    })
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_xs()
+                            .when(is_kept, |this| this.font_weight(FontWeight::MEDIUM))
+                            .when(!is_kept, |this| this.text_color(muted))
+                            .child(if is_kept { "Keep" } else { "Goes to holding" }),
+                    )
                     .child(
                         // The menu's own click must not reach the row, which would keep it.
                         div()
@@ -2033,9 +1867,7 @@ impl DuplicatesPage {
                                 .text_color(muted)
                                 .child("Keep the copy in"),
                         )
-                        .when(!read_only, |this| {
-                            this.child(widgets::caption("Check more than one to keep several", cx))
-                        }),
+                        .child(widgets::caption("Check more than one to keep several", cx)),
                 )
                 .child(widgets::card(cx).overflow_hidden().children(lines));
         div()
@@ -2161,7 +1993,7 @@ impl DuplicatesPage {
                     ))
                     .into_any_element()
             }
-            None => thumbs::picture(&self.thumbs, &file, 2048, ObjectFit::Contain, cx),
+            None => rounded_picture(&self.thumbs, &file, 2048, cx.theme().radius, cx),
         };
         // The versions either side, so a flip finds its picture decoded.
         let neighbours: Vec<FileRow> = [focus.wrapping_sub(1), focus + 1]
@@ -2401,9 +2233,11 @@ impl DuplicatesPage {
             .into_any_element()
     }
 
-    /// The decision bar, docked at the foot of the stage: what the decision does on its leading
-    /// edge ("1 version goes to holding · frees 1.6 MB"), and the commands on its trailing one,
-    /// the primary last.
+    /// The decision bar, docked at the foot of the stage: the commands, centred under the
+    /// versions, a size up from the page's other buttons since every set ends here (GPUI Kit's
+    /// large button keeps the medium's height, so the bar sets the next one), and the primary
+    /// last. Each version's tile already says what happens to it, so the bar adds no
+    /// summary of its own.
     fn render_decision_bar(
         &self,
         set: &DuplicateSet,
@@ -2413,54 +2247,27 @@ impl DuplicatesPage {
     ) -> AnyElement {
         let removed = removal_of(set, kept).len();
         let focus = self.focus_row();
-        let summary = if self.dismissed_mode {
-            "You marked these as not duplicates".to_string()
-        } else if self.looking {
-            // In the loupe, the primary keeps the version on screen only.
-            let only: Vec<FileId> = rows.get(focus).map(|row| row.file.id).into_iter().collect();
-            holding_summary(set, rows, &only)
-        } else {
-            holding_summary(set, rows, kept)
-        };
         let theme = cx.theme();
         let mut bar = div()
             .id("duplicates-decision-bar")
             .flex()
             .flex_row()
             .items_center()
+            .justify_center()
             .flex_shrink_0()
             .gap_2()
             .px_5()
             .py_3()
             .border_t_1()
             .border_color(theme.border)
-            .bg(theme.background)
-            .child(
-                div()
-                    .id("duplicates-decision-summary")
-                    .test_support()
-                    .aria_label(SharedString::from(summary.clone()))
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_sm()
-                    .text_color(theme.muted_foreground)
-                    .child(summary),
-            );
-        if self.dismissed_mode {
-            return bar
-                .child(
-                    widgets::primary_action("duplicates-decide", "Restore", "↩")
-                        .tooltip("Back to the sets to review")
-                        .on_click(cx.listener(|this, _, window, cx| this.decide(window, cx))),
-                )
-                .into_any_element();
-        }
+            .bg(theme.background);
         if self.looking {
             bar = bar
                 .child(
                     Button::new("loupe-previous")
                         .ghost()
+                        .large()
+                        .size_10()
                         .icon(Icon::new(IconName::ChevronLeft))
                         .accessibility_label("Previous version")
                         .tooltip("Previous version  ←")
@@ -2470,6 +2277,8 @@ impl DuplicatesPage {
                 .child(
                     Button::new("loupe-next")
                         .ghost()
+                        .large()
+                        .size_10()
                         .icon(Icon::new(IconName::ChevronRight))
                         .accessibility_label("Next version")
                         .tooltip("Next version  →")
@@ -2480,6 +2289,8 @@ impl DuplicatesPage {
         bar = bar.child(
             Button::new("duplicates-skip")
                 .outline()
+                .large()
+                .h_10()
                 .label("Skip")
                 .tooltip("Skip for now  S")
                 .on_click(cx.listener(|this, _, _, cx| this.skip(cx))),
@@ -2488,23 +2299,30 @@ impl DuplicatesPage {
             bar = bar.child(
                 Button::new("duplicates-keep-every")
                     .outline()
+                    .large()
+                    .h_10()
                     .label(keep_every_label(rows))
-                    .tooltip("Keep every version; the set moves to Not duplicates  N")
+                    .tooltip(if set.kind == DuplicateKind::Exact {
+                        "Keep every copy  N"
+                    } else {
+                        "Keep every version: they are not duplicates  N"
+                    })
                     .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx))),
             );
         }
         let label = self.decision().unwrap_or_default();
         bar.child(
-            widgets::primary_action("duplicates-decide", label, "↩").on_click(cx.listener(
-                |this, _, window, cx| {
+            widgets::primary_action("duplicates-decide", label, "↩")
+                .large()
+                .h_10()
+                .on_click(cx.listener(|this, _, window, cx| {
                     if this.looking {
                         let focus = this.focus_row();
                         this.keep_only(focus, window, cx);
                     } else {
                         this.decide(window, cx);
                     }
-                },
-            )),
+                })),
         )
         .into_any_element()
     }
@@ -2514,28 +2332,24 @@ impl DuplicatesPage {
         let scope = self.scope(cx);
         let fingerprinting = page.is_some_and(|page| page.fingerprinted < page.fingerprintable);
         let comparing = page.is_some_and(|page| page.compared < page.comparable);
-        let title = if self.dismissed_mode {
-            "Nothing marked as not duplicates"
-        } else {
-            match scope {
-                DuplicateScope::Variants if comparing => "No variants found yet",
-                DuplicateScope::Variants => "No sets of variants",
-                DuplicateScope::Similar | DuplicateScope::All if self.freed_here > 0 => {
-                    "All similar sets done"
-                }
-                DuplicateScope::Similar | DuplicateScope::All if fingerprinting => {
-                    "No similar versions found yet"
-                }
-                DuplicateScope::Similar | DuplicateScope::All => "No similar versions",
-                DuplicateScope::Exact => "No identical copies",
+        let title = match scope {
+            DuplicateScope::Variants if comparing => "No variants found yet",
+            DuplicateScope::Variants => "No sets of variants",
+            DuplicateScope::Similar | DuplicateScope::All if self.freed_here > 0 => {
+                "All similar sets done"
             }
+            DuplicateScope::Similar | DuplicateScope::All if fingerprinting => {
+                "No similar versions found yet"
+            }
+            DuplicateScope::Similar | DuplicateScope::All => "No similar versions",
+            DuplicateScope::Exact => "No identical copies",
         };
         let body = if self.freed_here > 0 {
             Some(format!(
                 "{} moved to holding.",
                 format::bytes(self.freed_here as f64)
             ))
-        } else if fingerprinting && scope == DuplicateScope::Similar && !self.dismissed_mode {
+        } else if fingerprinting && scope == DuplicateScope::Similar {
             page.map(|page| {
                 format!(
                     "Still checking for similar versions: {} of {}.",
@@ -2543,7 +2357,7 @@ impl DuplicatesPage {
                     format::count(page.fingerprintable)
                 )
             })
-        } else if scope == DuplicateScope::Variants && !self.dismissed_mode {
+        } else if scope == DuplicateScope::Variants {
             Some(
                 "Similar sets whose pictures each differ in one area come here, since none of \
                  them is a copy."
@@ -2561,31 +2375,28 @@ impl DuplicatesPage {
             DuplicateScope::Exact => page.counts.exact,
             _ => page.counts.similar,
         });
-        let mut actions = Vec::new();
-        if !self.dismissed_mode {
+        let mut actions = vec![
+            Button::new("duplicates-back")
+                .outline()
+                .label("Back to Overview")
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.state
+                        .update(cx, |state, cx| state.go(TidyPage::Overview, cx));
+                }))
+                .into_any_element(),
+        ];
+        if other_count > 0 {
             actions.push(
-                Button::new("duplicates-back")
+                Button::new("duplicates-other")
                     .outline()
-                    .label("Back to Overview")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.state
-                            .update(cx, |state, cx| state.go(TidyPage::Overview, cx));
-                    }))
+                    .label(if other == DuplicateScope::Exact {
+                        "Show identical copies"
+                    } else {
+                        "Show similar versions"
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| this.change_scope(other, cx)))
                     .into_any_element(),
             );
-            if other_count > 0 {
-                actions.push(
-                    Button::new("duplicates-other")
-                        .outline()
-                        .label(if other == DuplicateScope::Exact {
-                            "Show identical copies"
-                        } else {
-                            "Show similar versions"
-                        })
-                        .on_click(cx.listener(move |this, _, _, cx| this.change_scope(other, cx)))
-                        .into_any_element(),
-                );
-            }
         }
         let queue = self.render_queue(false, cx);
         div()
@@ -2754,6 +2565,43 @@ fn render_decision_line(reason: &model::Reason, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
+/// A picture fitted inside its place, its own corners rounded to `radius`. GPUI clips a child to
+/// its parent's rectangle, never to its rounded corners, so a picture that reached a rounded
+/// place's edge would show square corners there; rounded itself, it sits inside the shape
+/// wherever it lands. Until it is decoded, a rounded ground holds its place.
+fn rounded_picture(
+    thumbs: &Entity<Thumbs>,
+    file: &FileRow,
+    size: u32,
+    radius: Pixels,
+    cx: &mut App,
+) -> AnyElement {
+    let thumb = thumbs.update(cx, |thumbs, cx| thumbs.get(file, size, cx));
+    let theme = cx.theme();
+    match thumb {
+        Thumb::Ready(image) => img(image)
+            .size_full()
+            .object_fit(ObjectFit::Contain)
+            .rounded(radius)
+            .into_any_element(),
+        Thumb::Pending => div()
+            .size_full()
+            .rounded(radius)
+            .bg(theme.muted)
+            .into_any_element(),
+        Thumb::Unavailable => div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(radius)
+            .bg(theme.muted)
+            .text_color(theme.muted_foreground)
+            .child(Icon::new(thumbs::kind_icon(file.kind)))
+            .into_any_element(),
+    }
+}
+
 /// A version's number on its picture, which 1–9 keep it by.
 fn number_badge(number: usize, cx: &App) -> AnyElement {
     let theme = cx.theme();
@@ -2812,8 +2660,6 @@ struct VersionMenu {
     file: FileRow,
     /// Similar versions open in the loupe; identical copies have nothing to compare.
     similar: bool,
-    /// Not duplicates only shows its sets.
-    read_only: bool,
 }
 
 impl VersionMenu {
@@ -2838,20 +2684,18 @@ impl VersionMenu {
                 .ok();
         });
         let (state, dir) = (self.state.clone(), self.file.dir.clone());
-        let prefer = (!self.read_only).then(|| {
-            menu_item("Prefer this folder", Some("p"), move |window, cx| {
-                crate::settings::prefer_folder(&state, dir.clone(), window, cx);
-            })
+        let prefer = menu_item("Prefer this folder", Some("p"), move |window, cx| {
+            crate::settings::prefer_folder(&state, dir.clone(), window, cx);
         });
         let mut menu = menu;
         if let Some(look) = look {
             menu = menu.item(look);
         }
-        menu = menu.item(quick).item(reveal).item(view);
-        if let Some(prefer) = prefer {
-            menu = menu.separator().item(prefer);
-        }
-        menu
+        menu.item(quick)
+            .item(reveal)
+            .item(view)
+            .separator()
+            .item(prefer)
     }
 }
 

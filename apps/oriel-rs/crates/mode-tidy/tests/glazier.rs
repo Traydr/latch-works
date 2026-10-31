@@ -267,8 +267,8 @@ async fn spot_variants_moves_sets_of_variants_out_of_review(cx: &mut TestAppCont
         assert!(copy_of.starts_with("Same picture as"), "{name}: {copy_of}");
     }
 
-    // The outfits wait under Variants, every version kept, until Return keeps both and moves
-    // them to Not duplicates.
+    // The outfits wait under Variants, every version kept, until Return keeps both and marks
+    // them as not duplicates.
     click(cx, &session, "scope-variants");
     settle(cx, &session).await;
     let index = set_with(cx, &session, "outfit-a.png");
@@ -280,7 +280,7 @@ async fn spot_variants_moves_sets_of_variants_out_of_review(cx: &mut TestAppCont
     settle(cx, &session).await;
     assert_eq!(
         cx.read(last_toast).as_deref(),
-        Some("Moved to Not duplicates")
+        Some("Marked as not duplicates")
     );
     assert_eq!(counts(cx).dismissed, 1);
     assert_eq!(counts(cx).variants, 1);

@@ -321,7 +321,7 @@ fn version_numbers(numbers: &[usize]) -> String {
 }
 
 /// What keeping every version is called, for either kind: "Keep both", or "Keep all". The set
-/// then moves to Not duplicates, the list; the command never takes that name.
+/// is then marked as not duplicates; the command never takes that name.
 pub fn keep_every_label(rows: &[SetRow]) -> String {
     if rows.len() == 2 {
         "Keep both".into()
@@ -342,55 +342,6 @@ pub fn decision_label(rows: &[SetRow], kept: &[FileId]) -> String {
         return keep_every_label(rows);
     }
     format!("Keep {}", version_numbers(&numbers))
-}
-
-/// Where resolving sends files: "3 versions and 2 copies go to holding · frees 120 KB"
-/// (`holdingSummary`).
-pub fn holding_summary(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId]) -> String {
-    let removed = removal_of(set, kept);
-    if removed.is_empty() {
-        return "Nothing goes to holding".into();
-    }
-    let bytes = format!("frees {}", format::bytes(freed_bytes(set, &removed) as f64));
-    if set.kind == DuplicateKind::Exact {
-        return format!(
-            "{} to holding · {bytes}",
-            if removed.len() == 1 {
-                "1 copy goes".to_string()
-            } else {
-                format!("{} copies go", removed.len())
-            }
-        );
-    }
-    let versions = rows
-        .iter()
-        .filter(|row| !kept.contains(&row.file.id))
-        .count();
-    let copies = removed.len() - versions;
-    let parts: Vec<String> = [
-        (versions > 0).then(|| {
-            if versions == 1 {
-                "1 version".to_string()
-            } else {
-                format!("{versions} versions")
-            }
-        }),
-        (copies > 0).then(|| {
-            if copies == 1 {
-                "1 copy".to_string()
-            } else {
-                format!("{copies} copies")
-            }
-        }),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
-    format!(
-        "{} {} to holding · {bytes}",
-        parts.join(" and "),
-        if removed.len() == 1 { "goes" } else { "go" }
-    )
 }
 
 /// Why the suggested version is the one to keep, naming the value that decided it.

@@ -15,7 +15,7 @@ use std::time::Duration;
 use gpui_kit::assets::IconName;
 use gpui_kit::base::slider::{SliderEvent, SliderState};
 use gpui_kit::base::{Slider, SliderIndicator, SliderTrack};
-use gpui_kit::component::Icon;
+use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
     AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, MouseButton,
     ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
@@ -269,6 +269,7 @@ impl Render for TileVideo {
         if self.video.is_ok() {
             pump_frames(self, Self::video_of, window, cx);
         }
+        let radius = cx.theme().radius;
         let (picture, controls) = match &self.video {
             Ok(video) => (video.picture(), Some(self.render_controls(video, cx))),
             Err(error) => (
@@ -283,12 +284,15 @@ impl Render for TileVideo {
                 None,
             ),
         };
+        // Its black ground takes the picture's rounded corners, so it sits inside a tile as the
+        // picture it replaces did. The frame itself is drawn square: GPUI rounds no surface.
         div()
             .relative()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
+            .rounded(radius)
             .bg(gpui_kit::black())
             .children(picture)
             .when_some(controls, |this, controls| this.child(controls))

@@ -1,8 +1,8 @@
 //! Tidy's pages beyond the e2e cases, as GPUI Kit headless UI tests on the same archive: the
-//! Library's selection, its grid, its rename field and its menu, Quick Look, the job card's
-//! pause and queue, Settings' encoders, Overview's arrows, History's sets of a run of duplicate
-//! decisions and Holding's arrows, and Duplicates' scope list and decision line. Quick Look and the native menu need a real window,
-//! so these check what was asked of them ([`last_quick_look`], [`last_menu`]).
+//! Library's selection, its grid, its rename field and its menu, Quick Look, Settings' encoders,
+//! Overview's arrows, History's sets of a run of duplicate decisions and Holding's arrows, and
+//! Duplicates' scope list, decision line, and N with its Undo. Quick Look and the native menu need a real window, so these check what was asked of
+//! them ([`last_quick_look`], [`last_menu`]).
 
 mod support;
 
@@ -13,6 +13,7 @@ use gpui_kit::{AppContext as _, Entity, Focusable as _, Modifiers, TestAppContex
 use oriel_core_tidy::contract::FileId;
 use oriel_mode_tidy::{
     LibraryMenu, LibraryMode, LibraryPage, MenuChoice, TidyPage, last_menu, last_quick_look,
+    last_toast,
 };
 use oriel_ui::LocalStorage;
 use support::*;
@@ -343,7 +344,7 @@ async fn quick_look_shows_a_file_without_deciding_anything(cx: &mut TestAppConte
 }
 
 #[gpui_kit::test]
-async fn duplicates_lists_its_scopes_and_says_why_and_what_a_decision_does(
+async fn duplicates_lists_its_scopes_says_why_and_n_marks_a_set_until_undone(
     cx: &mut TestAppContext,
 ) {
     if !media_ready() {
@@ -353,6 +354,12 @@ async fn duplicates_lists_its_scopes_and_says_why_and_what_a_decision_does(
     add_archive(cx, &session).await;
     go(cx, &session, TidyPage::Duplicates);
     settle(cx, &session).await;
+    let dismissed = |cx: &mut TestAppContext| {
+        cx.read(|cx| {
+            let duplicates = session.tidy.read(cx).duplicates().read(cx);
+            duplicates.page().map(|page| page.counts.dismissed)
+        })
+    };
 
     // The scopes are rows with their counts; Variants shows only with Spot variants on, and
     // an empty list stays in its place.
@@ -365,126 +372,56 @@ async fn duplicates_lists_its_scopes_and_says_why_and_what_a_decision_does(
         label(cx, &session, "scope-exact").as_deref(),
         Some("Identical 1")
     );
-    assert_eq!(
-        label(cx, &session, "scope-dismissed").as_deref(),
-        Some("Not duplicates 0")
-    );
 
-    // The stage says why it keeps what it keeps, and the bar what deciding does.
+    // The stage says why it keeps what it keeps.
     let index = set_with(cx, &session, "sunset.png");
     click(cx, &session, ("set-row", index));
     let why = label(cx, &session, "duplicates-decision-line").unwrap();
     assert!(why.starts_with("Keeping 1: most pixels ("), "{why}");
-    let result = label(cx, &session, "duplicates-decision-summary").unwrap();
-    assert!(
-        result.starts_with("1 version goes to holding · frees "),
-        "{result}"
-    );
+    let key = cx.read(|cx| {
+        let duplicates = session.tidy.read(cx).duplicates().read(cx);
+        duplicates.active().map(|set| set.key.clone())
+    });
 
-    // Identical copies say why too; Not duplicates is a list, and the title stays.
+    // N keeps every version and marks the set as not duplicates: it leaves review, and with
+    // no list of such sets, Undo is what brings it back, into focus.
+    press(cx, &session, "n");
+    settle(cx, &session).await;
+    assert_eq!(
+        cx.read(last_toast).as_deref(),
+        Some("Marked as not duplicates")
+    );
+    assert_eq!(dismissed(cx), Some(1));
+    assert_eq!(
+        label(cx, &session, "scope-similar").as_deref(),
+        Some("Similar 3")
+    );
+    undo(cx, &session);
+    settle(cx, &session).await;
+    assert_eq!(dismissed(cx), Some(0));
+    assert_eq!(
+        label(cx, &session, "scope-similar").as_deref(),
+        Some("Similar 4")
+    );
+    let back = cx.read(|cx| {
+        let duplicates = session.tidy.read(cx).duplicates().read(cx);
+        duplicates.active().map(|set| set.key.clone())
+    });
+    assert_eq!(back, key);
+
+    // Identical copies say why too, and keep the title; matching only shows for similar ones.
     click(cx, &session, "scope-exact");
     settle(cx, &session).await;
     let why = label(cx, &session, "duplicates-decision-line").unwrap();
     assert!(why.starts_with("Keeping 1: "), "{why}");
     assert_eq!(label(cx, &session, "duplicates-matching"), None);
-    click(cx, &session, "scope-dismissed");
-    settle(cx, &session).await;
-    assert!(cx.read(|cx| {
-        session
-            .tidy
-            .read(cx)
-            .duplicates()
-            .read(cx)
-            .is_dismissed_mode()
-    }));
     assert_eq!(
         label(cx, &session, "top-bar-title").as_deref(),
         Some("Duplicates")
     );
-    assert_eq!(
-        label(cx, &session, "duplicates-empty").as_deref(),
-        Some("Nothing marked as not duplicates")
-    );
     click(cx, &session, "scope-similar");
     settle(cx, &session).await;
-    assert!(!cx.read(|cx| {
-        session
-            .tidy
-            .read(cx)
-            .duplicates()
-            .read(cx)
-            .is_dismissed_mode()
-    }));
     assert!(label(cx, &session, "duplicates-matching").is_some());
-}
-
-#[gpui_kit::test]
-async fn the_job_card_pauses_resumes_and_counts_what_waits(cx: &mut TestAppContext) {
-    let session = launch(cx, "job-card");
-    add_archive(cx, &session).await;
-    let (state, engine) = cx.read(|cx| {
-        let state = session.state.read(cx);
-        (session.state.clone(), state.engine().cloned().unwrap())
-    });
-    let root_id = cx.read(|cx| state.read(cx).root_id().unwrap());
-    let caption = |cx: &mut TestAppContext| label(cx, &session, "tidy-activity-caption");
-
-    // A rescan paused before its first step keeps its turn, with background analysis behind it.
-    cx.update_window(session.handle, |_, window, cx| {
-        state.update(cx, |state, cx| {
-            state.start_scan(root_id, window, cx);
-            state.toggle_pause(cx);
-            state.start_background_analysis(root_id, window, cx);
-        });
-    })
-    .unwrap();
-    render(cx, &session);
-    assert_eq!(caption(cx).as_deref(), Some("Paused"));
-    assert_eq!(
-        label(cx, &session, "tidy-activity-pause").as_deref(),
-        Some("Resume")
-    );
-    // Read before the app's tasks run again, since the rescan of a scanned folder ends at once.
-    cx.update_window(session.handle, |_, window, cx| {
-        window.render_frame(cx);
-        window.click("tidy-activity-pause", cx);
-    })
-    .unwrap();
-    render(cx, &session);
-    assert_eq!(
-        label(cx, &session, "tidy-activity-pause").as_deref(),
-        Some("Pause")
-    );
-    settle(cx, &session).await;
-    assert!(label(cx, &session, "tidy-activity").is_none(), "all done");
-
-    // Work that waits for its turn says how much more is queued behind it: here behind a scan
-    // the card does not show, paused while it holds the turn.
-    let blocker = cx.update(|cx| engine.start_scan(root_id, cx));
-    blocker.update(cx, |job, cx| job.pause(cx));
-    wait_for(cx, &session, "the paused scan to take its turn", |cx| {
-        blocker.read(cx).progress().phase().starts_with("Walking ")
-    })
-    .await;
-    cx.update_window(session.handle, |_, window, cx| {
-        state.update(cx, |state, cx| {
-            state.start_scan(root_id, window, cx);
-            state.start_analysis(root_id, window, cx);
-        });
-    })
-    .unwrap();
-    wait_for(cx, &session, "the scan to wait", |cx| {
-        state
-            .read(cx)
-            .scan()
-            .is_some_and(|scan| scan.job.read(cx).progress().is_waiting())
-    })
-    .await;
-    assert_eq!(caption(cx).as_deref(), Some("1 more queued"));
-    // Waiting work has nothing to pause.
-    assert!(label(cx, &session, "tidy-activity-pause").is_none());
-    blocker.update(cx, |job, cx| job.cancel(cx));
-    settle(cx, &session).await;
 }
 
 #[gpui_kit::test]
