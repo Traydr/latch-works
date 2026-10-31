@@ -310,19 +310,23 @@ The spikes' variables, for a run by hand, are documented at the top of each spik
   Shuffle, Refresh and comic mode in place of the scroll and the steps;
 - the Library's in `crates/mode-tidy/src/spike.rs`;
 - Tidy's pages in `crates/mode-tidy/src/page_spike.rs`: `ORIEL_RS_SPIKE_TIDY=<log>` runs page
-  switches, sorts, typing, filters, the Inspector, list and grid scrolls, Duplicates' sets, the
-  loupe and a rescan on the root Tidy shows; `ORIEL_RS_SPIKE_TIDY_ONLY=pages,rescan,redraw,
+  switches, sorts, typing, filters, the Inspector, list and grid scrolls, Duplicates' sets, its
+  version grid's scroll, the loupe and a rescan on the root Tidy shows, each step with its CPU
+  time on the main thread and in all; `ORIEL_RS_SPIKE_TIDY_ONLY=pages,rescan,redraw,
   library,grid,duplicates` picks groups and `ORIEL_RS_SPIKE_TIDY_HOLD=1` keeps the app open;
 - the shell's in `crates/app/src/spike.rs`: `ORIEL_RS_SPIKE_SHELL=<log>` times the launch, each
   mode switch and Settings at each section.
 
 `mpv_spike`'s own switches mirror the gallery: `ORIEL_SPIKE_SILENT=1` (a preview with sound off),
 `ORIEL_SPIKE_PREWARM=<ms>` (an engine started that long before the first open, as hovering a video
-tile does), `ORIEL_SPIKE_WARM=<video>` (the first open on an engine a player gave back) and
-`ORIEL_SPIKE_REST=<seconds>` (the footprint after that rest). Video through
+tile does), `ORIEL_SPIKE_PRIME=<ms>` (an engine started and primed that long before, as View
+showing a folder with videos does; it plays nothing, and makes its clip once with the pinned
+ffmpeg, in `<data>/view/cache/`), `ORIEL_SPIKE_WARM=<video>` (the first open on an engine a player
+gave back) and `ORIEL_SPIKE_REST=<seconds>` (the footprint after that rest). Video through
 AVPlayer, which `video_spike` forces: `cargo run --release -p oriel-media --example video_spike --
 <single|tiles|sweep|errors>`, and the same through libmpv with `--example mpv_spike` (also
-`verify` and `colour`).
+`verify`, `colour`, and `rest <seconds>`, which opens nothing and prints the footprint every 5 s:
+with `ORIEL_SPIKE_PRIME=0`, what a primed engine holds while it waits and after it shuts down).
 
 Phase 9's scorecard, and how its rows map to these, is in
 [docs/research/oriel-rs/scorecard.md](../research/oriel-rs/scorecard.md) under "Run it again".
@@ -338,6 +342,9 @@ cargo run --release -p oriel-core-tidy --example tidy_timing -- <root> <data-fol
 # fingerprint (decode and pHash), probe (header) or convert (decode and AVIF encode).
 cargo run --release -p oriel-core-tidy --example stills_timing -- \
   fingerprint|probe|convert <folder> <scratch> 4,8,18
+# Each video's fingerprint frames, made one ffmpeg run per keyframe and five single runs, checked
+# byte for byte against each other and timed.
+cargo run --release -p oriel-core-tidy --example video_frames -- <folder>
 ```
 
 The root must be one Tidy admits: a data folder whose `sandbox` links to the real one, as the
