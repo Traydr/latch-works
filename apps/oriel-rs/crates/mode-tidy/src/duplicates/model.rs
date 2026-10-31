@@ -142,79 +142,168 @@ fn ratio_label(ratio: f64, noun: &str) -> Option<String> {
     })
 }
 
-/// One fact under a tile; `worse` ones are what this version loses against the keeper.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Fact {
-    pub text: String,
-    pub worse: bool,
+/// How a version's value compares with the keeper's, which decides how a lane draws it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Standing {
+    /// The keeper's own value, or one that differs without being a loss.
+    Plain,
+    /// The same as the keeper's.
+    Same,
+    /// What this version loses against the keeper.
+    Worse,
 }
 
-/// A version's facts, each compared with the keeper's where a loss would matter (`factsOf`).
-pub fn facts_of(file: &FileRow, keeper: &FileRow) -> Vec<Fact> {
-    let mut facts = Vec::new();
+/// One labelled row under a tile ("Dimensions 1280×720 (1/4 the pixels)"). Every tile of a set
+/// shows the same lanes in the same order, so versions line up for comparison.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Lane {
+    pub label: &'static str,
+    pub value: String,
+    pub standing: Standing,
+}
+
+impl Lane {
+    fn new(label: &'static str, value: String, standing: Standing) -> Self {
+        Self {
+            label,
+            value,
+            standing,
+        }
+    }
+
+    /// Whether this version loses on this lane.
+    pub fn worse(&self) -> bool {
+        self.standing == Standing::Worse
+    }
+}
+
+/// What a lane shows when the file has no such value.
+const NONE: &str = "—";
+
+/// Whether a set's tiles carry the video lanes (Length and Sound): when any version is a video,
+/// every tile does, so the lanes stay level across the set.
+pub fn has_video(rows: &[SetRow]) -> bool {
+    rows.iter().any(|row| row.file.kind == FileKind::Video)
+}
+
+fn audio_label(audio: AudioState) -> &'static str {
+    match audio {
+        AudioState::None => "No sound track",
+        AudioState::Silent => "Silent",
+        AudioState::Sound => "Sound",
+        AudioState::Unmeasured => "Not checked",
+    }
+}
+
+/// A version's lanes against the keeper (`factsOf`, as labelled rows): Dimensions; Length and
+/// Sound when `video`; Size; Format. A loss names its difference.
+pub fn facts_of(file: &FileRow, keeper: &FileRow, video: bool) -> Vec<Lane> {
     let same = file.id == keeper.id;
-    if let Some(dimensions) = format::dimensions(file) {
-        let ratio = match (pixels_of(file), pixels_of(keeper)) {
-            (Some(pixels), Some(keeper_pixels)) if !same && keeper_pixels > 0 => {
-                pixels as f64 / keeper_pixels as f64
+    let compare = |equal: bool| {
+        if equal && !same {
+            Standing::Same
+        } else {
+            Standing::Plain
+        }
+    };
+    let mut lanes = Vec::new();
+    lanes.push(match format::dimensions(file) {
+        Some(dimensions) => {
+            let ratio = match (pixels_of(file), pixels_of(keeper)) {
+                (Some(pixels), Some(keeper_pixels)) if !same && keeper_pixels > 0 => {
+                    pixels as f64 / keeper_pixels as f64
+                }
+                _ => 1.,
+            };
+            match (ratio < 0.97)
+                .then(|| ratio_label(ratio, "pixels"))
+                .flatten()
+            {
+                Some(label) => Lane::new(
+                    "Dimensions",
+                    format!("{dimensions} ({label})"),
+                    Standing::Worse,
+                ),
+                None => Lane::new(
+                    "Dimensions",
+                    dimensions.clone(),
+                    compare(format::dimensions(keeper) == Some(dimensions)),
+                ),
             }
-            _ => 1.,
-        };
-        let label = (ratio < 0.97)
-            .then(|| ratio_label(ratio, "pixels"))
-            .flatten();
-        facts.push(Fact {
-            text: match &label {
-                Some(label) => format!("{dimensions} ({label})"),
-                None => dimensions,
-            },
-            worse: label.is_some(),
-        });
-    }
-    if file.kind == FileKind::Video
-        && let Some(duration) = file.duration_ms
-    {
-        let seconds = match keeper.duration_ms {
-            Some(keeper_duration) if !same => ((duration - keeper_duration) / 1000.).round() as i64,
-            _ => 0,
-        };
-        facts.push(Fact {
-            text: if seconds < 0 {
-                format!(
-                    "{} ({} s shorter)",
-                    format::duration(Some(duration)),
-                    -seconds
-                )
-            } else {
-                format::duration(Some(duration))
-            },
-            worse: seconds < 0,
-        });
-    }
-    if file.kind == FileKind::Video
-        && let Some(audio) = file.audio_state
-    {
-        let silent = matches!(audio, AudioState::None | AudioState::Silent);
-        facts.push(Fact {
-            text: match audio {
-                AudioState::None => "no sound track",
-                AudioState::Silent => "silent",
-                AudioState::Sound => "sound",
-                AudioState::Unmeasured => "sound not checked",
-            }
-            .into(),
-            worse: !same && silent && keeper.audio_state == Some(AudioState::Sound),
-        });
-    }
-    facts.push(Fact {
-        text: format::bytes(file.size as f64),
-        worse: false,
+        }
+        None => Lane::new("Dimensions", NONE.into(), compare(true)),
     });
-    facts.push(Fact {
-        text: format::format_label(file.format).into(),
-        worse: false,
-    });
-    facts
+    if video {
+        lanes.push(
+            match file.duration_ms.filter(|_| file.kind == FileKind::Video) {
+                Some(duration) => {
+                    let seconds = match keeper.duration_ms {
+                        Some(keeper_duration) if !same => {
+                            ((duration - keeper_duration) / 1000.).round() as i64
+                        }
+                        _ => 0,
+                    };
+                    if seconds < 0 {
+                        Lane::new(
+                            "Length",
+                            format!(
+                                "{} ({} s shorter)",
+                                format::duration(Some(duration)),
+                                -seconds
+                            ),
+                            Standing::Worse,
+                        )
+                    } else {
+                        Lane::new(
+                            "Length",
+                            format::duration(Some(duration)),
+                            compare(seconds == 0),
+                        )
+                    }
+                }
+                None => Lane::new("Length", NONE.into(), compare(keeper.duration_ms.is_none())),
+            },
+        );
+        lanes.push(
+            match file.audio_state.filter(|_| file.kind == FileKind::Video) {
+                Some(audio) => {
+                    let silent = matches!(audio, AudioState::None | AudioState::Silent);
+                    let lost = !same && silent && keeper.audio_state == Some(AudioState::Sound);
+                    Lane::new(
+                        "Sound",
+                        audio_label(audio).into(),
+                        if lost {
+                            Standing::Worse
+                        } else {
+                            compare(keeper.audio_state == Some(audio))
+                        },
+                    )
+                }
+                None => Lane::new("Sound", NONE.into(), compare(keeper.audio_state.is_none())),
+            },
+        );
+    }
+    let difference = file.size - keeper.size;
+    lanes.push(Lane::new(
+        "Size",
+        if same || difference == 0 {
+            format::bytes(file.size as f64)
+        } else {
+            format!(
+                "{} ({} {})",
+                format::bytes(file.size as f64),
+                format::bytes(difference.unsigned_abs() as f64),
+                if difference < 0 { "smaller" } else { "larger" }
+            )
+        },
+        compare(difference == 0),
+    ));
+    lanes.push(Lane::new(
+        "Format",
+        format::format_label(file.format).into(),
+        compare(file.format == keeper.format),
+    ));
+    lanes
 }
 
 fn version_numbers(numbers: &[usize]) -> String {
@@ -231,21 +320,18 @@ fn version_numbers(numbers: &[usize]) -> String {
     }
 }
 
-/// What keeping every version is called: identical copies are kept both (or all); similar
-/// versions are not duplicates (`keepEveryLabel`).
-pub fn keep_every_label(set: &DuplicateSet, rows: &[SetRow]) -> String {
-    if set.kind == DuplicateKind::Similar {
-        return "Not duplicates".into();
-    }
+/// What keeping every version is called, for either kind: "Keep both", or "Keep all". The set
+/// then moves to Not duplicates, the list; the command never takes that name.
+pub fn keep_every_label(rows: &[SetRow]) -> String {
     if rows.len() == 2 {
         "Keep both".into()
     } else {
-        format!("Keep all {}", rows.len())
+        "Keep all".into()
     }
 }
 
 /// The primary button's label: the versions it keeps, by number (`decisionLabel`).
-pub fn decision_label(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId]) -> String {
+pub fn decision_label(rows: &[SetRow], kept: &[FileId]) -> String {
     let numbers: Vec<usize> = rows
         .iter()
         .enumerate()
@@ -253,19 +339,19 @@ pub fn decision_label(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId]) -> S
         .map(|(index, _)| index + 1)
         .collect();
     if numbers.len() == rows.len() {
-        return keep_every_label(set, rows);
+        return keep_every_label(rows);
     }
     format!("Keep {}", version_numbers(&numbers))
 }
 
-/// Where resolving sends files: "3 versions and 2 copies go to holding · 120 KB"
+/// Where resolving sends files: "3 versions and 2 copies go to holding · frees 120 KB"
 /// (`holdingSummary`).
 pub fn holding_summary(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId]) -> String {
     let removed = removal_of(set, kept);
     if removed.is_empty() {
         return "Nothing goes to holding".into();
     }
-    let bytes = format::bytes(freed_bytes(set, &removed) as f64);
+    let bytes = format!("frees {}", format::bytes(freed_bytes(set, &removed) as f64));
     if set.kind == DuplicateKind::Exact {
         return format!(
             "{} to holding · {bytes}",

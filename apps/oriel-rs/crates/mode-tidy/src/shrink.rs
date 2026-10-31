@@ -196,8 +196,20 @@ impl Render for ShrinkPage {
         let Some(summary) = self.summary.data().cloned() else {
             let body = match self.summary.error().cloned() {
                 Some(error) => {
-                    widgets::empty_state("shrink-error", None, error, None, Vec::new(), cx)
-                        .into_any_element()
+                    let this = cx.entity().downgrade();
+                    widgets::error_state(
+                        "shrink-error",
+                        "Couldn't plan the shrinking",
+                        error,
+                        move |_, cx| {
+                            this.update(cx, |this, cx| {
+                                this.seen = (None, 0);
+                                this.sync(cx);
+                            })
+                            .ok();
+                        },
+                        cx,
+                    )
                 }
                 None => div().flex_1().into_any_element(),
             };
@@ -220,16 +232,21 @@ impl Render for ShrinkPage {
             .map(|item| (item.file_id, item))
             .collect();
         let batch_ids: Vec<i64> = batch.iter().map(|item| item.file_id).collect();
-        let tiles: Vec<AnyElement> = summary
+        let shown: Vec<_> = summary
             .preview
             .iter()
             .filter(|row| batch_ids.contains(&row.id))
+            .collect();
+        let repeated = widgets::repeated_names(&shown);
+        let tiles: Vec<AnyElement> = shown
+            .into_iter()
             .map(|row| {
                 let ratio = in_batch
                     .get(&row.id)
                     .filter(|item| item.bytes > 0)
                     .map(|item| item.estimated_bytes as f64 / item.bytes as f64);
-                widgets::media_tile(&self.thumbs, row, ratio, cx)
+                let folder = repeated.contains(&row.name);
+                widgets::media_tile(&self.thumbs, row, ratio, folder, cx)
             })
             .collect();
         let more = batch.len() as i64 - tiles.len() as i64;
@@ -246,17 +263,25 @@ impl Render for ShrinkPage {
                 format::bytes(all.estimated)
             )
         });
+        // The control says what it sets: how much one run takes on.
         let batches = (!summary.items.is_empty()).then(|| {
-            Segmented::new("shrink-batch", "How much each run takes").items(BATCHES.map(
-                |(value, label, _)| {
+            let segmented = Segmented::new("shrink-batch", "How much each run takes").items(
+                BATCHES.map(|(value, label, _)| {
                     SegmentedItem::new(SharedString::from(format!("shrink-batch-{value}")), label)
                         .selected(value == choice)
                         .on_click(move |_, window, cx| {
                             LocalStorage::set(cx, BATCH_KEY, value);
                             window.refresh();
                         })
-                },
-            ))
+                }),
+            );
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .child(widgets::caption("Each run", cx))
+                .child(segmented)
         });
         let action: AnyElement = match running {
             Some(running) => running,

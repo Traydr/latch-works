@@ -10,7 +10,7 @@ use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::{
     AnyElement, App, Div, ElementId, FontWeight, InteractiveElement as _, IntoElement as _,
     ParentElement as _, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
-    TestSupportExt as _, div, prelude::FluentBuilder as _, px,
+    TestSupportExt as _, div, prelude::FluentBuilder as _, px, rems,
 };
 
 use crate::format;
@@ -67,6 +67,34 @@ pub fn empty_state(
         .when(!actions.is_empty(), |this| {
             this.child(div().flex().flex_row().gap_2().pt_3().children(actions))
         })
+}
+
+/// What a page shows when what it needs couldn't be read: a short title naming what failed
+/// ("Couldn't plan the conversion"), the error under it, and Try again.
+pub fn error_state(
+    id: impl Into<ElementId>,
+    title: impl Into<SharedString>,
+    error: impl Into<SharedString>,
+    on_retry: impl Fn(&mut gpui_kit::Window, &mut App) + 'static,
+    cx: &App,
+) -> AnyElement {
+    let id: ElementId = id.into();
+    let error: SharedString = error.into();
+    empty_state(
+        id.clone(),
+        Some(IconName::CircleAlert),
+        title,
+        Some(div().child(error).into_any_element()),
+        vec![
+            Button::new(SharedString::from(format!("{id}-try-again")))
+                .outline()
+                .label("Try again")
+                .on_click(move |_, window, cx| on_retry(window, cx))
+                .into_any_element(),
+        ],
+        cx,
+    )
+    .into_any_element()
 }
 
 /// A surface lifted from the page (`lw-card`).
@@ -188,12 +216,14 @@ pub fn run_progress(
         .text_color(cx.theme().foreground)
 }
 
-/// A file as a tile (`MediaTile`): its picture in its own shape on a letterbox, then its name
-/// and size, with what converting is estimated to leave when `ratio` is known.
+/// A file as a tile (`MediaTile`): its picture in its own shape on a letterbox, then its name,
+/// its folder when `folder` (another tile shows the same name), and its size, with what
+/// converting is estimated to leave when `ratio` is known. Tiles grow to fill their row.
 pub fn media_tile(
     thumbs: &gpui_kit::Entity<crate::thumbs::Thumbs>,
     row: &oriel_core_tidy::contract::FileRow,
     ratio: Option<f64>,
+    folder: bool,
     cx: &mut App,
 ) -> AnyElement {
     let picture = crate::thumbs::picture(thumbs, row, 320, gpui_kit::ObjectFit::Contain, cx);
@@ -210,7 +240,9 @@ pub fn media_tile(
         .id(SharedString::from(format!("tile-{}", row.id)))
         .test_support()
         .aria_label(SharedString::from(row.name.clone()))
-        .w(px(176.))
+        .flex_grow(1.)
+        .flex_shrink_0()
+        .flex_basis(rems(TILE_BASIS))
         .flex()
         .flex_col()
         .min_w_0()
@@ -227,13 +259,30 @@ pub fn media_tile(
             div()
                 .px_0p5()
                 .pt(px(6.))
-                .child(div().truncate().text_size(px(13.)).child(row.name.clone()))
+                .child(div().truncate().text_sm().child(row.name.clone()))
+                .when(folder, |this| {
+                    this.child(
+                        caption(
+                            if row.dir.is_empty() {
+                                "The top folder".to_string()
+                            } else {
+                                row.dir.clone()
+                            },
+                            cx,
+                        )
+                        .truncate(),
+                    )
+                })
                 .child(caption(size, cx).truncate()),
         )
         .into_any_element()
 }
 
-/// Tiles in rows that wrap, 176 px wide.
+/// The width a media tile starts from before it grows to fill its row.
+const TILE_BASIS: f32 = 11.;
+
+/// Tiles in rows that wrap and fill the width. Empty tiles of no height end the last row, so
+/// its tiles keep the width of the rows above instead of stretching.
 pub fn tile_grid(tiles: Vec<AnyElement>) -> Div {
     div()
         .flex()
@@ -244,6 +293,24 @@ pub fn tile_grid(tiles: Vec<AnyElement>) -> Div {
         .pt_1()
         .pb_6()
         .children(tiles)
+        .children((0..12).map(|_| {
+            div()
+                .flex_grow(1.)
+                .flex_shrink_0()
+                .flex_basis(rems(TILE_BASIS))
+                .h_0()
+        }))
+}
+
+/// The names more than one of `rows` carries, whose tiles then show their folders.
+pub fn repeated_names(
+    rows: &[&oriel_core_tidy::contract::FileRow],
+) -> std::collections::HashSet<String> {
+    let mut seen = std::collections::HashSet::new();
+    rows.iter()
+        .filter(|row| !seen.insert(row.name.as_str()))
+        .map(|row| row.name.clone())
+        .collect()
 }
 
 /// The running change a page started, shown where its main button was.

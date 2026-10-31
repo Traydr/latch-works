@@ -268,9 +268,13 @@ impl ConvertPage {
             .unwrap_or_default();
         let more = files - rows.len() as i64;
         let loaded = self.slot(group).data().is_some();
+        let repeated = widgets::repeated_names(&rows.iter().collect::<Vec<_>>());
         let tiles: Vec<AnyElement> = rows
             .iter()
-            .map(|row| widgets::media_tile(&self.thumbs, row, ratio, cx))
+            .map(|row| {
+                let folder = repeated.contains(&row.name);
+                widgets::media_tile(&self.thumbs, row, ratio, folder, cx)
+            })
             .collect();
         let (one, many) = group.nouns();
         let kind = section_query(group).0;
@@ -406,8 +410,14 @@ impl Render for ConvertPage {
         let Some(tidy) = tidy else {
             let body = match error {
                 Some(error) => {
-                    widgets::empty_state("convert-error", None, error, None, Vec::new(), cx)
-                        .into_any_element()
+                    let state = self.state.clone();
+                    widgets::error_state(
+                        "convert-error",
+                        "Couldn't plan the conversion",
+                        error,
+                        move |_, cx| state.update(cx, |state, cx| state.changed(cx)),
+                        cx,
+                    )
                 }
                 None => div().flex_1().into_any_element(),
             };
@@ -447,18 +457,26 @@ impl Render for ConvertPage {
             .sum();
         let theme = cx.theme();
         let meta = (files > 0).then(|| {
-            let mut meta = format!(
+            format!(
                 "{} · {}",
                 format::plural(files, "file"),
                 format::bytes(bytes as f64)
-            );
-            if waiting > 0 {
-                meta.push_str(&format!(
-                    " · {} wait for duplicate review",
+            )
+        });
+        // Files duplicates hold back: a way to the review that frees them.
+        let waiting_link = (files > 0 && waiting > 0).then(|| {
+            Button::new("convert-waiting")
+                .ghost()
+                .small()
+                .label(format!(
+                    "{} wait for duplicate review",
                     format::count(waiting)
-                ));
-            }
-            meta
+                ))
+                .tooltip("Review duplicates")
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.state
+                        .update(cx, |state, cx| state.go(TidyPage::Duplicates, cx));
+                }))
         });
 
         let options_state = self.state.clone();
@@ -509,6 +527,7 @@ impl Render for ConvertPage {
                         .child(meta),
                 )
             })
+            .when_some(waiting_link, |bar, link| bar.trailing(link))
             .trailing(options)
             .trailing(action);
 

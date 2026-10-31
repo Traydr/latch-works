@@ -1416,7 +1416,7 @@ impl LibraryPage {
                 }
                 Err(error) => crate::widgets::show_toast(
                     window,
-                    Toast::error("Something went wrong").detail(format!("{error:#}")),
+                    Toast::error("Couldn't select every file").detail(format!("{error:#}")),
                     cx,
                 ),
             })
@@ -2191,7 +2191,7 @@ impl LibraryPage {
                             .outline()
                             .small()
                             .label("Move to holding")
-                            .tooltip("⌘⌫")
+                            .tooltip("Move to holding  ⌘⌫")
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.hold(hold_ids.clone(), window, cx);
                             })),

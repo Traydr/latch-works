@@ -362,7 +362,9 @@ impl HoldingPage {
                         format::count(result.failed.len() as i64)
                     ))
                     .detail(result.failed[0].clone()),
-                    Err(error) => Toast::error("That didn't work").detail(format!("{error:#}")),
+                    Err(error) => {
+                        Toast::error("Couldn't restore the files").detail(format!("{error:#}"))
+                    }
                 };
                 crate::widgets::show_toast(window, toast, cx);
                 this.state.update(cx, |state, cx| state.changed(cx));
@@ -407,7 +409,9 @@ impl HoldingPage {
                         format::plural_as(result.failed.len() as i64, "batch", "batches")
                     ))
                     .detail(result.failed[0].clone()),
-                    Err(error) => Toast::error("That didn't work").detail(format!("{error:#}")),
+                    Err(error) => {
+                        Toast::error("Couldn't empty holding").detail(format!("{error:#}"))
+                    }
                 };
                 crate::widgets::show_toast(window, toast, cx);
                 this.state.update(cx, |state, cx| state.changed(cx));

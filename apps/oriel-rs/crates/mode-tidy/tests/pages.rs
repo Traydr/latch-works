@@ -1,7 +1,7 @@
 //! Tidy's pages beyond the e2e cases, as GPUI Kit headless UI tests on the same archive: the
 //! Library's selection, its grid, its rename field and its menu, Quick Look, the job card's
 //! pause and queue, Settings' encoders, Overview's arrows, History's sets of a run of duplicate
-//! decisions and Holding's arrows. Quick Look and the native menu need a real window,
+//! decisions and Holding's arrows, and Duplicates' scope list and decision line. Quick Look and the native menu need a real window,
 //! so these check what was asked of them ([`last_quick_look`], [`last_menu`]).
 
 mod support;
@@ -334,6 +334,82 @@ async fn quick_look_shows_a_file_without_deciding_anything(cx: &mut TestAppConte
     assert_eq!(shown(), forest);
     assert!(!cx.read(|cx| session.state.read(cx).is_busy()));
     assert!(session.archive.join("photos/forest copy.png").is_file());
+}
+
+#[gpui_kit::test]
+async fn duplicates_lists_its_scopes_and_says_why_and_what_a_decision_does(
+    cx: &mut TestAppContext,
+) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch(cx, "duplicates-scopes");
+    add_archive(cx, &session).await;
+    go(cx, &session, TidyPage::Duplicates);
+    settle(cx, &session).await;
+
+    // The scopes are rows with their counts; Variants shows only with Spot variants on, and
+    // an empty list stays in its place.
+    assert_eq!(
+        label(cx, &session, "scope-similar").as_deref(),
+        Some("Similar 4")
+    );
+    assert_eq!(label(cx, &session, "scope-variants"), None);
+    assert_eq!(
+        label(cx, &session, "scope-exact").as_deref(),
+        Some("Identical 1")
+    );
+    assert_eq!(
+        label(cx, &session, "scope-dismissed").as_deref(),
+        Some("Not duplicates 0")
+    );
+
+    // The stage says why it keeps what it keeps, and the bar what deciding does.
+    let index = set_with(cx, &session, "sunset.png");
+    click(cx, &session, ("set-row", index));
+    let why = label(cx, &session, "duplicates-decision-line").unwrap();
+    assert!(why.starts_with("Keeping 1: most pixels ("), "{why}");
+    let result = label(cx, &session, "duplicates-decision-summary").unwrap();
+    assert!(
+        result.starts_with("1 version goes to holding · frees "),
+        "{result}"
+    );
+
+    // Identical copies say why too; Not duplicates is a list, and the title stays.
+    click(cx, &session, "scope-exact");
+    settle(cx, &session).await;
+    let why = label(cx, &session, "duplicates-decision-line").unwrap();
+    assert!(why.starts_with("Keeping 1: "), "{why}");
+    assert_eq!(label(cx, &session, "duplicates-matching"), None);
+    click(cx, &session, "scope-dismissed");
+    settle(cx, &session).await;
+    assert!(cx.read(|cx| {
+        session
+            .tidy
+            .read(cx)
+            .duplicates()
+            .read(cx)
+            .is_dismissed_mode()
+    }));
+    assert_eq!(
+        label(cx, &session, "top-bar-title").as_deref(),
+        Some("Duplicates")
+    );
+    assert_eq!(
+        label(cx, &session, "duplicates-empty").as_deref(),
+        Some("Nothing marked as not duplicates")
+    );
+    click(cx, &session, "scope-similar");
+    settle(cx, &session).await;
+    assert!(!cx.read(|cx| {
+        session
+            .tidy
+            .read(cx)
+            .duplicates()
+            .read(cx)
+            .is_dismissed_mode()
+    }));
+    assert!(label(cx, &session, "duplicates-matching").is_some());
 }
 
 #[gpui_kit::test]

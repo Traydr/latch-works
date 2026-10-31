@@ -127,13 +127,13 @@ async fn the_resized_jpeg_is_grouped_with_the_picture_it_came_from(cx: &mut Test
         "{decision:?}"
     );
 
-    // Its checkbox keeps the resized one as well, which makes them not duplicates, without
-    // deciding the set; ⇧2 takes it back. Nothing changes on disk.
+    // Its checkbox keeps the resized one as well, which keeps both, without deciding the set;
+    // ⇧2 takes it back. Nothing changes on disk.
     let small = file_id(cx, &session, "sunset-small.jpg");
     click(cx, &session, ("keep-version", small));
     assert_eq!(kept_names(cx, &session), ["sunset-small.jpg", "sunset.png"]);
     let decision = cx.read(|cx| session.tidy.read(cx).duplicates().read(cx).decision());
-    assert_eq!(decision.as_deref(), Some("Not duplicates"));
+    assert_eq!(decision.as_deref(), Some("Keep both"));
     press(cx, &session, "shift-2");
     assert_eq!(kept_names(cx, &session), ["sunset.png"]);
     assert!(session.archive.join("photos/sunset-small.jpg").is_file());
@@ -189,6 +189,8 @@ async fn spot_variants_moves_sets_of_variants_out_of_review(cx: &mut TestAppCont
     );
     assert_eq!(label(cx, &session, "scope-variants"), None);
 
+    // Spot variants is one of the matching settings, in the top bar's popover.
+    click(cx, &session, "duplicates-matching");
     click(cx, &session, "duplicates-spot-variants");
     settle(cx, &session).await;
     let on = counts(cx);
@@ -211,22 +213,23 @@ async fn spot_variants_moves_sets_of_variants_out_of_review(cx: &mut TestAppCont
     for name in ["900_p0.jpg", "900_p1.png"] {
         let id = file_id(cx, &session, name);
         let copy_of = description(cx, &session, ("version", id)).unwrap();
-        assert!(copy_of.starts_with("A copy of"), "{name}: {copy_of}");
+        assert!(copy_of.starts_with("Same picture as"), "{name}: {copy_of}");
     }
 
-    // The outfits wait under Variants, every version kept, until marked as not duplicates.
+    // The outfits wait under Variants, every version kept, until Return keeps both and moves
+    // them to Not duplicates.
     click(cx, &session, "scope-variants");
     settle(cx, &session).await;
     let index = set_with(cx, &session, "outfit-a.png");
     click(cx, &session, ("set-row", index));
     assert_eq!(kept_names(cx, &session), ["outfit-a.png", "outfit-b.png"]);
     let decision = cx.read(|cx| session.tidy.read(cx).duplicates().read(cx).decision());
-    assert_eq!(decision.as_deref(), Some("Not duplicates"));
+    assert_eq!(decision.as_deref(), Some("Keep both"));
     press(cx, &session, "enter");
     settle(cx, &session).await;
     assert_eq!(
         cx.read(last_toast).as_deref(),
-        Some("Marked as not duplicates")
+        Some("Moved to Not duplicates")
     );
     assert_eq!(counts(cx).dismissed, 1);
     assert_eq!(counts(cx).variants, 1);
@@ -378,6 +381,7 @@ async fn spot_variants_keeps_each_picture_once(cx: &mut TestAppContext) {
     add_archive(cx, &session).await;
     go(cx, &session, TidyPage::Duplicates);
     settle(cx, &session).await;
+    click(cx, &session, "duplicates-matching");
     click(cx, &session, "duplicates-spot-variants");
     settle(cx, &session).await;
     let index = set_with(cx, &session, "101_jp.png");

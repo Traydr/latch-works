@@ -20,21 +20,23 @@ use std::time::{Duration, Instant};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
+use gpui_kit::component::kbd::Kbd;
+use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu, PopupMenuItem};
+use gpui_kit::component::popover::Popover;
 use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, KeyDownEvent, ObjectFit, ParentElement as _, Render,
-    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription,
-    TestSupportExt as _, UniformListScrollHandle, Window, div, prelude::FluentBuilder as _, px,
-    uniform_list,
+    Anchor, AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable, FontWeight,
+    Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, Keystroke, MouseButton, ObjectFit,
+    ParentElement as _, Render, Role, ScrollHandle, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Subscription, TestSupportExt as _, UniformListScrollHandle, WeakEntity, Window,
+    div, prelude::FluentBuilder as _, px, rems, uniform_list,
 };
 use oriel_core_tidy::contract::{
     DuplicateKind, DuplicateScope, DuplicateSet, DuplicateSetPage, DuplicateSetRequest, FileId,
     FileKind, FileRow, RootId, SimilarityLevel, is_close_call,
 };
-use oriel_ui::segmented::{Segmented, SegmentedItem};
+use oriel_ui::layout::NavItem;
 use oriel_ui::{Toast, TopBar};
 
 use crate::actions::PerformOptions;
@@ -43,15 +45,14 @@ use crate::format;
 use crate::loaded::Loaded;
 use crate::pages::TidyPage;
 use crate::quick_look::quick_look;
-use crate::settings::SIMILARITY_LEVELS;
 use crate::state::TidyState;
 use crate::thumbs::{self, Thumbs};
 use crate::widgets;
 
 pub use model::SetRow;
 use model::{
-    copy_of_number, decision_label, facts_of, files_of, freed_bytes, holding_summary,
-    keep_every_label, keeper_of, kept_ids, reason_of, removal_of, rows_of,
+    Lane, Standing, copy_of_number, decision_label, facts_of, files_of, freed_bytes, has_video,
+    holding_summary, keep_every_label, keeper_of, kept_ids, reason_of, removal_of, rows_of,
 };
 use video::TileVideo;
 
@@ -61,17 +62,19 @@ const PAGE: usize = 100;
 /// How long a click on a new set waits, so a double-click never decides two sets.
 const ARM_DELAY: Duration = Duration::from_millis(400);
 
-/// The queue's rows.
-const QUEUE_ROW: f32 = 60.;
-
 /// A set of more versions than this scrolls, a line of four at a time.
 const FITS: usize = 6;
 
-/// The height of a line of versions once the grid scrolls, and the space below the last line,
-/// which the decision bar floats over. The space between lines and above the first is a rem
-/// (`gap_4`, `pt_4`).
+/// The height of a line of versions once the grid scrolls, which the grid's own arithmetic
+/// (`lines_to_draw`) needs in pixels. The space between lines, above the first and below the
+/// last is a rem (`gap_4`, `pt_4`, `pb_4`).
 const LINE: f32 = 300.;
-const GRID_BOTTOM: f32 = 76.;
+
+/// The loupe's surround: always this near-black, with light text, so a picture is judged on a
+/// neutral ground in either theme; and the amber its losses read in on it.
+const LOUPE_SURFACE: u32 = 0x09_09_0b;
+const LOUPE_TEXT: u32 = 0xf4_f4_f5;
+const LOUPE_LOSS: u32 = 0xfc_d3_4d;
 
 /// Lines above and below the screen whose pictures are decoded ahead of a scroll, but not drawn.
 const NEAR_LINES: usize = 1;
@@ -250,7 +253,7 @@ impl DuplicatesPage {
         } else if self.looking {
             format!("Keep {}", self.focus_row() + 1)
         } else {
-            decision_label(set, &rows_of(set), &self.kept())
+            decision_label(&rows_of(set), &self.kept())
         })
     }
 
@@ -560,7 +563,8 @@ impl DuplicatesPage {
         cx.notify();
     }
 
-    /// N: marks the set as not duplicates (identical copies: keeps every copy), with Undo.
+    /// N, Keep both or Keep all: keeps every version and moves the set to Not duplicates, with
+    /// Undo.
     fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(set) = self.active().cloned() else {
             return;
@@ -600,12 +604,7 @@ impl DuplicatesPage {
                     let undo_state = state.clone();
                     crate::widgets::show_toast(
                         window,
-                        Toast::done(if set.kind == DuplicateKind::Exact {
-                            "Kept every copy"
-                        } else {
-                            "Marked as not duplicates"
-                        })
-                        .action("Undo", move |_, cx| {
+                        Toast::done("Moved to Not duplicates").action("Undo", move |_, cx| {
                             undo_state.update(cx, |state, _| state.drop_undo(undo));
                             restore(cx);
                         }),
@@ -619,7 +618,8 @@ impl DuplicatesPage {
                     this.unhide(&set.key, cx);
                     crate::widgets::show_toast(
                         window,
-                        Toast::error("Something went wrong").detail(format!("{error:#}")),
+                        Toast::error("Couldn't mark the set as not duplicates")
+                            .detail(format!("{error:#}")),
                         cx,
                     );
                 }
@@ -654,7 +654,7 @@ impl DuplicatesPage {
                     this.unhide(&set.key, cx);
                     crate::widgets::show_toast(
                         window,
-                        Toast::error("Something went wrong").detail(format!("{error:#}")),
+                        Toast::error("Couldn't restore the set").detail(format!("{error:#}")),
                         cx,
                     );
                 }
@@ -971,184 +971,258 @@ impl DuplicatesPage {
 
     // Drawing.
 
-    fn render_top_bar(&self, cx: &mut Context<Self>) -> TopBar {
-        let state = self.state.read(cx);
-        let theme = cx.theme();
-        let settings = state.settings().cloned();
-        let level = settings
-            .as_ref()
-            .map_or(SimilarityLevel::Balanced, |settings| settings.similarity);
-        let spot = settings
-            .as_ref()
-            .is_some_and(|settings| settings.spot_variants);
-        let analysing = state.analysis().is_some() || state.scan().is_some();
-        let note = self.page().and_then(|page| {
-            if page.fingerprinted < page.fingerprintable {
-                Some(format!(
+    /// What the analysis has left to do for this page, and what that means: fingerprints first,
+    /// then, with Spot variants, the similar pictures still to compare. While the comparing runs,
+    /// the job counts what is left, as Electron Oriel's note does, since the sets are rebuilt
+    /// only when it ends.
+    fn analysis_note(&self, cx: &App) -> Option<(String, &'static str)> {
+        let page = self.page()?;
+        if page.fingerprinted < page.fingerprintable {
+            return Some((
+                format!(
                     "Checking {} of {}",
                     format::count(page.fingerprinted),
                     format::count(page.fingerprintable)
-                ))
-            } else if page.compared < page.comparable {
-                Some(format!(
+                ),
+                "Similar versions appear as each picture and video is checked",
+            ));
+        }
+        if page.compared < page.comparable {
+            let running = self.state.read(cx).analysis().and_then(|analysis| {
+                let progress = analysis.job.read(cx).progress();
+                (progress.phase().starts_with("Comparing") && progress.total() > 0)
+                    .then(|| (progress.done() as i64, progress.total() as i64))
+            });
+            let (done, total) = running.unwrap_or((page.compared, page.comparable));
+            return Some((
+                format!(
                     "Comparing {} of {}",
-                    format::count(page.compared),
-                    format::count(page.comparable)
-                ))
-            } else {
-                None
-            }
-        });
+                    format::count(done),
+                    format::count(total)
+                ),
+                "Spot variants compares each similar picture with the rest of its set",
+            ));
+        }
+        None
+    }
+
+    fn render_top_bar(&self, cx: &mut Context<Self>) -> TopBar {
+        let state = self.state.read(cx);
+        let theme = cx.theme();
+        let analysing = state.analysis().is_some() || state.scan().is_some();
         let shell = state.shell.clone();
-        let dismissed = self.page().map(|page| page.counts.dismissed);
-        let levels = Segmented::new("duplicates-level", "Similar versions").items(
-            SIMILARITY_LEVELS.map(|(value, label)| {
-                let state = self.state.clone();
-                SegmentedItem::new(SharedString::from(format!("level-{value}")), label)
-                    .selected(value == level)
-                    .on_click(move |_, window, cx| {
-                        let Some(mut settings) = state.read(cx).settings().cloned() else {
-                            return;
-                        };
-                        settings.similarity = value;
-                        state.update(cx, |state, cx| state.update_settings(settings, window, cx));
-                    })
-            }),
-        );
-        let spot_state = self.state.clone();
-        TopBar::new(
-            &shell,
-            if self.dismissed_mode {
-                "Not duplicates"
-            } else {
-                "Duplicates"
-            },
-        )
-        .when_some(note, |bar, note| {
-            bar.trailing(
+        let note = self.analysis_note(cx);
+        // What counts as similar matters only where similar versions are shown.
+        let matching = !self.dismissed_mode && self.scope(cx) != DuplicateScope::Exact;
+        TopBar::new(&shell, "Duplicates")
+            .when_some(note, |bar, (note, tooltip)| {
+                bar.trailing(
+                    div()
+                        .id("duplicates-analysis-note")
+                        .test_support()
+                        .aria_label(SharedString::from(note.clone()))
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_2()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .when(analysing, |this| this.child(Spinner::new().small()))
+                        .child(note)
+                        .tooltip(move |window, cx| {
+                            gpui_kit::component::tooltip::Tooltip::new(tooltip).build(window, cx)
+                        }),
+                )
+            })
+            .when(matching, |bar| bar.trailing(self.render_matching(cx)))
+    }
+
+    /// "Matching: Balanced…": the settings that decide what counts as a duplicate, Settings ›
+    /// Tidy's own rows, in a popover from the top bar.
+    fn render_matching(&self, cx: &App) -> AnyElement {
+        let level = self
+            .state
+            .read(cx)
+            .settings()
+            .map_or(SimilarityLevel::Balanced, |settings| settings.similarity);
+        let state = self.state.clone();
+        Popover::new("duplicates-matching-popover")
+            .anchor(Anchor::TopRight)
+            .trigger(
+                Button::new("duplicates-matching")
+                    .outline()
+                    .small()
+                    .label(format!(
+                        "Matching: {}…",
+                        crate::settings::similarity_label(level)
+                    )),
+            )
+            .content(move |_, _, cx| {
+                let Some(settings) = state.read(cx).settings().cloned() else {
+                    return div().into_any_element();
+                };
+                let [similarity, spot] =
+                    crate::settings::matching_rows(&state, &settings, "duplicates");
                 div()
                     .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_2()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .when(analysing, |this| this.child(Spinner::new().small()))
-                    .child(note),
-            )
-        })
-        .trailing(levels)
-        .trailing(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .text_size(px(13.))
-                .child("Spot variants")
-                .child(
-                    Switch::new("duplicates-spot-variants")
-                        .checked(spot)
-                        .accessibility_label("Spot variants")
-                        .tooltip(
-                            "Keeps every picture that differs in one area (a face, an outfit, a \
-                             caption's language), and keeps each picture's copy with sound, the \
-                             most pixels, or in the folder holding the rest of its set",
-                        )
-                        .on_click(move |checked, window, cx| {
-                            let Some(mut settings) = spot_state.read(cx).settings().cloned() else {
-                                return;
-                            };
-                            settings.spot_variants = *checked;
-                            spot_state.update(cx, |state, cx| {
-                                state.update_settings(settings, window, cx);
-                            });
-                        }),
-                ),
-        )
-        .trailing(
-            Button::new("duplicates-not-duplicates")
-                .outline()
-                .small()
-                .toggled(self.dismissed_mode)
-                .label(match dismissed {
-                    Some(count) => format!("Not duplicates {}", format::count(count)),
-                    None => "Not duplicates".into(),
-                })
-                .tooltip(if self.dismissed_mode {
-                    "Back to the sets to review"
-                } else {
-                    "Sets you marked as not duplicates"
-                })
-                .on_click(cx.listener(|this, _, _, cx| {
-                    let next = !this.dismissed_mode;
-                    this.show_dismissed(next, cx);
-                })),
-        )
-    }
-
-    fn render_scope_switch(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let page = self.page()?;
-        if self.dismissed_mode {
-            return None;
-        }
-        let scope = self.scope(cx);
-        let spot = self.spot_variants(cx);
-        let mut options = vec![(DuplicateScope::Similar, "Similar", page.counts.similar)];
-        if spot {
-            options.push((DuplicateScope::Variants, "Variants", page.counts.variants));
-        }
-        options.push((DuplicateScope::Exact, "Identical", page.counts.exact));
-        let this = cx.entity().downgrade();
-        Some(
-            Segmented::new("duplicates-scope", "Show")
-                .fill()
-                .items(options.into_iter().map(|(value, label, count)| {
-                    let this = this.clone();
-                    SegmentedItem::new(
-                        SharedString::from(format!("scope-{value}")),
-                        format!("{label} {}", format::count(count)),
+                    .flex_col()
+                    .w(rems(26.))
+                    .child(similarity)
+                    .child(
+                        div()
+                            .border_t_1()
+                            .border_color(cx.theme().border)
+                            .child(spot),
                     )
-                    .selected(value == scope)
-                    .on_click(move |_, _, cx| {
-                        this.update(cx, |this, cx| this.change_scope(value, cx))
-                            .ok();
-                    })
-                }))
-                .into_any_element(),
-        )
+                    .into_any_element()
+            })
+            .into_any_element()
     }
 
-    fn render_queue(&self, cx: &mut Context<Self>) -> AnyElement {
+    /// The queue's scopes as rows, in the pattern of the sidebar's: Similar, Variants (with Spot
+    /// variants on), Identical, and apart from them, the list of sets marked Not duplicates.
+    /// A row with nothing in it is dimmed, but stays where it is.
+    fn render_scope_list(&self, cx: &mut Context<Self>) -> AnyElement {
+        let counts = self.page().map(|page| page.counts);
+        let scope = self.scope(cx);
+        let mut scopes = vec![(
+            DuplicateScope::Similar,
+            "Similar",
+            IconName::Images,
+            counts.map(|counts| counts.similar),
+        )];
+        if self.spot_variants(cx) {
+            scopes.push((
+                DuplicateScope::Variants,
+                "Variants",
+                IconName::GalleryVerticalEnd,
+                counts.map(|counts| counts.variants),
+            ));
+        }
+        scopes.push((
+            DuplicateScope::Exact,
+            "Identical",
+            IconName::Copy,
+            counts.map(|counts| counts.exact),
+        ));
+        let this = cx.entity().downgrade();
+        let theme = cx.theme();
+        let (muted, border) = (theme.muted_foreground, theme.border);
+        let row = |id: SharedString,
+                   icon: IconName,
+                   label: &'static str,
+                   count: Option<i64>,
+                   current: bool,
+                   on_click: Box<dyn Fn(&mut App)>| {
+            let shown = count.map(format::count);
+            div()
+                .when(count == Some(0) && !current, |this| this.opacity(0.5))
+                .child(
+                    NavItem::new(id, Icon::new(icon), label)
+                        .accessibility_label(match &shown {
+                            Some(shown) => format!("{label} {shown}"),
+                            None => label.to_string(),
+                        })
+                        .current(current)
+                        .when_some(shown, |item, shown| {
+                            item.trailing(
+                                div()
+                                    .flex_shrink_0()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .child(shown),
+                            )
+                        })
+                        .on_click(move |_, _, cx| on_click(cx)),
+                )
+        };
+        let rows: Vec<_> = scopes
+            .into_iter()
+            .map(|(value, label, icon, count)| {
+                let this = this.clone();
+                row(
+                    SharedString::from(format!("scope-{value}")),
+                    icon,
+                    label,
+                    count,
+                    !self.dismissed_mode && value == scope,
+                    Box::new(move |cx| {
+                        this.update(cx, |this, cx| {
+                            this.dismissed_mode = false;
+                            this.change_scope(value, cx);
+                        })
+                        .ok();
+                    }),
+                )
+            })
+            .collect();
+        let dismissed = row(
+            "scope-dismissed".into(),
+            IconName::EyeOff,
+            "Not duplicates",
+            counts.map(|counts| counts.dismissed),
+            self.dismissed_mode,
+            Box::new(move |cx| {
+                this.update(cx, |this, cx| this.show_dismissed(true, cx))
+                    .ok();
+            }),
+        );
+        div()
+            .id("duplicates-scopes")
+            .test_support()
+            .role(Role::Navigation)
+            .aria_label("Duplicates to show")
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .children(rows)
+            .child(div().mx_2().my_1p5().h(px(1.)).bg(border))
+            .child(dismissed)
+            .into_any_element()
+    }
+
+    /// The queue's column: the scopes, then the sets of the scope on screen. `sets` is empty
+    /// for a scope with nothing in it, where the column keeps only its scopes.
+    fn render_queue(&self, sets: bool, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let (border, muted) = (theme.border, theme.muted_foreground);
-        let header = self.render_scope_switch(cx);
+        let header = self.render_scope_list(cx);
         let count = self.sets().len();
         let this = cx.entity().downgrade();
         div()
             .flex()
             .flex_col()
-            .w(px(248.))
+            .w(rems(16.))
             .flex_shrink_0()
             .h_full()
             .border_r_1()
             .border_color(border)
-            .child(div().flex_shrink_0().px_3().pt_3().pb_2().children(header))
             .child(
-                uniform_list("duplicates-queue", count, move |range, _, cx| {
-                    let Some(page) = this.upgrade() else {
-                        return Vec::new();
-                    };
-                    let page = page.clone();
-                    range
-                        .map(|index| render_queue_row(&page, index, muted, cx))
-                        .collect()
-                })
-                .track_scroll(&self.queue_scroll)
-                .flex_1()
-                .px_2()
-                .pb_3(),
+                div()
+                    .flex_shrink_0()
+                    .px_2()
+                    .pt_3()
+                    .pb_2()
+                    .when(sets, |this| this.border_b_1().border_color(border))
+                    .child(header),
             )
+            .when(sets, |this_column| {
+                this_column.child(
+                    uniform_list("duplicates-queue", count, move |range, _, cx| {
+                        let Some(page) = this.upgrade() else {
+                            return Vec::new();
+                        };
+                        range
+                            .map(|index| render_queue_row(&page, index, muted, cx))
+                            .collect()
+                    })
+                    .track_scroll(&self.queue_scroll)
+                    .flex_1()
+                    .px_2()
+                    .pt_1()
+                    .pb_3(),
+                )
+            })
             .into_any_element()
     }
 
@@ -1160,6 +1234,8 @@ impl DuplicatesPage {
         let kept = self.kept();
         let overridden = self.overrides.contains_key(&set.key);
         let reason = reason_of(&set, &rows, &kept, overridden);
+        let line = (!self.dismissed_mode && !reason.text.is_empty())
+            .then(|| render_decision_line(&reason, cx));
         let body = if set.kind == DuplicateKind::Exact {
             self.render_copies(&set, &rows, &kept, &reason.text, cx)
         } else {
@@ -1172,14 +1248,23 @@ impl DuplicatesPage {
             .id(SharedString::from(format!("set-{}", set.key)))
             .test_support()
             .aria_label(SharedString::from(set.key.clone()))
-            .relative()
             .flex()
             .flex_col()
             .flex_1()
             .min_w_0()
             .min_h_0()
-            .child(body)
-            .children(loupe)
+            .child(
+                // The loupe covers the decision line and the versions, never the bar.
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h_0()
+                    .children(line)
+                    .child(body)
+                    .children(loupe),
+            )
             .child(bar)
             .into_any_element()
     }
@@ -1207,12 +1292,19 @@ impl DuplicatesPage {
             5 | 6 => 3,
             _ => 4,
         };
-        let shared: HashSet<String> = {
-            let mut seen = HashSet::new();
-            rows.iter()
-                .filter(|row| !seen.insert(row.file.dir.clone()))
-                .map(|row| row.file.dir.clone())
-                .collect()
+        // Every tile carries the same lines, so the pictures above them stay the same height:
+        // the name when two versions share a folder, the video lanes when one is a video, and
+        // a line of notes when one has a note.
+        let layout = TileLayout {
+            names: {
+                let mut seen = HashSet::new();
+                rows.iter().any(|row| !seen.insert(row.file.dir.as_str()))
+            },
+            video: has_video(rows),
+            notes: rows
+                .iter()
+                .enumerate()
+                .any(|(index, row)| !tile_notes(set, row, index).is_empty()),
         };
         let several = kept.len() > 1;
         let focused = self.keyboard_focus.then(|| self.focus_row());
@@ -1264,10 +1356,9 @@ impl DuplicatesPage {
                         &keeper,
                         kept,
                         reason,
-                        shared.contains(&row.file.dir),
+                        layout,
                         several,
                         focused == Some(index),
-                        window,
                         cx,
                     )
                 })
@@ -1307,7 +1398,7 @@ impl DuplicatesPage {
             .gap_4()
             .px_5()
             .pt_4()
-            .pb(px(GRID_BOTTOM))
+            .pb_4()
             .when(scrolls, |this| this.overflow_y_scroll())
             .when_some(scroll, |this, scroll| this.track_scroll(&scroll))
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
@@ -1320,6 +1411,9 @@ impl DuplicatesPage {
             .into_any_element()
     }
 
+    /// One version: its picture with its checkbox, number and menu, then what happens to it,
+    /// its folder, and its lanes against the keeper. A plain click keeps only this one and goes
+    /// on, as in Electron Oriel; the fate line and the tooltip say so.
     #[allow(clippy::too_many_arguments)]
     fn render_tile(
         &mut self,
@@ -1329,20 +1423,20 @@ impl DuplicatesPage {
         keeper: &FileRow,
         kept: &[FileId],
         reason: &model::Reason,
-        show_name: bool,
+        layout: TileLayout,
         several: bool,
         focused: bool,
-        _: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = cx.theme();
-        let (primary, border, muted, warning, ground, radius, card) = (
+        let (primary, foreground, border, muted, ground, radius, inner_radius, card) = (
             theme.primary,
+            theme.foreground,
             theme.border,
             theme.muted_foreground,
-            theme.warning,
             theme.muted,
             theme.radius_lg,
+            theme.radius,
             theme.group_box,
         );
         let file = row.file.clone();
@@ -1350,9 +1444,9 @@ impl DuplicatesPage {
         let is_kept = kept.contains(&file.id);
         let suggested = reason.close_call && is_kept && !self.overrides.contains_key(&set.key);
         let read_only = self.dismissed_mode;
-        let facts = facts_of(&file, keeper);
+        let lanes = facts_of(&file, keeper, layout.video);
         let copy_of = copy_of_number(set, index);
-        let hard_linked = set.hard_linked_ids.contains(&file.id);
+        let notes = tile_notes(set, row, index);
         let playing = self
             .video
             .as_ref()
@@ -1385,41 +1479,34 @@ impl DuplicatesPage {
                 file.rel_path
             )
         };
-        let (look_file, reveal_path, play_file) = (index, file.abs_path.clone(), file.clone());
-        let shown_path = file.abs_path.clone();
-        let facts_line: Vec<AnyElement> = facts
-            .iter()
-            .enumerate()
-            .flat_map(|(position, fact)| {
-                let separator = (position > 0).then(|| div().child(" · ").into_any_element());
-                let text = div()
-                    .when(fact.worse, |this| {
-                        this.text_color(warning).font_weight(FontWeight::MEDIUM)
-                    })
-                    .child(fact.text.clone())
-                    .into_any_element();
-                separator.into_iter().chain([text])
-            })
-            .collect();
-        let also: Option<String> = match row.copies.as_slice() {
-            [] => None,
-            [copy] => Some(format!(
-                "Also in {}",
-                if copy.dir.is_empty() {
-                    "the top folder"
-                } else {
-                    &copy.dir
-                }
-            )),
-            copies => Some(format!("Also in {} other folders", copies.len())),
+        let play_file = file.clone();
+        let menu = VersionMenu {
+            page: cx.entity().downgrade(),
+            state: self.state.clone(),
+            index,
+            file: file.clone(),
+            similar: set.kind == DuplicateKind::Similar,
+            read_only,
         };
-        div()
+        let context_menu = menu.clone();
+        // What deciding does to this version: the icon, its colour, the words, and whether it
+        // stays (which reads stronger).
+        let fate: Option<(IconName, Hsla, &'static str, bool)> = if read_only {
+            None
+        } else if suggested {
+            Some((IconName::Check, foreground, "Suggested", true))
+        } else if is_kept {
+            Some((IconName::Check, foreground, "Keep", true))
+        } else {
+            Some((IconName::Archive, muted, "Goes to holding", false))
+        };
+        let tile = div()
             .id(("version", file.id as u64))
             .test_support()
             .aria_label(SharedString::from(file.name.clone()))
             .aria_selected(is_kept)
             .aria_description(SharedString::from(
-                copy_of.map_or_else(String::new, |of| format!("A copy of {of}")),
+                copy_of.map_or_else(String::new, |of| format!("Same picture as {of}")),
             ))
             .tooltip({
                 let tooltip = SharedString::from(tooltip);
@@ -1427,7 +1514,6 @@ impl DuplicatesPage {
                     gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(window, cx)
                 }
             })
-            .relative()
             .flex()
             .flex_col()
             .flex_1()
@@ -1438,7 +1524,6 @@ impl DuplicatesPage {
             .border_2()
             .border_color(ring)
             .bg(card)
-            .when(!read_only, |this| this.cursor_pointer())
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 if *hovered {
                     this.hover_row = Some(index);
@@ -1464,7 +1549,7 @@ impl DuplicatesPage {
                     .relative()
                     .flex_1()
                     .min_h_0()
-                    .rounded(radius - px(4.))
+                    .rounded(inner_radius)
                     .overflow_hidden()
                     .bg(ground)
                     .child(picture)
@@ -1476,7 +1561,7 @@ impl DuplicatesPage {
                             .flex()
                             .flex_row()
                             .items_center()
-                            .gap(px(6.))
+                            .gap_1p5()
                             .when(!read_only, |this| {
                                 this.child(
                                     Checkbox::new(("keep-version", file.id as u64))
@@ -1497,57 +1582,27 @@ impl DuplicatesPage {
                                         })),
                                 )
                             })
-                            .child(badge(number.to_string().into(), false, cx)),
+                            .child(number_badge(number, cx)),
                     )
                     .child(
+                        // The menu's own click must not reach the tile, which would keep it.
                         div()
                             .absolute()
                             .top_2()
                             .right_2()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap(px(6.))
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                             .child(
-                                Button::new(("reveal-version", file.id as u64))
+                                Button::new(("version-menu", file.id as u64))
                                     .xsmall()
-                                    .icon(Icon::new(IconName::FolderOpen))
-                                    .accessibility_label("Show in Finder")
-                                    .tooltip("Show in Finder  ⇧⌘R")
-                                    .on_click(move |_, _, cx| {
-                                        cx.stop_propagation();
-                                        cx.reveal_path(Path::new(&reveal_path));
-                                    }),
-                            )
-                            .child(
-                                Button::new(("open-version-in-view", file.id as u64))
-                                    .xsmall()
-                                    .icon(Icon::new(IconName::Images))
-                                    .accessibility_label("Open in View")
-                                    .tooltip("Open in View")
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        cx.stop_propagation();
-                                        this.open_in_view(shown_path.clone(), cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new(("look-version", file.id as u64))
-                                    .xsmall()
-                                    .icon(Icon::new(IconName::Maximize2))
-                                    .accessibility_label("Look closer")
-                                    .tooltip("Look closer  Space")
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        cx.stop_propagation();
-                                        this.open_loupe(look_file, cx);
-                                    })),
-                            )
-                            .when(is_kept, |this| {
-                                this.child(badge(
-                                    if suggested { "Suggested" } else { "Keep" }.into(),
-                                    !suggested,
-                                    cx,
-                                ))
-                            }),
+                                    .icon(Icon::new(IconName::Ellipsis))
+                                    .accessibility_label(SharedString::from(format!(
+                                        "More for version {number}"
+                                    )))
+                                    .dropdown_menu_with_anchor(
+                                        Anchor::TopRight,
+                                        move |popup, _, _| menu.build(popup),
+                                    ),
+                            ),
                     )
                     // Once it plays, the video's own controls take over from this button.
                     .when(video && playing.is_none(), |this| {
@@ -1573,12 +1628,30 @@ impl DuplicatesPage {
                 div()
                     .flex()
                     .flex_col()
+                    .gap_1()
                     .px_2()
                     .pt_2()
-                    .pb(px(6.))
+                    .pb_1p5()
+                    .when_some(fate, |this, (icon, color, fate, strong)| {
+                        this.child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap_1p5()
+                                .text_sm()
+                                .when(strong, |this| this.font_weight(FontWeight::MEDIUM))
+                                .when(!strong, |this| this.text_color(muted))
+                                .child(Icon::new(icon).small().text_color(color))
+                                .child(fate),
+                        )
+                    })
                     .child(
+                        // Two lines for the folder, always, so pictures keep one height.
                         div()
-                            .text_size(px(13.))
+                            .h(rems(2.5))
+                            .text_sm()
+                            .line_height(rems(1.25))
                             .line_clamp(2)
                             .child(if file.dir.is_empty() {
                                 "The top folder".to_string()
@@ -1586,28 +1659,25 @@ impl DuplicatesPage {
                                 file.dir.clone()
                             }),
                     )
-                    .when(show_name, |this| {
+                    .when(layout.names, |this| {
                         this.child(widgets::caption(file.name.clone(), cx).truncate())
                     })
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .flex_wrap()
-                            .text_xs()
-                            .text_color(muted)
-                            .children(facts_line),
-                    )
-                    .when_some(copy_of, |this, of| {
-                        this.child(widgets::caption(format!("A copy of {of}"), cx))
-                    })
-                    .when_some(also, |this, also| {
-                        this.child(widgets::caption(also, cx).truncate())
-                    })
-                    .when(hard_linked, |this| {
-                        this.child(widgets::caption("A hard link, so it frees nothing", cx))
+                    .child(render_lanes(&lanes, cx))
+                    .when(layout.notes, |this| {
+                        this.child(
+                            widgets::caption(
+                                if notes.is_empty() {
+                                    "\u{a0}".to_string()
+                                } else {
+                                    notes.join(" · ")
+                                },
+                                cx,
+                            )
+                            .truncate(),
+                        )
                     }),
-            )
+            );
+        tile.context_menu(move |popup, _, _| context_menu.build(popup))
             .into_any_element()
     }
 
@@ -1653,10 +1723,11 @@ impl DuplicatesPage {
             None => thumbs::picture(&self.thumbs, &first, 1024, ObjectFit::Contain, cx),
         };
         let theme = cx.theme();
-        let (border, accent, muted, radius_lg, ground) = (
+        let (border, accent, muted, radius, radius_lg, ground) = (
             theme.border,
             theme.accent,
             theme.muted_foreground,
+            theme.radius,
             theme.radius_lg,
             theme.muted,
         );
@@ -1673,11 +1744,13 @@ impl DuplicatesPage {
                     })),
             )
         });
+        // A tall picture is held to a height (32 rem) by its width, so the list of places stays
+        // in reach.
         let well = div()
             .relative()
             .flex_1()
-            .min_w(px(320.))
-            .max_h_full()
+            .min_w_80()
+            .max_w(rems(32. * aspect))
             .aspect_ratio(aspect)
             .rounded(radius_lg)
             .overflow_hidden()
@@ -1701,7 +1774,15 @@ impl DuplicatesPage {
             .map(|(index, row)| {
                 let file = &row.file;
                 let is_kept = kept.contains(&file.id);
-                let (reveal, shown) = (file.abs_path.clone(), file.abs_path.clone());
+                let menu = VersionMenu {
+                    page: cx.entity().downgrade(),
+                    state: self.state.clone(),
+                    index,
+                    file: file.clone(),
+                    similar: false,
+                    read_only,
+                };
+                let context_menu = menu.clone();
                 let place = if file.dir.is_empty() {
                     "the top folder".to_string()
                 } else {
@@ -1748,7 +1829,7 @@ impl DuplicatesPage {
                     .flex_row()
                     .items_center()
                     .gap_3()
-                    .min_h(px(52.))
+                    .min_h_12()
                     .pl_3()
                     .pr_2()
                     .py_2()
@@ -1802,13 +1883,13 @@ impl DuplicatesPage {
                     .child(
                         div()
                             .flex_shrink_0()
-                            .min_w(px(20.))
-                            .h(px(20.))
+                            .min_w_5()
+                            .h_5()
                             .px_1()
                             .flex()
                             .items_center()
                             .justify_center()
-                            .rounded(px(5.))
+                            .rounded(radius)
                             .border_1()
                             .border_color(border)
                             .text_xs()
@@ -1821,93 +1902,78 @@ impl DuplicatesPage {
                             .flex_col()
                             .flex_1()
                             .min_w_0()
-                            .child(
-                                div()
-                                    .text_size(px(13.))
-                                    .line_height(px(18.))
-                                    .line_clamp(3)
-                                    .child(if file.dir.is_empty() {
-                                        "The top folder".to_string()
-                                    } else {
-                                        file.dir.clone()
-                                    }),
-                            )
+                            .child(div().text_sm().line_clamp(3).child(if file.dir.is_empty() {
+                                "The top folder".to_string()
+                            } else {
+                                file.dir.clone()
+                            }))
                             .child(widgets::caption(note, cx).truncate()),
                     )
-                    .when(!is_kept && !read_only, |this| {
+                    .when(!read_only, |this| {
                         this.child(
                             div()
                                 .flex_shrink_0()
-                                .invisible()
-                                .group_hover("copy", |style| style.visible())
-                                .child(widgets::caption("Keep only this", cx)),
+                                .text_xs()
+                                .when(is_kept, |this| this.font_weight(FontWeight::MEDIUM))
+                                .when(!is_kept, |this| this.text_color(muted))
+                                .child(if is_kept { "Keep" } else { "Goes to holding" }),
                         )
                     })
                     .child(
-                        Button::new(("reveal-version", file.id as u64))
-                            .ghost()
-                            .xsmall()
-                            .icon(Icon::new(IconName::FolderOpen))
-                            .accessibility_label(format!("Show the copy in {place} in Finder"))
-                            .tooltip("Show in Finder  ⇧⌘R")
-                            .on_click(move |_, _, cx| {
-                                cx.stop_propagation();
-                                cx.reveal_path(Path::new(&reveal));
-                            }),
+                        // The menu's own click must not reach the row, which would keep it.
+                        div()
+                            .flex_shrink_0()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .child(
+                                Button::new(("version-menu", file.id as u64))
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(Icon::new(IconName::Ellipsis))
+                                    .accessibility_label(SharedString::from(format!(
+                                        "More for the copy in {place}"
+                                    )))
+                                    .dropdown_menu_with_anchor(
+                                        Anchor::TopRight,
+                                        move |popup, _, _| menu.build(popup),
+                                    ),
+                            ),
                     )
-                    .child(
-                        Button::new(("open-version-in-view", file.id as u64))
-                            .ghost()
-                            .xsmall()
-                            .icon(Icon::new(IconName::Images))
-                            .accessibility_label(format!("Open the copy in {place} in View"))
-                            .tooltip("Open in View")
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.open_in_view(shown.clone(), cx);
-                            })),
-                    )
+                    .context_menu(move |popup, _, _| context_menu.build(popup))
                     .into_any_element()
             })
             .collect();
-        let list = div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(320.))
-            .child(
-                div()
-                    .text_size(px(15.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(format::plural_as(
-                        rows.len() as i64,
-                        "identical copy",
-                        "identical copies",
-                    )),
-            )
-            .child(widgets::caption(summary, cx).mt_1())
-            .child(
-                div()
-                    .mt_5()
-                    .mb_2()
-                    .flex()
-                    .flex_row()
-                    .flex_wrap()
-                    .items_baseline()
-                    .justify_between()
-                    .gap_x_3()
-                    .child(
-                        div()
-                            .text_xs()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(muted)
-                            .child("Keep the copy in"),
-                    )
-                    .when(!read_only, |this| {
-                        this.child(widgets::caption("Check more than one to keep several", cx))
-                    }),
-            )
-            .child(widgets::card(cx).overflow_hidden().children(lines));
+        let list =
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_w_80()
+                .child(div().text_base().font_weight(FontWeight::SEMIBOLD).child(
+                    format::plural_as(rows.len() as i64, "identical copy", "identical copies"),
+                ))
+                .child(widgets::caption(summary, cx).mt_1())
+                .child(
+                    div()
+                        .mt_5()
+                        .mb_2()
+                        .flex()
+                        .flex_row()
+                        .flex_wrap()
+                        .items_baseline()
+                        .justify_between()
+                        .gap_x_3()
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(muted)
+                                .child("Keep the copy in"),
+                        )
+                        .when(!read_only, |this| {
+                            this.child(widgets::caption("Check more than one to keep several", cx))
+                        }),
+                )
+                .child(widgets::card(cx).overflow_hidden().children(lines));
         div()
             .id("copy-list")
             .flex_1()
@@ -1922,7 +1988,7 @@ impl DuplicatesPage {
                     .gap_6()
                     .px_5()
                     .pt_4()
-                    .pb(px(76.))
+                    .pb_6()
                     .child(well)
                     .child(list),
             )
@@ -2060,10 +2126,11 @@ impl DuplicatesPage {
         let keeper = keeper_of(set, rows, focus, kept)
             .cloned()
             .unwrap_or_else(|| file.clone());
-        let facts = facts_of(&file, &keeper);
+        let lanes = facts_of(&file, &keeper, has_video(rows));
         let close_call = reason.close_call;
         let wide = f32::from(window.viewport_size().width) >= 1024.;
-        let amber = gpui_kit::rgb(0xfc_d3_4d);
+        let amber = gpui_kit::rgb(LOUPE_LOSS);
+        let chip = gpui_kit::rgb(LOUPE_TEXT).opacity(0.1);
         let mut caption = div()
             .flex()
             .flex_row()
@@ -2071,17 +2138,20 @@ impl DuplicatesPage {
             .whitespace_nowrap()
             .text_xs()
             .opacity(0.7);
-        for (position, fact) in facts.into_iter().enumerate() {
+        // The same lanes as the tiles, on one line; a file without a value skips its lane.
+        let shown = lanes.into_iter().filter(|lane| lane.value != "—");
+        for (position, lane) in shown.enumerate() {
             if position > 0 {
                 caption = caption.child(div().flex_shrink_0().child(" · "));
             }
+            let worse = lane.worse();
             caption = caption.child(
                 div()
                     .flex_shrink_0()
-                    .when(fact.worse, |this| {
+                    .when(worse, |this| {
                         this.text_color(amber).font_weight(FontWeight::MEDIUM)
                     })
-                    .child(fact.text),
+                    .child(lane.value),
             );
         }
         if !is_kept {
@@ -2100,15 +2170,16 @@ impl DuplicatesPage {
                 .gap_1()
                 .px_2()
                 .py_0p5()
-                .rounded(px(6.))
+                .rounded(cx.theme().radius)
                 .text_xs()
                 .font_weight(FontWeight::MEDIUM)
                 .map(|this| {
                     if close_call {
-                        this.bg(gpui_kit::white().opacity(0.1)).child("Suggested")
+                        this.bg(chip).child("Suggested")
                     } else {
                         this.bg(cx.theme().primary)
-                            .child(Icon::new(IconName::Check).size(px(14.)))
+                            .text_color(cx.theme().primary_foreground)
+                            .child(Icon::new(IconName::Check).small())
                             .child("Keep")
                     }
                 })
@@ -2120,7 +2191,7 @@ impl DuplicatesPage {
             .then(|| {
                 div()
                     .absolute()
-                    .bottom(px(84.))
+                    .bottom_8()
                     .left_0()
                     .right_0()
                     .flex()
@@ -2148,27 +2219,27 @@ impl DuplicatesPage {
             .inset_0()
             .flex()
             .flex_col()
-            .bg(gpui_kit::rgb(0x09_09_0b))
-            .text_color(gpui_kit::rgb(0xf4_f4_f5))
+            .bg(gpui_kit::rgb(LOUPE_SURFACE))
+            .text_color(gpui_kit::rgb(LOUPE_TEXT))
             .child(
                 div()
                     .flex()
                     .flex_row()
                     .items_center()
                     .gap_3()
-                    .h(px(52.))
+                    .h_12()
                     .pl_5()
                     .pr_3()
                     .child(
                         div()
                             .flex_shrink_0()
-                            .min_w(px(48.))
+                            .min_w_12()
                             .flex()
                             .justify_center()
                             .px_2()
                             .py_0p5()
-                            .rounded(px(6.))
-                            .bg(gpui_kit::white().opacity(0.1))
+                            .rounded(cx.theme().radius)
+                            .bg(chip)
                             .text_xs()
                             .font_weight(FontWeight::MEDIUM)
                             .child(format!("{} of {}", focus + 1, rows.len())),
@@ -2183,7 +2254,7 @@ impl DuplicatesPage {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(13.))
+                                    .text_sm()
                                     .font_weight(FontWeight::MEDIUM)
                                     .child(file.rel_path.clone()),
                             )
@@ -2242,7 +2313,7 @@ impl DuplicatesPage {
                         if zoomed {
                             this.overflow_scroll().cursor(gpui_kit::CursorStyle::Arrow)
                         } else {
-                            this.mx_5().mb(px(76.)).overflow_hidden()
+                            this.mx_5().mb_5().overflow_hidden()
                         }
                     })
                     .on_mouse_move(cx.listener(
@@ -2269,6 +2340,9 @@ impl DuplicatesPage {
             .into_any_element()
     }
 
+    /// The decision bar, docked at the foot of the stage: what the decision does on its leading
+    /// edge ("1 version goes to holding · frees 1.6 MB"), and the commands on its trailing one,
+    /// the primary last.
     fn render_decision_bar(
         &self,
         set: &DuplicateSet,
@@ -2276,100 +2350,102 @@ impl DuplicatesPage {
         kept: &[FileId],
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let theme = cx.theme();
         let removed = removal_of(set, kept).len();
         let focus = self.focus_row();
+        let summary = if self.dismissed_mode {
+            "You marked these as not duplicates".to_string()
+        } else if self.looking {
+            // In the loupe, the primary keeps the version on screen only.
+            let only: Vec<FileId> = rows.get(focus).map(|row| row.file.id).into_iter().collect();
+            holding_summary(set, rows, &only)
+        } else {
+            holding_summary(set, rows, kept)
+        };
+        let theme = cx.theme();
         let mut bar = div()
+            .id("duplicates-decision-bar")
             .flex()
             .flex_row()
             .items_center()
+            .flex_shrink_0()
             .gap_2()
-            .p(px(6.))
-            .rounded(theme.radius_lg)
-            .bg(theme.popover)
-            .border_1()
+            .px_5()
+            .py_3()
+            .border_t_1()
             .border_color(theme.border)
-            .shadow_lg();
+            .bg(theme.background)
+            .child(
+                div()
+                    .id("duplicates-decision-summary")
+                    .test_support()
+                    .aria_label(SharedString::from(summary.clone()))
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_sm()
+                    .text_color(theme.muted_foreground)
+                    .child(summary),
+            );
         if self.dismissed_mode {
-            bar = bar
-                .child(widgets::caption("You marked these as not duplicates", cx).px_3())
+            return bar
                 .child(
                     widgets::primary_action("duplicates-decide", "Restore", "↩")
+                        .tooltip("Back to the sets to review")
                         .on_click(cx.listener(|this, _, window, cx| this.decide(window, cx))),
+                )
+                .into_any_element();
+        }
+        if self.looking {
+            bar = bar
+                .child(
+                    Button::new("loupe-previous")
+                        .ghost()
+                        .icon(Icon::new(IconName::ChevronLeft))
+                        .accessibility_label("Previous version")
+                        .tooltip("Previous version  ←")
+                        .disabled(focus == 0)
+                        .on_click(cx.listener(|this, _, _, cx| this.focus_by(-1, cx))),
+                )
+                .child(
+                    Button::new("loupe-next")
+                        .ghost()
+                        .icon(Icon::new(IconName::ChevronRight))
+                        .accessibility_label("Next version")
+                        .tooltip("Next version  →")
+                        .disabled(focus + 1 >= rows.len())
+                        .on_click(cx.listener(|this, _, _, cx| this.focus_by(1, cx))),
                 );
-        } else {
-            if self.looking {
-                bar = bar
-                    .child(
-                        Button::new("loupe-previous")
-                            .ghost()
-                            .icon(Icon::new(IconName::ChevronLeft))
-                            .accessibility_label("Previous version")
-                            .tooltip("Previous version  ←")
-                            .disabled(focus == 0)
-                            .on_click(cx.listener(|this, _, _, cx| this.focus_by(-1, cx))),
-                    )
-                    .child(
-                        Button::new("loupe-next")
-                            .ghost()
-                            .icon(Icon::new(IconName::ChevronRight))
-                            .accessibility_label("Next version")
-                            .tooltip("Next version  →")
-                            .disabled(focus + 1 >= rows.len())
-                            .on_click(cx.listener(|this, _, _, cx| this.focus_by(1, cx))),
-                    );
-            }
+        }
+        bar = bar.child(
+            Button::new("duplicates-skip")
+                .outline()
+                .label("Skip")
+                .tooltip("Skip for now  S")
+                .on_click(cx.listener(|this, _, _, cx| this.skip(cx))),
+        );
+        if removed > 0 {
             bar = bar.child(
-                Button::new("duplicates-skip")
+                Button::new("duplicates-keep-every")
                     .outline()
-                    .label("Skip")
-                    .tooltip("Skip for now  S")
-                    .on_click(cx.listener(|this, _, _, cx| this.skip(cx))),
-            );
-            if removed > 0 {
-                bar = bar.child(
-                    Button::new("duplicates-keep-every")
-                        .outline()
-                        .label(keep_every_label(set, rows))
-                        .tooltip(format!(
-                            "Keep every {} and stop showing this set  N",
-                            if set.kind == DuplicateKind::Exact {
-                                "copy"
-                            } else {
-                                "version"
-                            }
-                        ))
-                        .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx))),
-                );
-            }
-            let label = self.decision().unwrap_or_default();
-            let tooltip = if self.looking {
-                format!("Keep only {} and go on", focus + 1)
-            } else {
-                holding_summary(set, rows, kept)
-            };
-            bar = bar.child(
-                widgets::primary_action("duplicates-decide", label, "↩")
-                    .tooltip(tooltip)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        if this.looking {
-                            let focus = this.focus_row();
-                            this.keep_only(focus, window, cx);
-                        } else {
-                            this.decide(window, cx);
-                        }
-                    })),
+                    .label(keep_every_label(rows))
+                    .tooltip("Keep every version; the set moves to Not duplicates  N")
+                    .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx))),
             );
         }
-        div()
-            .absolute()
-            .bottom(px(20.))
-            .left_0()
-            .right_0()
-            .flex()
-            .justify_center()
-            .child(bar)
-            .into_any_element()
+        let label = self.decision().unwrap_or_default();
+        bar.child(
+            widgets::primary_action("duplicates-decide", label, "↩").on_click(cx.listener(
+                |this, _, window, cx| {
+                    if this.looking {
+                        let focus = this.focus_row();
+                        this.keep_only(focus, window, cx);
+                    } else {
+                        this.decide(window, cx);
+                    }
+                },
+            )),
+        )
+        .into_any_element()
     }
 
     fn render_empty(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -2450,25 +2526,13 @@ impl DuplicatesPage {
                 );
             }
         }
-        let header = self.render_scope_switch(cx);
-        let theme = cx.theme();
+        let queue = self.render_queue(false, cx);
         div()
             .flex()
             .flex_row()
             .flex_1()
             .min_h_0()
-            .when_some(header, |this, header| {
-                this.child(
-                    div()
-                        .w(px(248.))
-                        .flex_shrink_0()
-                        .px_3()
-                        .pt_3()
-                        .border_r_1()
-                        .border_color(theme.border)
-                        .child(header),
-                )
-            })
+            .child(queue)
             .child(widgets::empty_state(
                 "duplicates-empty",
                 Some(IconName::CircleCheck),
@@ -2497,7 +2561,7 @@ fn lines_to_draw(
     let pitch = LINE + gap;
     let screen = f32::from(window.viewport_size().height);
     // The space above the first line, the lines and the gaps between them, the space below.
-    let content = total as f32 * pitch + GRID_BOTTOM;
+    let content = total as f32 * pitch + gap;
     let bounds = f32::from(scroll.bounds().size.height);
     let most = if bounds > 0. {
         (content - bounds).max(0.)
@@ -2528,33 +2592,214 @@ fn skipped_lines(lines: usize, gap: f32) -> AnyElement {
         .into_any_element()
 }
 
-/// A number or a Keep on a picture (`lw-badge`).
-fn badge(text: SharedString, keep: bool, cx: &App) -> AnyElement {
+/// The lines every tile of a set carries, so tiles stay level with one another.
+#[derive(Clone, Copy, Debug)]
+struct TileLayout {
+    /// The file's name, when two versions share a folder.
+    names: bool,
+    /// Length and Sound, when a version is a video.
+    video: bool,
+    /// A line of notes, when a version has one.
+    notes: bool,
+}
+
+/// What a version's notes line says: the picture it repeats under Spot variants, the
+/// byte-identical copies that go with it ("Also in …"), and a hard link that frees nothing.
+fn tile_notes(set: &DuplicateSet, row: &SetRow, index: usize) -> Vec<String> {
+    let mut notes = Vec::new();
+    if let Some(of) = copy_of_number(set, index) {
+        notes.push(format!("Same picture as {of}"));
+    }
+    match row.copies.as_slice() {
+        [] => {}
+        [copy] => notes.push(format!(
+            "Also in {}",
+            if copy.dir.is_empty() {
+                "the top folder"
+            } else {
+                &copy.dir
+            }
+        )),
+        copies => notes.push(format!("Also in {} other folders", copies.len())),
+    }
+    if set.hard_linked_ids.contains(&row.file.id) {
+        notes.push("A hard link, so it frees nothing".into());
+    }
+    notes
+}
+
+/// A tile's lanes, a label and a value each, one line apiece: a loss reads in the warning
+/// colour, a value the keeper shares is muted.
+fn render_lanes(lanes: &[Lane], cx: &App) -> AnyElement {
     let theme = cx.theme();
     div()
-        .min_w(px(24.))
-        .h(px(22.))
-        .px(px(6.))
         .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(6.))
+        .flex_col()
         .text_xs()
-        .font_weight(FontWeight::MEDIUM)
-        .map(|this| {
-            if keep {
-                this.bg(theme.primary).text_color(gpui_kit::white())
-            } else {
-                this.bg(gpui_kit::black().opacity(0.6))
-                    .text_color(gpui_kit::white())
-            }
-        })
-        .child(text)
+        .children(lanes.iter().map(|lane| {
+            div()
+                .flex()
+                .flex_row()
+                .gap_2()
+                .child(
+                    div()
+                        .w(rems(4.5))
+                        .flex_shrink_0()
+                        .text_color(theme.muted_foreground)
+                        .child(lane.label),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .map(|this| match lane.standing {
+                            Standing::Worse => this
+                                .text_color(theme.warning)
+                                .font_weight(FontWeight::MEDIUM),
+                            Standing::Same => this.text_color(theme.muted_foreground),
+                            Standing::Plain => this.text_color(theme.foreground),
+                        })
+                        .child(lane.value.clone()),
+                )
+        }))
         .into_any_element()
 }
 
-/// One row of the queue: the keeper's thumbnail, its name and the set's size; a close call
-/// carries an amber dot, and a skipped set is dimmed.
+/// Why the suggestion keeps what it keeps, at the top of the stage: "Keeping 1: most pixels
+/// (2560×1440 against 1280×720)". A close call leads with a warning sign and says so.
+fn render_decision_line(reason: &model::Reason, cx: &App) -> AnyElement {
+    let theme = cx.theme();
+    div()
+        .id("duplicates-decision-line")
+        .test_support()
+        .aria_label(SharedString::from(reason.text.clone()))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_2()
+        .flex_shrink_0()
+        .px_5()
+        .pt_4()
+        .text_sm()
+        .when(reason.close_call, |this| {
+            this.child(
+                Icon::new(IconName::TriangleAlert)
+                    .small()
+                    .text_color(theme.warning),
+            )
+        })
+        .child(div().min_w_0().truncate().child(reason.text.clone()))
+        .into_any_element()
+}
+
+/// A version's number on its picture, which 1–9 keep it by.
+fn number_badge(number: usize, cx: &App) -> AnyElement {
+    let theme = cx.theme();
+    div()
+        .min_w_6()
+        .h_5()
+        .px_1p5()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(theme.radius)
+        .bg(theme.background)
+        .border_1()
+        .border_color(theme.border)
+        .text_color(theme.foreground)
+        .text_xs()
+        .font_weight(FontWeight::MEDIUM)
+        .child(number.to_string())
+        .into_any_element()
+}
+
+/// A menu item with its key at the trailing edge, as menus show shortcuts.
+fn menu_item(
+    label: &'static str,
+    keys: Option<&'static str>,
+    handler: impl Fn(&mut Window, &mut App) + 'static,
+) -> PopupMenuItem {
+    PopupMenuItem::element(move |_, cx| {
+        div()
+            .flex()
+            .flex_row()
+            .flex_1()
+            .items_center()
+            .justify_between()
+            .gap_4()
+            .child(label)
+            .children(
+                keys.and_then(|keys| Keystroke::parse(keys).ok())
+                    .map(|keys| {
+                        div()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(Kbd::new(keys).appearance(false))
+                    }),
+            )
+    })
+    .on_click(move |_, window, cx| handler(window, cx))
+}
+
+/// What a version's `…` button and its right-click offer: the commands that act on that one
+/// version, each with the key that does the same.
+#[derive(Clone)]
+struct VersionMenu {
+    page: WeakEntity<DuplicatesPage>,
+    state: Entity<TidyState>,
+    index: usize,
+    file: FileRow,
+    /// Similar versions open in the loupe; identical copies have nothing to compare.
+    similar: bool,
+    /// Not duplicates only shows its sets.
+    read_only: bool,
+}
+
+impl VersionMenu {
+    fn build(&self, menu: PopupMenu) -> PopupMenu {
+        let (page, index) = (self.page.clone(), self.index);
+        let look = self.similar.then(|| {
+            menu_item("Look closer", Some("space"), move |_, cx| {
+                page.update(cx, |page, cx| page.open_loupe(index, cx)).ok();
+            })
+        });
+        let path = self.file.abs_path.clone();
+        let quick = menu_item(
+            crate::quick_look::QUICK_LOOK_LABEL,
+            Some("cmd-y"),
+            move |window, cx| {
+                quick_look(Path::new(&path), window, cx);
+            },
+        );
+        let path = self.file.abs_path.clone();
+        let reveal = menu_item("Show in Finder", Some("shift-cmd-r"), move |_, cx| {
+            cx.reveal_path(Path::new(&path));
+        });
+        let (page, path) = (self.page.clone(), self.file.abs_path.clone());
+        let view = menu_item("Open in View", None, move |_, cx| {
+            page.update(cx, |page, cx| page.open_in_view(path.clone(), cx))
+                .ok();
+        });
+        let (state, dir) = (self.state.clone(), self.file.dir.clone());
+        let prefer = (!self.read_only).then(|| {
+            menu_item("Prefer this folder", Some("p"), move |window, cx| {
+                crate::settings::prefer_folder(&state, dir.clone(), window, cx);
+            })
+        });
+        let mut menu = menu;
+        if let Some(look) = look {
+            menu = menu.item(look);
+        }
+        menu = menu.item(quick).item(reveal).item(view);
+        if let Some(prefer) = prefer {
+            menu = menu.separator().item(prefer);
+        }
+        menu
+    }
+}
+
+/// One row of the queue: the keeper's thumbnail, its name, and what deciding the set frees; a
+/// close call says so, with an amber dot beside the words, and a skipped set is dimmed.
 fn render_queue_row(
     page: &Entity<DuplicatesPage>,
     index: usize,
@@ -2582,7 +2827,8 @@ fn render_queue_row(
         "Skipped".to_string()
     } else {
         format!(
-            "{} · {}",
+            "{}{} · frees {}",
+            if close_call { "Close call · " } else { "" },
             if set.kind == DuplicateKind::Exact {
                 format::plural_as(files.len() as i64, "copy", "copies")
             } else {
@@ -2618,8 +2864,8 @@ fn render_queue_row(
         .items_center()
         .gap_3()
         .w_full()
-        .h(px(QUEUE_ROW - 4.))
-        .my(px(2.))
+        .h(rems(3.5))
+        .my_0p5()
         .px_2()
         .rounded(radius)
         .cursor_pointer()
@@ -2638,7 +2884,7 @@ fn render_queue_row(
         })
         .child(
             div()
-                .size(px(40.))
+                .size_10()
                 .flex_shrink_0()
                 .rounded(radius)
                 .overflow_hidden()
@@ -2653,7 +2899,7 @@ fn render_queue_row(
                 .child(
                     div()
                         .truncate()
-                        .text_size(px(13.))
+                        .text_sm()
                         .font_weight(FontWeight::MEDIUM)
                         .child(keeper.map(|file| file.name).unwrap_or_default()),
                 )
@@ -2662,16 +2908,40 @@ fn render_queue_row(
                         .flex()
                         .flex_row()
                         .items_center()
-                        .gap(px(6.))
+                        .gap_1p5()
                         .text_xs()
                         .text_color(muted)
-                        .when(close_call, |this| {
-                            this.child(div().size(px(6.)).rounded_full().bg(warning))
+                        .when(close_call && !skipped, |this| {
+                            this.child(div().flex_shrink_0().size_1p5().rounded_full().bg(warning))
                         })
                         .child(div().truncate().child(caption)),
                 ),
         )
         .into_any_element()
+}
+
+impl DuplicatesPage {
+    /// The queue could not be read: what failed, why, and a way to try again.
+    fn render_error(&self, error: SharedString, cx: &mut Context<Self>) -> AnyElement {
+        widgets::empty_state(
+            "duplicates-error",
+            Some(IconName::CircleAlert),
+            "Couldn't read duplicates",
+            Some(div().child(error).into_any_element()),
+            vec![
+                Button::new("duplicates-try-again")
+                    .outline()
+                    .label("Try again")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.load(cx);
+                        cx.notify();
+                    }))
+                    .into_any_element(),
+            ],
+            cx,
+        )
+        .into_any_element()
+    }
 }
 
 impl Focusable for DuplicatesPage {
@@ -2683,7 +2953,10 @@ impl Focusable for DuplicatesPage {
 impl Render for DuplicatesPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let top_bar = self.render_top_bar(cx);
-        let body: AnyElement = if self.page().is_none() {
+        let body: AnyElement = if let (None, Some(error)) = (self.page(), self.queue.error()) {
+            let error = error.clone();
+            self.render_error(error, cx)
+        } else if self.page().is_none() {
             widgets::empty_state(
                 "duplicates-loading",
                 None,
@@ -2696,7 +2969,7 @@ impl Render for DuplicatesPage {
         } else if self.sets().is_empty() {
             self.render_empty(cx)
         } else {
-            let queue = self.render_queue(cx);
+            let queue = self.render_queue(true, cx);
             let stage = self.render_stage(window, cx);
             div()
                 .flex()

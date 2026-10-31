@@ -447,8 +447,14 @@ impl Render for CleanupPage {
         let Some(tidy) = tidy else {
             let body = match error {
                 Some(error) => {
-                    widgets::empty_state("cleanup-error", None, error, None, Vec::new(), cx)
-                        .into_any_element()
+                    let state = self.state.clone();
+                    widgets::error_state(
+                        "cleanup-error",
+                        "Couldn't find what to clean up",
+                        error,
+                        move |_, cx| state.update(cx, |state, cx| state.changed(cx)),
+                        cx,
+                    )
                 }
                 None => div().flex_1().into_any_element(),
             };
@@ -489,18 +495,22 @@ impl Render for CleanupPage {
                 "cleanup-empty",
                 Some(IconName::Sparkles),
                 "Nothing to clean up",
-                measuring.then(|| {
+                Some(if measuring {
                     div()
                         .flex()
                         .flex_row()
                         .items_center()
-                        .gap(px(6.))
+                        .gap_1p5()
                         .child(gpui_kit::component::spinner::Spinner::new().small())
                         .child(format!(
                             "Still measuring soundtracks · {} of {}",
                             format::count(tidy.analysis.sound_measured),
                             format::count(tidy.analysis.sound_measurable)
                         ))
+                        .into_any_element()
+                } else {
+                    "Silent soundtracks, junk files, empty folders and wrong extensions show up \
+                     here."
                         .into_any_element()
                 }),
                 Vec::new(),

@@ -24,7 +24,7 @@ use oriel_ui::{SettingsGroup, SettingsRow, Toast};
 use crate::state::TidyState;
 
 /// How alike two pictures or videos must look to count as versions of one, strictest first.
-pub const SIMILARITY_LEVELS: [(SimilarityLevel, &str); 3] = [
+const SIMILARITY_LEVELS: [(SimilarityLevel, &str); 3] = [
     (SimilarityLevel::Strict, "Strict"),
     (SimilarityLevel::Balanced, "Balanced"),
     (SimilarityLevel::Loose, "Loose"),
@@ -95,6 +95,66 @@ pub fn prefer_folder(state: &Entity<TidyState>, dir: String, window: &mut Window
             }),
         cx,
     );
+}
+
+/// A handler that changes Tidy's settings through `change`, as each control here does.
+fn change_settings(
+    state: &Entity<TidyState>,
+    change: impl Fn(&mut Settings) + 'static,
+) -> impl Fn(&mut Window, &mut App) + 'static {
+    let state = state.clone();
+    move |window, cx| {
+        let Some(mut settings) = state.read(cx).settings().cloned() else {
+            return;
+        };
+        change(&mut settings);
+        state.update(cx, |state, cx| state.update_settings(settings, window, cx));
+    }
+}
+
+/// The name of a similarity level, as the controls show it.
+pub fn similarity_label(level: SimilarityLevel) -> &'static str {
+    SIMILARITY_LEVELS
+        .iter()
+        .find(|(value, _)| *value == level)
+        .map_or("Balanced", |(_, label)| label)
+}
+
+/// The rows that decide what counts as a duplicate, Similar versions and Spot variants, with
+/// their descriptions. Settings › Tidy and Duplicates' Matching popover both draw them; `id`
+/// names their controls (`{id}-similarity`, its levels, and `{id}-spot-variants`).
+pub fn matching_rows(state: &Entity<TidyState>, settings: &Settings, id: &str) -> [SettingsRow; 2] {
+    let similarity = Segmented::new(
+        SharedString::from(format!("{id}-similarity")),
+        "Similar versions",
+    )
+    .items(SIMILARITY_LEVELS.map(|(level, label)| {
+        let pick = change_settings(state, move |settings| settings.similarity = level);
+        SegmentedItem::new(
+            SharedString::from(format!("{id}-similarity-{level}")),
+            label,
+        )
+        .selected(settings.similarity == level)
+        .on_click(move |_, window, cx| pick(window, cx))
+    }));
+    let toggle = change_settings(state, |settings| {
+        settings.spot_variants = !settings.spot_variants;
+    });
+    let spot = Switch::new(SharedString::from(format!("{id}-spot-variants")))
+        .checked(settings.spot_variants)
+        .accessibility_label("Spot variants")
+        .on_click(move |_, window, cx| toggle(window, cx));
+    [
+        SettingsRow::new("Similar versions")
+            .description("How alike two pictures or videos must look to count as one")
+            .child(similarity),
+        SettingsRow::new("Spot variants")
+            .description(
+                "Keep pictures that differ in one area, like a face, an outfit or a caption's \
+                 language, and keep each picture's copy in the folder with the rest of its set",
+            )
+            .child(spot),
+    ]
 }
 
 /// The encoders Settings lists (`ENCODERS`), and whether this machine has each. Oriel RS adds
@@ -229,14 +289,7 @@ impl SettingsSection {
         &self,
         change: impl Fn(&mut Settings) + 'static,
     ) -> impl Fn(&mut Window, &mut App) + 'static {
-        let state = self.state.clone();
-        move |window, cx| {
-            let Some(mut settings) = state.read(cx).settings().cloned() else {
-                return;
-            };
-            change(&mut settings);
-            state.update(cx, |state, cx| state.update_settings(settings, window, cx));
-        }
+        change_settings(&self.state, change)
     }
 
     fn add_preferred(&self, window: &mut Window, cx: &mut App) {
@@ -385,36 +438,8 @@ impl SettingsSection {
                     ),
             );
         }
-        let similarity = Segmented::new("tidy-settings-similarity", "Similar versions").items(
-            SIMILARITY_LEVELS.map(|(level, label)| {
-                let pick = self.change(move |settings| settings.similarity = level);
-                SegmentedItem::new(SharedString::from(format!("similarity-{level}")), label)
-                    .selected(settings.similarity == level)
-                    .on_click(move |_, window, cx| pick(window, cx))
-            }),
-        );
-        let spot = {
-            let toggle = self.change(|settings| settings.spot_variants = !settings.spot_variants);
-            Switch::new("tidy-settings-spot-variants")
-                .checked(settings.spot_variants)
-                .accessibility_label("Spot variants")
-                .on_click(move |_, window, cx| toggle(window, cx))
-        };
-        duplicates = duplicates
-            .child(
-                SettingsRow::new("Similar versions")
-                    .description("How alike two pictures or videos must look to count as one")
-                    .child(similarity),
-            )
-            .child(
-                SettingsRow::new("Spot variants")
-                    .description(
-                        "Keep pictures that differ in one area, like a face, an outfit or a \
-                         caption's language, and keep each picture's copy in the folder with the \
-                         rest of its set",
-                    )
-                    .child(spot),
-            );
+        let [similarity, spot] = matching_rows(&self.state, &settings, "tidy-settings");
+        duplicates = duplicates.child(similarity).child(spot);
 
         let quality = Segmented::new("tidy-settings-quality", "Video quality").items(
             VIDEO_QUALITIES.map(|(quality, label)| {

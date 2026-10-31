@@ -1044,7 +1044,9 @@ impl HistoryPage {
                                 })
                                 .loading(undoing)
                                 .disabled(undoing)
-                                .tooltip("Undo  U")
+                                // ⌘Z undoes the newest change from anywhere; U undoes
+                                // the row the arrows are on.
+                                .tooltip(if newest { "Undo  ⌘Z" } else { "Undo  U" })
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
                                     this.undo(&undo_entry, window, cx);

@@ -47,7 +47,7 @@ const DUPLICATES: (&str, &[Shortcut]) = (
             "⇧1–9",
             Some("(or ⇧-click, or its checkbox)"),
         ),
-        ("Keep both (not duplicates)", "N", None),
+        ("Keep all", "N", None),
         ("Skip", "S", None),
         ("Previous", "K", None),
         ("Move between versions", "← →", None),

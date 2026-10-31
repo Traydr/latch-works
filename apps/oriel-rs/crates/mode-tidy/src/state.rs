@@ -636,7 +636,7 @@ impl TidyState {
                 Ok(roots) => this.set_roots(roots, None, cx),
                 Err(error) => crate::widgets::show_toast(
                     window,
-                    Toast::error("Something went wrong").detail(format!("{error:#}")),
+                    Toast::error("Couldn't forget the folder").detail(format!("{error:#}")),
                     cx,
                 ),
             })
@@ -913,7 +913,7 @@ impl TidyState {
                 }
                 Err(error) => crate::widgets::show_toast(
                     window,
-                    Toast::error("Something went wrong").detail(format!("{error:#}")),
+                    Toast::error("Couldn't change the setting").detail(format!("{error:#}")),
                     cx,
                 ),
             })

@@ -582,8 +582,12 @@ impl OverviewPage {
             .filter(|state| **state == StepState::Done)
             .count() as i64;
         let todo = steps.iter().filter(|step| step.todo).count() as i64;
+        // Tidy up leaves duplicates to the owner, so what it saves leaves them out, and says so.
+        let duplicates = data.duplicates.similar.sets + data.duplicates.exact.sets > 0;
         let heading = if tidying {
             "Tidying up"
+        } else if saving > 0. && duplicates {
+            "Tidying up saves, not counting duplicates"
         } else if saving > 0. {
             "Tidying up saves"
         } else {
@@ -802,7 +806,10 @@ impl OverviewPage {
             "{} of similar versions",
             format::plural_as(similar.sets, "set", "sets")
         );
-        let bytes_line = format!("up to {}", format::bytes(similar.reclaimable_bytes as f64));
+        let bytes_line = format!(
+            "frees up to {}",
+            format::bytes(similar.reclaimable_bytes as f64)
+        );
         let (title, caption): (String, Option<String>) = if looking && similar_job {
             (
                 format!(
@@ -886,16 +893,9 @@ impl OverviewPage {
                 .items_center()
                 .gap_4()
                 .p_4()
-                .when(!stack.is_empty(), |this| {
-                    this.child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .flex_shrink_0()
-                            .pl_3()
-                            .children(stack),
-                    )
-                })
+                // The same leading tile as the identical copies' card, so both titles start on
+                // one spine; the keepers' pictures sit before the actions.
+                .child(widgets::row_icon(IconName::Images, cx))
                 .child(
                     div()
                         .flex()
@@ -919,6 +919,16 @@ impl OverviewPage {
                             this.child(widgets::caption(caption, cx).mt_0p5())
                         }),
                 )
+                .when(!stack.is_empty(), |this| {
+                    this.child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .flex_shrink_0()
+                            .pl_3()
+                            .children(stack),
+                    )
+                })
                 .when(unchecked, |this| {
                     this.child(
                         Button::new("overview-check-now")
@@ -959,7 +969,7 @@ impl OverviewPage {
             return None;
         }
         let title = format!(
-            "{} of identical copies · {}",
+            "{} of identical copies · frees up to {}",
             format::plural(exact.sets, "set"),
             format::bytes(exact.reclaimable_bytes as f64)
         );
