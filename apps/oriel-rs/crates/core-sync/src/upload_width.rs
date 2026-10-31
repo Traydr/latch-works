@@ -9,15 +9,17 @@
 //! - It starts at 3, as Electron Oriel runs.
 //! - It measures the total throughput at the current width over a window of completed uploads:
 //!   the bytes every upload sent in the window, over the window's time. A window closes once it
-//!   holds at least two completions per upload slot and a second has passed, so neither one
+//!   holds at least two completions per upload slot and half a second has passed, so neither one
 //!   large file nor a burst of small ones decides alone. The first completion only starts the
 //!   clock, which leaves the run's start-up out of the first window; after a change of width the
 //!   clock starts once as many uploads have completed as there are slots, so they settle first.
-//! - With that baseline it adds a slot and measures again. A gain of at least 10% keeps the new
-//!   width and probes the next one, up to 6. A window without that gain gets one more, since a
-//!   busy machine or server makes single windows noisy. Two without it mean the link, not the
-//!   width, is the limit: the width goes back one step and holds there before it measures and
-//!   probes again.
+//! - With that baseline it adds a slot and measures again. A busy machine or server makes single
+//!   windows noisy, so one window decides neither way:
+//!   - a gain of at least 10%, over the baseline and over the fastest window any narrower width
+//!     has measured in the push, must hold for two windows in a row before the new width is kept
+//!     and the next one probed, up to 6, since on a full link more uploads at once only split it;
+//!   - two windows without that gain mean the link, not the width, is the limit: the width goes
+//!     back one step and holds there before it measures and probes again.
 //! - A sign of overload (a 429 or 5xx answer, a timeout, a dropped connection) takes a slot away
 //!   at once, down to 1, and holds as well.
 //! - A hold lasts 5 s, and each one after it without a kept gain in between twice as long, up to
@@ -45,7 +47,7 @@ const MEANINGFUL_GAIN: f64 = 0.10;
 const SAMPLES_PER_SLOT: usize = 2;
 
 /// ...and lasts at least this long.
-const MIN_WINDOW: Duration = Duration::from_secs(1);
+const MIN_WINDOW: Duration = Duration::from_millis(500);
 
 /// The first hold after a step back, and the longest any grows to.
 const FIRST_HOLD: Duration = Duration::from_secs(5);
@@ -63,8 +65,13 @@ pub enum UploadSample {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Phase {
     /// Measuring the current width. With a baseline the width is a probe, one above the
-    /// baseline's, and `missed` says whether a window at it has already shown no gain.
-    Measuring { baseline: Option<f64>, missed: bool },
+    /// baseline's: `missed` says whether a window at it has already shown no gain, and `gained`
+    /// whether the window just before showed one.
+    Measuring {
+        baseline: Option<f64>,
+        missed: bool,
+        gained: bool,
+    },
     /// Holding the current width until then.
     Holding { until: Duration },
 }
@@ -73,6 +80,7 @@ impl Phase {
     const FRESH: Self = Self::Measuring {
         baseline: None,
         missed: false,
+        gained: false,
     };
 }
 
@@ -120,6 +128,8 @@ pub struct UploadWidth {
     window: Window,
     /// How long the next step back holds.
     next_hold: Duration,
+    /// The fastest window measured at each width so far.
+    peaks: [f64; MAX_ADAPTIVE_UPLOADS + 1],
     /// Each width the push ran at, with when it started.
     history: Vec<(Duration, usize)>,
 }
@@ -138,6 +148,7 @@ impl UploadWidth {
             phase: Phase::FRESH,
             window: Window::after(1),
             next_hold: FIRST_HOLD,
+            peaks: [0.0; MAX_ADAPTIVE_UPLOADS + 1],
             history: vec![(Duration::ZERO, DEFAULT_UPLOAD_CONCURRENCY)],
         }
     }
@@ -162,20 +173,32 @@ impl UploadWidth {
             }
             UploadSample::Completed { bytes, at } => (bytes, at),
         };
-        let (baseline, missed) = match self.phase {
+        let (baseline, missed, gained) = match self.phase {
             Phase::Holding { until } if at < until => return,
             Phase::Holding { .. } => {
                 self.phase = Phase::FRESH;
                 self.window = Window::after(self.width);
                 return;
             }
-            Phase::Measuring { baseline, missed } => (baseline, missed),
+            Phase::Measuring {
+                baseline,
+                missed,
+                gained,
+            } => (baseline, missed, gained),
         };
         let Some(rate) = self.measure(bytes, at) else {
             return;
         };
+        let measured = self.width;
+        // A probe must beat the fastest any narrower width has gone, not only the latest
+        // baseline: on a full link a slow baseline window would otherwise let noise through.
+        let bar = baseline.map(|baseline| {
+            let peak = self.peaks[..measured].iter().copied().fold(0.0, f64::max);
+            baseline.max(peak) * (1.0 + MEANINGFUL_GAIN)
+        });
+        self.peaks[measured] = self.peaks[measured].max(rate);
         match baseline {
-            Some(baseline) if rate < baseline * (1.0 + MEANINGFUL_GAIN) => {
+            Some(baseline) if rate < bar.unwrap_or(0.0) => {
                 if missed {
                     self.set_width(self.width - 1, at);
                     self.back_off(at);
@@ -183,8 +206,17 @@ impl UploadWidth {
                     self.phase = Phase::Measuring {
                         baseline: Some(baseline),
                         missed: true,
+                        gained: false,
                     };
                 }
+            }
+            // A first window with the gain: the next one must show it too.
+            Some(baseline) if !gained => {
+                self.phase = Phase::Measuring {
+                    baseline: Some(baseline),
+                    missed,
+                    gained: true,
+                };
             }
             _ if self.width < MAX_ADAPTIVE_UPLOADS => {
                 if baseline.is_some() {
@@ -194,6 +226,7 @@ impl UploadWidth {
                 self.phase = Phase::Measuring {
                     baseline: Some(rate),
                     missed: false,
+                    gained: false,
                 };
                 self.set_width(self.width + 1, at);
                 self.window = Window::after(self.width);
@@ -315,10 +348,53 @@ mod tests {
     fn it_keeps_the_widest_step_that_still_paid() {
         let mut width = UploadWidth::new();
         // Gains up to 5 at once, then the link is full.
-        feed(&mut width, Duration::ZERO, Duration::from_secs(15), |w| {
+        feed(&mut width, Duration::ZERO, Duration::from_secs(25), |w| {
             w.min(5) as f64 * 1e6
         });
         assert_eq!(widths(&width), [3, 4, 5, 6, 5]);
+    }
+
+    #[test]
+    fn a_gain_must_hold_for_a_second_window() {
+        let mut width = UploadWidth::new();
+        // 3 at once makes 3 MB/s. A fourth upload seems to pay at first (a burst, a fast
+        // moment of the link), then the link is full again.
+        let end = feed(
+            &mut width,
+            Duration::ZERO,
+            Duration::from_millis(3_400),
+            |_| 3e6,
+        );
+        assert_eq!(width.width(), 4);
+        let end = feed(&mut width, end, end + Duration::from_millis(2_200), |_| 4e6);
+        assert_eq!(
+            width.width(),
+            4,
+            "one window with the gain keeps nothing yet"
+        );
+        feed(&mut width, end, end + Duration::from_secs(10), |_| 3e6);
+        assert_eq!(widths(&width), [3, 4, 3]);
+    }
+
+    #[test]
+    fn a_slow_baseline_does_not_let_a_probe_through() {
+        let mut width = UploadWidth::new();
+        // A full link at about 3 MB/s, once measured at 3.3 MB/s at three uploads at once.
+        let end = feed(
+            &mut width,
+            Duration::ZERO,
+            Duration::from_millis(3_400),
+            |_| 3.3e6,
+        );
+        // Four uploads seem 12% faster than the slower windows at three, but not than the best.
+        let end = feed(&mut width, end, end + Duration::from_secs(12), |w| {
+            if w > 3 { 3.36e6 } else { 3e6 }
+        });
+        feed(&mut width, end, end + Duration::from_secs(30), |w| {
+            if w > 3 { 3.36e6 } else { 3e6 }
+        });
+        assert!(width.history().iter().all(|&(_, w)| w <= 4));
+        assert_eq!(width.width(), 3);
     }
 
     #[test]
@@ -358,19 +434,20 @@ mod tests {
     }
 
     #[test]
-    fn a_window_needs_two_completions_a_slot_and_a_second() {
+    fn a_window_needs_two_completions_a_slot_and_half_a_second() {
         let mut width = UploadWidth::new();
-        // The first completion only starts the clock; six more inside a second decide nothing.
-        for tenth in 0..7 {
+        // The first completion only starts the clock; six more inside half a second decide
+        // nothing.
+        for step in 0..7 {
             width.record(UploadSample::Completed {
                 bytes: 1,
-                at: Duration::from_millis(100 * tenth),
+                at: Duration::from_millis(50 * step),
             });
         }
         assert_eq!(width.width(), 3);
         width.record(UploadSample::Completed {
             bytes: 1,
-            at: Duration::from_millis(1_000),
+            at: Duration::from_millis(500),
         });
         assert_eq!(width.width(), 4);
     }

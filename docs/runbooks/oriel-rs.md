@@ -457,4 +457,25 @@ cargo run --release -p oriel-core-tidy --example video_frames -- <folder>
 The root must be one Tidy admits: a data folder whose `sandbox` links to the real one, as the
 `tidy` row does, or a copy under that `sandbox` for `--changes`.
 
+Sync's timer is `oriel-core-sync`'s `sync_bench` example (the `sync` row's), against the e2e
+Pane View, which it refuses to leave this machine for:
+
+```sh
+# Push at a fixed upload width (1 to 8), or adaptive (auto, the default). The JSON line's
+# "widths" lists each width the queue ran at, as [ms from the first upload, width].
+cargo run --release -p oriel-core-sync --example sync_bench -- push <source> <hash-cache> auto|N
+# Plans, then prunes; "prune_ms" is the prune alone.
+cargo run --release -p oriel-core-sync --example sync_bench -- prune <source> <hash-cache>
+# A slow link for the adaptive width: listens on 127.0.0.1:<listen> and forwards to
+# 127.0.0.1:<upstream> with the upload direction held to <bytes/s> across every connection.
+cargo run --release -p oriel-core-sync --example throttle_proxy -- 9100 9000 2000000
+```
+
+To push through the proxy, start the e2e Pane View with `S3_ENDPOINT=http://127.0.0.1:9100`
+(`E2E_SKIP_BUILD=1 S3_ENDPOINT=… pnpm --filter @latch-works/e2e exec tsx
+scripts/start-pane-view.ts`): the upload URLs it signs then go through the proxy to the local
+RustFS, and the signatures still hold, since the proxy passes the bytes and the Host header
+through unchanged. Each start recreates `latch_works_e2e`, so restart it before each push that
+should upload everything.
+
 Reports carry numbers only: the owner's library is never screenshotted or uploaded.
