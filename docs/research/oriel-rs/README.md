@@ -13,9 +13,9 @@ steps and Windows are left.
   Its 33 e2e cases are the plan's parity list: 32 pass as GPUI tests, and the migration case does
   not apply. What is left: a VoiceOver pass by a person, signing with a real identity, the DMG,
   the offer to move to Applications, a release workflow, and Windows.
-- **Oriel RS leads on everything but video, and the first optimization round widened the
-  lead.** It is 2.4 times smaller on disk and starts 3.5 times faster, and at rest it uses 2.6
-  times less memory. Tidy analyses the 21k fixture 2.4 times faster than glazier-core. Electron
+- **Oriel RS leads on everything but video, and two optimization rounds widened the lead.** It
+  is 2.4 times smaller on disk and starts 3.6 times faster, and at rest it uses 2.9 times less
+  memory. Tidy analyses the 21k fixture 2.9 times faster than glazier-core. Electron
   Oriel still opens video 1.4 to 2.2 times faster and seeks exactly 4 to 6 times faster.
 - **The two implementations agree.** On the 21k fixture, Tidy's engine finds the same sets as
   glazier-core, with 0 differences, and every e2e Tidy change runs differentially against it. A
@@ -28,22 +28,22 @@ steps and Windows are left.
 
 ## Against Electron Oriel
 
-Oriel RS's numbers are from after the first optimization round (2026-10-30). Electron Oriel's
+Oriel RS's numbers are from after the second optimization round (2026-10-31). Electron Oriel's
 are Phase 9's, from the same Mac and fixture. Both come from the [scorecard](scorecard.md), as
 medians of 3.
 
 | Measure | Oriel RS | Electron Oriel | Oriel RS is |
 |---|---:|---:|---|
 | Size on disk | 205 MB `.app` | 502 MB | 2.4× smaller |
-| Cold start to first thumbnails | 290 ms | 1,022 ms | 3.5× faster |
-| All 20,000 stills listed | 51 ms | 1,430 ms | 28× faster |
-| Memory at rest (footprint) | 166 MB | 436 MB | 2.6× lighter |
-| Memory after a full scroll (footprint) | 302 MB | 1,469 MB | 4.9× lighter |
+| Cold start to first thumbnails | 282 ms | 1,022 ms | 3.6× faster |
+| All 20,000 stills listed | 48 ms | 1,430 ms | 30× faster |
+| Memory at rest (footprint) | 149 MB | 436 MB | 2.9× lighter |
+| Memory after a full scroll (footprint) | 238 MB | 1,469 MB | 6.2× lighter |
 | Gallery scroll, p95 / long frames | 8.5 ms / 1 | 9.2 ms / 17 | as smooth, fewer long frames |
-| Viewer step, AVIF / JPEG | 4.3 / 5.3 ms | 129 / 67 ms | 30× / 13× faster |
+| Viewer step, AVIF / JPEG | 5.0 / 4.1 ms | 129 / 67 ms | 26× / 16× faster |
 | Video open to first frame | 46–63 ms | 21–33 ms | 1.4–2.2× slower |
 | Exact seek | 166–330 ms | 37–53 ms | 4–6× slower, but on target in every codec |
-| Tidy: scan to Overview, 21k fixture | 138 s | 336.5 s (glazier-core, headless) | 2.4× faster |
+| Tidy: scan to Overview, 21k fixture | 117 s | 336.5 s (glazier-core, headless) | 2.9× faster |
 | Sync push, 247 files | 0.79 s | 1.32 s (Lockstep CLI) | 1.7× faster |
 
 ## Decided by the owner

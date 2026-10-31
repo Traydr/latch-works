@@ -222,6 +222,65 @@ What it cost:
 - **The Library's sorts by size and date** are about 2 ms slower on 100k rows.
 - **A bundle build** takes about 3 minutes after any change.
 
+## After the second optimization round (2026-10-31)
+
+Round 2 is commits `13d7289c` to `d99d856d`. Before it ran, a review of round 1 found no
+high-severity defect and one medium one: a cancelled scan's queued index writes all still ran,
+and the next folder waited behind them. That and two of the low ones are fixed in `13d7289c`;
+the third low one was fixed with round 2's video work (`f248aae2`). Tidy's full 21k differential
+still has 0 differences.
+
+The table compares round 1's bundle ("before") with round 2's ("after"), measured the same way
+as round 1. Video's sweep was not run again: its code path did not change, and the video
+agent's interleaved runs found it level. Its gain, priming, is in the notes.
+
+| Measure | Before | After | Change |
+|---|---:|---:|---:|
+| Cold start, launch to first thumbnails | 303 ms | 282 ms | −7 % |
+| Memory 60 s after opening, footprint | 168 MB | 149 MB | −11 % |
+| Memory 60 s after scrolling, footprint | 299 MB | 238 MB | −20 % |
+| The app's CPU during the scroll | 324 s | 305 s | −6 % |
+| Viewer step AVIF / JPEG, p50 | 5.31 / 5.71 ms | 4.96 / 4.05 ms | −7 / −29 % |
+| Library 100k, sort by name, to the frame | 36.3 ms | 30.3 ms | −17 % |
+| Library 100k, other sorts, to the frame | 14.8–15.8 ms | 8.5–11.2 ms | −25 to −44 % |
+| At rest in Tidy with nothing open, footprint | 98.7 MB | 73.1 MB | −26 % |
+| Tidy, launch to a finished Overview, 21k fixture | 135 s | 117 s | −13 % |
+| Tidy, ffmpeg's and ffprobe's CPU to then | 803 s | 474 s | −41 % |
+| Tidy, all CPU to then (app and ffmpeg) | 2,225 s | 1,912 s | −14 % |
+
+Against the bundle from before optimizing (`03dab588`), Tidy's analysis now takes 117 s rather
+than 328 s, with 4 % less CPU in all.
+
+What made the difference:
+- **View** paints tiles from its own cache and gives each tile's pixels back after its first
+  paint. It decodes tiles with libwebp off the main thread, byte for byte as GPUI's decoder does.
+  Memory goes back to macOS once the gallery has been still for 2 s. Only the tile under the
+  pointer lays out a caption, which takes the scroll's text layout down by 78 %.
+- **Sync's plan scan** reads folders in bulk, as View's does: 68.7 ms to 43.8 ms for the 21k
+  fixture.
+- **Tidy's video prints** take one ffmpeg run per keyframe instead of one per frame, and the
+  frames are byte-identical on all 300 fixture videos. Overview is kept while the catalog doesn't
+  change. libvips and the encoder probe load on first use, not at launch.
+- **Tidy's pages.**
+  - Duplicates, History and Holding draw only what is on screen. A 77-version set fills in 1.0 s
+    instead of 3.5 s.
+  - Holding's first visit with 1,500 held files takes 22–75 ms instead of 36–700 ms.
+  - The Library sorts packed keys instead of whole rows.
+  - Video-frame thumbnails get 8 decode slots.
+- **Video.** While a video tile is in sight, an engine is primed with a 0.25 s clip that the
+  pinned ffmpeg makes once into View's cache. It is not measured here: its gain is the first open
+  of a session, 150–195 ms before and 36–58 ms after, from `mpv_spike` with
+  `ORIEL_SPIKE_PRIME`.
+
+What it cost, or left:
+- **A primed engine** stays about 18 MB of footprint for the rest of the session, as playing any
+  video would.
+- **Captions** appear one frame (8 ms) after the pointer arrives.
+- **A file deleted** between Sync's folder read and its push now fails at the push, not at the
+  plan.
+- **Footprint at rest** reads either about 73 MB or about 91 MB from run to run. The difference
+  is one window drawable (2560 × 1800 × 4 bytes) that GPUI's Metal layer sometimes keeps.
+
 ## Lines of code
 
 Counted at `b5e8dd5f` with `git ls-files` piped to `wc -l`: every line of every tracked file,
