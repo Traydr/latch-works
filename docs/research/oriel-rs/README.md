@@ -4,15 +4,19 @@ Oriel RS is Oriel ported to Rust on GPUI with GPUI Kit, as an experiment beside 
 ([plan 063](../../plans/063-oriel-rs.md)). On macOS the port is done: the shell, View, Tidy, Sync,
 the links between the modes and Settings, in a double-clickable `Oriel RS.app`
 ([runbook](../../runbooks/oriel-rs.md)). Phase 9's scorecard has been run, and the owner chose
-to go on toward replacing Electron Oriel. Optimizing every workflow comes first; a few packaging
-steps and Windows are left.
+to go on toward replacing Electron Oriel. After two optimization rounds, the parity round of
+2026-10-31 ported what was left, added a DMG and an import of Electron Oriel's data, took Tidy out
+of the sandbox, and made Windows build. Optimization resumes next.
 
 ## What matters
 
-- **Nearly everything Electron Oriel does on macOS is ported.** 92 of its 104 features are done.
-  Its 33 e2e cases are the plan's parity list: 32 pass as GPUI tests, and the migration case does
-  not apply. What is left: a VoiceOver pass by a person, signing with a real identity, the DMG,
-  the offer to move to Applications, a release workflow, and Windows.
+- **Everything Electron Oriel does on macOS is ported**, except a VoiceOver pass by a person: 99 of
+  its 104 features are done, and the build workflow is left on purpose. Its 33 e2e cases are the
+  plan's parity list: 32 pass as GPUI tests, and the migration case does not apply. Windows' 7
+  rows compile but have not run (Partial).
+- **It installs and brings Electron Oriel's data over.** `cargo run -p xtask -- dmg` makes a
+  plain DMG. On first start the welcome offers to import Electron Oriel's data, which it reads and
+  never writes. On a copy of the owner's data, every area came over in 1.4 s.
 - **Oriel RS leads on everything but video, and two optimization rounds widened the lead.** It
   is 2.4 times smaller on disk and starts 3.6 times faster, and at rest it uses 2.9 times less
   memory. Tidy analyses the 21k fixture 2.9 times faster than glazier-core. Electron
@@ -21,8 +25,9 @@ steps and Windows are left.
   glazier-core, with 0 differences, and every e2e Tidy change runs differentially against it. A
   Rust Sync plan equals the Lockstep CLI's. The ordering, format and fingerprint rules are pinned
   by vectors that the TypeScript writes.
-- **Tidy changes files only in the sandbox.** Its changes run only on roots under
-  `~/.latch-works/oriel-rs/sandbox` or the temp folder. Lifting that is the owner's call.
+- **Tidy works on any folder** (decision 18). A run with `ORIEL_RS_DATA_DIR` set, as checks and
+  agents use, keeps the old sandbox. A safety review of the import, holding and the move to
+  Applications found seven issues, all fixed before the first real use.
 - **Optimizing goes on, workflow by workflow.** `cargo run -p xtask -- measure` repeats the
   scorecard's rows, so every change is measured A/B against the build before it.
 
@@ -66,16 +71,29 @@ medians of 3.
   - macOS 15 and later is fine;
   - the licence notices stand;
   - no real signing identity, notarization or auto-update for now.
+- On the optimization rounds (decisions 16–24):
+  - feature parity, installers on macOS and Windows, and the import of Electron Oriel's data come
+    before more optimizing;
+  - Oriel RS imports Electron Oriel's data, reading it without writing it;
+  - Tidy leaves the sandbox;
+  - no signing and no updater: a plain DMG and a simple Setup.exe;
+  - GitHub CI runs only the typecheck;
+  - Windows best effort, finished later on the owner's machine;
+  - Sync hashes 16 at once, adapts uploads between 3 and 6, and prunes in parallel;
+  - Tidy's thumbnails are capped at about 200 MB, Shrink keeps one encode, the 3.3 GB analysis
+    peak stays, and a libvips with dav1d waits;
+  - no FFmpeg build of our own for exact seeks; the warmed video player stays in memory.
 
 ## Still open
 
-- **Optimization trade-offs** the first round left to the owner: wider hashing and upload queues
-  in Sync, a cap on Tidy's thumbnail memory, Shrink's encodes at once, Tidy's peak memory during
-  the analysis, a libvips with dav1d, and patched FFmpeg decoders for exact seeks.
-- **Using Oriel's data and retiring the Electron app** need a plan of their own.
+- **Retiring the Electron app**, once the owner has lived with Oriel RS on their own data.
+- **Exact seeks** stay 4 to 6 times slower than Electron's, unless a runtime option in mpv helps;
+  the owner wants no FFmpeg build of our own.
 - **"Glazier" in two planner warnings** is kept so the differential runs still match
   glazier-core.
-- **Windows (Phase 8)** is not started.
+- **Windows (Phase 8)** builds and passes clippy for `x86_64-pc-windows-gnullvm`, but has not run.
+  [The Windows runbook](../../runbooks/oriel-rs-windows.md) lists what the Windows agent must
+  check, starting with Phase 8's video gate of 60 fps at 1080p.
 
 ## The detail pages
 

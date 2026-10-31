@@ -22,12 +22,13 @@
 ## Status
 
 - **Status**: IN PROGRESS. Phases 0 to 7 and the scorecard (Phase 9) are done on macOS
-  (2026-10-30, branch `agent/063-0-spike`), and two optimization rounds followed (2026-10-31).
-  The reports start at [docs/research/oriel-rs/README.md](../research/oriel-rs/README.md). 92 of
-  Electron Oriel's 104 features are done and 32 of its 33 e2e cases pass as GPUI tests
-  ([parity](../research/oriel-rs/parity.md)). Next, from the owner's decisions 16 to 24: every
-  remaining feature, a DMG and a Windows Setup.exe that install, an import of Electron Oriel's
-  data on both systems, and Tidy out of the sandbox. Optimization resumes after.
+  (2026-10-30, branch `agent/063-0-spike`); two optimization rounds and a parity round followed
+  (2026-10-31). The reports start at
+  [docs/research/oriel-rs/README.md](../research/oriel-rs/README.md). 99 of Electron Oriel's 104
+  features are done, and 32 of its 33 e2e cases pass as GPUI tests
+  ([parity](../research/oriel-rs/parity.md)). The app installs from a DMG and imports Electron
+  Oriel's data, and Tidy works outside the sandbox. Phase 8, Windows, builds but has not run
+  ([its runbook](../runbooks/oriel-rs-windows.md)). Next: optimization again (decision 16).
 - **Priority**: P3 (an experiment the owner asked for)
 - **Effort**: XL several times over. About 24.8k lines of UI, 15k lines of core packages and the
   main-side services are rewritten in Rust. Phase 0, the gate, is L.
@@ -649,7 +650,10 @@ Re-run plan 062's Windows checks on a throwaway archive: files held open, drives
 names, Explorer's files and hard links. Those were fixes in TypeScript, so each must be redone in
 Rust. **STOP** and report if video cannot reach 60 fps at 1080p on the owner's Windows machine.
 
-**Not started.** The overnight run of 2026-10-29 covered macOS only.
+**Best effort done (2026-10-31), not yet run.** The workspace builds and passes clippy for
+`x86_64-pc-windows-gnullvm`. The video path, AVIF, caption buttons, single-instance lock, Setup.exe
+through `vpk pack`, and plan 062's fixes are written. A Windows agent checks them on the owner's
+machine, starting with the video gate: [docs/runbooks/oriel-rs-windows.md](../runbooks/oriel-rs-windows.md).
 
 ### Phase 9: the scorecard and the decision (S)
 

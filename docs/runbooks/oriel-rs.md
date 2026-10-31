@@ -2,7 +2,8 @@
 
 Oriel RS is Oriel ported to Rust on GPUI with GPUI Kit, as an experiment beside the Electron
 app: [plan 063](../plans/063-oriel-rs.md). Its code is the Cargo workspace in `apps/oriel-rs`.
-It keeps its own data in `~/.latch-works/oriel-rs/` and never touches Electron Oriel's folders.
+It keeps its own data in `~/.latch-works/oriel-rs/`. It reads Electron Oriel's folders only to
+import them, and never writes them.
 
 ## Try it
 
@@ -25,8 +26,14 @@ so the same commands work without pnpm. What you will see:
   `open --env ORIEL_RS_OPEN=<folder> "apps/oriel-rs/target/release/bundle/Oriel RS.app"` opens
   a folder at start instead. View never writes into the folder it shows: its thumbnails go to
   `~/.latch-works/oriel-rs/view/`.
-- **Tidy** lists its pages in the sidebar, each a placeholder for now.
-- **Sync** is a placeholder.
+- **Tidy** analyses the folders you add and offers to tidy them: duplicates, conversions, junk and
+  shrinking. Its changes move files out to Holding, where they stay until you empty it, and each
+  has an Undo.
+- **Sync** pushes a folder to a Pane View server and prunes what was deleted.
+- On the first start, the welcome offers to import Electron Oriel's data when it finds any
+  ([below](#importing-electron-oriels-data)).
+
+To install it like any app, make the DMG ([Making the app](#making-the-app)).
 
 ## Prerequisites
 
@@ -38,7 +45,8 @@ so the same commands work without pnpm. What you will see:
 | ffmpeg | The app's own pinned ffmpeg and ffprobe, fetched once (below); Homebrew's `ffmpeg` only for the fixture script, which needs its encoders |
 | meson, ninja, pkgconf | `brew install meson ninja pkgconf`, to build the LGPL libmpv (below); nothing else from Homebrew is installed or linked (libavif's bottles are fetched by URL and relocated, below) |
 
-Windows and Linux are not supported yet (Windows is Phase 8).
+Windows builds from this workspace but has not run there yet: see [the Windows
+runbook](oriel-rs-windows.md). Linux is not supported.
 
 ## Run it
 
@@ -82,8 +90,12 @@ scripted input:
 | `ORIEL_RS_VIDEO=avplayer` | Video through AVPlayer instead of libmpv |
 | `ORIEL_RS_ABOUT=1` | Opens the About dialog at start, to see the version and the licences a bundle lists |
 | `ORIEL_RS_WELCOME=1` | Shows the first-run welcome under `ORIEL_RS_DATA_DIR` (it shows once otherwise, until `shell/welcomed` exists) |
-| `ORIEL_RS_TIDY_ROOT=<folder>` | Tidy opens on that root (it must be in the sandbox) |
-| `ORIEL_RS_TIDY_PAGE=<page>` | Tidy opens on that page (`overview`, `library`, `duplicates`, …) |
+| `ORIEL_RS_TIDY_ROOT=<folder>` | Tidy opens on that root (in a sandboxed run, one inside the sandbox) |
+| `ORIEL_RS_TIDY_PAGE=<page>` | Tidy opens on that page (`overview`, `library`, `duplicates`, `duplicates:identical`, …) |
+| `ORIEL_RS_IMPORT_FROM=<folder>` | The import reads Electron Oriel's data under this stand-in for the home folder; with `ORIEL_RS_DATA_DIR` set and this unset, it finds nothing |
+| `ORIEL_RS_IMPORT=1` | The welcome starts the import at once |
+| `ORIEL_RS_MOVE_OFFER=1` | Offers the move to Applications even in a run that would skip it |
+| `ORIEL_RS_APPLICATIONS_DIR=<folder>` | Where that move goes, read only when the offer is forced |
 | `ORIEL_RS_QUICK_LOOK=<file>` | Tidy shows the file in Quick Look once it is up |
 | `ORIEL_RS_TIDY_PICKER=1` | Tidy opens its folder picker (Add Folder…) once it is up |
 | `ORIEL_RS_CHANGES_ONLY=<scenario>` | `core-tidy`'s changes test runs one differential scenario |

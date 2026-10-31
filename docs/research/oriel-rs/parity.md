@@ -1,11 +1,12 @@
 # Oriel RS against Electron Oriel: what is ported
 
 This page lists what Electron Oriel does, area by area, and how much of each feature Oriel RS has,
-checked against `apps/oriel-rs/crates` at commit `b5e8dd5f` (2026-10-30). The shell,
-View, Sync, Tidy's engine and pages, the links between the modes and Settings are ported, and 32
-of Oriel's 33 e2e cases run as GPUI tests. What is left on macOS is a VoiceOver pass by a person,
-signing with a real identity, the DMG, the move to Applications and a release workflow. Windows
-(Phase 8) was not done.
+checked against `apps/oriel-rs/crates` at commit `31aa7326` (2026-10-31). After the parity round of
+2026-10-31 everything Electron Oriel does on macOS is ported. The exceptions are a VoiceOver pass by
+a person, and the build workflow the owner chose not to have (decision 20). Oriel RS also imports
+Electron Oriel's data. Windows builds and passes clippy for `x86_64-pc-windows-gnullvm`, but
+nothing has run on Windows yet; [the Windows runbook](../../runbooks/oriel-rs-windows.md) hands it
+over. 32 of Oriel's 33 e2e cases run as GPUI tests.
 
 ## How much is done
 
@@ -18,9 +19,13 @@ signing with a real identity, the DMG, the move to Applications and a release wo
 | [Sync](#sync) | 7 | 7 | 0 | 0 | 4 |
 | [Links between the modes](#links-between-the-modes) | 7 | 7 | 0 | 0 | 7 |
 | [Settings](#settings) | 7 | 7 | 0 | 0 | 2, 3, 4 and 7 |
-| [Packaging and updates](#packaging-and-updates) | 8 | 4 | 1 | 3 | after 1, or none yet |
-| [Windows](#windows) | 7 | 0 | 0 | 7 | 8 |
-| **All** | **104** | **92** | **2** | **10** | |
+| [Packaging and updates](#packaging-and-updates) | 8 | 7 | 0 | 0 | after 1, and the parity round |
+| [Windows](#windows) | 7 | 0 | 7 | 0 | 8 |
+| **All** | **104** | **99** | **8** | **0** | |
+
+Packaging's eighth row, the build workflow, is left on purpose (decision 20). Windows' rows are
+Partial because they compile but have not run. [Importing Electron Oriel's
+data](#importing-electron-oriels-data) is new in Oriel RS and is listed apart.
 
 Of Oriel's 33 e2e cases, the plan's parity list, 32 pass as GPUI tests and 1 does not apply
 ([the parity list](#the-parity-list)).
@@ -31,8 +36,8 @@ The states mean this:
   [where Oriel RS differs on purpose](#where-oriel-rs-differs-on-purpose).
 - **Partial**: some of it works, and the row says which part is missing.
 - **Not started**: none of it is in the app.
-- No row is **Left on purpose**. What the plan sets aside and neither app has, notarization and
-  auto-update, is under [not ported on purpose](#not-ported-on-purpose).
+- **Left on purpose**: the owner chose not to have it. What the plan sets aside and neither app
+  has, notarization and auto-update, is under [not ported on purpose](#not-ported-on-purpose).
 
 The inventory comes from the e2e specs in `e2e/tests/`, the runbooks
 ([Oriel](../../runbooks/oriel.md), [Tidy](../../runbooks/glazier.md),
@@ -47,7 +52,7 @@ explains.
 |---|---|---|---|
 | One window, a transparent title bar, the window buttons inset | Done | 1320 × 860, at least 960 × 640, as Electron Oriel's first window | 0 |
 | View · Tidy · Sync switcher in the sidebar's header, ⌘1–3, stacked icons in the rail | Done | A segmented control, or three icons in the rail; Tab reaches it | 0 |
-| Hidden modes keep their state, and keys reach only the mode on screen | Done | A hidden mode's entity lives on and is not drawn; the mode coming on screen takes the keys | 0 and 2 |
+| Hidden modes keep their state, and keys reach only the mode on screen | Done | A hidden mode's entity lives on and is not drawn; the mode coming on screen takes the keys; its videos pause | 0 and 2 |
 | Light and dark house theme | Done | Oriel Light and Oriel Dark from the `lw-*` tokens | 0 |
 | Full sidebar or rail, from ⌘\ or the top bar's toggle | Done | Remembered under Electron's `oriel.sidebar` key | 2 |
 | Native menu with the mode's own File, Edit and View items, a check mark on the mode, Settings…, Toggle Full Screen | Done | Every item of the mode on screen is lit; Window also has Bring All to Front | 2 |
@@ -81,10 +86,10 @@ explains.
 | The thumbnail cache capped at 5,000 files | Done | Kept as Electron has it | 3 |
 | Thumbnail size slider, in Settings | Done | | 3 |
 | Video autoplays on hover, with optional sound | Done | One preview at a time, through libmpv; it starts after 200 ms of rest, where Electron starts at once | 3 |
-| Keyboard focus through the grid: arrows or WASD move, Enter or F opens | Done | | 3 |
-| The viewer's Copy path, Reveal in folder, Show in Tidy and full screen | Done | The controls fade after 2.5 s | 3 and 7 |
+| Keyboard focus through the grid: arrows or WASD move, Enter or F opens | Done | Wraps at the ends; ⇧S opens the first folder | 3 |
+| The viewer's Copy path, Reveal in folder, Show in Tidy and full screen | Done | The controls fade after 2.5 s, and any key brings them back | 3 and 7 |
 | The player's volume level, playback speed, held 4 for a temporary speed, loop | Done | Volume and mute under Electron's `frameview.viewer.*` keys; a volume drag is saved when let go | 3 |
-| Comic mode, with leaf folders as comics, and the comic reader | Done | The reader decodes pages through ImageIO near the one in view | 3 |
+| Comic mode, with leaf folders as comics, and the comic reader | Done | The reader decodes pages through ImageIO near the one in view; its top bar fades as the viewer's does | 3 |
 | The last folder, and the folder it was opened at, come back on launch | Done | `frame-view-settings.json` in Electron's version-3 envelope | 3 |
 | Refresh (⌘R) | Done | | 3 |
 
@@ -93,9 +98,9 @@ explains.
 `glazier-core` is about 10.6k lines of TypeScript, and `core-tidy` ports all of it. Both engines
 scan and analyse the same archives to identical reports, the 21,136 files of `spike-fixture`
 among them (`tests/differential.rs`), and every e2e Tidy case's changes and Undos leave the same
-trees, holding and journal (`tests/changes.rs`). Tidy changes files only in a root under
-`~/.latch-works/oriel-rs/sandbox` or the temp folder, the plan's rule until the owner lifts it, so
-the rows that rule touches count as Done.
+trees, holding and journal (`tests/changes.rs`). Tidy changes files in any folder the owner adds
+(decision 18). A run with `ORIEL_RS_DATA_DIR` set, as checks and agents use, keeps the old sandbox:
+roots under `<data>/sandbox` or the temp folder.
 
 | Electron Oriel | State | In Oriel RS | Phase |
 |---|---|---|---|
@@ -109,12 +114,12 @@ the rows that rule touches count as Done.
 | The probe pass (ffprobe) and the loudness pass (silent below −60 dBFS) | Done | The pinned ffprobe and ffmpeg, through `oriel-tools` | 5 |
 | Identical sets, the keeper choice and close calls | Done | | 5 |
 | Background analysis: behind asked-for work, pause and stop, results cached per file | Done | One job for fingerprints, detail prints and loudness, where glazier-core runs separate jobs | 5 |
-| The planner, the executor (it re-reads each file first), holding outside the root, the journal, Undo per step, stopped changes cleaned up on launch | Done | A root on another volume holds in the data folder, copied and its size checked | 6 |
+| The planner, the executor (it re-reads each file first), holding outside the root, the journal, Undo per step, stopped changes cleaned up on launch | Done | A root on another volume holds at that volume's top, in `.latch-works/oriel-rs/holding`, as glazier-core does with its own folder; Restore, Undo and Empty Holding touch only Oriel RS's holding places | 6 |
 | Clean up: junk to holding, empty folders removed, wrong extensions renamed | Done | | 6 |
 | Shrink: SVT-AV1 at CRF 35, the estimate, the timings it learns, batches that stop and resume | Done | | 6 |
 | Tidy up: Clean up, silent soundtracks and Convert as one change with one Undo | Done | The page runs the steps one after another, as Electron's renderer does | 6 |
-| Rename, Move to… and Fix extension | Done | Move to… refuses a folder outside the sandbox | 6 |
-| Thumbnails for Tidy's tiles and rows | Done | Kept in memory, the last 400 drawn, not on disk | 7 |
+| Rename, Move to… and Fix extension | Done | In a sandboxed run, Move to… refuses a folder outside the sandbox | 6 |
+| Thumbnails for Tidy's tiles and rows | Done | Kept in memory, the last 400 drawn and at most 200 MiB (decision 23), not on disk | 7 |
 
 ## Tidy's pages
 
@@ -122,18 +127,18 @@ the rows that rule touches count as Done.
 |---|---|---|---|
 | The sidebar: the pages in order, Holding and Settings at the foot, the folder menu, ⌥⌘1–7 | Done | The pages show even with no folder | 7 |
 | The Library's table: sort, scroll, select | Done | GPUI Kit's data table; ⌘-click, ⇧-click and ⇧ with the arrows; columns drop at Electron's widths | 7 |
-| "Choose your media archive" when Tidy has no folder | Done | It names the sandbox and takes a dropped folder | 7 |
-| Tidy's own folder picker (a typed path, the usual folders, drives, keys), and a dropped folder | Done | Tidy's places outside the sandbox are shown but locked | 7 |
+| "Choose your media archive" when Tidy has no folder | Done | It takes a dropped folder; a sandboxed run names the sandbox | 7 |
+| Tidy's own folder picker (a typed path, the usual folders, drives, keys), and a dropped folder | Done | In a sandboxed run, places outside the sandbox are shown but locked | 7 |
 | Overview: what tidying would do, Tidy up (⌘↩), Check now | Done | | 7 |
-| Duplicates: the queue (Similar, Identical, Variants, Not duplicates), the version grid with playing tiles, the copy list, the loupe | Done | Tiles play through libmpv | 7 |
+| Duplicates: the queue (Similar, Identical, Variants, Not duplicates), the version grid with playing tiles, the copy list, the loupe | Done | Cleaned up at the owner's request (see [where Oriel RS differs](#where-oriel-rs-differs-on-purpose)); tiles play through libmpv and stop out of sight; the loupe shows actual pixels, up to 16384 px | 7 |
 | Duplicates' keys: Return, 1–9, ⇧1–9, N, S, Space, ⌘Y Quick Look, ⇧⌘R, P, ⌘Z; Undo toasts; the Spot variants switch | Done | Quick Look shows one file at a time; Electron's Duplicates has no ⌘Return, so the row drops it | 7 |
 | Convert | Done | | 7 |
 | Clean up | Done | | 7 |
 | Shrink | Done | With "How much each run takes", as in Electron | 7 |
 | The Library's search, Filter menu, list or grid, Inspector (I), rename field, selection bar and More… | Done | The native menu writes its shortcuts into the item text | 7 |
-| History, with Undo | Done | | 7 |
-| Holding: Restore (⌘⌫) and Empty to Trash (⇧⌘⌫) | Done | Empty to Trash goes through NSFileManager | 7 |
-| The job card at the sidebar's foot: progress, pause, stop | Done | Pause and Resume, "N more queued" and "In the background" | 7 |
+| History, with Undo | Done | A run of duplicate decisions lists each with its own Undo, and Undo all N; kind icons, relative times | 7 |
+| Holding: Restore (⌘⌫) and Empty to Trash (⇧⌘⌫) | Done | Arrow keys and a Restore on each tile; Empty to Trash goes through NSFileManager, or the Recycle Bin on Windows | 7 |
+| The job card at the sidebar's foot: progress, pause, stop | Done | Pause and Resume, "N more queued" and "In the background"; Convert, Clean up and Shrink pause in place too | 7 |
 | Tidy's menu items (Add Folder… ⌘O, Rescan ⌘R, Undo ⌘Z, Select All, Find ⌘F) and the shortcut sheet (?) | Done | | 7 |
 
 ## Sync
@@ -143,22 +148,22 @@ the rows that rule touches count as Done.
 | Profiles in the sidebar: add, edit, delete, each with a source folder, a Pane View URL and a token | Done | It reads the profiles Electron Oriel wrote | 4 |
 | The token stored with AES-256-GCM under a 0600 key file, never in the settings file in the clear | Done | It opens the tokens Electron Oriel sealed; there are no session-only tokens | 4 |
 | Check connection (the doctor) | Done | | 4 |
-| Plan: the source against Pane View's snapshot, with the hash cache, shown as the plan tree | Done | The hash cache is lockstep-core's JSON; a Rust plan equals the Lockstep CLI's on four sources | 4 |
-| Push through a bounded upload queue, with the run panel's progress, throughput and Cancel | Done | 1 to 8 uploads at once, 3 by default; the throughput chart is bars, with failure markers | 4 |
-| Prune: once per plan, confirming the count, skipping a file that is back in the source | Done | With the lock icon | 4 |
+| Plan: the source against Pane View's snapshot, with the hash cache, shown as the plan tree | Done | The hash cache is lockstep-core's JSON; a Rust plan equals the Lockstep CLI's on four sources; it hashes 16 files at once (decision 22) | 4 |
+| Push through a bounded upload queue, with the run panel's progress, throughput and Cancel | Done | Starts at 3 uploads at once and adds one, up to 6, while the gain holds for two windows; steps back when the link is full, or on a 429, a 5xx or a timeout (decision 22). A width set by hand stays fixed, 1 to 8. The throughput chart is bars, with failure markers | 4 |
+| Prune: once per plan, confirming the count, skipping a file that is back in the source | Done | With the lock icon; 6 deletes at once (decision 22) | 4 |
 | The run log (⌘L), and the last run under the profile's name | Done | | 4 |
 
 ## Links between the modes
 
 | Electron Oriel | State | In Oriel RS | Phase |
 |---|---|---|---|
-| A folder one mode works on is offered in the others' empty states | Done | Tidy offers only folders inside the sandbox | 7 |
+| A folder one mode works on is offered in the others' empty states | Done | In a sandboxed run, Tidy offers only folders inside the sandbox | 7 |
 | Open in View from Tidy's Library, Inspector, duplicate tiles, copies, loupe and Overview | Done | Also from the Library's right-click menu | 7 |
-| Show in Tidy from the viewer | Done | A folder outside the sandbox gets a toast with the rule and is not added | 7 |
+| Show in Tidy from the viewer | Done | In a sandboxed run, a folder outside the sandbox gets a toast with the rule | 7 |
 | Sync this folder from Tidy's Overview | Done | | 7 |
 | Open in View and Tidy this folder from Sync's profile menu | Done | | 7 |
 | A file handed to View opens in the viewer once its folder is scanned | Done | View checks only that the path exists, as it has no renderer to grant it to | 3 and 7 |
-| The first start's welcome: one folder for View, and for Tidy and Sync if asked | Done | `shell/welcomed` records it; "Tidy it" is off for a folder outside the sandbox | 7 |
+| The first start's welcome: one folder for View, and for Tidy and Sync if asked | Done | `shell/welcomed` records it; when Electron Oriel's data is found, the welcome offers the import first | 7 |
 
 ## Settings
 
@@ -166,7 +171,7 @@ the rows that rule touches count as Done.
 |---|---|---|---|
 | General: the theme (System, Light, Dark) | Done | | 2 |
 | One Settings page (⌘,), opened at the mode's section from the bottom left of every sidebar; Escape closes it | Done | | 2 |
-| General: the data folder | Done | Shown with Show in Finder; `ORIEL_RS_DATA_DIR` moves it | 2 |
+| General: the data folder | Done | Shown with Show in Finder (Explorer on Windows); `ORIEL_RS_DATA_DIR` moves it; Import… brings Electron Oriel's data | 2 |
 | View: remember the last folder, recursive by default, autoplay on hover and in the viewer, loop viewer navigation, sound in previews, loop videos, show images and videos | Done | | 3 |
 | View's Diagnostics: index and thumbnail counts, clearing them, ffmpeg's status, worker events | Done | Electron's groups, Copy diagnostics and the two debug switches; no worker crash counts, as there are no workers | 3 |
 | Tidy: preferred folders, Convert's options and video quality, background analysis, similar versions, Spot variants, encoders, how long each run takes | Done | Encoders lists 8 (libavif and libvips added, the video encoders being the pinned ffmpeg's); run times are on the Shrink page, as in Electron | 7 |
@@ -177,25 +182,42 @@ the rows that rule touches count as Done.
 | Electron Oriel | State | In Oriel RS | Phase |
 |---|---|---|---|
 | ffmpeg and ffprobe bundled at pinned hashes | Done | `cargo run -p xtask -- bundle` fetches Electron Oriel's pins into the app | after 1 |
-| A `.app` with its icon, opened from Finder | Done | 223 MB (Electron Oriel: 503 MB); macOS 15 and later, which Homebrew's aom needs | after 1 |
+| A `.app` with its icon, opened from Finder | Done | 205 MB (Electron Oriel: 503 MB); macOS 15 and later, which Homebrew's aom needs | after 1 |
 | Its native libraries inside the app | Done | An LGPL libmpv built from pinned sources, sharp's libvips and Homebrew's libavif, in `Contents/Frameworks` | after 1 |
 | About in the app menu: the name and the version | Done | About is a GPUI dialog; it also lists each bundled component's licence | 2 |
-| Signed ad hoc, or with `ORIEL_MACOS_SIGN_IDENTITY` | Partial | Ad hoc signing verifies; the identity has never been tried with a real certificate | after 1 |
-| A designed DMG and a ZIP, from `pnpm make:oriel` | Not started | | none yet |
-| An offer to move to Applications when started from elsewhere | Not started | | none yet |
-| A build workflow that makes the DMG and Setup.exe as artifacts | Not started | `oriel-rs.yml` runs the checks only | none yet |
+| Signed ad hoc, or with `ORIEL_MACOS_SIGN_IDENTITY` | Done | Ad hoc; the owner wants no real identity (decision 19) | after 1 |
+| A designed DMG and a ZIP, from `pnpm make:oriel` | Done | A plain DMG with the app and an Applications link, from `cargo run -p xtask -- dmg`; no background art or ZIP (decision 19) | parity round |
+| An offer to move to Applications when started from elsewhere | Done | Copies itself, relaunches, and trashes the old copy unless it is on a read-only volume; paths compared by device and inode | parity round |
+| A build workflow that makes the DMG and Setup.exe as artifacts | Left on purpose | GitHub runs only a typecheck (decision 20); `oriel-rs.yml` runs the checks when started by hand | none |
 
 ## Windows
 
+Every row here compiles and passes clippy for `x86_64-pc-windows-gnullvm` through llvm-mingw, and a
+debug `oriel-rs.exe` cross-links with its icon and version info. None of it has run on Windows, so
+every row is Partial until the Windows agent's checks in
+[the Windows runbook](../../runbooks/oriel-rs-windows.md) pass.
+
 | Electron Oriel | State | In Oriel RS | Phase |
 |---|---|---|---|
-| A Windows x64 build | Not started | `oriel-tools` already pins Electron Oriel's win32-x64 ffmpeg | 8 |
-| Setup.exe and an MSI through Velopack | Not started | | 8 |
-| The native caption buttons (`titleBarOverlay`) | Not started | | 8 |
-| A single-instance lock | Not started | | 8 |
-| Video playback | Not started | | 8 |
-| AVIF on screen (Chromium decodes it) | Not started | | 8 |
-| Plan 062's fixes: files held open, drives, long paths, names, hard links | Not started | The executor already counts sharing and lock violations as "in use", untested | 8 |
+| A Windows x64 build | Partial | The MSVC and release builds need a Windows machine (C headers, GPUI's `fxc` shaders) | 8 |
+| Setup.exe and an MSI through Velopack | Partial | `cargo run -p xtask -- package` stages the app and runs `vpk pack` for Setup.exe, with Velopack's hooks and no updater; no MSI; never run | 8 |
+| The native caption buttons (`titleBarOverlay`) | Partial | GPUI Kit's title bar with its app menu bar, and taskbar progress | 8 |
+| A single-instance lock | Partial | A named mutex keyed on the data folder, and a pipe that hands a second launch's paths over | 8 |
+| Video playback | Partial | libmpv from shinchiro's GPL build, through its software renderer; the 1080p60 gate is untested | 8 |
+| AVIF on screen (Chromium decodes it) | Partial | Through sharp's Windows libvips; Convert encodes with MSYS2's libavif, pinned | 8 |
+| Plan 062's fixes: files held open, drives, long paths, names, hard links | Partial | Roots without the verbatim prefix and compared without case, holding at a drive's top, cross-drive moves undone when the original stays open, read-only folders, the Recycle Bin, NTFS change times as Node reads them, `\\?\` paths for libvips | 8 |
+
+## Importing Electron Oriel's data
+
+New in Oriel RS (decision 17), so it is not in the counts above. It reads Electron Oriel's folders
+and never writes them, so Electron Oriel keeps working beside it.
+
+| What | State | In Oriel RS |
+|---|---|---|
+| The welcome offers it first when Electron Oriel's data is found, with counts and sizes | Done | Refused while Electron Oriel runs |
+| Settings › General › Import… at any time | Done | What Oriel RS had goes to `before-import-<time>/`, never deleted; the sandbox is never touched |
+| The window and preferences, View's settings, index and thumbnails, Tidy's catalog and held files, Sync's profiles, tokens and hash cache | Done | Staged, then put in place at the next start; on a copy of the owner's data every area came over in 1.4 s |
+| On Windows | Partial | Electron's Windows folders and `lockfile`; unit-tested on macOS, never run |
 
 ## The parity list
 
@@ -253,16 +275,18 @@ e2e library.
 
 - **The old apps' data.** Electron Oriel's first start brings Frame View's, Glazier's and
   Lockstep's data and tokens over, offers to remove the old apps, and refuses to run Tidy beside
-  the old Glazier. Oriel RS keeps its own data (decision 2), so none of that applies, and neither
-  does File › Import from the Old Apps…. Nor does Glazier's old holding folder,
-  `<root>/.glazier-holding`, which no Oriel RS catalog ever had.
+  the old Glazier. Oriel RS imports Electron Oriel's data instead (decision 17), which already holds
+  what those apps had, so none of that applies, and neither does File › Import from the Old Apps….
+  Nor does Glazier's old holding folder, `<root>/.glazier-holding`, which no Oriel RS catalog ever
+  had.
 - **Electron's processes.** Tidy's engine host, AVIF pool, transcoder window and IPC go, since the
   engine runs on background threads. View's Diagnostics has no worker crash or restart counts.
 - **Mediabunny and WebCodecs.** Convert encodes through ffmpeg instead, so Settings › Encoders
   lists the pinned ffmpeg's video encoders. ffmpeg's hardware encoders are a follow-up.
 - **PDFs.** Electron Oriel's View does not read them either (plan 040).
-- **Notarization and auto-update.** Neither app has a notarized release or auto-update. Plan 063
-  leaves them, with signing by a real identity, as follow-ups, since they need certificates.
+- **Notarization, a real signing identity and auto-update.** Neither app has a notarized release or
+  auto-update, and the owner wants none of them (decision 19): the app is for the owner and family,
+  who build it themselves.
 - **Touch and narrow windows.** Holding the player for 2× by touch (macOS has no touch screen),
   and the settings cog of windows under 640 px, which is below the 960 px minimum. Nor do Home,
   End and the arrows move the scrubber, since GPUI Kit's slider takes no keyboard focus.
@@ -282,7 +306,23 @@ e2e library.
 - Sync's Cancel stops uploads in flight, as lockstep-core does, though Electron's panel says they
   finish first.
 - Sync's `/` focuses the plan filter from a key handler, so a text field keeps its `/`.
-- The welcome is "Welcome to Oriel RS", with no line about migrated data, and the three mode
-  icons stand in for the animated mark.
+- The welcome is "Welcome to Oriel RS", and the three mode icons stand in for the animated mark.
+  When Electron Oriel's data is found it offers the import first; Electron's welcome has a line
+  about the old apps' data instead.
 - Tidy's "Tidy “name”?" question is a GPUI Kit alert dialog, not a native sheet.
 - About lists the licences of every bundled part, read from `Contents/Resources/licenses/`.
+- Duplicates was cleaned up at the owner's request (2026-10-31): a line saying why a version is
+  kept; the decision bar saying what goes to holding and what it frees; a scope list (Similar,
+  Variants, Identical, then Not duplicates) instead of tabs and a top-bar toggle; one "Matching"
+  popover for the similarity level and Spot variants; fact lanes that line tiles up; a fate line
+  per tile ("Keep", "Suggested", "Goes to holding"); one `…` menu and a right-click menu with
+  Prefer this folder. N reads "Keep both" or "Keep all" everywhere, and Spot variants' note reads
+  "Same picture as 1".
+- Overview's cards both read "frees up to …", and its hero says "not counting duplicates".
+  Convert's tiles fill the row, and "N wait for duplicate review" is a button. Errors say what
+  failed ("Couldn't …") and offer Try again.
+- Sync hashes 16 files at once (Electron: 4), adapts its upload width between 3 and 6 (Electron:
+  always 3), and prunes 6 at once (Electron: 1), as decision 22 asks.
+- Empty Holding marks a batch emptied when its folder is already gone, where Electron's Trash call
+  fails and leaves it held, so an imported batch whose files never arrived can be cleared.
+- Off macOS, Quick Look reads "Open in Default App", and the Library's menu shows only Open.
