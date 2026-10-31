@@ -661,7 +661,7 @@ Rust. **STOP** and report if video cannot reach 60 fps at 1080p on the owner's W
 **Best effort done (2026-10-31), not yet run.** The workspace builds and passes clippy for
 `x86_64-pc-windows-gnullvm`. The video path, AVIF, caption buttons, single-instance lock, Setup.exe
 through `vpk pack`, and plan 062's fixes are written. A Windows agent checks them on the owner's
-machine, starting with the video gate: [docs/runbooks/oriel-rs-windows.md](../runbooks/oriel-rs-windows.md).
+machine, starting with the video gate: [docs/runbooks/oriel-windows.md](../runbooks/oriel-windows.md).
 
 ### Phase 9: the scorecard and the decision (S)
 

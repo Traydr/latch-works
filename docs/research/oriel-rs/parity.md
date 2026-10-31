@@ -5,7 +5,7 @@ checked against `apps/oriel-rs/crates` at commit `31aa7326` (2026-10-31). After 
 2026-10-31 everything Electron Oriel does on macOS is ported. The exceptions are a VoiceOver pass by
 a person, and the build workflow the owner chose not to have (decision 20). Oriel RS also imports
 Electron Oriel's data. Windows builds and passes clippy for `x86_64-pc-windows-gnullvm`, but
-nothing has run on Windows yet; [the Windows runbook](../../runbooks/oriel-rs-windows.md) hands it
+nothing has run on Windows yet; [the Windows runbook](../../runbooks/oriel-windows.md) hands it
 over. 32 of Oriel's 33 e2e cases run as GPUI tests.
 
 ## How much is done
@@ -195,7 +195,7 @@ roots under `<data>/sandbox` or the temp folder.
 Every row here compiles and passes clippy for `x86_64-pc-windows-gnullvm` through llvm-mingw, and a
 debug `oriel-rs.exe` cross-links with its icon and version info. None of it has run on Windows, so
 every row is Partial until the Windows agent's checks in
-[the Windows runbook](../../runbooks/oriel-rs-windows.md) pass.
+[the Windows runbook](../../runbooks/oriel-windows.md) pass.
 
 | Electron Oriel | State | In Oriel RS | Phase |
 |---|---|---|---|

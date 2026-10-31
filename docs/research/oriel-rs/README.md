@@ -96,7 +96,7 @@ medians of 3.
 - **"Glazier" in two planner warnings** is kept so the differential runs still match
   glazier-core.
 - **Windows (Phase 8)** builds and passes clippy for `x86_64-pc-windows-gnullvm`, but has not run.
-  [The Windows runbook](../../runbooks/oriel-rs-windows.md) lists what the Windows agent must
+  [The Windows runbook](../../runbooks/oriel-windows.md) lists what the Windows agent must
   check, starting with Phase 8's video gate of 60 fps at 1080p.
 
 ## The detail pages
