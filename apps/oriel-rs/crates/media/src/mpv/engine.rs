@@ -130,6 +130,12 @@ impl Engine {
             ("sid", "no"),
             ("audio-client-name", "Oriel RS"),
         ];
+        // Interleaved stereo for CoreAudio. This macOS refuses (-50) the channel layout mpv sets
+        // on its audio unit for planar samples, which FFmpeg's AAC decoder gives, and for mono,
+        // and mpv then drops the soundtrack: every AAC video played silent. Interleaved float
+        // stereo it takes, so mpv converts to that (losslessly, but for a downmix of surround).
+        #[cfg(target_os = "macos")]
+        options.extend([("audio-format", "float"), ("audio-channels", "stereo")]);
         options.extend(render.options());
         let extra = std::env::var(OPTIONS_VARIABLE).unwrap_or_default();
         options.extend(
@@ -536,5 +542,51 @@ mod tests {
         assert_eq!(engine.core.observed().picture_size(), Some((320, 180)));
         engine.shut_down();
         std::fs::remove_dir_all(prime.parent().unwrap()).ok();
+    }
+
+    /// A file loaded with its sound has its soundtrack playing through the audio output, even
+    /// after the engine played a preview without sound: the clip's mono AAC is what CoreAudio
+    /// refused until the engine asked mpv for interleaved stereo, and the AAC video played
+    /// silent. Loaded paused, so nothing is heard.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_file_with_sound_reaches_the_audio_output() {
+        let test = "sound";
+        let (Some(preview), Some(viewer)) = (clip(test, "preview.mp4"), clip(test, "viewer.mp4"))
+        else {
+            eprintln!(
+                "skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)"
+            );
+            return;
+        };
+        if !super::super::libmpv_available() {
+            eprintln!("skipped: no libmpv (cargo run -p xtask -- libmpv)");
+            return;
+        }
+        let audio = |engine: &Engine| {
+            (
+                engine.core.get_string(c"current-tracks/audio/codec"),
+                engine.core.get_string(c"current-ao"),
+            )
+        };
+        let engine = Engine::start(MpvRender::OpenGl).expect("an engine starts");
+        engine.load(preview.to_str().unwrap().to_owned(), false);
+        wait_until("the preview loads", || {
+            engine.core.observed().picture_size().is_some()
+        });
+        assert_eq!(audio(&engine), (None, None), "a preview has no sound");
+        assert!(engine.come_to_rest(), "the engine comes to rest");
+
+        play(&engine, &viewer);
+        wait_until("the soundtrack reaches the audio output", || {
+            audio(&engine).1.is_some()
+        });
+        assert_eq!(
+            audio(&engine),
+            (Some("aac".to_owned()), Some("coreaudio".to_owned()))
+        );
+        assert_eq!(engine.core.get_string(c"mute").as_deref(), Some("no"));
+        engine.shut_down();
+        std::fs::remove_dir_all(viewer.parent().unwrap()).ok();
     }
 }

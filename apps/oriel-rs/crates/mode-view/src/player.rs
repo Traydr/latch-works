@@ -75,6 +75,17 @@ const ACTIVE: u32 = 0xc4b5fdff;
 /// A panel over the picture: `zinc-900/90`.
 const PANEL: u32 = 0x18181be6;
 const PANEL_GAP: f32 = 12.;
+/// A panel's corner radius.
+const PANEL_RADIUS: f32 = 16.;
+/// How far a panel's rows sit inside its border, so their fills keep clear of its corners.
+const PANEL_INSET: f32 = 4.;
+/// A row's corner radius in a panel: the panel's, less the inset and the 1 px border, so the
+/// two curves run concentric (the Design Guides' nested radii).
+const PANEL_ROW_RADIUS: f32 = PANEL_RADIUS - PANEL_INSET - 1.;
+/// The volume thumb's diameter. Its travel reaches half of it past each end of the track.
+const VOLUME_THUMB: f32 = 14.;
+/// The volume track's length.
+const VOLUME_TRACK: f32 = 112.;
 const VOLUME_PANEL_WIDTH: f32 = 48.;
 const SPEED_PANEL_WIDTH: f32 = 72.;
 const SPEED_BUTTON_WIDTH: f32 = 36.;
@@ -832,51 +843,56 @@ impl CapsulePlayer {
                         .flex()
                         .flex_col()
                         .items_center()
-                        .gap_1()
+                        .gap_2()
                         .px_2()
                         .pt_3()
-                        .pb_1()
+                        .pb_2()
                         .child(
-                            Slider::new(&self.volume_slider)
-                                .vertical()
-                                .accessibility_label("Volume")
-                                .child(
-                                    SliderTrack::new(&self.volume_slider)
-                                        .axis(gpui_kit::Axis::Vertical)
-                                        .flex()
-                                        .justify_center()
-                                        .w(px(32.))
-                                        .h(px(112.))
-                                        .child(
-                                            SliderIndicator::new(&self.volume_slider)
-                                                .relative()
-                                                .w(px(6.))
-                                                .h_full()
-                                                .rounded_full()
-                                                .bg(gpui_kit::white().opacity(0.25))
-                                                .child(
-                                                    div()
-                                                        .absolute()
-                                                        .left_0()
-                                                        .right_0()
-                                                        .bottom_0()
-                                                        .h(relative(level))
-                                                        .rounded_full()
-                                                        .bg(gpui_kit::white()),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .absolute()
-                                                        .bottom(relative(level))
-                                                        .left(px(-4.))
-                                                        .mb(px(-7.))
-                                                        .size(px(14.))
-                                                        .rounded_full()
-                                                        .bg(gpui_kit::white())
-                                                        .shadow_md(),
-                                                ),
-                                        ),
-                                ),
+                            // The thumb's half at either end is room the track keeps clear,
+                            // so at 100% it sits inside the panel's top rather than at its
+                            // edge, and at 0% clear of the percentage.
+                            div().py(px(VOLUME_THUMB / 2.)).child(
+                                Slider::new(&self.volume_slider)
+                                    .vertical()
+                                    .accessibility_label("Volume")
+                                    .child(
+                                        SliderTrack::new(&self.volume_slider)
+                                            .axis(gpui_kit::Axis::Vertical)
+                                            .flex()
+                                            .justify_center()
+                                            .w(px(32.))
+                                            .h(px(VOLUME_TRACK))
+                                            .child(
+                                                SliderIndicator::new(&self.volume_slider)
+                                                    .relative()
+                                                    .w(px(6.))
+                                                    .h_full()
+                                                    .rounded_full()
+                                                    .bg(gpui_kit::white().opacity(0.25))
+                                                    .child(
+                                                        div()
+                                                            .absolute()
+                                                            .left_0()
+                                                            .right_0()
+                                                            .bottom_0()
+                                                            .h(relative(level))
+                                                            .rounded_full()
+                                                            .bg(gpui_kit::white()),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .absolute()
+                                                            .bottom(relative(level))
+                                                            .left(px(-4.))
+                                                            .mb(px(-VOLUME_THUMB / 2.))
+                                                            .size(px(VOLUME_THUMB))
+                                                            .rounded_full()
+                                                            .bg(gpui_kit::white())
+                                                            .shadow_md(),
+                                                    ),
+                                            ),
+                                    ),
+                            ),
                         )
                         .child(
                             div()
@@ -950,7 +966,8 @@ impl CapsulePlayer {
                         .aria_label("Playback speed")
                         .flex()
                         .flex_col()
-                        .py_1()
+                        .gap(px(2.))
+                        .p(px(PANEL_INSET))
                         .children(SPEEDS.iter().rev().map(|&choice| {
                             let chosen = choice == speed;
                             div()
@@ -959,13 +976,15 @@ impl CapsulePlayer {
                                 .test_support()
                                 .aria_label(format_speed(choice))
                                 .aria_selected(chosen)
-                                .px_4()
-                                .py(px(6.))
+                                .px_3()
+                                .py(px(5.))
+                                .rounded(px(PANEL_ROW_RADIUS))
                                 .text_center()
                                 .text_size(px(14.))
                                 .when(chosen, |this| {
                                     this.font_weight(FontWeight::SEMIBOLD)
                                         .text_color(rgba(ACTIVE))
+                                        .bg(gpui_kit::white().opacity(0.08))
                                 })
                                 .when(!chosen, |this| {
                                     this.text_color(gpui_kit::white().opacity(0.9))
@@ -991,7 +1010,7 @@ fn popup(trigger_width: f32, width: f32, trigger_height: f32) -> gpui_kit::Div {
         .left(px((trigger_width - width) / 2.))
         .w(px(width))
         .occlude()
-        .rounded(px(16.))
+        .rounded(px(PANEL_RADIUS))
         .bg(rgba(PANEL))
         .border_1()
         .border_color(rgba(CAPSULE_RING))

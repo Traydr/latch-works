@@ -515,7 +515,11 @@ impl Viewer {
                 self.probe(cx);
             }
             MediaKind::Image | MediaKind::Gif => {
-                self.player = None;
+                // The video's player has the keys, and they would go with it, leaving the next
+                // step's key nothing to reach: the viewer takes them back first.
+                if self.player.take().is_some() && self.focus_handle.contains_focused(window, cx) {
+                    self.focus_handle.focus(window, cx);
+                }
                 self.player_subscriptions.clear();
                 self.video_playing = false;
             }

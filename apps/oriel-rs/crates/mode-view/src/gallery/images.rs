@@ -181,12 +181,13 @@ impl TileImages {
     }
 }
 
-/// A tile's picture, covering the tile as `img().object_fit(ObjectFit::Cover)` does, painted
-/// from the atlas once it is there.
+/// A tile's picture, covering the tile as `img().object_fit(ObjectFit::Cover)` does, with its
+/// corners rounded to `radius`, painted from the atlas once it is there.
 pub fn tile_picture(
     images: &Entity<TileImages>,
     path: Arc<Path>,
     picture: TilePicture,
+    radius: Pixels,
 ) -> impl IntoElement {
     let images = images.clone();
     canvas(
@@ -206,7 +207,7 @@ pub fn tile_picture(
             let painted = window.paint_image(
                 bounds,
                 fit,
-                Corners::default(),
+                Corners::all(radius),
                 picture.image.clone(),
                 0,
                 false,

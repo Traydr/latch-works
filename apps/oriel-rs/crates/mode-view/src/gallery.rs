@@ -27,9 +27,9 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::{ActiveTheme as _, Icon, tooltip::Tooltip};
 use gpui_kit::{
     App, AppContext as _, Bounds, ClickEvent, Context, DispatchPhase, ElementId, Entity,
-    EventEmitter, FocusHandle, Focusable, Hitbox, HitboxBehavior, InteractiveElement as _,
-    IntoElement, KeyBinding, MouseMoveEvent, ParentElement as _, Render, Role, ScrollStrategy,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
+    EventEmitter, FocusHandle, Focusable, Hitbox, HitboxBehavior, Hsla, InteractiveElement as _,
+    IntoElement, KeyBinding, MouseMoveEvent, ParentElement as _, PathBuilder, Pixels, Render, Role,
+    ScrollStrategy, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
     TestSupportExt as _, UniformListScrollHandle, WeakEntity, Window, actions, canvas, div,
     linear_color_stop, linear_gradient, point, prelude::FluentBuilder as _, px, size, uniform_list,
 };
@@ -894,6 +894,10 @@ impl Gallery {
         };
         let selected = self.selected.as_ref() == Some(tile.key());
         let theme = cx.theme();
+        // GPUI clips to a rectangle, never to a rounded one, so everything drawn edge to edge
+        // in the tile carries the tile's radius itself: its picture, its caption, and a mask
+        // over a playing preview's corners, which `surface()` cannot round.
+        let radius = theme.radius_lg;
         let id = match tile {
             Tile::Media { media, .. } => ElementId::Path(media.path().clone()),
             _ => ElementId::Name(tile.key().clone()),
@@ -908,7 +912,7 @@ impl Gallery {
             .flex_shrink_0()
             .w(px(metrics.card_width()))
             .h(px(metrics.card_height()))
-            .rounded(theme.radius_lg)
+            .rounded(radius)
             .overflow_hidden()
             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                 this.click_tile(position, event, window, cx);
@@ -957,11 +961,12 @@ impl Gallery {
                 .tooltip(path_tooltip(comic.folder_path()))
                 .bg(theme.muted)
                 .when_some(picture, |card, (path, picture)| {
-                    card.child(self.picture(path, picture))
+                    card.child(self.picture(path, picture, radius))
                 })
                 .child(caption(
                     comic.name().clone(),
                     format!("{} pages", comic.pages().len()).into(),
+                    radius,
                 )),
             Tile::Media { media, .. } => {
                 let preview = self
@@ -972,13 +977,20 @@ impl Gallery {
                 let hover_plays = media.is_video() && self.preview_settings.autoplay;
                 let path = media.path().clone();
                 let captioned = self.captioned == Some(position);
+                let backdrop = theme.background;
                 card.bg(theme.muted)
                     .when_some(picture, |card, (path, picture)| {
-                        card.child(self.picture(path, picture))
+                        card.child(self.picture(path, picture, radius))
                     })
-                    .when_some(preview, |card, preview| card.child(preview))
+                    .when_some(preview, |card, preview| {
+                        card.child(preview).child(corner_mask(radius, backdrop))
+                    })
                     .when(captioned, |card| {
-                        card.child(hover_caption(media, self.probes.facts.get(media.key())))
+                        card.child(hover_caption(
+                            media,
+                            self.probes.facts.get(media.key()),
+                            radius,
+                        ))
                     })
                     .when(media.is_video(), |card| card.child(video_badge()))
                     .when(hover_plays, |card| {
@@ -988,15 +1000,27 @@ impl Gallery {
                     })
             }
         };
-        let card = card.when(selected, |card| card.border_2().border_color(theme.ring));
+        // The selection is a ring over the tile rather than a border of the tile's own, so
+        // the picture keeps its place and size when selected. Its inner edge, the outer radius
+        // less its 2 px, runs concentric with the picture's corners under it.
+        let card = card.when(selected, |card| {
+            card.child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .rounded(radius)
+                    .border_2()
+                    .border_color(theme.ring),
+            )
+        });
         (card.into_any_element(), drawn)
     }
 
     /// A tile's thumbnail, from the gallery's own bounded cache ([`images`]) rather than
     /// `img()`'s: an `img()` without a cache of its own keeps its image in the App's asset cache
     /// for good, which held 11 GB once 20,000 tiles had scrolled by.
-    fn picture(&self, path: Arc<Path>, picture: TilePicture) -> impl IntoElement {
-        tile_picture(&self.images, path, picture)
+    fn picture(&self, path: Arc<Path>, picture: TilePicture, radius: Pixels) -> impl IntoElement {
+        tile_picture(&self.images, path, picture, radius)
     }
 }
 
@@ -1012,6 +1036,45 @@ struct Autoscroll {
 fn path_tooltip(path: &Path) -> impl Fn(&mut Window, &mut App) -> gpui_kit::AnyView + 'static {
     let text = SharedString::from(path.display().to_string());
     move |window, cx| Tooltip::new(text.clone()).build(window, cx)
+}
+
+/// The tile's backdrop over its four corners outside a `radius` curve: a playing preview is a
+/// `surface()`, which GPUI draws square whatever the radius asked.
+fn corner_mask(radius: Pixels, backdrop: Hsla) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds: Bounds<Pixels>, (), window, _| {
+            // A cubic's control points at this share of the radius from the corner draw a
+            // quarter circle to within 0.03%.
+            const KAPPA: f32 = 0.552_284_8;
+            let r = radius
+                .min(bounds.size.width / 2.)
+                .min(bounds.size.height / 2.);
+            let corners = [
+                (bounds.origin, 1., 1.),
+                (bounds.top_right(), -1., 1.),
+                (bounds.bottom_left(), 1., -1.),
+                (bounds.bottom_right(), -1., -1.),
+            ];
+            for (corner, x, y) in corners {
+                let along = |dx: f32, dy: f32| point(corner.x + r * dx, corner.y + r * dy);
+                let mut path = PathBuilder::fill();
+                path.move_to(corner);
+                path.line_to(along(x, 0.));
+                path.cubic_bezier_to(
+                    along(0., y),
+                    along(x * (1. - KAPPA), 0.),
+                    along(0., y * (1. - KAPPA)),
+                );
+                path.close();
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, backdrop);
+                }
+            }
+        },
+    )
+    .absolute()
+    .inset_0()
 }
 
 /// The badge on a video's tile. It sits on the picture rather than on a themed surface, so it is
@@ -1100,7 +1163,11 @@ impl CaptionProbe {
 
 /// A media tile's name and size, and a video's picture size once known, over the bottom of the
 /// picture while the pointer is on the tile (`MediaTile`'s caption).
-fn hover_caption(media: &MediaEntry, probe: Option<&VideoProbe>) -> impl IntoElement {
+fn hover_caption(
+    media: &MediaEntry,
+    probe: Option<&VideoProbe>,
+    radius: Pixels,
+) -> impl IntoElement {
     let mut detail = format_bytes(media.size() as f64);
     if let Some((width, height)) = probe.and_then(|probe| probe.width.zip(probe.height)) {
         detail.push_str(&format!(" · {width}×{height}"));
@@ -1110,6 +1177,7 @@ fn hover_caption(media: &MediaEntry, probe: Option<&VideoProbe>) -> impl IntoEle
         .test_support()
         .absolute()
         .inset_0()
+        .rounded(radius)
         .flex()
         .flex_col()
         .justify_end()
@@ -1137,10 +1205,11 @@ fn hover_caption(media: &MediaEntry, probe: Option<&VideoProbe>) -> impl IntoEle
 }
 
 /// A comic's name and page count over the bottom of its cover, on a scrim.
-fn caption(title: SharedString, detail: SharedString) -> impl IntoElement {
+fn caption(title: SharedString, detail: SharedString, radius: Pixels) -> impl IntoElement {
     div()
         .absolute()
         .inset_0()
+        .rounded(radius)
         .flex()
         .flex_col()
         .justify_end()
