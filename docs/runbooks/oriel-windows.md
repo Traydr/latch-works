@@ -21,8 +21,9 @@ Tools and the .NET SDK. It builds Setup.exe with `package windows`, then uninsta
 Oriel if it is installed, moving its old data folder aside to
 `%USERPROFILE%\.latch-works\oriel-electron-<date>`. Last, it installs Oriel and starts it. A
 second run skips what is done; `-BuildOnly`, `-NoLaunch`, `-SkipPrerequisites` and `-Clean`
-(which removes the build folder, tens of GB) are in its usage block. It has not run yet: plan
-064's step 1 runs it first.
+(which removes the build folder, tens of GB) are in its usage block. It ran on the owner's
+machine on 2026-11-01 (plan 064's results); its prerequisite installs and their elevation have
+not run, since that machine had them all.
 
 ## Prerequisites
 
@@ -190,44 +191,47 @@ passes, `cargo build -p oriel --target x86_64-pc-windows-gnullvm` links, and
 
 ## To check on Windows
 
-Each on a throwaway archive with `ORIEL_DATA_DIR` set, as plan 062 ran them for Electron Oriel:
+Each on a throwaway archive with `ORIEL_DATA_DIR` set, as plan 062 ran them for Electron Oriel.
+Checked on 2026-11-01; [plan 064's results](../plans/064-oriel-windows.md#results-2026-11-01) have
+the detail and the numbers:
 
-- [ ] `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`; the
+- [x] `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`; the
       conformance vectors, Tidy's change and Undo round trip and the GPUI tests that port the e2e cases.
-      Symlink tests need developer mode.
-- [ ] **The video gate (plan 063, Phase 8): 60 fps at 1080p.** STOP and report if it fails.
+      Symlink tests need developer mode. (8 symlink and 4 macOS-vector tests fail; see plan 064.)
+- [x] **The video gate (plan 063, Phase 8): 60 fps at 1080p.** Passed, 4K60 too. STOP and report if it fails.
       `cargo run --release -p oriel-media --example mpv_spike -- sweep` with
       `ORIEL_LIBMPV=<libmpv-2.dll>`, then the viewer on the fixture's 1080p and 4K videos.
-- [ ] Stills and AVIF in View and Tidy; similar pictures group as on macOS (libvips 8.18).
-- [ ] **Convert to AVIF**: the staged `libavif\` loads (Settings or the log names
+- [x] Stills and AVIF in View and Tidy (HEIC does not decode: libvips has no HEVC decoder); similar pictures group as on macOS (libvips 8.18).
+- [x] **Convert to AVIF**: the staged `libavif\` loads (Settings or the log names
       `libavif-16.dll`), a still converts, and the file opens in Photos. Then without
       `libavif\`: Convert says no libavif was found.
-- [ ] **ctime**: `fs.statSync(f).ctimeMs` in Node equals the catalog's `ctime_ms` after a scan
+- [x] **ctime** (the second scan not run): `fs.statSync(f).ctimeMs` in Node equals the catalog's `ctime_ms` after a scan
       (whole milliseconds); `attrib +r` alone moves it; a second scan hashes nothing again.
-- [ ] **Recycle Bin**: Empty Holding puts each batch in the Recycle Bin, restorable; a batch on a
+- [x] **Recycle Bin** (a drive with it off not tried): Empty Holding puts each batch in the Recycle Bin, restorable; a batch on a
       drive with the Recycle Bin off fails with a message and stays in holding.
 - [ ] **Logging off during a push**: Windows' screen names Oriel with the reason; the app
       quits when the push ends and the sign-out goes on; "Sign out anyway" quits at once.
-- [ ] **The exe**: Explorer shows Oriel's icon and, in Properties › Details, "Oriel" and the
+- [x] **The exe**: Explorer shows Oriel's icon and, in Properties › Details, "Oriel" and the
       version; the taskbar and the window show the icon.
-- [ ] **Files held open**: a video playing in Duplicates, a file View has open, one Defender is
+- [x] **Files held open** (a held JPEG; the Duplicates, View and Defender cases not tried): a video playing in Duplicates, a file View has open, one Defender is
       scanning: the step fails with a readable message and nothing is half moved.
 - [ ] **Replacing in place**: Shrink's MP4 to MP4, and Undo with the output open elsewhere.
 - [ ] **Drives**: the archive on `D:` with data on `C:` (holding by rename in
       `D:\.latch-works\oriel\holding`, without `ORIEL_DATA_DIR`), and a whole drive as the
       root (holding by copy); Undo both. Empty Holding refuses the `D:` batches today ("not one
       of Tidy's holding folders": `empty_holding` admits only `<data>\holding`), on macOS too.
-- [ ] **Long paths**: past 260 characters through the scan, fingerprints (libvips refused them in
+- [x] **Long paths**: past 260 characters through the scan, fingerprints (libvips refused them in
       Electron Oriel until paths were given as `\\?\`), thumbnails, ffprobe and Shrink.
-- [ ] **Names**: Japanese and other non-ASCII names through ffmpeg's arguments and libvips.
-- [ ] **Explorer's files**: `desktop.ini` (hidden, system, read-only folder) and `Thumbs.db`.
-- [ ] **Hard links**: `mklink /H` a picture; Duplicates frees nothing for it.
-- [ ] **One instance**: a second launch with a folder opens it in the first; without one it
+- [x] **Names**: Japanese and other non-ASCII names through ffmpeg's arguments and libvips.
+- [x] **Explorer's files**: `desktop.ini` (hidden, system, read-only folder) and `Thumbs.db`.
+- [x] **Hard links** (`dev` and `ino` shared; Duplicates' total not read): `mklink /H` a picture; Duplicates frees nothing for it.
+- [x] **One instance**: a second launch with a folder opens it in the first; without one it
       brings the first to the front; a check's run with its own data folder starts beside it.
-- [ ] **Setup.exe**: installs silently (`--silent`) to `%LocalAppData%\Oriel\current`, starts,
+- [x] **Setup.exe** (and an upgrade to a local 1.0.1): installs silently (`--silent`) to `%LocalAppData%\Oriel\current`, starts,
       shows About's licences, uninstalls cleanly, and leaves the data folder.
-- [ ] The title bar: dragging, double-click to maximize, snap layouts on the maximize button,
-      the menus by mouse and by Alt; the taskbar progress during a push.
+- [ ] The title bar: double-click to maximize, snap layouts on the maximize button and the menus
+      by mouse work; **the menus by Alt do not** (GPUI Kit's menu bar has no Alt); the taskbar
+      progress during a push not checked.
 
 ## Known risks
 
