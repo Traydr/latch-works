@@ -84,6 +84,7 @@ scripted input:
 | --- | --- |
 | `ORIEL_RS_DATA_DIR=<folder>` | The data root, as `--user-data-dir` is for Electron Oriel |
 | `ORIEL_RS_OPEN=<folder>` | View opens the folder at start |
+| `ORIEL_RS_VIEW_SCROLL=<px>` | View scrolls its grid that far down once the folder lists |
 | `ORIEL_RS_SETTINGS=general` | Settings opens at that section (`general`, `view`, `tidy`, `sync`) |
 | `ORIEL_RS_ACTIVITY=tidy=0.4,sync=working` | Fakes mode activity; a faked progress makes ⌘Q wait, so press it twice |
 | `ORIEL_RS_ACTIVITY_PANEL=1` | Opens the activity panel at the bottom right whenever work runs |
@@ -93,6 +94,8 @@ scripted input:
 | `ORIEL_RS_WELCOME=1` | Shows the first-run welcome under `ORIEL_RS_DATA_DIR` (it shows once otherwise, until `shell/welcomed` exists) |
 | `ORIEL_RS_TIDY_ROOT=<folder>` | Tidy opens on that root (in a sandboxed run, one inside the sandbox) |
 | `ORIEL_RS_TIDY_PAGE=<page>` | Tidy opens on that page (`overview`, `library`, `duplicates`, `duplicates:identical`, …) |
+| `ORIEL_RS_DUPLICATES_MATCHING=1` | Duplicates opens its Matching popover when the page first draws |
+| `ORIEL_RS_HISTORY_OPEN=1` | History opens its newest entry |
 | `ORIEL_RS_IMPORT_FROM=<folder>` | The import reads Electron Oriel's data under this stand-in for the home folder; with `ORIEL_RS_DATA_DIR` set and this unset, it finds nothing |
 | `ORIEL_RS_IMPORT=1` | The welcome starts the import at once |
 | `ORIEL_RS_MOVE_OFFER=1` | Offers the move to Applications even in a run that would skip it |

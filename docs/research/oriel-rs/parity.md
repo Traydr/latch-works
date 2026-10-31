@@ -136,7 +136,7 @@ roots under `<data>/sandbox` or the temp folder.
 | Clean up | Done | | 7 |
 | Shrink | Done | With "How much each run takes", as in Electron | 7 |
 | The Library's search, Filter menu, list or grid, Inspector (I), rename field, selection bar and More… | Done | The native menu writes its shortcuts into the item text | 7 |
-| History, with Undo | Done | A run of duplicate decisions lists each with its own Undo, and Undo all N; kind icons, relative times | 7 |
+| History, with Undo | Done | A run of duplicate decisions lists each with its own Undo, and Undo all N; kind icons, relative times; also lists "not duplicates" decisions, read from the catalog, with an Undo that sends the set back to review | 7 |
 | Holding: Restore (⌘⌫) and Empty to Trash (⇧⌘⌫) | Done | Arrow keys and a Restore on each tile; Empty to Trash goes through NSFileManager, or the Recycle Bin on Windows | 7 |
 | The job card at the sidebar's foot: progress, pause, stop | Done | Replaced at the owner's request by the shell's activity panel at the bottom right, for every mode, with Pause, Stop and a queue | 7 |
 | Tidy's menu items (Add Folder… ⌘O, Rescan ⌘R, Undo ⌘Z, Select All, Find ⌘F) and the shortcut sheet (?) | Done | | 7 |
@@ -335,3 +335,7 @@ e2e library.
   and centred.
 - Video sound goes to the output as float stereo, as macOS's CoreAudio refused FFmpeg's planar
   AAC; surround sound is downmixed.
+- Duplicates' video versions play in their tiles, muted and looping; a click on the picture plays or
+  pauses it, and the rest of the tile keeps the version. Electron's grid showed poster frames.
+- Every control follows one size scale (`oriel_ui::controls`): the theme's 13 px base is GPUI Kit's
+  rem, which sized its controls for 16 px, so they are set one size up and never below 26 px.
