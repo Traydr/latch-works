@@ -58,6 +58,38 @@ services:
         aws --endpoint-url http://rustfs:9000 s3api head-bucket --bucket "$$S3_BUCKET"
     restart: "no"
 
+  # Caps the stack's object storage at about 60 GiB: 50 GiB for the e2e suite's bucket, which every
+  # test push adds to and nothing empties, and 10 GiB for the dev bucket. RustFS refuses a write
+  # past a cap with "Bucket quota exceeded"; README.md says how to empty the e2e bucket. Quotas
+  # need RustFS's own CLI, rc, which this fetches pinned by SHA-256.
+  rustfs-quota:
+    image: alpine:3.22
+    depends_on:
+      rustfs-create-bucket:
+        condition: service_completed_successfully
+    environment:
+      RC_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RC_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      S3_BUCKET: ${S3_BUCKET:-latch-works-media}
+      E2E_BUCKET: latch-works-e2e
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        case "$$(uname -m)" in
+          aarch64 | arm64) arch=arm64; sum=6e9dea7ac4f81562add9e1e31206ba6059d6f5929ad4ed924986223282b3aa9c ;;
+          x86_64) arch=amd64; sum=4a8128911ccad4e7b481f26635a4cfd1ec064412210526e57ad2c748d356f3b7 ;;
+          *) echo "No rc build for $$(uname -m)"; exit 1 ;;
+        esac
+        wget -q -O /tmp/rc.tar.gz "https://github.com/rustfs/cli/releases/download/v0.1.36/rustfs-cli-linux-$$arch-v0.1.36.tar.gz"
+        echo "$$sum  /tmp/rc.tar.gz" | sha256sum -c -
+        tar -xzf /tmp/rc.tar.gz -C /usr/local/bin rc
+        rc alias set local http://rustfs:9000 "$$RC_ACCESS_KEY" "$$RC_SECRET_KEY" > /dev/null
+        rc bucket create --ignore-existing "local/$$E2E_BUCKET" > /dev/null
+        rc bucket quota set "local/$$E2E_BUCKET" 50G
+        rc bucket quota set "local/$$S3_BUCKET" 10G
+    restart: "no"
+
 volumes:
   postgres-data:
   rustfs-data:

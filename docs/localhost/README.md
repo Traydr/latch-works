@@ -59,6 +59,23 @@ pnpm dev:pane
 {"ok":true,"service":"pane-view"}
 ```
 
+## Storage cap
+
+The `rustfs-quota` service caps RustFS at about 60 GiB: 50 GiB for the e2e suite's
+`latch-works-e2e` bucket and 10 GiB for the dev bucket. A write past a cap fails with "Bucket quota
+exceeded". The e2e bucket grows with every test push and nothing empties it, so when it fills,
+empty it. Listing it through S3 times out once it holds a few hundred thousand files, so stop RustFS
+and remove its objects from the volume:
+
+```bash
+docker stop latch-works-localhost-rustfs-1
+docker run --rm -v latch-works-localhost_rustfs-data:/data alpine rm -rf /data/latch-works-e2e/originals
+docker start latch-works-localhost-rustfs-1
+```
+
+The bucket, its CORS rule and its quota stay; the dev bucket is not touched. The next e2e run
+seeds what it needs.
+
 ## Reset Local Data
 
 This deletes the local PostgreSQL and RustFS volumes for this compose project:
