@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -129,6 +129,44 @@ impl HoldingPlaces {
         Some(folder)
     }
 
+    /// Whether `path` lies inside a holding folder of the kind this run hands out, the only
+    /// places Restore, Undo and Empty Holding move or trash from: `<data>/holding`, or, holding on
+    /// volumes, `.latch-works/oriel-rs/holding` at the top of a volume other than the data
+    /// folder's. Anything else, Electron Oriel's `glazier` holding above all, is refused, so a
+    /// catalog row that points elsewhere (an import's, an edited one) never moves another app's
+    /// files. A place that climbs out (`..`), or whose folders lead elsewhere through a link, is
+    /// refused too.
+    pub fn holds(&self, path: &Path) -> bool {
+        if !path.is_absolute()
+            || path
+                .components()
+                .any(|part| matches!(part, Component::ParentDir | Component::CurDir))
+        {
+            return false;
+        }
+        let own = self.data_dir.join("holding");
+        if path.starts_with(&own) {
+            return path != own && resolves_inside(path, &own);
+        }
+        if !self.on_volumes {
+            return false;
+        }
+        let Some(top) = volume_holding_top(path) else {
+            return false;
+        };
+        let holding = top
+            .join(oriel_core_domain::LATCH_WORKS_DIRECTORY_NAME)
+            .join("oriel-rs")
+            .join("holding");
+        let Some(device) = volume_of(top) else {
+            return false;
+        };
+        path != holding
+            && volume_of(&self.data_dir) != Some(device)
+            && mount_point_of(top, device) == top
+            && resolves_inside(path, &holding)
+    }
+
     /// The folder a root's held files go to if it has been chosen already this run.
     pub fn known_folder(&self, root_id: RootId) -> Option<PathBuf> {
         self.folders
@@ -137,6 +175,41 @@ impl HoldingPlaces {
             .get(&root_id)
             .cloned()
     }
+}
+
+/// The folder at whose top `path`'s `.latch-works/oriel-rs/holding` sits, the highest one when
+/// there are several.
+fn volume_holding_top(path: &Path) -> Option<&Path> {
+    path.ancestors()
+        .filter(|folder| {
+            let names: Vec<_> = folder
+                .components()
+                .rev()
+                .take(3)
+                .map(Component::as_os_str)
+                .collect();
+            names.len() == 3
+                && names[0] == "holding"
+                && names[1] == "oriel-rs"
+                && names[2] == oriel_core_domain::LATCH_WORKS_DIRECTORY_NAME
+        })
+        .last()
+        .and_then(|holding| holding.parent()?.parent()?.parent())
+}
+
+/// Whether `path`, once the links in its folders are followed, is still inside `folder`. Its
+/// last part is not followed: a held link moves or goes to the Trash as the link it is. A place
+/// whose folder is not there has nothing to move, so it passes.
+fn resolves_inside(path: &Path, folder: &Path) -> bool {
+    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+        return false;
+    };
+    let Ok(parent) = fs::canonicalize(parent) else {
+        return true;
+    };
+    let folder = fs::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf());
+    let resolved = parent.join(name);
+    resolved.starts_with(&folder) && resolved != folder
 }
 
 /// The device `path` is on, as `fs.stat`'s `dev` gives it.
@@ -508,12 +581,10 @@ impl std::fmt::Display for RestoreConflict {
 impl std::error::Error for RestoreConflict {}
 
 /// Moves a held file back to where it came from. Refuses when something now sits at the
-/// original path, so a restore never overwrites. Called from a worker thread.
-pub fn restore_held(catalog: &Catalog, id: HoldingId) -> anyhow::Result<HoldingRecord> {
-    let record = catalog.blocking(move |connection| holding_record_by_id(connection, id))?;
-    let Some(record) = record.filter(|record| record.state == "held") else {
-        bail!("That item is no longer in holding.");
-    };
+/// original path, so a restore never overwrites, and when the file is not in one of Tidy's own
+/// holding folders ([`HoldingPlaces::holds`]). Called from a worker thread.
+pub fn restore_held(store: HoldingStore<'_>, id: HoldingId) -> anyhow::Result<HoldingRecord> {
+    let record = restorable(store, id)?;
     let original = to_absolute_path(&record.root_path, &record.original_rel);
     if path_exists(&original) {
         bail!(RestoreConflict(format!(
@@ -522,10 +593,33 @@ pub fn restore_held(catalog: &Catalog, id: HoldingId) -> anyhow::Result<HoldingR
         )));
     }
     move_file(Path::new(&record.hold_path), &original)?;
-    catalog.blocking(move |connection| {
+    store.catalog.blocking(move |connection| {
         connection.execute("UPDATE holding SET state = 'restored' WHERE id = ?1", [id])?;
         Ok(())
     })?;
+    Ok(record)
+}
+
+/// The held row `id`, when its file can come back: still held, in one of Tidy's own holding
+/// folders, and there. An undo checks it before it changes anything else.
+pub fn restorable(store: HoldingStore<'_>, id: HoldingId) -> anyhow::Result<HoldingRecord> {
+    let record = store
+        .catalog
+        .blocking(move |connection| holding_record_by_id(connection, id))?;
+    let Some(record) = record.filter(|record| record.state == "held") else {
+        bail!("That item is no longer in holding.");
+    };
+    if !store.places.holds(Path::new(&record.hold_path)) {
+        bail!(
+            "{} is not in Oriel RS's holding, so Tidy leaves it where it is.",
+            record.hold_path
+        );
+    }
+    // An imported row whose file stayed on a volume that was not there, or a file someone took
+    // out of holding by hand.
+    if !path_exists(Path::new(&record.hold_path)) {
+        bail!("{} is missing from holding.", record.original_rel);
+    }
     Ok(record)
 }
 
@@ -541,23 +635,26 @@ pub fn held_batch_paths(connection: &Connection, root_id: RootId) -> anyhow::Res
 
 /// Records that whole batch folders went to the Trash: everything still marked held in them is
 /// gone (restored items had already left). Only folders this catalog handed out count, and the
-/// root's holding folder goes once its last batch has. Called from a worker thread.
+/// root's holding folder goes once its last batch has, when it is one of Tidy's own. Called from
+/// a worker thread.
 pub fn mark_batches_emptied(
-    catalog: &Catalog,
+    store: HoldingStore<'_>,
     root_id: RootId,
     batch_paths: &[String],
 ) -> anyhow::Result<i64> {
     let mut emptied = 0;
     for batch_path in batch_paths {
         let batch = batch_path.clone();
-        emptied += catalog.blocking(move |connection| {
+        emptied += store.catalog.blocking(move |connection| {
             Ok(connection.execute(
                 "UPDATE holding SET state = 'emptied'
           WHERE root_id = ?1 AND batch_path = ?2 AND state = 'held'",
                 params![root_id, batch],
             )? as i64)
         })?;
-        if let Some(folder) = Path::new(batch_path).parent() {
+        if let Some(folder) = Path::new(batch_path).parent()
+            && store.places.holds(folder)
+        {
             let _ = fs::remove_dir(folder);
         }
     }
@@ -860,6 +957,44 @@ mod tests {
         assert!(name.ends_with("-plan-12"), "{name}");
         assert_eq!(name.len(), "2026-10-24_093012-plan-12".len());
         assert!(holding_batch_name(None, SystemTime::now()).ends_with("-manual"));
+    }
+
+    /// The safety rule behind Restore, Undo and Empty Holding: only Oriel RS's own holding.
+    #[cfg(unix)]
+    #[test]
+    fn only_oriel_rs_holding_folders_are_held_places() {
+        let scratch = std::env::temp_dir().join(format!("oriel-holds-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scratch);
+        let data_dir = scratch.join("home/.latch-works/oriel-rs/tidy");
+        let batch = data_dir.join("holding/1-Photos/2026-10-31_000000-manual");
+        fs::create_dir_all(&batch).unwrap();
+        let places = HoldingPlaces::new(&data_dir).on_volumes(true);
+        assert!(places.holds(&batch));
+        assert!(places.holds(&batch.join("a.jpg")));
+        assert!(
+            !places.holds(&data_dir.join("holding")),
+            "the whole holding"
+        );
+        assert!(!places.holds(&data_dir.join("catalog.sqlite")));
+        assert!(!places.holds(&batch.join("../../../catalog.sqlite")));
+        assert!(!places.holds(Path::new("holding/1-Photos/b")));
+        // Electron Oriel's holding, in its data folder or at the top of a volume.
+        let glazier = scratch.join("home/.latch-works/glazier/holding/1-Photos/b");
+        fs::create_dir_all(&glazier).unwrap();
+        assert!(!places.holds(&glazier));
+        assert!(!places.holds(Path::new(
+            "/Volumes/Photos/.latch-works/glazier/holding/1-Photos/b"
+        )));
+        // A folder that is not a volume's top holds nothing, whatever it is called.
+        let fake = scratch.join("Volumes/X/.latch-works/oriel-rs/holding/1-Photos/b");
+        fs::create_dir_all(&fake).unwrap();
+        assert!(!places.holds(&fake));
+        // A link inside holding that leads into Electron Oriel's holding.
+        std::os::unix::fs::symlink(&glazier, data_dir.join("holding/2-Linked")).unwrap();
+        assert!(!places.holds(&data_dir.join("holding/2-Linked/a.jpg")));
+        // A sandboxed run holds only in its data folder.
+        assert!(HoldingPlaces::new(&data_dir).holds(&batch));
+        fs::remove_dir_all(&scratch).unwrap();
     }
 
     #[test]

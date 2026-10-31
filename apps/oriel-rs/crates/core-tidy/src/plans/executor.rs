@@ -31,7 +31,7 @@ use rusqlite::{OptionalExtension as _, params};
 use super::encode_budget::EncodeBudget;
 use super::holding::{
     HoldRequest, HoldingPlaces, HoldingStore, copy_times, hold_file, holding_batch_name, move_file,
-    path_exists, restore_held,
+    path_exists, restorable, restore_held,
 };
 use super::journal::{StepRecord, load_steps, plan_subject, temp_path_of};
 use super::planner::{StepSpec, is_within};
@@ -526,7 +526,7 @@ fn convert(
     let holding_id = if same_path {
         let holding_id = hold()?;
         if let Err(error) = move_file(&temp.0, &target) {
-            restore_held(deps.catalog, holding_id)?;
+            restore_held(deps.store(), holding_id)?;
             return Err(error.into());
         }
         holding_id
@@ -1180,7 +1180,7 @@ fn undo_step(deps: &ExecutorDeps<'_>, step: &StepRecord, batch: &str) -> anyhow:
     match step.action {
         PlanStepAction::Hold => {
             if let Some(holding_id) = step.holding_id {
-                restore_held(deps.catalog, holding_id)?;
+                restore_held(deps.store(), holding_id)?;
             }
             Ok(())
         }
@@ -1204,6 +1204,9 @@ fn undo_step(deps: &ExecutorDeps<'_>, step: &StepRecord, batch: &str) -> anyhow:
             let (Some(target), Some(holding_id)) = (step.to_abs.as_deref(), step.holding_id) else {
                 return Ok(());
             };
+            // The original must be able to come back before the converted file is held, or the
+            // undo would leave the root with neither.
+            restorable(deps.store(), holding_id)?;
             if let Ok(output) = fs::metadata(target) {
                 if Some(output.size() as i64) != step.bytes_after {
                     bail!("The converted file has changed since.");
@@ -1223,7 +1226,7 @@ fn undo_step(deps: &ExecutorDeps<'_>, step: &StepRecord, batch: &str) -> anyhow:
                     },
                 )?;
             }
-            restore_held(deps.catalog, holding_id)?;
+            restore_held(deps.store(), holding_id)?;
             Ok(())
         }
         PlanStepAction::RemoveFolder => {
@@ -1250,7 +1253,7 @@ fn undo_step(deps: &ExecutorDeps<'_>, step: &StepRecord, batch: &str) -> anyhow:
                 if dir_of(&original_rel) == step.from_rel {
                     // Finder or Explorer may have written fresh files into the folder already;
                     // those win.
-                    let _ = restore_held(deps.catalog, id);
+                    let _ = restore_held(deps.store(), id);
                 }
             }
             Ok(())

@@ -52,7 +52,8 @@ pub fn run() {
     let data = DataRoot::from_environment().expect("Oriel RS needs a data folder");
     data.create_folders()
         .expect("Oriel RS could not create its data folder");
-    // On Windows a second launch hands its paths to the running instance and exits here.
+    // A second start on this data folder exits here, before a staged import is put in place
+    // under the running instance; on Windows it hands its paths over first.
     let executable = std::env::current_exe().unwrap_or_default();
     let launch_path = open_paths::from_args(std::env::args_os().skip(1), &executable);
     let instance = match single_instance::claim(&data, launch_path.as_slice()) {

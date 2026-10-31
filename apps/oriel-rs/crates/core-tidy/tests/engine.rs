@@ -501,3 +501,90 @@ fn a_change_in_a_root_outside_the_sandbox_is_refused() {
     .unwrap();
     assert_eq!(held.total, 0);
 }
+
+/// Restore, Undo and Empty Holding move only what is in Oriel RS's own holding: a row that points
+/// elsewhere (into Electron Oriel's holding, as an import's might) leaves that file where it is,
+/// and a row whose file is gone from Oriel RS's holding says so and empties.
+#[test]
+fn only_oriel_rs_holding_is_restored_undone_or_emptied() {
+    let scratch = Scratch::new("foreign-holding");
+    let archive = scratch.archive();
+    let engine = scratch.engine(Media::default());
+    let root = block_on(engine.add_root(&archive)).unwrap();
+    engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+    let junk = file_id(&engine, root.id, "._sunset.png");
+    let performed = engine
+        .perform_blocking(
+            PlanRequest::Hold {
+                file_ids: vec![junk],
+            },
+            &Quiet::new(),
+        )
+        .unwrap();
+    let listed = |engine: &TidyEngine| {
+        block_on(engine.list_holding(HoldingRequest {
+            root_id: root.id,
+            offset: 0,
+            limit: 10,
+        }))
+        .unwrap()
+    };
+    let held = listed(&engine);
+    let id = held.items[0].id;
+    let own = PathBuf::from(&held.items[0].hold_path);
+    let set_place = |hold: &Path, batch: &Path| {
+        let (hold, batch) = (
+            hold.to_string_lossy().into_owned(),
+            batch.to_string_lossy().into_owned(),
+        );
+        block_on(engine.catalog().call(move |connection| {
+            connection.execute(
+                "UPDATE holding SET hold_path = ?1, batch_path = ?2",
+                [hold, batch],
+            )?;
+            Ok(())
+        }))
+        .unwrap();
+    };
+
+    let electron_batch = scratch
+        .0
+        .join("home/.latch-works/glazier/holding/1-archive/2026-10-31_000000-manual");
+    let electron = electron_batch.join("._sunset.png");
+    fs::create_dir_all(&electron_batch).unwrap();
+    fs::write(&electron, b"Electron Oriel's").unwrap();
+    set_place(&electron, &electron_batch);
+    let restored = block_on(engine.restore_holding(vec![id])).unwrap();
+    assert_eq!(restored.restored, 0);
+    assert!(
+        restored.failed[0].contains("not in Oriel RS's holding"),
+        "{restored:?}"
+    );
+    let undone = engine
+        .undo_blocking(performed.applied.plan.id, &Quiet::new())
+        .unwrap();
+    // The step stays done, with why, as glazier-core records a step that did not come back.
+    assert_eq!(undone.plans[0].undone, 0, "{undone:?}");
+    let emptied = block_on(engine.empty_holding(root.id)).unwrap();
+    assert_eq!(emptied.emptied, 0);
+    assert_eq!(emptied.failed.len(), 1, "{emptied:?}");
+    assert_eq!(fs::read(&electron).unwrap(), b"Electron Oriel's");
+    assert!(!archive.join("._sunset.png").exists());
+
+    // Back in Oriel RS's holding, but gone from there.
+    fs::remove_dir_all(own.parent().unwrap()).unwrap();
+    set_place(&own, own.parent().unwrap());
+    let restored = block_on(engine.restore_holding(vec![id])).unwrap();
+    assert!(
+        restored.failed[0].contains("missing from holding"),
+        "{restored:?}"
+    );
+    let emptied = block_on(engine.empty_holding(root.id)).unwrap();
+    assert_eq!(
+        (emptied.emptied, emptied.failed.len()),
+        (1, 0),
+        "{emptied:?}"
+    );
+    assert_eq!(listed(&engine).total, 0);
+    assert_eq!(fs::read(&electron).unwrap(), b"Electron Oriel's");
+}

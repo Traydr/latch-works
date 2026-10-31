@@ -8,6 +8,10 @@
 //! number, so reading every log and table and keeping each key's highest-numbered record gives
 //! the database's contents, deletions included, without its manifest.
 //!
+//! Every length and checksum in the files is checked before it is believed: the reader runs on
+//! the welcome's first look, so a damaged table must read as preferences that do not read, never
+//! a crash at every start.
+//!
 //! Chromium's keys are `_<origin>\0<script key>`, and both the script key and the value begin with
 //! one byte that says how the rest is encoded: `1` for Latin-1, `0` for UTF-16LE
 //! (`LocalStorageStorageFormat`). A packaged Electron app's pages are on the `file://` origin.
@@ -25,6 +29,14 @@ const BLOCK_SIZE: usize = 32 * 1024;
 const LOG_HEADER: usize = 7;
 const TABLE_MAGIC: u64 = 0xdb47_7524_8b80_fb57;
 const FOOTER: usize = 48;
+/// A block's trailer: its compression byte and its checksum.
+const BLOCK_TRAILER: usize = 5;
+/// The most a block may hold once uncompressed. LevelDB writes blocks of about 4 KiB (Chromium
+/// keeps the default); anything near this is a damaged length, not a block, and must not be
+/// allocated.
+const MAX_BLOCK: usize = 16 * 1024 * 1024;
+/// Snappy's densest code turns three bytes into 64, so no honest block grows more than this.
+const MAX_SNAPPY_GROWTH: usize = 22;
 
 /// The `localStorage` entries of `origin`, from the LevelDB folder `folder` (`…/leveldb`). A
 /// folder that is not there holds none.
@@ -128,6 +140,12 @@ fn log_records(bytes: &[u8]) -> Vec<Vec<u8>> {
             let Some(fragment) = block.get(start..start + length) else {
                 return records;
             };
+            let stored = u32::from_le_bytes(block[at..at + 4].try_into().expect("four bytes"));
+            if unmask(stored) != crc32c(&[&[kind], fragment]) {
+                // A damaged record: LevelDB drops the rest of its block, and so does this.
+                pending = None;
+                break;
+            }
             match kind {
                 1 => records.push(fragment.to_vec()),
                 2 => pending = Some(fragment.to_vec()),
@@ -170,7 +188,7 @@ fn read_batch(
             0 => None,
             _ => return Err("a write batch has an unknown record"),
         };
-        keep(key, sequence + index, value);
+        keep(key, sequence.wrapping_add(index), value);
     }
     Ok(())
 }
@@ -213,19 +231,61 @@ fn read_table(
 }
 
 /// A block's contents, uncompressed: `size` bytes at `offset`, then a byte saying how they were
-/// compressed (and a checksum, which is not checked).
+/// compressed and the checksum of both, which must match.
 fn block(table: &[u8], offset: u64, size: u64) -> Result<Vec<u8>, &'static str> {
     let start = usize::try_from(offset).map_err(|_| "a block is out of range")?;
     let size = usize::try_from(size).map_err(|_| "a block is out of range")?;
-    let contents = table
-        .get(start..start + size)
-        .ok_or("a block is out of range")?;
-    match table.get(start + size) {
-        Some(0) => Ok(contents.to_vec()),
-        Some(1) => snappy(contents),
-        Some(_) => Err("a block is compressed in a way this reader does not know"),
-        None => Err("a block has no trailer"),
+    let end = start.checked_add(size).ok_or("a block is out of range")?;
+    let contents = table.get(start..end).ok_or("a block is out of range")?;
+    let trailer = end
+        .checked_add(BLOCK_TRAILER)
+        .and_then(|trailer_end| table.get(end..trailer_end))
+        .ok_or("a block has no trailer")?;
+    let stored = u32::from_le_bytes(trailer[1..].try_into().expect("four bytes"));
+    if unmask(stored) != crc32c(&[contents, &trailer[..1]]) {
+        return Err("a block's checksum does not match");
     }
+    match trailer[0] {
+        0 => Ok(contents.to_vec()),
+        1 => snappy(contents),
+        _ => Err("a block is compressed in a way this reader does not know"),
+    }
+}
+
+/// LevelDB stores each checksum masked, so a checksum of data holding checksums still checks.
+fn unmask(masked: u32) -> u32 {
+    let rotated = masked.wrapping_sub(0xa282_ead8);
+    rotated.rotate_left(15)
+}
+
+/// CRC-32C (Castagnoli), as LevelDB checks its blocks and records, over `parts` in turn.
+fn crc32c(parts: &[&[u8]]) -> u32 {
+    const TABLE: [u32; 256] = {
+        let mut table = [0u32; 256];
+        let mut index = 0;
+        while index < 256 {
+            let mut crc = index as u32;
+            let mut bit = 0;
+            while bit < 8 {
+                crc = if crc & 1 == 1 {
+                    (crc >> 1) ^ 0x82f6_3b78
+                } else {
+                    crc >> 1
+                };
+                bit += 1;
+            }
+            table[index] = crc;
+            index += 1;
+        }
+        table
+    };
+    let mut crc = !0u32;
+    for part in parts {
+        for byte in *part {
+            crc = TABLE[((crc ^ u32::from(*byte)) & 0xff) as usize] ^ (crc >> 8);
+        }
+    }
+    !crc
 }
 
 /// A block's entries: each shares a prefix with the key before it, and the block ends with its
@@ -235,10 +295,10 @@ fn block_entries(block: &[u8]) -> Result<Vec<Entry>, &'static str> {
         return Err("a block is too short");
     }
     let restarts = u32::from_le_bytes(block[block.len() - 4..].try_into().expect("four bytes"));
-    let restarts = usize::try_from(restarts).map_err(|_| "a block has too many restarts")?;
-    let end = block
-        .len()
-        .checked_sub(4 + restarts * 4)
+    let end = usize::try_from(restarts)
+        .ok()
+        .and_then(|restarts| restarts.checked_mul(4)?.checked_add(4))
+        .and_then(|tail| block.len().checked_sub(tail))
         .ok_or("a block's restarts overrun it")?;
     let mut reader = Reader::new(&block[..end]);
     let mut key: Vec<u8> = Vec::new();
@@ -257,10 +317,15 @@ fn block_entries(block: &[u8]) -> Result<Vec<Entry>, &'static str> {
     Ok(entries)
 }
 
-/// Snappy's raw format: the length, then literals and copies of what came before.
+/// Snappy's raw format: the length, then literals and copies of what came before. The length is
+/// the file's word, so it is checked before anything is allocated for it, and the output never
+/// grows past it.
 fn snappy(input: &[u8]) -> Result<Vec<u8>, &'static str> {
     let mut reader = Reader::new(input);
     let length = reader.length()?;
+    if length > MAX_BLOCK || length > input.len().saturating_mul(MAX_SNAPPY_GROWTH) {
+        return Err("a Snappy block claims more than a block holds");
+    }
     let mut output = Vec::with_capacity(length);
     while !reader.is_empty() {
         let tag = reader.byte()?;
@@ -277,6 +342,9 @@ fn snappy(input: &[u8]) -> Result<Vec<u8>, &'static str> {
                         .map_err(|_| "a literal is too long")?
                         + 1
                 };
+                if literal > length - output.len() {
+                    return Err("a Snappy block has the wrong length");
+                }
                 output.extend_from_slice(reader.take(literal)?);
                 continue;
             }
@@ -302,6 +370,9 @@ fn snappy(input: &[u8]) -> Result<Vec<u8>, &'static str> {
         };
         if offset == 0 || offset > output.len() {
             return Err("a Snappy copy reaches before the start");
+        }
+        if copy_length > length - output.len() {
+            return Err("a Snappy block has the wrong length");
         }
         // Copies may overlap what they write, so byte by byte.
         let from = output.len() - offset;
@@ -382,6 +453,35 @@ mod tests {
             snappy(&[4, 0b0000_0001, 9]).is_err(),
             "a copy before the start"
         );
+    }
+
+    #[test]
+    fn a_damaged_length_is_refused_before_anything_is_allocated() {
+        // Headers claiming 2^62 and 2^46 bytes, as a damaged table's block may: refused, where
+        // allocating them would abort the process at every start.
+        for claimed in [1u64 << 62, 1 << 46, 1 << 30] {
+            let mut compressed = Vec::new();
+            let mut value = claimed;
+            while value >= 0x80 {
+                compressed.push((value as u8) | 0x80);
+                value >>= 7;
+            }
+            compressed.push(value as u8);
+            compressed.extend_from_slice(&[0b0000_1000, b'a', b'b', b'c']);
+            assert!(snappy(&compressed).is_err(), "{claimed}");
+        }
+        // A copy that runs past the length it claimed.
+        assert!(snappy(&[4, 0b0000_1000, b'a', b'b', b'c', 0b0001_0001, 3]).is_err());
+    }
+
+    #[test]
+    fn checksums_are_leveldbs_masked_crc32c() {
+        // CRC-32C's check value, and LevelDB's mask undone.
+        assert_eq!(crc32c(&[b"123456789"]), 0xe306_9283);
+        assert_eq!(crc32c(&[b"1234", b"56789"]), 0xe306_9283);
+        let crc = crc32c(&[b"block"]);
+        let masked = crc.rotate_right(15).wrapping_add(0xa282_ead8);
+        assert_eq!(unmask(masked), crc);
     }
 
     #[test]

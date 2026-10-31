@@ -43,7 +43,7 @@ use crate::plans::encode_budget::EncodeBudget;
 pub use crate::plans::encode_budget::still_concurrency;
 use crate::plans::executor::{ExecutorDeps, apply_plan, undo_plan};
 use crate::plans::holding::{
-    held_batch_paths, list_holding, mark_batches_emptied, move_to_trash, restore_held,
+    HoldingStore, held_batch_paths, list_holding, mark_batches_emptied, move_to_trash, restore_held,
 };
 use crate::plans::journal::{
     discard_draft, get_plan, list_plan_steps, list_plans, plan_root_ids, plan_subject,
@@ -600,7 +600,11 @@ impl TidyEngine {
                         .push("That file's root is outside Tidy's sandbox.".to_owned());
                     continue;
                 }
-                match restore_held(&inner.catalog, id) {
+                let store = HoldingStore {
+                    catalog: &inner.catalog,
+                    places: &inner.places,
+                };
+                match restore_held(store, id) {
                     Ok(record) => {
                         result.restored += 1;
                         if !result.rescan.contains(&record.root_id) {
@@ -638,7 +642,11 @@ impl TidyEngine {
             inner
                 .catalog
                 .blocking(move |connection| root_or_error(connection, root_id))?;
-            let emptied = mark_batches_emptied(&inner.catalog, root_id, &batch_paths)?;
+            let store = HoldingStore {
+                catalog: &inner.catalog,
+                places: &inner.places,
+            };
+            let emptied = mark_batches_emptied(store, root_id, &batch_paths)?;
             inner.changed();
             Ok(emptied)
         })
@@ -657,13 +665,26 @@ impl TidyEngine {
                 root_or_error(connection, root_id)?;
                 held_batch_paths(connection, root_id)
             })?;
-            let holding = inner.places.data_dir().join("holding");
             let mut trashed = Vec::new();
             let mut failed = Vec::new();
             for batch in batches {
+                // A batch in the data folder's holding, or at the top of the root's own volume,
+                // as Electron Oriel's `emptyHolding` takes any batch its catalog lists; never a
+                // folder anywhere else.
                 let path = Path::new(&batch);
-                if !path.starts_with(&holding) || !inner.data.contains(path) {
-                    failed.push(format!("{batch}: not one of Tidy's holding folders"));
+                if !inner.places.holds(path) {
+                    failed.push(format!(
+                        "{batch}: not one of Tidy's holding folders, or its volume is not connected"
+                    ));
+                    continue;
+                }
+                // A batch whose folder is gone from its holding place (an import's held files
+                // left on a volume that was not there) has nothing to trash; it empties all the
+                // same, rather than staying in holding for good.
+                if fs::symlink_metadata(path)
+                    .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+                {
+                    trashed.push(batch);
                     continue;
                 }
                 match move_to_trash(path) {
@@ -671,7 +692,11 @@ impl TidyEngine {
                     Err(error) => failed.push(format!("{batch}: {error}")),
                 }
             }
-            let emptied = mark_batches_emptied(&inner.catalog, root_id, &trashed)?;
+            let store = HoldingStore {
+                catalog: &inner.catalog,
+                places: &inner.places,
+            };
+            let emptied = mark_batches_emptied(store, root_id, &trashed)?;
             inner.changed();
             Ok(EmptyHoldingResult { emptied, failed })
         })

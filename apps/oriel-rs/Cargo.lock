@@ -5381,6 +5381,7 @@ dependencies = [
  "oriel-mode-sync",
  "oriel-mode-tidy",
  "oriel-mode-view",
+ "oriel-runtime",
  "oriel-ui",
  "serde",
  "serde_json",

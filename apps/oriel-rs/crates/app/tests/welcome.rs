@@ -249,10 +249,12 @@ fn the_welcome_offers_electron_oriels_data_first_and_imports_it(cx: &mut TestApp
     assert!(data.sync().join("lockstep-settings.json").is_file());
     assert!(data.shell().join("migration.json").is_file());
 
-    // Later closes the welcome, which shows no more.
-    click(cx, handle, "import-later");
-    assert!(cx.update(|cx| opened.shell.read(cx).welcome().is_none()));
-    assert!(data.shell().join("welcomed").exists());
+    // Staged, the welcome cannot be put off: Tidy or Sync used before the restart would be
+    // stranded beside the folders the import moves aside.
+    assert!(!is_drawn(cx, handle, "import-later"));
+    press(cx, handle, "escape");
+    assert!(cx.update(|cx| opened.shell.read(cx).welcome().is_some()));
+    assert!(is_drawn(cx, handle, "import-restart"));
 }
 
 #[gpui_kit::test]
@@ -319,4 +321,49 @@ fn settings_imports_again_and_says_what_moves_aside(cx: &mut TestAppContext) {
     click(cx, handle, "import-cancel");
     assert!(!is_drawn(cx, handle, "import"));
     assert!(!oriel_migrate::pending(&data));
+}
+
+#[gpui_kit::test]
+fn a_staged_import_from_settings_stays_until_the_restart(cx: &mut TestAppContext) {
+    let root = scratch("settings-staged");
+    let archive = root.join("archive");
+    write_archive(&archive);
+    let home = electron_home(&root, &archive);
+    let data = DataRoot::at(root.join("data")).unwrap();
+    start(cx, &data);
+    import_from(cx, &home);
+    let opened = open_shell(cx, &data);
+    let handle = opened.handle;
+    cx.update(|cx| {
+        let state = opened.shell.read(cx).state().clone();
+        state.update(cx, |state, cx| {
+            state.open_settings(SettingsSection::General, cx)
+        });
+    });
+    frame(cx, handle);
+    click(cx, handle, "import-electron-oriel");
+    wait_until(cx, handle, "the look at Electron Oriel's data", |cx| {
+        is_drawn(cx, handle, "import-start")
+    });
+    click(cx, handle, "import-start");
+    wait_until(cx, handle, "the import", |cx| {
+        is_drawn(cx, handle, "import-summary")
+    });
+    assert!(oriel_migrate::pending(&data));
+    // Escape, a click beside it and a close button would all leave Tidy and Sync open to use
+    // before the restart; only Restart Now (Quit, in a check's run) is offered.
+    press(cx, handle, "escape");
+    assert!(is_drawn(cx, handle, "import-summary"));
+    assert!(is_drawn(cx, handle, "import-restart"));
+    assert!(!is_drawn(cx, handle, "import-later"));
+
+    // Opened again with the import still waiting, it says so and holds the same way.
+    cx.update(|cx| cx.set_global(ImportSource(None)));
+    cx.update_window(handle, |_, window, cx| {
+        oriel_rs::welcome::open_import_dialog(data.clone(), window, cx);
+    })
+    .unwrap();
+    frame(cx, handle);
+    press(cx, handle, "escape");
+    assert!(is_drawn(cx, handle, "import-restart"));
 }

@@ -87,9 +87,58 @@ pub fn bundle_of(executable: &Path) -> Option<PathBuf> {
 }
 
 /// Whether `bundle` is in `/Applications` or `~/Applications`, at any depth, as Electron's
-/// `isInApplicationsFolder` reads it.
+/// `isInApplicationsFolder` reads it, however either is spelled ([`inside`]).
 pub fn in_applications(bundle: &Path, home: &Path) -> bool {
-    bundle.starts_with("/Applications") || bundle.starts_with(home.join("Applications"))
+    inside(bundle, Path::new("/Applications")) || inside(bundle, &home.join("Applications"))
+}
+
+/// The device and inode of what `path` names once links are followed: one folder has one
+/// whatever the path to it, through a link or a firmlink (`/Applications` is
+/// `/System/Volumes/Data/Applications`).
+#[cfg(unix)]
+fn identity(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt as _;
+    std::fs::metadata(path)
+        .ok()
+        .map(|metadata| (metadata.dev(), metadata.ino()))
+}
+
+#[cfg(not(unix))]
+fn identity(_: &Path) -> Option<(u64, u64)> {
+    None
+}
+
+/// Whether `a` and `b` name the same file or folder, however each is spelled.
+pub fn same_place(a: &Path, b: &Path) -> bool {
+    a == b || identity(a).is_some_and(|place| identity(b) == Some(place))
+}
+
+/// Whether `path` lies inside `folder` at any depth, however either is spelled: by its words,
+/// or by a folder above it (as written, or with its links followed) being `folder` itself.
+pub fn inside(path: &Path, folder: &Path) -> bool {
+    if path.starts_with(folder) {
+        return true;
+    }
+    let Some(place) = identity(folder) else {
+        return false;
+    };
+    let resolved = std::fs::canonicalize(path).ok();
+    path.ancestors()
+        .skip(1)
+        .chain(resolved.iter().flat_map(|path| path.ancestors().skip(1)))
+        .any(|above| identity(above) == Some(place))
+}
+
+/// Whether moving `bundle` into `folder` would land on `bundle` itself: `folder` is the folder
+/// it is in, or the copy there is it, under another spelling. Copying would then replace the
+/// running app with itself, and trashing "the old copy" would trash the only one.
+pub fn lands_on_itself(bundle: &Path, folder: &Path) -> bool {
+    bundle
+        .parent()
+        .is_some_and(|parent| same_place(parent, folder))
+        || bundle
+            .file_name()
+            .is_some_and(|name| same_place(bundle, &folder.join(name)))
 }
 
 /// Where the move goes: `/Applications` when it can be written to, else `~/Applications`, which
@@ -151,8 +200,10 @@ mod mac {
             Some(folder) if situation.test_run && !folder.is_empty() => PathBuf::from(folder),
             _ => destination(&situation.home, writable(Path::new("/Applications"))),
         };
-        // A check's own folder is where the moved copy starts again.
-        if bundle.parent() == Some(folder.as_path()) {
+        // Already there under another spelling, or a check's own folder, where the moved copy
+        // starts again.
+        if super::lands_on_itself(&bundle, &folder) {
+            log::debug!("no offer to move to Applications: it is there already");
             return;
         }
         let declined = data.shell().join(DECLINED_FILE);
@@ -197,6 +248,9 @@ mod mac {
             return;
         };
         let target = folder.join(&name);
+        if super::lands_on_itself(&bundle, &folder) {
+            return;
+        }
         if target.exists() {
             let replace = cx.prompt(
                 PromptLevel::Warning,
@@ -231,7 +285,9 @@ mod mac {
                 return;
             }
         };
+        // Never the copy just made: a bundle that is the target under another spelling is it.
         if !read_only(&bundle)
+            && !super::same_place(&bundle, &target)
             && let Err(error) = trash(&bundle)
         {
             log::warn!("the old copy stays at {}: {error}", bundle.display());
@@ -456,6 +512,51 @@ mod tests {
         let mut declined = situation(IN_IMAGE);
         declined.declined = true;
         assert_eq!(decide(&declined), Decision::Skip(Skip::Declined));
+    }
+
+    /// The rule that keeps the move from trashing the only copy: an Applications folder or a
+    /// bundle reached through a link is the same one.
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_reached_through_a_link_is_the_same_folder() {
+        use super::{inside, lands_on_itself, same_place};
+
+        let scratch = std::env::temp_dir().join(format!("oriel-rs-move-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let real = scratch.join("real/Applications");
+        let bundle = real.join("Oriel RS.app");
+        std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
+        std::os::unix::fs::symlink(scratch.join("real"), scratch.join("link")).unwrap();
+        let linked = scratch.join("link/Applications");
+        let linked_bundle = linked.join("Oriel RS.app");
+
+        assert!(same_place(&linked_bundle, &bundle));
+        assert!(!same_place(&linked, &bundle));
+        assert!(inside(&linked_bundle, &real));
+        assert!(inside(&bundle, &linked));
+        // Running from either spelling, moving into the other lands on itself.
+        assert!(lands_on_itself(&linked_bundle, &real));
+        assert!(lands_on_itself(&bundle, &linked));
+        // The bundle itself a link to the one in Applications, on the Desktop.
+        let desktop = scratch.join("Desktop");
+        std::fs::create_dir_all(&desktop).unwrap();
+        std::os::unix::fs::symlink(&bundle, desktop.join("Oriel RS.app")).unwrap();
+        assert!(lands_on_itself(&desktop.join("Oriel RS.app"), &real));
+        assert!(inside(&desktop.join("Oriel RS.app"), &real));
+        // Another copy elsewhere is not.
+        let downloads = scratch.join("Downloads/Oriel RS.app");
+        std::fs::create_dir_all(&downloads).unwrap();
+        assert!(!lands_on_itself(&downloads, &real));
+        assert!(!inside(&downloads, &real));
+
+        // `~/Applications` a link to another folder: a bundle there is in Applications.
+        let home = scratch.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        std::os::unix::fs::symlink(&real, home.join("Applications")).unwrap();
+        let mut situation = situation(&bundle.join("Contents/MacOS/oriel-rs").to_string_lossy());
+        situation.home = home;
+        assert_eq!(decide(&situation), Decision::Skip(Skip::InApplications));
+        std::fs::remove_dir_all(&scratch).unwrap();
     }
 
     #[test]

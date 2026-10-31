@@ -424,7 +424,8 @@ fn the_import_brings_every_area_over_and_only_reads_electron_oriel() {
     );
 
     // Tidy: every held place is now in Oriel RS's holding, with the file there; the one outside
-    // the stand-in home is left where it was and said so.
+    // the stand-in home is not copied and said so, but its place moves all the same, so nothing
+    // in the catalog points into Electron Oriel's holding.
     let catalog = Connection::open(data.tidy().join("catalog.sqlite")).unwrap();
     let data_dir: String = catalog
         .query_row(
@@ -445,10 +446,10 @@ fn the_import_brings_every_area_over_and_only_reads_electron_oriel() {
     assert_eq!(places.len(), 3);
     for (original, place) in &places {
         let place = Path::new(place);
+        assert!(place.starts_with(data.tidy().join("holding")), "{original}");
         if original == "outside.jpg" {
-            assert!(place.starts_with(&electron.elsewhere));
+            assert!(!place.exists(), "{original} was copied");
         } else {
-            assert!(place.starts_with(data.tidy().join("holding")), "{original}");
             assert!(place.is_file(), "{original} was not copied");
         }
     }
@@ -604,6 +605,172 @@ fn nothing_is_read_while_electron_oriel_runs() {
     assert_eq!(error.to_string(), "Quit Electron Oriel to import its data.");
     assert!(!pending(&data));
     assert!(!data.root().join(oriel_migrate::STAGING).exists());
+}
+
+/// The staged import's note, to stand in for a start that stopped midway.
+fn edit_note(data: &DataRoot, edit: impl FnOnce(&mut Value)) {
+    let note = data.root().join(oriel_migrate::STAGING).join("ready.json");
+    let mut value: Value = serde_json::from_str(&fs::read_to_string(&note).unwrap()).unwrap();
+    edit(&mut value);
+    fs::write(&note, value.to_string()).unwrap();
+}
+
+#[test]
+fn a_start_after_a_crash_midway_finishes_the_import_and_names_the_folder_aside() {
+    let scratch = Scratch::new("crash");
+    let electron = Electron::make(&scratch);
+    let data = oriel_rs(&scratch);
+    import(&electron.source(), &data, &Progress::default()).unwrap();
+    let staging = data.root().join(oriel_migrate::STAGING);
+    // The start before stopped with Tidy moved aside but not yet replaced, and every other area
+    // in place, with the note still there.
+    let aside = data.root().join("before-import-earlier");
+    edit_note(&data, |note| note["aside"] = json!(aside));
+    fs::create_dir_all(&aside).unwrap();
+    fs::rename(data.tidy(), aside.join("tidy")).unwrap();
+    for area in [Area::Shell, Area::View, Area::Sync, Area::HashCache] {
+        let live = data.root().join(area.folder());
+        if live.exists() {
+            fs::rename(&live, aside.join(area.folder())).unwrap();
+        }
+        fs::rename(staging.join(area.folder()), &live).unwrap();
+    }
+
+    let report = finish_pending(&data).unwrap();
+    assert!(report.areas.iter().all(|area| area.imported), "{report:#?}");
+    assert!(report.failed().next().is_none());
+    assert_eq!(
+        report.moved_aside.as_deref().map(Path::new),
+        Some(aside.as_path())
+    );
+    assert_eq!(
+        fs::read(aside.join("tidy/catalog.sqlite")).unwrap(),
+        b"an older catalog"
+    );
+    assert!(data.tidy().join("catalog.sqlite").is_file());
+    assert_ne!(
+        fs::read(data.tidy().join("catalog.sqlite")).unwrap(),
+        b"an older catalog"
+    );
+    assert!(!pending(&data) && !staging.exists());
+}
+
+#[test]
+fn an_area_that_cannot_go_in_place_keeps_its_copy_and_its_folder() {
+    let scratch = Scratch::new("kept");
+    let electron = Electron::make(&scratch);
+    let data = oriel_rs(&scratch);
+    import(&electron.source(), &data, &Progress::default()).unwrap();
+    // The folder aside cannot be made, so nothing Oriel RS has can move aside.
+    let blocked = data.root().join("before-import-blocked");
+    fs::write(&blocked, b"a file where the folder would go").unwrap();
+    edit_note(&data, |note| note["aside"] = json!(blocked));
+
+    let report = finish_pending(&data).unwrap();
+    let tidy = report.area(Area::Tidy).unwrap();
+    assert!(!tidy.imported);
+    let error = tidy.error.clone().unwrap();
+    assert!(error.contains("Its copy is in"), "{error}");
+    assert_eq!(report.moved_aside, None, "nothing went aside");
+    assert_eq!(
+        fs::read(data.tidy().join("catalog.sqlite")).unwrap(),
+        b"an older catalog",
+        "Oriel RS's own Tidy stays in place"
+    );
+    let kept: Vec<PathBuf> = fs::read_dir(data.root())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("import-not-placed-")
+        })
+        .collect();
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    assert!(error.contains(&kept[0].join("tidy").display().to_string()));
+    assert!(kept[0].join("tidy/catalog.sqlite").is_file());
+    assert!(!kept[0].join("ready.json").exists());
+    // An area with nothing of Oriel RS's in the way still went in place.
+    assert!(report.area(Area::View).unwrap().imported);
+    assert!(!pending(&data));
+    assert!(!data.root().join(oriel_migrate::STAGING).exists());
+    assert_eq!(finish_pending(&data), None);
+}
+
+/// LevelDB's masked CRC-32C of `bytes`, so a damaged length gets past the block's checksum.
+fn masked_crc32c(bytes: &[u8]) -> u32 {
+    let mut crc = !0u32;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = if crc & 1 == 1 {
+                (crc >> 1) ^ 0x82f6_3b78
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    let crc = !crc;
+    crc.rotate_right(15).wrapping_add(0xa282_ead8)
+}
+
+/// A table whose index block is Snappy claiming to unpack to `claimed` bytes, as a damaged disk
+/// leaves one: with its checksum right (the length itself is the damage) or wrong.
+fn damaged_table(path: &Path, claimed: u64, checksummed: bool) {
+    let mut contents = Vec::new();
+    let mut rest = claimed;
+    while rest >= 0x80 {
+        contents.push((rest as u8) | 0x80);
+        rest >>= 7;
+    }
+    contents.push(rest as u8);
+    let mut table = contents.clone();
+    table.push(1);
+    let checksum = if checksummed {
+        masked_crc32c(&table)
+    } else {
+        0
+    };
+    table.extend_from_slice(&checksum.to_le_bytes());
+    let mut footer = vec![0, 0, 0, contents.len() as u8];
+    footer.resize(40, 0);
+    footer.extend_from_slice(&0xdb47_7524_8b80_fb57u64.to_le_bytes());
+    table.extend_from_slice(&footer);
+    fs::write(path, table).unwrap();
+}
+
+#[test]
+fn a_damaged_preferences_table_is_left_out_rather_than_a_crash() {
+    // 2^62 and 2^46 bytes would abort the process on allocation; 2^20 is merely more than
+    // the block holds.
+    for (claimed, checksummed) in [
+        (1u64 << 62, true),
+        (1 << 46, true),
+        (1 << 20, true),
+        (1 << 62, false),
+    ] {
+        let scratch = Scratch::new(&format!("damaged-{claimed}-{checksummed}"));
+        let electron = Electron::make(&scratch);
+        damaged_table(
+            &electron
+                .latch_works()
+                .join("oriel/Local Storage/leveldb/000099.ldb"),
+            claimed,
+            checksummed,
+        );
+        let data = oriel_rs(&scratch);
+        assert_eq!(Survey::of(&electron.source(), &data).preferences, 0);
+        let report = import_now(&electron.source(), &data, &Progress::default()).unwrap();
+        let shell = report.area(Area::Shell).unwrap();
+        assert!(shell.imported, "{shell:?}");
+        assert!(
+            shell.skipped[0].starts_with("The preferences, which did not read"),
+            "{shell:?}"
+        );
+        assert!(!data.shell().join("local-storage.json").exists());
+        assert!(data.shell().join("welcomed").is_file());
+    }
 }
 
 #[test]

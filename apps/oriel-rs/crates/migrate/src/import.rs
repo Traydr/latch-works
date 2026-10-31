@@ -52,6 +52,19 @@ const LOCAL_STORAGE: &str = "local-storage.json";
 #[derive(Serialize, Deserialize)]
 struct Ready {
     report: Report,
+    /// The folder what Oriel RS had goes aside to, chosen by the start that puts the import in
+    /// place and noted before anything moves, so a start after a crash midway uses it too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    aside: Option<PathBuf>,
+}
+
+/// Writes the staging folder's note whole, through a temporary file.
+fn write_note(staging: &Path, ready: &Ready) -> anyhow::Result<()> {
+    let text = serde_json::to_string_pretty(ready)?;
+    let temporary = staging.join(format!("{READY}.tmp"));
+    fs::write(&temporary, text).context("writing the staging folder's note")?;
+    fs::rename(&temporary, staging.join(READY)).context("writing the staging folder's note")?;
+    Ok(())
 }
 
 /// Whether an import is staged, waiting for the next start to put it in place.
@@ -127,12 +140,13 @@ pub fn import(
     let mut seen = std::collections::HashSet::new();
     report.folders.retain(|folder| seen.insert(folder.clone()));
 
-    let ready = serde_json::to_string_pretty(&Ready {
-        report: report.clone(),
-    })?;
-    let temporary = staging.join(format!("{READY}.tmp"));
-    fs::write(&temporary, ready).context("writing the staging folder's note")?;
-    fs::rename(&temporary, staging.join(READY)).context("writing the staging folder's note")?;
+    write_note(
+        &staging,
+        &Ready {
+            report: report.clone(),
+            aside: None,
+        },
+    )?;
     progress.begin("Imported");
     Ok(report)
 }
@@ -150,7 +164,13 @@ pub fn import_now(
 
 /// Puts a staged import in place, at a start before anything opens Oriel RS's files. Returns the
 /// report, once, or `None` when nothing was staged. A staging folder left without its note (an
-/// import stopped halfway) is removed, since none of it was in place.
+/// import stopped halfway) is removed, since none of it was in place and it is only a copy.
+///
+/// Nothing of the owner's is deleted, and a start after a crash midway finishes the job: an area
+/// the note says was staged that is gone from staging, with its live folder there, went in place
+/// already; the folder moved aside is the one the note named before anything moved; and an area
+/// that could not go in place keeps its staged copy in `<root>/import-not-placed-<time>`, which
+/// the report names.
 pub fn finish_pending(data: &DataRoot) -> Option<Report> {
     let staging = data.root().join(STAGING);
     if !staging.exists() {
@@ -161,32 +181,83 @@ pub fn finish_pending(data: &DataRoot) -> Option<Report> {
             .map_err(|error| log::warn!("the staged import's note does not read: {error}"))
             .ok()
     });
-    let Some(Ready { mut report }) = ready else {
+    let Some(Ready { mut report, aside }) = ready else {
         remove_own(&staging);
         return None;
     };
-    let aside = unique(&data.root().join(format!(
-        "before-import-{}",
+    let aside = match aside {
+        Some(aside) => aside,
+        None => {
+            let aside = unique(&data.root().join(format!(
+                "before-import-{}",
+                folder_timestamp(SystemTime::now())
+            )));
+            let noted = Ready {
+                report: report.clone(),
+                aside: Some(aside.clone()),
+            };
+            // Nothing moves until the folder aside is noted, or a crash midway would leave it
+            // where no report names it; the import stays staged for the next start.
+            if let Err(error) = write_note(&staging, &noted) {
+                log::error!("the staged import waits, since its note was not written: {error:#}");
+                return None;
+            }
+            aside
+        }
+    };
+    let kept = unique(&data.root().join(format!(
+        "import-not-placed-{}",
         folder_timestamp(SystemTime::now())
     )));
+    let mut keeps = false;
     for outcome in report.areas.iter_mut().filter(|outcome| outcome.imported) {
         let name = outcome.area.folder();
         let staged = staging.join(name);
         let live = data.root().join(name);
+        if !staged.exists() && live.exists() {
+            // A start that stopped after putting this area in place.
+            continue;
+        }
         if let Err(error) = put_in_place(&staged, &live, &aside.join(name)) {
             log::warn!("the import's {name} was not put in place: {error:#}");
             outcome.imported = false;
-            outcome.error = Some(format!("It could not be put in place: {error:#}"));
+            outcome.error = Some(if staged.exists() {
+                keeps = true;
+                format!(
+                    "It could not be put in place: {error:#}. Its copy is in {}.",
+                    kept.join(name).display()
+                )
+            } else {
+                format!("It could not be put in place: {error:#}")
+            });
         }
     }
-    if aside.exists() {
+    if aside.is_dir() {
         report.moved_aside = Some(aside.display().to_string());
     }
     if let Err(error) = fs::create_dir_all(data.shell()).and_then(|()| report.write(&data.shell()))
     {
         log::warn!("the import's report was not written: {error}");
     }
-    remove_own(&staging);
+    // Copies that did not go in place move out of staging whole, note and all, so the import is
+    // no longer pending and a crash now cannot leave them where the next start removes them.
+    let rest = if keeps {
+        match fs::rename(&staging, &kept) {
+            Ok(()) => kept,
+            Err(error) => {
+                log::warn!("the import's copies stay in {}: {error}", staging.display());
+                staging
+            }
+        }
+    } else {
+        staging
+    };
+    for note in [READY.to_owned(), format!("{READY}.tmp")] {
+        let _ = fs::remove_file(rest.join(note));
+    }
+    if !keeps {
+        remove_own(&rest);
+    }
     Some(report)
 }
 
@@ -201,6 +272,10 @@ fn put_in_place(staged: &Path, live: &Path, aside: &Path) -> anyhow::Result<()> 
         fs::remove_dir(live).with_context(|| format!("clearing {}", live.display()))?;
         false
     } else {
+        if fs::symlink_metadata(aside).is_ok() {
+            // An empty folder there would be replaced by the move; anything else refuses it.
+            bail!("{} is in the way", aside.display());
+        }
         if let Some(parent) = aside.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -448,10 +523,15 @@ fn stage_tidy(
     outcome
         .details
         .push(count(roots.len() as u64, "folder", "folders"));
+    // The held files that came over; those left out are counted on their own below.
     outcome.details.push(format!(
         "{} ({})",
-        count(held_files as u64, "held file", "held files"),
-        bytes(held_bytes as u64)
+        count(
+            (held_files as u64).saturating_sub(left_out.files),
+            "held file",
+            "held files"
+        ),
+        bytes((held_bytes as u64).saturating_sub(left_out.bytes))
     ));
     if plans > 0 {
         outcome.details.push(count(
@@ -462,7 +542,7 @@ fn stage_tidy(
     }
     if left_out.files > 0 {
         outcome.skipped.push(format!(
-            "{} on other volumes, which were not there to copy",
+            "{} on other volumes, which were not there to copy; Tidy lists them as missing",
             count(left_out.files, "held file", "held files")
         ));
     }
@@ -472,7 +552,8 @@ fn stage_tidy(
 
 /// Rewrites the catalog's holding places to Oriel RS's holding, copying in what was held on other
 /// volumes, and notes the data folder the catalog now belongs to. Returns the held files left out:
-/// gone, or (in a dry run) outside the stand-in home, which a dry run never reads.
+/// gone, or (in a dry run) outside the stand-in home, which a dry run never reads. Their places
+/// move into Oriel RS's holding all the same, so no row keeps pointing into Electron Oriel's.
 fn rehome_holding(
     connection: &Connection,
     source: &ElectronData,
@@ -527,20 +608,25 @@ fn rehome_holding(
         let Some((new_hold, on_volume)) = place(&hold_path) else {
             continue;
         };
+        // A held file that cannot be copied (its volume is not mounted, or a dry run does not
+        // read it) still has its place rewritten into Oriel RS's holding, where no file is: Tidy
+        // lists it, and its Restore says the file is missing, as Electron Oriel's does for a held
+        // file that went. Left in Electron Oriel's holding, Oriel RS's Restore would move
+        // Electron Oriel's own file once the volume came back.
         if let Some(rest) = on_volume
             && state == "held"
         {
             let from = Path::new(&hold_path);
-            if !source.admits(from) || !from.is_file() {
+            if source.admits(from) && from.is_file() {
+                let to = out.join("holding").join(relative(&rest, separator));
+                copy_file(from, &to, progress)
+                    .with_context(|| format!("copying the held {}", from.display()))?;
+            } else {
                 left_out.add(Size {
                     files: 1,
                     bytes: size as u64,
                 });
-                continue;
             }
-            let to = out.join("holding").join(relative(&rest, separator));
-            copy_file(from, &to, progress)
-                .with_context(|| format!("copying the held {}", from.display()))?;
         }
         let new_batch = batch_path
             .as_deref()

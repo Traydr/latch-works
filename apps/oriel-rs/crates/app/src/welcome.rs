@@ -693,6 +693,17 @@ impl ImportFlow {
         matches!(self.stage, Stage::Importing(_))
     }
 
+    /// Whether the surface must stay open: while the import copies, and once it is staged. A
+    /// staged import goes in place at the next start, moving the live Tidy and Sync folders
+    /// aside, so whatever Tidy held or Sync saved in between would be stranded there; the only
+    /// ways on are Restart Now and Quit.
+    pub fn holds_open(&self) -> bool {
+        matches!(
+            self.stage,
+            Stage::Importing(_) | Stage::Done(_) | Stage::Waiting
+        )
+    }
+
     /// What was found, once looked.
     pub fn survey(&self) -> Option<&Survey> {
         match &self.stage {
@@ -1036,7 +1047,8 @@ impl ImportFlow {
             .into_any_element()
     }
 
-    /// What finishes the import: a start, which puts it in place.
+    /// What finishes the import: a start, which puts it in place. There is no Later: the window
+    /// stays on this until the app restarts or quits ([`Self::holds_open`]).
     fn render_restart(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme().clone();
         let restarts = restart_allowed();
@@ -1055,19 +1067,12 @@ impl ImportFlow {
                     }),
             )
             .child(
-                self.buttons(cx)
-                    .child(
-                        Button::new("import-later")
-                            .ghost()
-                            .label("Later")
-                            .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
-                    )
-                    .child(
-                        Button::new("import-restart")
-                            .primary()
-                            .label(if restarts { "Restart Now" } else { "Quit" })
-                            .on_click(|_, _, cx| restart(cx)),
-                    ),
+                self.buttons(cx).child(
+                    Button::new("import-restart")
+                        .primary()
+                        .label(if restarts { "Restart Now" } else { "Quit" })
+                        .on_click(|_, _, cx| restart(cx)),
+                ),
             )
             .into_any_element()
     }
@@ -1218,7 +1223,8 @@ fn and_list(names: &[&str]) -> String {
 }
 
 /// Opens the import over the window, from Settings › General: what was found and what moves
-/// aside, then Import. Escape and the overlay close it, except while it copies.
+/// aside, then Import. Escape and the overlay close it, except while it copies and once it is
+/// staged ([`ImportFlow::holds_open`]).
 pub fn open_import_dialog(data: DataRoot, window: &mut Window, cx: &mut App) {
     if window.has_active_dialog(cx) {
         return;
@@ -1233,13 +1239,13 @@ pub fn open_import_dialog(data: DataRoot, window: &mut Window, cx: &mut App) {
         })
         .detach();
     window.open_dialog(cx, move |dialog, _, cx| {
-        let busy = flow.read(cx).is_importing();
+        let held = flow.read(cx).holds_open();
         dialog
             .title("Import from Electron Oriel")
             .w(px(480.))
-            .close_button(!busy)
-            .overlay_closable(!busy)
-            .keyboard(!busy)
+            .close_button(!held)
+            .overlay_closable(!held)
+            .keyboard(!held)
             .child(flow.clone())
     });
 }
