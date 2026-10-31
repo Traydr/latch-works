@@ -658,6 +658,15 @@ fn execute_step(
         return remove_folder(deps, step, batch);
     }
     let source = check_source(deps, step)?;
+    if matches!(
+        step.spec,
+        StepSpec::ConvertAvif | StepSpec::ConvertAnimation { .. } | StepSpec::ConvertVideo { .. }
+    ) {
+        // A file another program holds without sharing still answers `check_source`, which
+        // reads only attributes; libvips and ffmpeg would then call it an unknown format. One
+        // open here gives Windows' sharing violation, which `is_file_in_use` reads.
+        fs::File::open(step.from_abs())?;
+    }
 
     match &step.spec {
         StepSpec::RemoveFolder => unreachable!("handled above"),
