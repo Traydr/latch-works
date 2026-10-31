@@ -22,12 +22,12 @@
 ## Status
 
 - **Status**: IN PROGRESS. Phases 0 to 7 and the scorecard (Phase 9) are done on macOS
-  (2026-10-30, branch `agent/063-0-spike`); Phase 8, Windows, is not started. The reports start
-  at [docs/research/oriel-rs/README.md](../research/oriel-rs/README.md). 92 of Electron Oriel's
-  104 features are done and 32 of its 33 e2e cases pass as GPUI tests
-  ([parity](../research/oriel-rs/parity.md)). Tidy changes files only in the sandbox. The owner
-  chose to go on toward replacing Electron Oriel (decisions 11 to 15). Next: optimizing every
-  workflow.
+  (2026-10-30, branch `agent/063-0-spike`), and two optimization rounds followed (2026-10-31).
+  The reports start at [docs/research/oriel-rs/README.md](../research/oriel-rs/README.md). 92 of
+  Electron Oriel's 104 features are done and 32 of its 33 e2e cases pass as GPUI tests
+  ([parity](../research/oriel-rs/parity.md)). Next, from the owner's decisions 16 to 24: every
+  remaining feature, a DMG and a Windows Setup.exe that install, an import of Electron Oriel's
+  data on both systems, and Tidy out of the sandbox. Optimization resumes after.
 - **Priority**: P3 (an experiment the owner asked for)
 - **Effort**: XL several times over. About 24.8k lines of UI, 15k lines of core packages and the
   main-side services are rewritten in Rust. Phase 0, the gate, is L.
@@ -96,6 +96,29 @@ On Phase 9's scorecard (2026-10-30):
 14. **The licence notices stand as they are**: the GPL notice points at the upstream sources,
     and shared MIT and Apache-2.0 texts cover the 62 crates without a licence file of their own.
 15. **No signing with a real identity, notarization or auto-update** for now.
+
+On the optimization rounds' report (2026-10-31):
+
+16. **Parity and an installable build come first**, then optimization again: every feature
+    Electron Oriel has, Tidy's most of all; a build that installs on macOS and Windows; and an
+    import of Electron Oriel's data on both.
+17. **Oriel RS imports Electron Oriel's data.** This replaces decision 2's "for now". Oriel RS
+    reads Electron Oriel's folders only to copy them into its own, and never writes them, so
+    Electron Oriel keeps working beside it.
+18. **Tidy leaves the sandbox.** This reverses decision 12: Tidy changes files in any folder the
+    owner adds, as Electron Oriel does. The guard stays only for runs with `ORIEL_RS_DATA_DIR`
+    set, which checks and agents use.
+19. **No signing, and no updater.** The app is for the owner and maybe family, who build it
+    themselves. A plain DMG on macOS and a simple Setup.exe on Windows are enough.
+20. **CI runs a basic typecheck only.** The other workflows run only when started by hand.
+21. **Windows, best effort.** It must build and package from this workspace; a Windows agent
+    finishes it on the owner's machine.
+22. **Sync**: hashes 16 files at once; uploads up to 6 at once, backing off when more at once
+    stops adding speed; prune sends its deletes in parallel.
+23. **Tidy**: its thumbnail memory is capped at about 200 MB; Shrink keeps one encode at a time;
+    the 3.3 GB peak during a full analysis stays; a libvips with dav1d waits.
+24. **No FFmpeg build of our own** for exact seeks, unless a build or runtime flag is enough.
+    The warmed-up video player stays in memory.
 
 ## Which GPUI (D1, settled: A)
 
@@ -200,12 +223,10 @@ changes: wide, but mostly mechanical, since CE's kit port keeps GPUI Kit's compo
   `dev.traydr.latchworks.oriel-rs`, executable `oriel-rs`. It installs beside Oriel and keeps
   everything in `~/.latch-works/oriel-rs/` (`shell/`, `view/`, `tidy/`, `sync/`, `hash-cache/`).
   The paths crate has one root, and a test fails if any path it hands out leaves it.
-- **Tidy works in a sandbox.** Tidy refuses a root outside `~/.latch-works/oriel-rs/sandbox`
-  and the temp folder. Agents build archives there with `e2e/src/glazier-archive.ts`.
-  - The sandbox setting stays hidden until Phase 6's differential suite passes and the owner has
-    read its report. Even then the owner lifts it, not an agent.
-  - The owner's library is tidied by Electron Oriel. The sandbox also keeps two apps from
-    rewriting the same files.
+- **Tidy worked in a sandbox until decision 18.** Tidy refused a root outside
+  `~/.latch-works/oriel-rs/sandbox` and the temp folder. The owner lifted that on 2026-10-31.
+  Runs with `ORIEL_RS_DATA_DIR` set keep it, and agents still change only archives under the
+  sandbox or `/tmp`.
 - **View reads; Sync goes to the local stack.** View never writes inside a root, so the owner may
   point it at the real library themselves. Agents use the fixture archives
   (`e2e/scripts/make-fixture.ts`). Sync pushes only to the local compose stack
@@ -685,8 +706,8 @@ pnpm e2e:frame && pnpm e2e:glazier && pnpm e2e:lockstep && pnpm e2e:oriel   # El
     the format checks.
 - **`cargo` stays out of `pnpm test`**, so the TypeScript side still builds without Rust. Biome
   and Knip ignore `apps/oriel-rs/crates` and `target/`.
-- **CI.** An `oriel-rs.yml` workflow runs `pnpm oriel-rs:check` on demand and on PRs touching
-  `apps/oriel-rs` or the vectors.
+- **CI.** An `oriel-rs.yml` workflow runs `pnpm oriel-rs:check` when started by hand
+  (decision 20); GitHub runs only the TypeScript typecheck on its own.
 - **Docs.** When Phase 1 lands, add a short `docs/runbooks/oriel-rs.md` (prerequisites: Rust
   through rustup, Xcode, and Node 24 with pnpm 12 for the vectors) and one line in `CLAUDE.md`'s
   project structure.
