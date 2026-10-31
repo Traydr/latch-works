@@ -5,8 +5,10 @@
 //! its controller there.
 //!
 //! Where the panel cannot be driven (no Quick Look, or a platform without it), the file opens in
-//! its default app instead. A window with no platform handle, as in a test, shows nothing; the
-//! path asked for is kept for [`last_quick_look`] either way.
+//! its default app instead. On Windows, which has no Quick Look, that is all it does, and
+//! [`QUICK_LOOK_LABEL`] says so where Electron Oriel's `previewFile` did nothing at all. A window
+//! with no platform handle, as in a test, shows nothing; the path asked for is kept for
+//! [`last_quick_look`] either way.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -16,6 +18,14 @@ use gpui_kit::{App, Window};
 thread_local! {
     static LAST: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 }
+
+/// What menus and the shortcut sheet call [`quick_look`]: Quick Look on macOS, and elsewhere what
+/// it does there, which is to open the file in its default app.
+pub const QUICK_LOOK_LABEL: &str = if cfg!(target_os = "macos") {
+    "Quick Look"
+} else {
+    "Open in Default App"
+};
 
 /// Shows `path` in Quick Look over `window`, or opens it where Quick Look cannot show it.
 pub fn quick_look(path: &Path, window: &Window, cx: &mut App) {

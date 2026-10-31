@@ -515,6 +515,20 @@ pub fn ensure(set: &'static VendorSet) -> Result<Vendored> {
 
 /// `vendor [libvips] [libavif]`: the named sets, or all of them.
 pub fn command(args: &[String]) -> Result<()> {
+    // Windows' libavif is MSYS2's DLLs, laid out by its own module rather than as a Mac set.
+    let windows = (args.is_empty() && cfg!(windows))
+        || args.iter().any(|name| name == crate::libavif_windows::NAME);
+    let args: Vec<&String> = args
+        .iter()
+        .filter(|name| *name != crate::libavif_windows::NAME)
+        .collect();
+    if windows {
+        crate::libavif_windows::vendor()?;
+        if args.is_empty() {
+            return Ok(());
+        }
+        log("");
+    }
     let chosen: Vec<&'static VendorSet> = if args.is_empty() {
         SETS.to_vec()
     } else {
@@ -522,8 +536,12 @@ pub fn command(args: &[String]) -> Result<()> {
             .map(|name| {
                 SETS.iter()
                     .copied()
-                    .find(|set| set.name == name)
-                    .with_context(|| format!("vendor: no set named {name}; try libvips or libavif"))
+                    .find(|set| set.name == name.as_str())
+                    .with_context(|| {
+                        format!(
+                            "vendor: no set named {name}; try libvips, libavif or libavif-windows"
+                        )
+                    })
             })
             .collect::<Result<_>>()?
     };

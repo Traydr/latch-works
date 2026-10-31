@@ -20,9 +20,14 @@
 //! first found wins:
 //!
 //! 1. `Contents/Frameworks/libavif.16.dylib` of the app bundle this runs from (on Windows, one of
-//!    [`LIBAVIF_WINDOWS_FILES`] beside the executable);
+//!    [`LIBAVIF_WINDOWS_FILES`] in the `libavif` folder beside the executable, where `package
+//!    windows` stages MSYS2's build with the DLLs it needs, or beside the executable itself);
 //! 2. the file `ORIEL_RS_LIBAVIF` names;
-//! 3. the vendored set, `apps/oriel-rs/.vendor/libavif/current` (`cargo run -p xtask -- vendor`).
+//! 3. the vendored set, `apps/oriel-rs/.vendor/libavif/current` (`cargo run -p xtask -- vendor`),
+//!    or on Windows `apps/oriel-rs/.vendor/libavif-windows` (`vendor libavif-windows`).
+//!
+//! On Windows a libavif loads with its own folder searched first for the DLLs it needs (aom,
+//! dav1d, rav1e, SVT-AV1, libyuv and MinGW's runtime), so they need not sit beside the executable.
 
 mod ffi;
 
@@ -45,6 +50,9 @@ pub const LIBAVIF_FILE: &str = "libavif.16.dylib";
 /// libavif 1.x's names on Windows, beside the installed app: CMake's MSVC build makes
 /// `avif.dll`, MinGW's (MSYS2's package) `libavif-16.dll`.
 pub const LIBAVIF_WINDOWS_FILES: [&str; 2] = ["avif.dll", "libavif-16.dll"];
+
+/// The folder beside the executable the Windows package stages libavif and its DLLs in.
+pub const LIBAVIF_WINDOWS_FOLDER: &str = "libavif";
 
 /// What went wrong, in words for a log or a journal entry.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -134,13 +142,25 @@ impl Places {
 /// `apps/oriel-rs/.vendor/libavif/current`, found from this crate's folder at compile time, as
 /// `oriel-tools` finds its development cache.
 fn vendored_set() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    let vendor = Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(2)
         .expect("crates/avif sits two folders under the workspace")
-        .join(".vendor")
-        .join("libavif")
-        .join("current")
+        .join(".vendor");
+    if cfg!(windows) {
+        vendor.join("libavif-windows")
+    } else {
+        vendor.join("libavif").join("current")
+    }
+}
+
+/// The vendored set's entry library on this system.
+fn vendored_file() -> &'static str {
+    if cfg!(windows) {
+        LIBAVIF_WINDOWS_FILES[1]
+    } else {
+        LIBAVIF_FILE
+    }
 }
 
 /// `X.app/Contents` when `executable` is `X.app/Contents/MacOS/<name>`.
@@ -155,9 +175,9 @@ fn bundle_contents(executable: &Path) -> Option<&Path> {
 fn choose(places: &Places) -> std::result::Result<(PathBuf, LibavifSource), String> {
     #[cfg(windows)]
     if let Some(folder) = places.executable.as_deref().and_then(Path::parent)
-        && let Some(found) = LIBAVIF_WINDOWS_FILES
+        && let Some(found) = [folder.join(LIBAVIF_WINDOWS_FOLDER), folder.to_path_buf()]
             .iter()
-            .map(|name| folder.join(name))
+            .flat_map(|folder| LIBAVIF_WINDOWS_FILES.map(|name| folder.join(name)))
             .find(|path| path.is_file())
     {
         return Ok((found, LibavifSource::Bundle));
@@ -171,14 +191,47 @@ fn choose(places: &Places) -> std::result::Result<(PathBuf, LibavifSource), Stri
     if let Some(file) = &places.override_file {
         return Ok((PathBuf::from(file), LibavifSource::Override));
     }
-    let vendored = places.vendored.join(LIBAVIF_FILE);
+    let vendored = places.vendored.join(vendored_file());
     if vendored.is_file() {
         return Ok((vendored, LibavifSource::Vendored));
+    }
+    if cfg!(windows) {
+        return Err(format!(
+            "no libavif: fetch it with `cargo run -p xtask -- vendor libavif-windows` in \
+             apps/oriel-rs, or set {LIBAVIF_VARIABLE} to one"
+        ));
     }
     Err(format!(
         "no libavif: fetch it with `pnpm --filter @latch-works/oriel-rs vendor` (or `cargo run \
          -p xtask -- vendor libavif` in apps/oriel-rs), or set {LIBAVIF_VARIABLE} to one"
     ))
+}
+
+/// Loads a library.
+///
+/// # Safety
+///
+/// Loading runs the library's initialisers, as [`Library::new`] does.
+#[cfg(not(windows))]
+unsafe fn open_library(path: &Path) -> std::result::Result<Library, libloading::Error> {
+    // SAFETY: the caller's.
+    unsafe { Library::new(path) }
+}
+
+/// Loads a library with its own folder searched first for the DLLs it needs, as
+/// `LOAD_WITH_ALTERED_SEARCH_PATH` does for an absolute path: MSYS2's libavif needs a dozen,
+/// which sit beside it rather than beside the executable.
+///
+/// # Safety
+///
+/// Loading runs the library's initialisers, as [`Library::new`] does.
+#[cfg(windows)]
+unsafe fn open_library(path: &Path) -> std::result::Result<Library, libloading::Error> {
+    use libloading::os::windows::{LOAD_WITH_ALTERED_SEARCH_PATH, Library as WindowsLibrary};
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    // SAFETY: the caller's.
+    unsafe { WindowsLibrary::load_with_flags(&absolute, LOAD_WITH_ALTERED_SEARCH_PATH) }
+        .map(Library::from)
 }
 
 static LIBAVIF: OnceLock<std::result::Result<Libavif, String>> = OnceLock::new();
@@ -222,7 +275,7 @@ impl Libavif {
     fn load(path: &Path, source: LibavifSource) -> std::result::Result<Libavif, String> {
         // SAFETY: loading libavif runs its initialisers (and aom's and dav1d's), which have no
         // preconditions.
-        let library = unsafe { Library::new(path) }
+        let library = unsafe { open_library(path) }
             .map_err(|error| format!("could not load {}: {error}", path.display()))?;
         let api = Api::load(&library, path)?;
         Ok(Libavif {
@@ -513,7 +566,7 @@ mod tests {
         let error = choose(&places(&executable, None)).unwrap_err();
         assert!(error.contains("vendor"), "{error}");
 
-        let dev = put(&vendored.join(LIBAVIF_FILE));
+        let dev = put(&vendored.join(vendored_file()));
         assert_eq!(
             choose(&places(&executable, None)).unwrap(),
             (dev.clone(), LibavifSource::Vendored)

@@ -13,6 +13,8 @@
 //! - `libmpv-2.dll`: shinchiro's `mpv-dev-x86_64` build, GPL (fine for the owner's own use);
 //! - `libvips-42.dll`: sharp's `@img/sharp-libvips-win32-x64`, the libvips 8.18.7 the Mac's is,
 //!   with libheif and aom, so it decodes AVIF and HEIC;
+//! - `libavif\`: MSYS2's libavif 1.4.2 and the DLLs it needs, for Convert's AVIF encode
+//!   (`libavif_windows`);
 //! - `media-tools/ffmpeg.exe` and `ffprobe.exe`: `oriel-tools`' win32-x64 pin, Electron Oriel's;
 //! - `licenses/`: each part's notices and `index.json`, as the Mac bundle has them.
 //!
@@ -106,6 +108,10 @@ const LIBVIPS: PinnedFile = PinnedFile {
              built by https://github.com/lovell/sharp-libvips at v1.3.4.",
 };
 
+/// The folder beside the executable `oriel-avif` looks in for libavif on Windows
+/// (`LIBAVIF_WINDOWS_FOLDER`).
+const LIBAVIF_FOLDER: &str = "libavif";
+
 struct Options {
     stage_only: bool,
     exe: Option<PathBuf>,
@@ -187,13 +193,18 @@ fn windows(options: &Options) -> Result<()> {
         None => log("  none given: the stage lacks oriel-rs.exe (pass --exe <path>)"),
     }
 
-    log("\n2. libmpv and libvips");
+    log("\n2. libmpv, libvips and libavif");
     let downloads = workspace.join("target").join("vendor").join("downloads");
     let licenses = stage.join("licenses");
     let mut listed = vec![notices::oriel_rs(repository, &licenses, &version)?];
     for part in [&LIBMPV, &LIBVIPS] {
         listed.push(stage_file(part, &downloads, &stage, &licenses)?);
     }
+    listed.push(crate::libavif_windows::fetch(
+        &downloads,
+        &stage.join(LIBAVIF_FOLDER),
+        &licenses,
+    )?);
 
     log("\n3. ffmpeg and ffprobe");
     let pin = oriel_tools::pin_for("win32-x64").context("oriel-tools pins no Windows ffmpeg")?;

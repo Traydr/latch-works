@@ -5,7 +5,7 @@ use std::path::Path;
 
 use oriel_core_domain::{is_system_junk_directory, is_system_junk_file};
 use oriel_runtime::Cancelled;
-use oriel_runtime::fs_meta::{MetadataExt as _, dev_ino};
+use oriel_runtime::fs_meta::{MetadataExt as _, identity};
 
 /// A regular file the walk found, with what tells later scans it changed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -147,16 +147,18 @@ pub fn walk_root(
                     summary.skipped_entries += 1;
                     continue;
                 };
-                let (dev, ino) = dev_ino(&path, &stat);
+                // Hard links share a device and inode; on Windows those and the change time take
+                // a read of the file itself, one open for the three.
+                let identity = identity(&path, &stat);
                 batch.push(WalkedFile {
                     rel_path: join(&rel_dir, name),
                     dir: rel_dir.clone(),
                     ext: extension_of(name),
                     size: stat.size() as i64,
                     mtime_ms: whole_ms(stat.mtime(), stat.mtime_nsec()),
-                    ctime_ms: whole_ms(stat.ctime(), stat.ctime_nsec()),
-                    dev: dev.to_string(),
-                    ino: ino.to_string(),
+                    ctime_ms: whole_ms(identity.ctime, identity.ctime_nsec),
+                    dev: identity.dev.to_string(),
+                    ino: identity.ino.to_string(),
                     junk: is_system_junk_file(name),
                     name: name.clone(),
                 });

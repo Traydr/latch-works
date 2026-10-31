@@ -105,14 +105,15 @@ impl HoldingPlaces {
     }
 
     /// The holding folder at the top of the root's own volume, when the root is on another
-    /// volume than the data folder and is not that whole volume.
-    #[cfg(unix)]
+    /// volume than the data folder and is not that whole volume. On Windows a volume is told by
+    /// its serial number, Node's `dev` there, so a root on `D:\Photos` holds in
+    /// `D:\.latch-works\oriel-rs\holding`, as glazier-core holds in `D:\.latch-works\glazier`.
     fn on_volume(&self, root: &Path, name: &str) -> Option<PathBuf> {
         if !self.on_volumes {
             return None;
         }
-        let device = fs::metadata(root).ok()?.dev();
-        if fs::metadata(&self.data_dir).ok()?.dev() == device {
+        let device = volume_of(root)?;
+        if volume_of(&self.data_dir)? == device {
             return None;
         }
         let mount_point = mount_point_of(root, device);
@@ -128,13 +129,6 @@ impl HoldingPlaces {
         Some(folder)
     }
 
-    /// Windows has no device numbers to compare here; its drives are plan 062's.
-    #[cfg(not(unix))]
-    fn on_volume(&self, _root: &Path, _name: &str) -> Option<PathBuf> {
-        let _ = self.on_volumes;
-        None
-    }
-
     /// The folder a root's held files go to if it has been chosen already this run.
     pub fn known_folder(&self, root_id: RootId) -> Option<PathBuf> {
         self.folders
@@ -145,13 +139,28 @@ impl HoldingPlaces {
     }
 }
 
-/// The folder `path`'s volume is mounted at: its highest ancestor still on `device`
-/// (`mountPointOf`).
+/// The device `path` is on, as `fs.stat`'s `dev` gives it.
 #[cfg(unix)]
+fn volume_of(path: &Path) -> Option<u64> {
+    fs::metadata(path).map(|meta| meta.dev()).ok()
+}
+
+/// The serial number of the volume `path` is on, libuv's `dev` on Windows; `None` for a path
+/// that cannot be opened.
+#[cfg(windows)]
+fn volume_of(path: &Path) -> Option<u64> {
+    let metadata = fs::metadata(path).ok()?;
+    let (serial, _) = oriel_runtime::fs_meta::dev_ino(path, &metadata);
+    (serial != 0).then_some(serial)
+}
+
+/// The folder `path`'s volume is mounted at: its highest ancestor still on `device`
+/// (`mountPointOf`). On Windows that is the drive's top, `D:\`, or the folder a volume is
+/// mounted in.
 fn mount_point_of(path: &Path, device: u64) -> PathBuf {
     let mut current = path.to_path_buf();
     while let Some(parent) = current.parent() {
-        if fs::metadata(parent).map(|meta| meta.dev()).ok() != Some(device) {
+        if volume_of(parent) != Some(device) {
             break;
         }
         current = parent.to_path_buf();
@@ -160,6 +169,7 @@ fn mount_point_of(path: &Path, device: u64) -> PathBuf {
 }
 
 /// Local time's fields, from the C library, as JavaScript's `Date` getters read them.
+#[cfg(unix)]
 fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
     let seconds = at
         .duration_since(UNIX_EPOCH)
@@ -167,12 +177,7 @@ fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
     // SAFETY: `tm` is plain data; `localtime_r` fills it from `seconds` and is thread-safe.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     // SAFETY: both pointers are valid for the call.
-    #[cfg(unix)]
     let filled = unsafe { !libc::localtime_r(&seconds, &mut tm).is_null() };
-    // The CRT's thread-safe form, with its arguments the other way round.
-    // SAFETY: both pointers are valid for the call.
-    #[cfg(windows)]
-    let filled = unsafe { libc::localtime_s(&mut tm, &seconds) == 0 };
     if !filled {
         return (1970, 1, 1, 0, 0, 0);
     }
@@ -183,6 +188,51 @@ fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
         tm.tm_hour,
         tm.tm_min,
         tm.tm_sec,
+    )
+}
+
+/// Local time's fields on Windows, in the zone and with the daylight saving rules Windows' clock
+/// shows, as JavaScript's `Date` getters read them there. The C library's `localtime_s` would
+/// read a `TZ` variable as POSIX spells it, which Node does not.
+#[cfg(windows)]
+fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
+    use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
+    use windows_sys::Win32::System::Time::{
+        DYNAMIC_TIME_ZONE_INFORMATION, FileTimeToSystemTime, GetDynamicTimeZoneInformation,
+        SystemTimeToTzSpecificLocalTimeEx,
+    };
+
+    /// 100-nanosecond intervals from 1601 to 1970.
+    const EPOCH_DIFFERENCE: u64 = 116_444_736_000_000_000;
+    let ticks = at
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs() * 10_000_000)
+        + EPOCH_DIFFERENCE;
+    let file_time = FILETIME {
+        dwLowDateTime: ticks as u32,
+        dwHighDateTime: (ticks >> 32) as u32,
+    };
+    // SAFETY: plain data, filled by the calls on success.
+    let (mut utc, mut local): (SYSTEMTIME, SYSTEMTIME) = unsafe { std::mem::zeroed() };
+    // SAFETY: plain data, filled by the call.
+    let mut zone: DYNAMIC_TIME_ZONE_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: every pointer is valid for its call.
+    let filled = unsafe {
+        GetDynamicTimeZoneInformation(&raw mut zone) != u32::MAX
+            && FileTimeToSystemTime(&raw const file_time, &raw mut utc) != 0
+            && SystemTimeToTzSpecificLocalTimeEx(&raw const zone, &raw const utc, &raw mut local)
+                != 0
+    };
+    if !filled {
+        return (1970, 1, 1, 0, 0, 0);
+    }
+    (
+        i32::from(local.wYear),
+        i32::from(local.wMonth),
+        i32::from(local.wDay),
+        i32::from(local.wHour),
+        i32::from(local.wMinute),
+        i32::from(local.wSecond),
     )
 }
 
@@ -230,8 +280,15 @@ pub fn move_file(source: &Path, target: &Path) -> io::Result<()> {
                     source.display()
                 )));
             }
-            copy_times(target, &before)?;
-            fs::remove_file(source)
+            let finished = copy_times(target, &before).and_then(|()| fs::remove_file(source));
+            // Windows will not delete a file another program has open, though it copies it: the
+            // copy comes back out, so the move leaves things as they were and the error says
+            // why (plan 062). Elsewhere an open file deletes.
+            #[cfg(windows)]
+            if finished.is_err() {
+                let _ = fs::remove_file(target);
+            }
+            finished
         }
         Err(error) => Err(error),
     }
@@ -568,12 +625,221 @@ pub fn move_to_trash(path: &Path) -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("{}", error.localizedDescription()))
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Moves a file or folder to the Recycle Bin through the shell's `IFileOperation`, as Electron's
+/// `shell.trashItem` does on Windows, with Chromium's flags: no dialogs, an undo record, and the
+/// Recycle Bin rather than a delete. An item the Recycle Bin cannot take (too large for it, or on
+/// a drive without one) stops the operation rather than being deleted outright, as Chromium's
+/// progress sink stops it, so emptying holding never deletes what the owner cannot take back.
+#[cfg(windows)]
+pub fn move_to_trash(path: &Path) -> anyhow::Result<()> {
+    let owned = path.to_path_buf();
+    // `IFileOperation` runs only in a single-threaded apartment, so it gets a thread of its own
+    // whatever apartment the caller's thread is in.
+    std::thread::Builder::new()
+        .name("tidy recycle".into())
+        .spawn(move || recycle::move_to_recycle_bin(&owned))?
+        .join()
+        .map_err(|_| anyhow::anyhow!("Moving {} to the Recycle Bin failed.", path.display()))?
+        .map_err(|error| {
+            anyhow::anyhow!(
+                "Moving {} to the Recycle Bin failed: {error}",
+                path.display()
+            )
+        })
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn move_to_trash(path: &Path) -> anyhow::Result<()> {
     bail!(
         "Moving {} to the Trash is not ported to this platform yet.",
         path.display()
     )
+}
+
+/// The Recycle Bin, as Chromium's `platform_util::MoveItemToTrash` reaches it.
+#[cfg(windows)]
+mod recycle {
+    use std::path::Path;
+
+    use windows::Win32::Foundation::E_ABORT;
+    use windows::Win32::System::Com::{
+        CLSCTX_ALL, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoCreateInstance,
+        CoInitializeEx, CoUninitialize,
+    };
+    use windows::Win32::UI::Shell::{
+        FOF_NO_UI, FOF_NOERRORUI, FOF_SILENT, FOFX_ADDUNDORECORD, FOFX_RECYCLEONDELETE,
+        FOFX_SHOWELEVATIONPROMPT, FileOperation, IFileOperation, IFileOperationProgressSink,
+        IFileOperationProgressSink_Impl, IShellItem, SHCreateItemFromParsingName,
+        TSF_DELETE_RECYCLE_IF_POSSIBLE,
+    };
+    use windows::core::{HRESULT, HSTRING, PCWSTR, Ref, implement};
+
+    /// Stops a delete the shell would not send to the Recycle Bin: it leaves
+    /// `TSF_DELETE_RECYCLE_IF_POSSIBLE` off for an item it would delete outright.
+    #[implement(IFileOperationProgressSink)]
+    struct RecycleOnly;
+
+    impl IFileOperationProgressSink_Impl for RecycleOnly_Impl {
+        fn PreDeleteItem(&self, flags: u32, _item: Ref<IShellItem>) -> windows::core::Result<()> {
+            if flags & TSF_DELETE_RECYCLE_IF_POSSIBLE.0 as u32 == 0 {
+                return Err(E_ABORT.into());
+            }
+            Ok(())
+        }
+
+        fn StartOperations(&self) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn FinishOperations(&self, _result: HRESULT) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn PreRenameItem(
+            &self,
+            _flags: u32,
+            _item: Ref<IShellItem>,
+            _name: &PCWSTR,
+        ) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn PostRenameItem(
+            &self,
+            _flags: u32,
+            _item: Ref<IShellItem>,
+            _name: &PCWSTR,
+            _result: HRESULT,
+            _created: Ref<IShellItem>,
+        ) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn PreMoveItem(
+            &self,
+            _flags: u32,
+            _item: Ref<IShellItem>,
+            _folder: Ref<IShellItem>,
+            _name: &PCWSTR,
+        ) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn PostMoveItem(
+            &self,
+            _flags: u32,
+            _item: Ref<IShellItem>,
+            _folder: Ref<IShellItem>,
+            _name: &PCWSTR,
+            _result: HRESULT,
+            _created: Ref<IShellItem>,
+        ) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn PreCopyItem(
+            &self,
+            _flags: u32,
+            _item: Ref<IShellItem>,
+            _folder: Ref<IShellItem>,
+            _name: &PCWSTR,
+        ) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn PostCopyItem(
+            &self,
+            _flags: u32,
+            _item: Ref<IShellItem>,
+            _folder: Ref<IShellItem>,
+            _name: &PCWSTR,
+            _result: HRESULT,
+            _created: Ref<IShellItem>,
+        ) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn PostDeleteItem(
+            &self,
+            _flags: u32,
+            _item: Ref<IShellItem>,
+            _result: HRESULT,
+            _created: Ref<IShellItem>,
+        ) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn PreNewItem(
+            &self,
+            _flags: u32,
+            _folder: Ref<IShellItem>,
+            _name: &PCWSTR,
+        ) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn PostNewItem(
+            &self,
+            _flags: u32,
+            _folder: Ref<IShellItem>,
+            _name: &PCWSTR,
+            _template: &PCWSTR,
+            _attributes: u32,
+            _result: HRESULT,
+            _item: Ref<IShellItem>,
+        ) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn UpdateProgress(&self, _total: u32, _done: u32) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn ResetTimer(&self) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn PauseTimer(&self) -> windows::core::Result<()> {
+            Ok(())
+        }
+
+        fn ResumeTimer(&self) -> windows::core::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// Recycles `path` on the calling thread, which this makes a single-threaded apartment.
+    pub(super) fn move_to_recycle_bin(path: &Path) -> anyhow::Result<()> {
+        // SAFETY: the thread's first COM call; balanced by `CoUninitialize` below.
+        unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) }.ok()?;
+        let result = recycle(path);
+        // SAFETY: balances the successful `CoInitializeEx`, after every COM object is released.
+        unsafe { CoUninitialize() };
+        result
+    }
+
+    fn recycle(path: &Path) -> anyhow::Result<()> {
+        // SAFETY: COM is initialised on this thread; each call gets live interfaces.
+        unsafe {
+            let operation: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+            operation.SetOperationFlags(
+                FOF_NO_UI
+                    | FOFX_ADDUNDORECORD
+                    | FOF_NOERRORUI
+                    | FOF_SILENT
+                    | FOFX_SHOWELEVATIONPROMPT
+                    | FOFX_RECYCLEONDELETE,
+            )?;
+            let item: IShellItem = SHCreateItemFromParsingName(&HSTRING::from(path), None)?;
+            let sink: IFileOperationProgressSink = RecycleOnly.into();
+            operation.DeleteItem(&item, &sink)?;
+            operation.PerformOperations()?;
+            if operation.GetAnyOperationsAborted()?.as_bool() {
+                anyhow::bail!("the Recycle Bin could not take it");
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -17,6 +17,12 @@ oriel-tools.workspace = true
 libloading = "0.8"
 # `measure` reads the app's memory and CPU time with proc_pid_rusage, as the View spike does.
 libc = "0.2"
+# The Windows libavif set: each DLL's imports are read to check the set needs nothing it lacks,
+# with the version already in the lock (the backtrace crate's), PE support only.
+object = { version = "0.40", default-features = false, features = ["read_core", "pe", "std"] }
+# MSYS2's packages are zstd-compressed tars, which neither system's bsdtar decompresses; ruzstd
+# is a decoder in Rust, with no dependencies of its own without its default features.
+ruzstd = { version = "0.8", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true

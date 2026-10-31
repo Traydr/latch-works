@@ -6,8 +6,9 @@
 //!
 //! or through the package's pnpm scripts, which do the same:
 //!
-//! - `vendor [libvips] [libavif]`: fetches the prebuilt native libraries into
-//!   `apps/oriel-rs/.vendor/<name>/<id>/`, each pinned by URL and SHA-256;
+//! - `vendor [libvips] [libavif] [libavif-windows]`: fetches the prebuilt native libraries into
+//!   `apps/oriel-rs/.vendor/<name>/<id>/`, each pinned by URL and SHA-256, and Windows' libavif
+//!   into `.vendor/libavif-windows`;
 //! - `libmpv [--jobs N] [--work <dir>] [--out <dir>] [--keep-work]`: builds the LGPL libmpv
 //!   from pinned sources into `apps/oriel-rs/.libmpv/<id>/`;
 //! - `bundle`: makes `target/release/bundle/Oriel RS.app`, with the libraries above, the pinned
@@ -26,6 +27,8 @@ mod bundle;
 // hdiutil's disk image, for macOS only.
 #[cfg(target_os = "macos")]
 mod dmg;
+// libavif and the DLLs it needs on Windows, from MSYS2.
+mod libavif_windows;
 mod libmpv;
 // The scorecard's rows read the app through macOS's process APIs (`proc_pid_rusage`).
 #[cfg(target_os = "macos")]
@@ -40,7 +43,9 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: cargo run -p xtask -- <command>
 
 commands:
-  vendor [libvips] [libavif]   fetch the pinned prebuilt libraries into .vendor/ (both by default)
+  vendor [libvips] [libavif] [libavif-windows]
+                               fetch the pinned prebuilt libraries into .vendor/ (the Mac's two
+                               by default; on Windows, Windows' libavif)
   libmpv [--jobs N] [--work <dir>] [--out <dir>] [--keep-work]
                                build the LGPL libmpv from pinned sources into .libmpv/
   bundle                       make target/release/bundle/Oriel RS.app

@@ -54,9 +54,10 @@ pub struct ArchiveFileFingerprint {
 }
 
 impl ArchiveFileFingerprint {
-    /// The fingerprint `fs.stat` gives, with the times truncated.
-    pub fn of(metadata: &fs::Metadata) -> Self {
-        Self::from_stat(FileStat::of(metadata))
+    /// The fingerprint `fs.stat` gives for the file at `path`, whose metadata is `metadata`,
+    /// with the times truncated.
+    pub fn of(path: &Path, metadata: &fs::Metadata) -> Self {
+        Self::from_stat(FileStat::with_change_time(path, metadata))
     }
 
     fn from_stat(stat: FileStat) -> Self {
@@ -354,7 +355,8 @@ impl<'a> ScanArchive<'a> {
                     let metadata = fs::metadata(&candidate.absolute_path).with_context(|| {
                         format!("cannot stat {}", candidate.absolute_path.display())
                     })?;
-                    let fingerprint = ArchiveFileFingerprint::of(&metadata);
+                    let fingerprint =
+                        ArchiveFileFingerprint::of(&candidate.absolute_path, &metadata);
                     check(self.cancel)?;
                     if !queue.is_running() {
                         return Ok(());
@@ -624,7 +626,10 @@ pub fn hash_file_contents(
         let after = fs::metadata(file_path)
             .with_context(|| format!("cannot stat {}", file_path.display()))?;
         check(cancel)?;
-        if !fingerprints_match(&expected.normalized(), &ArchiveFileFingerprint::of(&after)) {
+        if !fingerprints_match(
+            &expected.normalized(),
+            &ArchiveFileFingerprint::of(file_path, &after),
+        ) {
             anyhow::bail!("File changed while hashing: {}", file_path.display());
         }
     }
@@ -762,7 +767,7 @@ mod tests {
         let file = folder.join("a.jpg");
         fs::write(&file, b"abc").unwrap();
         let metadata = fs::metadata(&file).unwrap();
-        let fingerprint = ArchiveFileFingerprint::of(&metadata);
+        let fingerprint = ArchiveFileFingerprint::of(&file, &metadata);
         assert_eq!(
             hash_file_contents(&file, Some(&fingerprint), None, &|_| {}).unwrap(),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"

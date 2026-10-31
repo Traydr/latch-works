@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use super::now_ms;
 use crate::contract::{PreferredFolder, Root, RootId, Settings, SimilarityLevel, VideoQuality};
+use crate::plans::planner::is_within;
 
 /// Every root, in path order without regard to case, with its file count and bytes.
 pub fn list_roots(connection: &Connection) -> anyhow::Result<Vec<Root>> {
@@ -73,7 +74,10 @@ pub fn resolve_root_folder(data: &DataRoot, folder: &Path) -> Result<PathBuf, Ro
             .map_err(|error| RootError(format!("No working folder: {error}")))?
             .join(folder)
     };
-    let resolved = std::fs::canonicalize(&absolute)
+    // Node's `realpath`: on Windows without the `\\?\` prefix std's `canonicalize` adds, so the
+    // root is stored, shown and compared as Electron Oriel's are. std's file calls add the long
+    // form back themselves for a path that needs it.
+    let resolved = oriel_runtime::paths::canonicalize(&absolute)
         .map_err(|_| RootError(format!("{} does not exist.", folder.display())))?;
     if !resolved.is_dir() {
         return Err(RootError(format!(
@@ -100,7 +104,13 @@ pub fn add_root(connection: &Connection, resolved: &Path) -> anyhow::Result<Root
         .with_context(|| format!("{} is not a Unicode path", resolved.display()))?;
     for existing in list_roots(connection)? {
         let other = Path::new(&existing.path);
-        if resolved.starts_with(other) || other.starts_with(resolved) {
+        // On Windows `path.relative` ignores case, as NTFS does, so the check does too.
+        let overlaps = if cfg!(windows) {
+            is_within(resolved, other) || is_within(other, resolved)
+        } else {
+            resolved.starts_with(other) || other.starts_with(resolved)
+        };
+        if overlaps {
             bail!(RootError(format!(
                 "{path} overlaps the root {}.",
                 existing.path

@@ -12,7 +12,7 @@ use std::os::windows::fs::FileExt as _;
 use std::path::Path;
 
 use oriel_runtime::Cancelled;
-use oriel_runtime::fs_meta::MetadataExt as _;
+use oriel_runtime::fs_meta::{MetadataExt as _, change_time};
 use sha2::{Digest as _, Sha256};
 
 use crate::catalog::files::SqlParams;
@@ -209,7 +209,10 @@ pub(crate) fn hash_whole_file(
     let (size, mtime_ms, ctime_ms) = expected;
     let unchanged = after.size() as i64 == size
         && whole_ms(after.mtime(), after.mtime_nsec()) as f64 == mtime_ms
-        && whole_ms(after.ctime(), after.ctime_nsec()) as f64 == ctime_ms;
+        && {
+            let (seconds, nanoseconds) = change_time(path, &after);
+            whole_ms(seconds, nanoseconds) as f64 == ctime_ms
+        };
     if !unchanged {
         return Err(HashError::Unreadable);
     }

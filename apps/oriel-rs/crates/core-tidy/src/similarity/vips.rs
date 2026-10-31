@@ -401,6 +401,18 @@ impl Loaded {
             // The cache never changes a result, only whether it is made again.
             // SAFETY: plain call after vips_init.
             unsafe { set_cache_max(0) };
+            // libvips also keeps the files it read open, and Windows will not hold, move or
+            // replace an open file: as Electron Oriel's `sharp.cache({ files: 0 })` (plan 062).
+            #[cfg(windows)]
+            {
+                let set_max_files: libloading::Symbol<unsafe extern "C" fn(c_int)> =
+                    // SAFETY: `vips_cache_set_max_files` has this signature in every libvips 8.
+                    unsafe { library.get(b"vips_cache_set_max_files\0") }.map_err(|error| {
+                        VipsError(format!("libvips has no vips_cache_set_max_files: {error}"))
+                    })?;
+                // SAFETY: plain call after vips_init.
+                unsafe { set_max_files(0) };
+            }
         }
 
         let api = Api::load(&library)?;
@@ -1128,11 +1140,13 @@ fn file_name(path: &Path) -> Result<CString> {
         .map_err(|_| VipsError("A path with a NUL byte cannot be opened.".into()))
 }
 
-/// A path as libvips takes it on Windows: UTF-8. glazier-core also gives sharp the `\\?\`
-/// prefix past 260 characters (`sharpPath`); Phase 8 adds that here.
+/// A path as libvips takes it on Windows: UTF-8, in the `\\?\` form, as glazier-core's
+/// `sharpPath` gives it to sharp. libvips opens no path past 260 characters otherwise, even with
+/// long paths enabled (plan 062).
 #[cfg(not(unix))]
 fn file_name(path: &Path) -> Result<CString> {
-    let text = path
+    let namespaced = oriel_runtime::paths::namespaced(path);
+    let text = namespaced
         .to_str()
         .ok_or_else(|| VipsError("A path that is not Unicode cannot be opened.".into()))?;
     CString::new(text).map_err(|_| VipsError("A path with a NUL byte cannot be opened.".into()))

@@ -37,6 +37,14 @@ sha2.workspace = true
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSError", "NSFileManager", "NSString", "NSURL"] }
 
+# Emptying holding moves its batches to the Recycle Bin through the shell's `IFileOperation`, as
+# Electron's `shell.trashItem` does, and holding's batch names read Windows' own local time, at
+# the versions already in the lock (GPUI's Windows backend builds `windows` with these features).
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
+windows-core = "0.62"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Time"] }
+
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
 serde_json = { workspace = true, features = ["float_roundtrip"] }

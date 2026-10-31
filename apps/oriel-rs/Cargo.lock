@@ -5243,6 +5243,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5362,6 +5365,7 @@ name = "oriel-rs"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "embed-resource",
  "futures",
  "gpui-fps",
  "gpui-kit",
@@ -6658,6 +6662,12 @@ dependencies = [
  "unicode-properties",
  "unicode-script",
 ]
+
+[[package]]
+name = "ruzstd"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7c1c839d570d835527c9a5e4db7cb2198683a988cb9d7293fc8674e6bd58fc8"
 
 [[package]]
 name = "ryu"
@@ -9494,7 +9504,9 @@ dependencies = [
  "anyhow",
  "libc",
  "libloading",
+ "object",
  "oriel-tools",
+ "ruzstd",
  "serde",
  "serde_json",
  "sha2 0.11.1",

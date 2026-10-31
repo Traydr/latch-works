@@ -7,12 +7,14 @@
 //! - [`TokioRuntime`]: a tokio runtime on its own thread, for the HTTP clients that need one;
 //! - [`Database`]: one SQLite connection per catalog, on its own thread, called from async code;
 //! - [`release_free_memory`]: heavy work hands its memory back to the system when it is done;
-//! - [`fs_meta`]: a file's size, times and identity as Node's `fs.stat` gives them, on Windows too.
+//! - [`fs_meta`]: a file's size, times and identity as Node's `fs.stat` gives them, on Windows too;
+//! - [`paths`]: paths as Node writes them on Windows, and the long form a C library opens.
 
 mod cancel;
 pub mod fs_meta;
 mod job;
 mod memory;
+pub mod paths;
 mod pause;
 mod sqlite;
 mod tokio_runtime;

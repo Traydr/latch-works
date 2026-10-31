@@ -331,6 +331,7 @@ fn is_plain_file_name(name: &str) -> bool {
 
 /// Whether `target` is `root` or inside it, as glazier-core's `isWithin` decides through
 /// `path.relative` (which also counts a first component starting with `..` as outside).
+#[cfg(not(windows))]
 pub fn is_within(target: &Path, root: &Path) -> bool {
     match target.strip_prefix(root) {
         Ok(relative) => {
@@ -339,6 +340,23 @@ pub fn is_within(target: &Path, root: &Path) -> bool {
         }
         Err(_) => false,
     }
+}
+
+/// [`is_within`] on Windows, where `path.relative` lowercases both paths first: NTFS names do not
+/// differ by case alone, so `C:\Photos` and `c:\photos\a` are one folder and a file in it.
+#[cfg(windows)]
+pub fn is_within(target: &Path, root: &Path) -> bool {
+    let lowered = |path: &Path| -> Vec<String> {
+        path.components()
+            .map(|part| part.as_os_str().to_string_lossy().to_lowercase())
+            .collect()
+    };
+    let (target, root) = (lowered(target), lowered(root));
+    target.len() >= root.len()
+        && target[..root.len()] == root[..]
+        && target
+            .get(root.len())
+            .is_none_or(|first| !first.starts_with(".."))
 }
 
 fn require_files(ids: &[FileId]) -> anyhow::Result<()> {

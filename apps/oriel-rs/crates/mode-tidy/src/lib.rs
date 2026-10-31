@@ -50,7 +50,7 @@ pub use library::{LibraryMenu, LibraryMode, LibraryPage, MenuChoice, last_menu};
 pub use links::TidyEvent;
 pub use overview::OverviewPage;
 pub use pages::TidyPage;
-pub use quick_look::last_quick_look;
+pub use quick_look::{QUICK_LOOK_LABEL, last_quick_look};
 pub use state::{LibraryPreset, TidyState};
 pub use synthetic::{LibraryColumn, LibraryDelegate, LibraryRow, SyntheticLibrary, synthetic_rows};
 pub use widgets::last_toast;

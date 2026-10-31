@@ -25,7 +25,7 @@ use anyhow::{Context as _, anyhow, bail};
 use oriel_avif::Libavif;
 use oriel_core_format::{AudioTrackPlan, VideoTrackPlan};
 use oriel_runtime::Cancelled;
-use oriel_runtime::fs_meta::{MetadataExt as _, dev_ino};
+use oriel_runtime::fs_meta::{MetadataExt as _, change_time, identity};
 use rusqlite::{OptionalExtension as _, params};
 
 use super::encode_budget::EncodeBudget;
@@ -194,8 +194,11 @@ fn whole_mtime(metadata: &fs::Metadata) -> i64 {
     whole_ms(metadata.mtime(), metadata.mtime_nsec())
 }
 
-fn whole_ctime(metadata: &fs::Metadata) -> i64 {
-    whole_ms(metadata.ctime(), metadata.ctime_nsec())
+/// Node's `ctimeMs` of `path` in whole milliseconds: on Windows NTFS's change time, which only a
+/// read of the path gives (`fs_meta::change_time`).
+fn whole_ctime(path: &Path, metadata: &fs::Metadata) -> i64 {
+    let (seconds, nanoseconds) = change_time(path, metadata);
+    whole_ms(seconds, nanoseconds)
 }
 
 /// Re-reads the source just before touching it. A file that changed since the scan (size, mtime
@@ -213,7 +216,7 @@ fn check_source(deps: &ExecutorDeps<'_>, step: &StepRecord) -> anyhow::Result<fs
     {
         return Err(StepSkip::stale(CHANGED_SINCE_SCAN));
     }
-    if whole_ctime(&current) != step.expected_ctime_ms.trunc() as i64
+    if whole_ctime(&source, &current) != step.expected_ctime_ms.trunc() as i64
         && !holds_catalogued_bytes(deps, step, &current)?
     {
         return Err(StepSkip::stale(CHANGED_SINCE_SCAN));
@@ -244,7 +247,7 @@ fn holds_catalogued_bytes(
     let expected = (
         current.size() as i64,
         whole_mtime(current) as f64,
-        whole_ctime(current) as f64,
+        whole_ctime(&step.from_abs(), current) as f64,
     );
     match hash_whole_file(&step.from_abs(), expected, deps.progress) {
         Ok(sha256) => Ok(sha256 == catalogued),
@@ -270,8 +273,12 @@ fn relocate_row(deps: &ExecutorDeps<'_>, step: &StepRecord, target: &Path) -> an
     let name = base_name(&rel_path).to_owned();
     let ext = extension_of(&name);
     let dir = dir_of(&rel_path).to_owned();
-    let (dev, ino) = dev_ino(target, &moved);
-    let (ctime, dev, ino) = (whole_ctime(&moved), dev.to_string(), ino.to_string());
+    let identity = identity(target, &moved);
+    let (ctime, dev, ino) = (
+        whole_ms(identity.ctime, identity.ctime_nsec),
+        identity.dev.to_string(),
+        identity.ino.to_string(),
+    );
     deps.catalog.blocking(move |connection| {
         let format: Option<String> = connection
             .query_row(
@@ -336,16 +343,16 @@ fn replace_row(
         return Ok(());
     };
     let written = fs::metadata(target)?;
-    let (dev, ino) = dev_ino(target, &written);
+    let identity = identity(target, &written);
     let name = base_name(&rel_path).to_owned();
     let row = (
         dir_of(&rel_path).to_owned(),
         extension_of(&name),
         written.size() as i64,
         whole_mtime(&written),
-        whole_ctime(&written),
-        dev.to_string(),
-        ino.to_string(),
+        whole_ms(identity.ctime, identity.ctime_nsec),
+        identity.dev.to_string(),
+        identity.ino.to_string(),
     );
     let (root_id, from) = (step.root_id, step.from_rel.clone());
     deps.catalog.blocking(move |connection| {
@@ -595,7 +602,7 @@ fn remove_folder(
             },
         )?;
     }
-    fs::remove_dir(&folder)?;
+    remove_empty_folder(&folder)?;
     let (root_id, rel_path) = (step.root_id, step.from_rel.clone());
     deps.catalog.blocking(move |connection| {
         connection.execute(
@@ -609,6 +616,36 @@ fn remove_folder(
         holding_id: None,
         message: None,
     })
+}
+
+#[cfg(not(windows))]
+fn remove_empty_folder(folder: &Path) -> io::Result<()> {
+    fs::remove_dir(folder)
+}
+
+/// Removes an emptied folder. Explorer marks a customized folder (one with a `desktop.ini`)
+/// read-only, and Windows can take that as a refusal; Node's `rmdir` removed such a folder in plan
+/// 062's checks, so when the mark is what refuses, it comes off, and goes back if the folder
+/// stays all the same.
+#[cfg(windows)]
+// On Windows `set_readonly(false)` clears the read-only attribute and nothing else.
+#[allow(clippy::permissions_set_readonly_false)]
+fn remove_empty_folder(folder: &Path) -> io::Result<()> {
+    match fs::remove_dir(folder) {
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+            let mut permissions = fs::metadata(folder)?.permissions();
+            if !permissions.readonly() {
+                return Err(error);
+            }
+            permissions.set_readonly(false);
+            fs::set_permissions(folder, permissions.clone())?;
+            fs::remove_dir(folder).inspect_err(|_| {
+                permissions.set_readonly(true);
+                let _ = fs::set_permissions(folder, permissions);
+            })
+        }
+        removed => removed,
+    }
 }
 
 fn execute_step(

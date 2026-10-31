@@ -37,11 +37,25 @@ pub(crate) struct FileStat {
 }
 
 impl FileStat {
+    /// The facts `metadata` holds: on Windows without the change time, which View's catalog
+    /// does not read.
     pub(crate) fn of(metadata: &fs::Metadata) -> Self {
         Self {
             size: metadata.len(),
             modified_ms: modified_ms(metadata),
             changed_ms: change_time_ms(metadata),
+        }
+    }
+
+    /// The facts of the file at `path`, whose metadata is `metadata`, with its change time on
+    /// every platform: on Windows NTFS's, as Node's `ctimeMs` reads it, which takes a read of the
+    /// file itself (`fs_meta::change_time`). Sync's fingerprints then match those Electron
+    /// Oriel's scan and hash cache wrote there.
+    pub(crate) fn with_change_time(path: &Path, metadata: &fs::Metadata) -> Self {
+        let (seconds, nanoseconds) = oriel_runtime::fs_meta::change_time(path, metadata);
+        Self {
+            changed_ms: Some(seconds as f64 * 1e3 + nanoseconds as f64 / 1e6),
+            ..Self::of(metadata)
         }
     }
 }
