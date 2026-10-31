@@ -359,9 +359,9 @@ fn an_overloaded_store_takes_upload_slots_away() {
         .block_on(async move { push_changes(options, &client, None, &CancelToken::new()).await })
         .unwrap();
     assert_eq!((result.pushed, result.failed), (0, 6));
-    // Each 503 gives a slot back, down to one at a time.
+    // The 503s within one hold are one overload: they give one slot back, not one each.
     let widths: Vec<usize> = result.upload_widths.iter().map(|&(_, w)| w).collect();
-    assert_eq!(widths, [3, 2, 1]);
+    assert_eq!(widths, [3, 2]);
     assert_eq!(setup.server.peak_uploads(), 3);
 }
 

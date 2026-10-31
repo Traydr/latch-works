@@ -542,7 +542,7 @@ fn stat_fingerprint(path: &Path) -> std::io::Result<Stat> {
     let mtime = modified_ms(&metadata);
     Ok((
         ArchiveFileFingerprint {
-            ctime_ms: change_time_ms(&metadata),
+            ctime_ms: change_time_ms(path, &metadata),
             mtime_ms: mtime.trunc(),
             size: metadata.len(),
         },
@@ -555,19 +555,12 @@ async fn stat_fingerprint_async(path: &Path) -> anyhow::Result<Stat> {
     Ok(tokio::task::spawn_blocking(move || stat_fingerprint(&path)).await??)
 }
 
-#[cfg(unix)]
-fn change_time_ms(metadata: &std::fs::Metadata) -> Option<f64> {
-    use std::os::unix::fs::MetadataExt as _;
-    Some(metadata.ctime() as f64 * 1e3 + metadata.ctime_nsec() as f64 / 1e6)
-}
-
-/// Windows' change time is not in std's metadata. Node reads NTFS's, but the plan's scan
-/// (`oriel-core-index`) records none there, and a fingerprint without one matches on its size and
-/// modified time alone, so a hash cache Electron Oriel wrote on Windows, change times and all,
-/// still matches rather than being hashed again.
-#[cfg(not(unix))]
-fn change_time_ms(_: &std::fs::Metadata) -> Option<f64> {
-    None
+/// Node's `ctimeMs`: on Windows NTFS's change time, read from the file itself
+/// (`fs_meta::change_time`), as Electron Oriel's hash cache and the plan's scan
+/// (`oriel-core-index`) record it there.
+fn change_time_ms(path: &Path, metadata: &std::fs::Metadata) -> Option<f64> {
+    let (seconds, nanoseconds) = oriel_runtime::fs_meta::change_time(path, metadata);
+    Some(seconds as f64 * 1e3 + nanoseconds as f64 / 1e6)
 }
 
 /// `resolvePushItemHash`, then `pushMediaItem`'s first look at the file: the item with its

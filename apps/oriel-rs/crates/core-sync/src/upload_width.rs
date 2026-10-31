@@ -20,11 +20,18 @@
 //!     and the next one probed, up to 6, since on a full link more uploads at once only split it;
 //!   - two windows without that gain mean the link, not the width, is the limit: the width goes
 //!     back one step and holds there before it measures and probes again.
+//! - Above 3 it also checks the other way after each hold, since a link can fill up later in a
+//!   push: it measures the width, then one slot fewer for two windows. When the wider width does
+//!   not pay 10% over the narrower one in either, it stays one slot down and holds 5 s, so a
+//!   capped link brings it back to 3 step by step; otherwise it returns and carries on.
 //! - A sign of overload (a 429 or 5xx answer, a timeout, a dropped connection) takes a slot away
-//!   at once, down to 1, and holds as well.
+//!   at once, down to 1, and holds as well. A burst of them (a Wi-Fi blip, a server restart, which
+//!   fail every upload in flight at once) counts once: overloads inside that hold take nothing
+//!   more.
 //! - A hold lasts 5 s, and each one after it without a kept gain in between twice as long, up to
 //!   a minute. A step back that noise caused costs a few seconds; on a link that is really full
-//!   the probes grow rare and the width settles.
+//!   the probes grow rare and the width settles. The checks of a width that keeps paying grow
+//!   rare the same way, on a schedule of their own.
 //!
 //! The controller only does arithmetic on the samples it is given, with times the caller
 //! measures, so the same samples always give the same widths and tests can drive it with
@@ -72,8 +79,11 @@ enum Phase {
         missed: bool,
         gained: bool,
     },
-    /// Holding the current width until then.
-    Holding { until: Duration },
+    /// Checking whether one slot more than the current width pays: `upper` is the rate one slot
+    /// up just measured, and `missed` whether a window here has already shown it does.
+    Checking { upper: f64, missed: bool },
+    /// Holding the current width until then; `stepped_back` when it holds after a step back.
+    Holding { until: Duration, stepped_back: bool },
 }
 
 impl Phase {
@@ -128,8 +138,13 @@ pub struct UploadWidth {
     window: Window,
     /// How long the next step back holds.
     next_hold: Duration,
+    /// How long the next hold at a width that just paid lasts, before it is checked again.
+    next_check: Duration,
     /// The fastest window measured at each width so far.
     peaks: [f64; MAX_ADAPTIVE_UPLOADS + 1],
+    /// Whether the current width has passed its check against one slot fewer since the last
+    /// hold, so its next baseline probes up instead of down.
+    checked_down: bool,
     /// Each width the push ran at, with when it started.
     history: Vec<(Duration, usize)>,
 }
@@ -148,7 +163,9 @@ impl UploadWidth {
             phase: Phase::FRESH,
             window: Window::after(1),
             next_hold: FIRST_HOLD,
+            next_check: FIRST_HOLD,
             peaks: [0.0; MAX_ADAPTIVE_UPLOADS + 1],
+            checked_down: false,
             history: vec![(Duration::ZERO, DEFAULT_UPLOAD_CONCURRENCY)],
         }
     }
@@ -167,24 +184,30 @@ impl UploadWidth {
     pub fn record(&mut self, sample: UploadSample) {
         let (bytes, at) = match sample {
             UploadSample::Overloaded { at } => {
+                // A burst of failures is one overload: inside the hold its first one started,
+                // the rest take nothing more.
+                if let Phase::Holding {
+                    until,
+                    stepped_back: true,
+                } = self.phase
+                    && at < until
+                {
+                    return;
+                }
                 self.set_width(self.width.saturating_sub(1).max(MIN_UPLOADS), at);
                 self.back_off(at);
                 return;
             }
             UploadSample::Completed { bytes, at } => (bytes, at),
         };
-        let (baseline, missed, gained) = match self.phase {
-            Phase::Holding { until } if at < until => return,
+        let phase = match self.phase {
+            Phase::Holding { until, .. } if at < until => return,
             Phase::Holding { .. } => {
                 self.phase = Phase::FRESH;
                 self.window = Window::after(self.width);
                 return;
             }
-            Phase::Measuring {
-                baseline,
-                missed,
-                gained,
-            } => (baseline, missed, gained),
+            phase => phase,
         };
         let Some(rate) = self.measure(bytes, at) else {
             return;
@@ -192,13 +215,27 @@ impl UploadWidth {
         let measured = self.width;
         // A probe must beat the fastest any narrower width has gone, not only the latest
         // baseline: on a full link a slow baseline window would otherwise let noise through.
-        let bar = baseline.map(|baseline| {
-            let peak = self.peaks[..measured].iter().copied().fold(0.0, f64::max);
-            baseline.max(peak) * (1.0 + MEANINGFUL_GAIN)
-        });
+        let peak_below = self.peaks[..measured].iter().copied().fold(0.0, f64::max);
         self.peaks[measured] = self.peaks[measured].max(rate);
-        match baseline {
-            Some(baseline) if rate < bar.unwrap_or(0.0) => {
+        match phase {
+            Phase::Holding { .. } => unreachable!("a hold measures nothing"),
+            Phase::Checking { upper, missed } => self.checked(upper, missed, rate, at),
+            // A baseline above 3 that has not been checked since the hold: one slot fewer next.
+            Phase::Measuring { baseline: None, .. }
+                if measured > DEFAULT_UPLOAD_CONCURRENCY && !self.checked_down =>
+            {
+                self.phase = Phase::Checking {
+                    upper: rate,
+                    missed: false,
+                };
+                self.set_width(measured - 1, at);
+                self.window = Window::after(self.width);
+            }
+            Phase::Measuring {
+                baseline: Some(baseline),
+                missed,
+                ..
+            } if rate < baseline.max(peak_below) * (1.0 + MEANINGFUL_GAIN) => {
                 if missed {
                     self.set_width(self.width - 1, at);
                     self.back_off(at);
@@ -211,14 +248,18 @@ impl UploadWidth {
                 }
             }
             // A first window with the gain: the next one must show it too.
-            Some(baseline) if !gained => {
+            Phase::Measuring {
+                baseline: Some(baseline),
+                missed,
+                gained: false,
+            } => {
                 self.phase = Phase::Measuring {
                     baseline: Some(baseline),
                     missed,
                     gained: true,
                 };
             }
-            _ if self.width < MAX_ADAPTIVE_UPLOADS => {
+            Phase::Measuring { baseline, .. } if self.width < MAX_ADAPTIVE_UPLOADS => {
                 if baseline.is_some() {
                     // The probe paid: the next step back starts the holds over.
                     self.next_hold = FIRST_HOLD;
@@ -231,8 +272,35 @@ impl UploadWidth {
                 self.set_width(self.width + 1, at);
                 self.window = Window::after(self.width);
             }
-            // At the top there is nothing more to probe; it holds, then measures again.
-            _ => self.hold(at, FIRST_HOLD),
+            // At the top there is nothing more to probe; it holds, then checks one slot fewer.
+            Phase::Measuring { .. } => self.back_off_kept(at),
+        }
+    }
+
+    /// A window one slot below a width being checked. The wider width keeps its slot only if it
+    /// paid in one of two windows here.
+    fn checked(&mut self, upper: f64, missed: bool, rate: f64, at: Duration) {
+        let pays = upper >= rate * (1.0 + MEANINGFUL_GAIN);
+        let wider = self.width + 1;
+        if pays {
+            self.set_width(wider, at);
+            if wider < MAX_ADAPTIVE_UPLOADS {
+                // Measured again, then probed up.
+                self.checked_down = true;
+                self.phase = Phase::FRESH;
+                self.window = Window::after(self.width);
+            } else {
+                self.back_off_kept(at);
+            }
+        } else if !missed {
+            self.phase = Phase::Checking {
+                upper,
+                missed: true,
+            };
+        } else {
+            // The link filled up: stay one slot down, and check the next one down soon.
+            self.next_check = FIRST_HOLD;
+            self.hold(at, FIRST_HOLD, true);
         }
     }
 
@@ -259,12 +327,23 @@ impl UploadWidth {
 
     /// Holds after a step back, each time longer until a probe pays.
     fn back_off(&mut self, at: Duration) {
-        self.hold(at, self.next_hold);
+        self.hold(at, self.next_hold, true);
         self.next_hold = (self.next_hold * 2).min(LONGEST_HOLD);
     }
 
-    fn hold(&mut self, at: Duration, hold: Duration) {
-        self.phase = Phase::Holding { until: at + hold };
+    /// Holds at a width that just paid, each time longer, so the checks of a width that keeps
+    /// paying grow rare.
+    fn back_off_kept(&mut self, at: Duration) {
+        self.hold(at, self.next_check, false);
+        self.next_check = (self.next_check * 2).min(LONGEST_HOLD);
+    }
+
+    fn hold(&mut self, at: Duration, hold: Duration, stepped_back: bool) {
+        self.phase = Phase::Holding {
+            until: at + hold,
+            stepped_back,
+        };
+        self.checked_down = false;
     }
 
     fn set_width(&mut self, width: usize, at: Duration) {
@@ -305,11 +384,34 @@ mod tests {
     fn it_climbs_to_six_while_each_step_adds_speed() {
         let mut width = UploadWidth::new();
         // Latency-bound: each upload at once adds 5 MB/s.
-        feed(&mut width, Duration::ZERO, Duration::from_secs(60), |w| {
+        let end = Duration::from_secs(300);
+        feed(&mut width, Duration::ZERO, end, |w| w as f64 * 5e6);
+        assert_eq!(widths(&width)[..4], [3, 4, 5, 6]);
+        assert_eq!(width.width(), 6);
+        // At the top it checks one slot fewer now and then, finds 6 pays, and goes back; the
+        // holds between the checks grow, so it spends nearly all its time at 6.
+        assert!(width.history()[3..].iter().all(|&(_, w)| w >= 5));
+        assert!(time_at(&width, 6, end) > end * 9 / 10);
+    }
+
+    #[test]
+    fn at_six_it_comes_back_down_when_the_link_fills() {
+        let mut width = UploadWidth::new();
+        let climbed = feed(&mut width, Duration::ZERO, Duration::from_secs(20), |w| {
             w as f64 * 5e6
         });
-        assert_eq!(widths(&width), [3, 4, 5, 6]);
         assert_eq!(width.width(), 6);
+        // Then the link is capped at 2 MB/s for ten minutes.
+        let capped = Duration::from_secs(600);
+        feed(&mut width, climbed, climbed + capped, |_| 2e6);
+        assert_eq!(width.width(), 3);
+        let came_down = width
+            .history()
+            .iter()
+            .find(|&&(at, w)| at > climbed && w == 3)
+            .map(|&(at, _)| at - climbed)
+            .unwrap();
+        assert!(came_down < Duration::from_secs(150), "{came_down:?}");
     }
 
     /// How long the push ran at `width` before `end`.
@@ -409,7 +511,8 @@ mod tests {
     #[test]
     fn overload_takes_a_slot_away_at_once_down_to_one() {
         let mut width = UploadWidth::new();
-        for second in 1..=5 {
+        // Overloads that keep coming after each hold: 5 s, then 10 s, then 20 s.
+        for second in [1, 7, 18, 39] {
             width.record(UploadSample::Overloaded {
                 at: Duration::from_secs(second),
             });
@@ -418,19 +521,54 @@ mod tests {
         // It holds after an overload: completions inside the hold change nothing.
         feed(
             &mut width,
-            Duration::from_secs(5),
-            Duration::from_secs(20),
+            Duration::from_secs(39),
+            Duration::from_secs(55),
             |w| w as f64 * 5e6,
         );
         assert_eq!(width.width(), 1);
         // Afterwards it climbs again while that pays.
         feed(
             &mut width,
-            Duration::from_secs(25),
             Duration::from_secs(80),
+            Duration::from_secs(120),
             |w| w as f64 * 5e6,
         );
-        assert_eq!(widths(&width), [3, 2, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(widths(&width)[..8], [3, 2, 1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn a_burst_of_failures_takes_one_slot() {
+        let mut width = UploadWidth::new();
+        let climbed = feed(&mut width, Duration::ZERO, Duration::from_secs(20), |w| {
+            w as f64 * 5e6
+        });
+        assert_eq!(width.width(), 6);
+        let before = width.history().len();
+        // A Wi-Fi blip fails all six uploads in flight at once, and a straggler after.
+        for _ in 0..6 {
+            width.record(UploadSample::Overloaded { at: climbed });
+        }
+        width.record(UploadSample::Overloaded {
+            at: climbed + Duration::from_secs(4),
+        });
+        assert_eq!(width.width(), 5);
+        assert_eq!(width.history().len(), before + 1);
+        // The hold was the first one, 5 s, not a minute: by 6 s it measures and climbs again.
+        feed(
+            &mut width,
+            climbed,
+            climbed + Duration::from_secs(15),
+            |w| w as f64 * 5e6,
+        );
+        let back = width
+            .history()
+            .iter()
+            .find(|&&(at, w)| at > climbed && w == 6)
+            .map(|&(at, _)| at - climbed);
+        assert!(
+            back.is_some_and(|back| back < Duration::from_secs(10)),
+            "{back:?}"
+        );
     }
 
     #[test]
