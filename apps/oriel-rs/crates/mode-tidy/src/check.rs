@@ -67,7 +67,7 @@ pub fn apply_from_environment(
                 state.go(page, cx);
             }
             if let Some(root) = root {
-                let resolved = std::fs::canonicalize(&root).unwrap_or(root);
+                let resolved = oriel_runtime::paths::canonicalize(&root).unwrap_or(root);
                 let known = state
                     .roots()
                     .iter()

@@ -131,6 +131,19 @@ impl RunningChange {
 /// What a finished job left: its value, or why there is none.
 type Finished<T> = Result<T, JobError>;
 
+/// A change that did not finish: why, and its plan when its job ran and failed part way, having
+/// perhaps done some of its steps, which Undo takes back (`job.state === "failed"`).
+struct Unfinished {
+    error: JobError,
+    plan: Option<PlanSummary>,
+}
+
+impl From<JobError> for Unfinished {
+    fn from(error: JobError) -> Self {
+        Self { error, plan: None }
+    }
+}
+
 /// A channel that answers once `job` finishes, and the subscription that feeds it.
 fn when_finished<T: Clone + Send + 'static>(
     job: &Entity<Job<T>>,
@@ -237,11 +250,12 @@ impl TidyState {
         request: PlanRequest,
         source: Option<SharedString>,
         cx: &mut Context<Self>,
-    ) -> Task<Finished<(PlanPreview, Applied)>> {
+    ) -> Task<Result<(PlanPreview, Applied), Unfinished>> {
         let Some(engine) = self.engine().cloned() else {
             return Task::ready(Err(job_error(anyhow::anyhow!(
                 "Tidy's catalog is not open"
-            ))));
+            ))
+            .into()));
         };
         let kind = request.kind();
         let performing = self.changes.perform(&engine, request, cx);
@@ -269,8 +283,24 @@ impl TidyState {
                     finished
                 })
                 .map_err(job_error)?;
-            let applied = finished.await.unwrap_or(Err(JobError::Cancelled))?;
-            Ok((preview, applied))
+            match finished.await.unwrap_or(Err(JobError::Cancelled)) {
+                Ok(applied) => Ok((preview, applied)),
+                Err(error @ JobError::Failed(_)) => {
+                    let plan = this
+                        .update(cx, |this, _| {
+                            let engine = this.engine().cloned()?;
+                            Some(this.changes.get_plan(&engine, preview.plan_id))
+                        })
+                        .ok()
+                        .flatten();
+                    let plan = match plan {
+                        Some(plan) => plan.await.ok(),
+                        None => None,
+                    };
+                    Err(Unfinished { error, plan })
+                }
+                Err(error) => Err(error.into()),
+            }
         })
     }
 
@@ -344,21 +374,22 @@ impl TidyState {
 
     fn announce(
         &mut self,
-        outcome: Finished<(PlanPreview, Applied)>,
+        outcome: Result<(PlanPreview, Applied), Unfinished>,
         options: &PerformOptions,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let (preview, applied) = match outcome {
             Ok(outcome) => outcome,
-            Err(error) => {
+            Err(Unfinished { error, plan }) => {
                 // After this update, so the page may read the state.
                 if let Some(on_failed) = options.on_failed.clone() {
                     window.defer(cx, move |window, cx| on_failed(window, cx));
                 }
-                let toast = match error {
-                    JobError::Cancelled => Toast::info("Stopped"),
-                    error => Toast::error("That didn't work").detail(job_message(&error)),
+                let toast = match (error, plan) {
+                    (JobError::Cancelled, _) => Toast::info("Stopped"),
+                    (error, Some(plan)) => self.failed_toast(plan, &error, options, cx),
+                    (error, None) => Toast::error("That didn't work").detail(job_message(&error)),
                 };
                 show_toast(window, toast, cx);
                 return;
@@ -413,6 +444,32 @@ impl TidyState {
             toast = self.undo_action(toast, plan, options.clone(), cx);
         }
         show_toast(window, toast, cx);
+    }
+
+    /// A change whose job failed part way: "‹title›, with errors", with what went wrong and an
+    /// Undo for the steps it did, which ⌘Z takes back too (`announce`).
+    fn failed_toast(
+        &mut self,
+        plan: PlanSummary,
+        error: &JobError,
+        options: &PerformOptions,
+        cx: &mut Context<Self>,
+    ) -> Toast {
+        if let Some(source) = &options.source {
+            self.results.insert(source.clone(), plan.clone());
+        }
+        let toast = Toast::error(format!("{}, with errors", plan.title)).detail(job_message(error));
+        if !can_undo(&plan) {
+            return toast;
+        }
+        let (entry_plan, entry_options) = (plan.clone(), options.clone());
+        self.push_entry(UndoEntry {
+            plan_ids: vec![plan.id],
+            run: Rc::new(move |this, window, cx| {
+                this.undo_plan(entry_plan.clone(), entry_options.clone(), window, cx);
+            }),
+        });
+        self.undo_action(toast, plan, options.clone(), cx)
     }
 
     /// A toast's Undo for `plan`.
@@ -737,7 +794,7 @@ async fn run_steps(
             this.changed(cx);
         })
         .ok();
-        match outcome {
+        match outcome.map_err(|unfinished| (unfinished.error, unfinished.plan)) {
             Ok((_, applied)) => {
                 let plan = applied.plan;
                 follow_up.rescan.extend(applied.follow_up.rescan);
@@ -749,11 +806,19 @@ async fn run_steps(
                     plans.push(plan);
                 }
             }
-            Err(JobError::Cancelled) => {
+            Err((JobError::Cancelled, _)) => {
                 notes.push("Stopped".into());
                 break;
             }
-            Err(error) => {
+            // A step that failed part way counts with the rest, so the one Undo takes back
+            // what it did (`performAll`).
+            Err((_, Some(plan))) => {
+                notes.push(format!("{}: {} failed", plan.title, plan.failed));
+                if plan.steps > 0 {
+                    plans.push(plan);
+                }
+            }
+            Err((error, None)) => {
                 let message = job_message(&error);
                 // A step whose files went in an earlier step has nothing left to do.
                 if !message.contains("nothing to do") {

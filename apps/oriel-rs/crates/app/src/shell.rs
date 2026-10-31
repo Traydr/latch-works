@@ -414,7 +414,7 @@ impl Shell {
             .map(|folders| {
                 folders
                     .iter()
-                    .filter_map(|folder| std::fs::canonicalize(folder).ok())
+                    .filter_map(|folder| oriel_runtime::paths::canonicalize(folder).ok())
                     .filter(|folder| folder.is_dir())
                     .collect()
             })

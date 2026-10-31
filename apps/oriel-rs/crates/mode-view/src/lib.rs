@@ -188,15 +188,20 @@ impl ViewMode {
             // Back on screen with the viewer or the reader open, View gives it the keys again,
             // so Escape and the arrows reach it: another mode may have taken them meanwhile.
             // Leaving the screen, it pauses the viewer's video, as Electron Oriel pauses a
-            // hidden mode's media.
+            // hidden mode's media, and their chrome stops fading, which would hide the pointer
+            // over the mode or the Settings page on screen.
             cx.observe_in(shell, window, {
-                let mut shown = shell.read(cx).mode() == ModeId::View;
+                let on_screen =
+                    |shell: &ShellState| shell.mode() == ModeId::View && shell.settings().is_none();
+                let mut shown = on_screen(shell.read(cx));
                 move |this, shell, window, cx| {
-                    let now = shell.read(cx).mode() == ModeId::View;
+                    let now = on_screen(shell.read(cx));
                     if now && !shown {
                         this.focus_overlay(window, cx);
+                        this.overlay_chrome(true, window, cx);
                     } else if shown && !now {
                         this.pause_video(window, cx);
+                        this.overlay_chrome(false, window, cx);
                     }
                     shown = now;
                 }
@@ -341,7 +346,7 @@ impl ViewMode {
         self.leave_overlays();
         self.pending_focus = path.is_file().then(|| PendingFocus {
             folder: folder.clone().into(),
-            file: std::fs::canonicalize(&path).unwrap_or(path),
+            file: oriel_runtime::paths::canonicalize(&path).unwrap_or(path),
         });
         self.start_scan_at(folder, cx);
     }
@@ -874,6 +879,29 @@ impl ViewMode {
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
         if let Some(root) = self.catalog.read(cx).root().cloned() {
             self.run_scan(&root, ScanOptions::default(), cx);
+        }
+    }
+
+    /// Starts the viewer's and the reader's chrome fading again, as View comes back on screen,
+    /// or stops it, as View leaves.
+    fn overlay_chrome(&mut self, fading: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(viewer) = &self.viewer {
+            viewer.update(cx, |viewer, cx| {
+                if fading {
+                    viewer.reveal_chrome(window, cx);
+                } else {
+                    viewer.stop_fading();
+                }
+            });
+        }
+        if let Some((reader, _)) = &self.comic_reader {
+            reader.update(cx, |reader, cx| {
+                if fading {
+                    reader.reveal_chrome(window, cx);
+                } else {
+                    reader.stop_fading();
+                }
+            });
         }
     }
 

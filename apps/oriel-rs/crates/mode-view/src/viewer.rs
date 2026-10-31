@@ -329,6 +329,12 @@ impl Viewer {
         }
     }
 
+    /// View left the screen: the controls stop fading, so the pointer is never hidden over
+    /// another mode. [`Self::reveal_chrome`] starts it again.
+    pub fn stop_fading(&mut self) {
+        self._idle = None;
+    }
+
     fn set_chrome_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
         self.chrome_visible = visible;
         if let Some((_, player)) = &self.player {

@@ -159,7 +159,7 @@ pub fn sandbox_rule(data: &DataRoot) -> String {
 }
 
 fn resolved(path: PathBuf) -> PathBuf {
-    std::fs::canonicalize(&path).unwrap_or(path)
+    oriel_runtime::paths::canonicalize(&path).unwrap_or(path)
 }
 
 fn file_name(path: &Path) -> String {

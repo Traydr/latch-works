@@ -4,6 +4,8 @@
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
 use gpui_kit::{App, FontWeight, IntoElement, ParentElement as _, Styled as _, Window, div, px};
 
+use crate::quick_look::QUICK_LOOK_LABEL;
+
 /// An action, its keys (split on spaces into caps), and an optional mouse alternative.
 type Shortcut = (&'static str, &'static str, Option<&'static str>);
 
@@ -55,7 +57,7 @@ const DUPLICATES: (&str, &[Shortcut]) = (
         ("Flip versions", "← →", None),
         ("Keep the one shown", "↩", None),
         ("Actual size", "Z", None),
-        ("Quick Look", "⌘Y", None),
+        (QUICK_LOOK_LABEL, "⌘Y", None),
         ("Show in Finder", "⇧⌘R", None),
         ("Sound on or off", "M", None),
         ("Prefer this folder", "P", None),
@@ -68,7 +70,7 @@ const LIBRARY: (&str, &[Shortcut]) = (
         ("Search", "/", None),
         ("Move", "↑ ↓", None),
         ("Extend", "⇧↑ ⇧↓", None),
-        ("Quick Look", "Space", None),
+        (QUICK_LOOK_LABEL, "Space", None),
         ("Rename", "↩", None),
         ("Select all", "⌘A", None),
         ("Move to holding", "⌘⌫", None),

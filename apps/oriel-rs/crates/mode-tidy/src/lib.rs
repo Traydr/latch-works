@@ -172,10 +172,15 @@ impl TidyMode {
                 }
             }),
             // Tidy takes the keys when it comes on screen, so its commands and page keys reach it.
+            // Leaving the screen, it pauses Duplicates' video, as Electron Oriel pauses a hidden
+            // mode's media.
             cx.observe_in(shell, window, |this, shell, window, cx| {
                 let shell = shell.read(cx);
                 if shell.mode() == ModeId::Tidy && shell.settings().is_none() {
                     this.focus_page(window, cx);
+                } else {
+                    this.duplicates
+                        .update(cx, |page, cx| page.pause_video(window, cx));
                 }
             }),
             // A new page takes the keys, so the sidebar item keeps no focus while they are used.

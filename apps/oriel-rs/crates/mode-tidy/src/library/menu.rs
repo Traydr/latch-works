@@ -10,6 +10,7 @@ use oriel_core_tidy::contract::{
 };
 
 use crate::format;
+use crate::quick_look::QUICK_LOOK_LABEL;
 
 /// What a menu item does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,9 +99,17 @@ pub fn menu_entries(
 ) -> Vec<MenuEntry> {
     let mut entries = Vec::new();
     if target.is_some() {
+        // Off macOS, Quick Look opens the file in its default app (`QUICK_LOOK_LABEL`), which
+        // is what Open does, so Open alone stands for both, with Space.
+        if cfg!(target_os = "macos") {
+            entries.extend([
+                MenuEntry::item(format!("{QUICK_LOOK_LABEL}  Space"), MenuChoice::QuickLook),
+                MenuEntry::item("Open", MenuChoice::Open),
+            ]);
+        } else {
+            entries.push(MenuEntry::item("Open  Space", MenuChoice::Open));
+        }
         entries.extend([
-            MenuEntry::item("Quick Look  Space", MenuChoice::QuickLook),
-            MenuEntry::item("Open", MenuChoice::Open),
             MenuEntry::item("Open in View", MenuChoice::OpenInView),
             MenuEntry::item("Show in Finder  ⇧⌘R", MenuChoice::Reveal),
             MenuEntry::Separator,

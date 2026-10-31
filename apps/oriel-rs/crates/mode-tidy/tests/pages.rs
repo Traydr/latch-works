@@ -282,8 +282,14 @@ async fn a_right_click_offers_what_applies_to_the_file(cx: &mut TestAppContext) 
     // move to MP4, a video to re-encode, a soundtrack to remove.
     assert_eq!(selection(cx, &session), [id]);
     let menu = last_menu();
+    // Off macOS, Open stands for Quick Look, which opens the file in its default app there too.
+    let quick_look = if cfg!(target_os = "macos") {
+        "Quick Look  Space"
+    } else {
+        "Open  Space"
+    };
     for line in [
-        "Quick Look  Space",
+        quick_look,
         "Open in View",
         "Convert 1 to AVIF or MP4",
         "Re-encode 1 video as",

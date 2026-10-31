@@ -121,8 +121,8 @@ fn places_for(sandbox: Option<&DataRoot>) -> Vec<(SharedString, Vec<Place>)> {
     let admits = |path: &Path| sandbox.is_none_or(|data| data.admits_tidy_root(path));
     let mut groups = Vec::new();
     if let Some(data) = sandbox {
-        let temp =
-            std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
+        let temp = oriel_runtime::paths::canonicalize(&std::env::temp_dir())
+            .unwrap_or_else(|_| std::env::temp_dir());
         groups.push((
             "Where Tidy works".into(),
             vec![
@@ -198,7 +198,7 @@ fn list_volumes() -> Vec<FolderEntry> {
             if name.starts_with('.') || name.starts_with("com.apple.") {
                 return None;
             }
-            let path = std::fs::canonicalize(entry.path()).ok()?;
+            let path = oriel_runtime::paths::canonicalize(&entry.path()).ok()?;
             path.is_dir().then_some(FolderEntry { name, path })
         })
         .collect();

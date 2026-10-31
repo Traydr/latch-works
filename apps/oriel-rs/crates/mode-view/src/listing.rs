@@ -239,7 +239,9 @@ pub fn resolve_folder_path(candidate: &Path) -> Option<PathBuf> {
     } else {
         return None;
     };
-    Some(fs::canonicalize(&folder).unwrap_or(folder))
+    // Node's `realpath`, without the `\\?\` prefix std's `canonicalize` gives on Windows, so the
+    // thumbnail keys (which hold the path) are Electron Oriel's.
+    Some(oriel_runtime::paths::canonicalize(&folder).unwrap_or(folder))
 }
 
 #[cfg(test)]

@@ -962,10 +962,24 @@ impl HistoryPage {
         let status = first.as_ref().and_then(|plan| status_label(plan.status));
         let title = entry_title(entry);
         let detail = entry_detail(entry);
-        let time = first
-            .as_ref()
-            .map(|plan| format::time(plan.created_at))
-            .unwrap_or_default();
+        // When, as "5 min ago" with the full date and time in a tooltip (`formatRelative`).
+        let when = first.as_ref().map(|plan| {
+            let at = plan.created_at;
+            div()
+                .id(SharedString::from(format!(
+                    "history-time-{key}",
+                    key = entry.key
+                )))
+                .flex_shrink_0()
+                .text_xs()
+                .text_color(muted)
+                .child(format::relative(Some(at as f64), format::now_ms()))
+                .tooltip(move |window, cx| {
+                    gpui_kit::component::tooltip::Tooltip::new(format::date_time(at))
+                        .build(window, cx)
+                })
+        });
+        let icon = first.as_ref().map(|plan| plan_icon(plan.kind, cx));
         let steps = open.then(|| self.render_steps(entry, cx));
         let key = entry.key.clone();
         let newest = log.newest_undoable.as_ref() == Some(&key);
@@ -1000,6 +1014,7 @@ impl HistoryPage {
                         .size(px(14.))
                         .text_color(muted),
                     )
+                    .children(icon)
                     .child(
                         div()
                             .flex()
@@ -1015,7 +1030,6 @@ impl HistoryPage {
                             )
                             .child(widgets::caption(
                                 [
-                                    Some(time),
                                     status.map(String::from),
                                     (!detail.is_empty()).then_some(detail),
                                 ]
@@ -1026,6 +1040,7 @@ impl HistoryPage {
                                 cx,
                             )),
                     )
+                    .children(when)
                     .when(undoable, |this| {
                         this.child(
                             Button::new(SharedString::from(format!("history-undo-{key}")))
@@ -1075,6 +1090,33 @@ impl HistoryPage {
             )
             .into_any_element()
     }
+}
+
+/// The 32 px tile that says what kind of change a row is (`PlanIcon`).
+fn plan_icon(kind: PlanKind, cx: &App) -> impl IntoElement + use<> {
+    let icon = match kind {
+        PlanKind::Hold => IconName::Archive,
+        PlanKind::Move => IconName::FolderInput,
+        PlanKind::Rename | PlanKind::FixExtension => IconName::PencilLine,
+        PlanKind::Optimize | PlanKind::Reencode => IconName::ArrowRightLeft,
+        PlanKind::StripAudio => IconName::VolumeX,
+        PlanKind::ResolveDuplicates => IconName::Copy,
+        PlanKind::CleanJunk | PlanKind::RemoveEmptyFolders | PlanKind::Cleanup => {
+            IconName::Sparkles
+        }
+        PlanKind::ShrinkVideos => IconName::Shrink,
+    };
+    let theme = cx.theme();
+    div()
+        .flex_shrink_0()
+        .size_8()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(theme.radius_lg)
+        .bg(theme.muted)
+        .text_color(theme.muted_foreground)
+        .child(Icon::new(icon).size(px(16.)))
 }
 
 /// An item's height until it has been drawn: a heading, an entry closed, or the button.

@@ -1,7 +1,8 @@
 //! A video playing in a version tile, the copy list or the loupe, through `oriel-media`'s player
 //! (libmpv, or AVPlayer where libmpv cannot load), with its sound: playing one is how the owner
-//! checks a soundtrack. One plays at a time; the page drops it when another starts or the set
-//! changes.
+//! checks a soundtrack. One plays at a time; the page drops it when another starts, the set
+//! changes, the loupe flips or closes, or another page shows, and pauses it when Tidy leaves the
+//! screen.
 //!
 //! Over its picture sit Electron Oriel's `VideoControls`: play or pause, the time and the length,
 //! a scrubber and the sound, so versions can be watched and heard side by side to check their
@@ -66,6 +67,17 @@ impl TileVideo {
     pub fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Ok(video) = &mut self.video {
             video.toggle_playback();
+            pump_frames(self, Self::video_of, window, cx);
+            cx.notify();
+        }
+    }
+
+    /// Pauses it, if it plays; the frames keep coming until the pause lands, then stop.
+    pub fn pause(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Ok(video) = &mut self.video
+            && video.is_playing()
+        {
+            video.pause();
             pump_frames(self, Self::video_of, window, cx);
             cx.notify();
         }

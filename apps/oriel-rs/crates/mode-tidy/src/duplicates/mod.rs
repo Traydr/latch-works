@@ -44,7 +44,7 @@ use crate::changes::{PlanRequest, ResolveGroup};
 use crate::format;
 use crate::loaded::Loaded;
 use crate::pages::TidyPage;
-use crate::quick_look::quick_look;
+use crate::quick_look::{QUICK_LOOK_LABEL, quick_look};
 use crate::state::TidyState;
 use crate::thumbs::{self, Thumbs};
 use crate::widgets;
@@ -78,6 +78,22 @@ const LOUPE_LOSS: u32 = 0xfc_d3_4d;
 
 /// Lines above and below the screen whose pictures are decoded ahead of a scroll, but not drawn.
 const NEAR_LINES: usize = 1;
+
+/// The longest side the loupe decodes a picture at for actual size: GPUI's sprite atlas holds no
+/// texture larger (Metal's and Direct3D's 16384), and one larger comes out blank. A panorama or a
+/// scan past it shows at this size instead, and the loupe's actual size means it.
+const MAX_PICTURE_SIDE: u32 = 16_384;
+
+/// The loupe's picture before it is fitted, as decoding draws it: the file's size, or the size it
+/// is held to on its longer side ([`MAX_PICTURE_SIDE`]).
+fn actual_size(file: &FileRow) -> Option<(f32, f32)> {
+    let (w, h) = file
+        .width
+        .zip(file.height)
+        .filter(|(w, h)| *w > 0 && *h > 0)?;
+    let scale = (MAX_PICTURE_SIDE as f32 / w.max(h) as f32).min(1.);
+    Some((w as f32 * scale, h as f32 * scale))
+}
 
 /// A set's sets and the catalog version they were read at.
 type Queue = (DuplicateSetPage, u64);
@@ -283,6 +299,10 @@ impl DuplicatesPage {
     fn sync(&mut self, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
         let visible = state.page() == TidyPage::Duplicates;
+        // Another page on screen: Electron Oriel unmounts Duplicates, and its video with it.
+        if !visible {
+            self.video = None;
+        }
         if visible
             && let Some(scope) = self
                 .state
@@ -746,6 +766,7 @@ impl DuplicatesPage {
         }
         self.focused_row = (self.focus_row() as isize + delta).clamp(0, count - 1) as usize;
         self.keyboard_focus = true;
+        self.keep_video_in_sight();
         cx.notify();
     }
 
@@ -759,13 +780,53 @@ impl DuplicatesPage {
         self.focused_row = index;
         self.zoomed = false;
         self.looking = true;
+        self.keep_video_in_sight();
         cx.notify();
     }
 
+    /// Closing the loupe stops its video, as Electron Oriel's loupe unmounts its own.
     fn close_loupe(&mut self, cx: &mut Context<Self>) {
         self.looking = false;
         self.zoomed = false;
+        self.video = None;
         cx.notify();
+    }
+
+    /// The loupe shows one version: a video of another would play on out of sight, with its
+    /// sound, so a flip or a new focus stops it, as the loupe's `<video key={file.id}>` does in
+    /// Electron Oriel. Dropping the player pauses it at once and gives its engine back.
+    fn keep_video_in_sight(&mut self) {
+        if !self.looking {
+            return;
+        }
+        let shown = self.rows().get(self.focus_row()).map(|row| row.file.id);
+        if self
+            .video
+            .as_ref()
+            .is_some_and(|(id, _)| Some(*id) != shown)
+        {
+            self.video = None;
+        }
+    }
+
+    /// Pauses the video playing, if any, as Electron Oriel pauses a hidden mode's media: Tidy
+    /// left the screen. Coming back, it shows paused where it was.
+    pub fn pause_video(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some((_, video)) = &self.video {
+            video.update(cx, |video, cx| video.pause(window, cx));
+        }
+    }
+
+    /// The file whose video plays, or shows paused, if one does.
+    pub fn video_file(&self) -> Option<FileId> {
+        self.video.as_ref().map(|(id, _)| *id)
+    }
+
+    /// Whether the video the page holds is playing.
+    pub fn is_video_playing(&self, cx: &App) -> bool {
+        self.video
+            .as_ref()
+            .is_some_and(|(_, video)| video.read(cx).is_playing())
     }
 
     /// Plays a version's video in its tile, pausing any other.
@@ -887,6 +948,7 @@ impl DuplicatesPage {
                 if modifiers.shift {
                     self.toggle_keep(digit - 1, cx);
                     self.focused_row = digit - 1;
+                    self.keep_video_in_sight();
                 } else {
                     self.keep_only(digit - 1, window, cx);
                 }
@@ -945,6 +1007,7 @@ impl DuplicatesPage {
                     }
                     let zooming = !self.looking || !self.zoomed;
                     self.looking = true;
+                    self.keep_video_in_sight();
                     self.toggle_zoom(zooming, self.pointer_at, cx);
                 }
             }
@@ -1447,10 +1510,11 @@ impl DuplicatesPage {
         let lanes = facts_of(&file, keeper, layout.video);
         let copy_of = copy_of_number(set, index);
         let notes = tile_notes(set, row, index);
+        // Under the loupe, the loupe draws the video; the tile keeps its picture.
         let playing = self
             .video
             .as_ref()
-            .filter(|(id, _)| *id == file.id)
+            .filter(|(id, _)| *id == file.id && !self.looking)
             .map(|(_, video)| video.clone());
         let video = file.kind == FileKind::Video && file.probe_error.is_none();
         let is_playing = playing
@@ -2065,31 +2129,33 @@ impl DuplicatesPage {
             .filter(|(id, _)| *id == file.id)
             .map(|(_, video)| video.clone());
         let is_video = file.kind == FileKind::Video && file.probe_error.is_none();
-        // The largest version's width, which every version is drawn at when zoomed.
+        // The largest version's width at actual size, which every version is drawn at when
+        // zoomed.
         let widest = rows
             .iter()
-            .filter_map(|row| row.file.width)
-            .max()
-            .unwrap_or(0);
-        let zoomed = self.zoomed && !is_video && widest > 0;
+            .filter_map(|row| actual_size(&row.file))
+            .map(|(w, _)| w)
+            .fold(0., f32::max);
+        let zoomed = self.zoomed && !is_video && widest > 0.;
+        // The shape of the picture drawn at `widest`: its height there.
+        let tall = actual_size(&file).map_or(widest, |(w, h)| widest * h / w);
         let picture: AnyElement = match playing {
             Some(video) => video.into_any_element(),
             None if zoomed => {
-                let longest = file.width.max(file.height).unwrap_or(2048).max(1) as u32;
-                let (w, h) = match (file.width, file.height) {
-                    (Some(w), Some(h)) if w > 0 => {
-                        (widest as f32, widest as f32 * h as f32 / w as f32)
-                    }
-                    _ => (widest as f32, widest as f32),
-                };
+                let longest = actual_size(&file)
+                    .map_or(2048, |(w, h)| w.max(h).round() as u32)
+                    .max(1);
+                // A flip shows the version's fitted picture, already decoded, until its own
+                // at actual size is, rather than a blank stage.
                 div()
-                    .w(px(w))
-                    .h(px(h))
+                    .w(px(widest))
+                    .h(px(tall))
                     .flex_shrink_0()
-                    .child(thumbs::picture(
+                    .child(thumbs::picture_meanwhile(
                         &self.thumbs,
                         &file,
                         longest,
+                        2048,
                         ObjectFit::Fill,
                         cx,
                     ))
@@ -2112,14 +2178,9 @@ impl DuplicatesPage {
         if zoomed && std::mem::take(&mut self.center_zoom) {
             let bounds = self.loupe_scroll.bounds();
             let (bw, bh) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
-            let h = file
-                .width
-                .zip(file.height)
-                .filter(|(w, _)| *w > 0)
-                .map_or(widest as f32, |(w, h)| widest as f32 * h as f32 / w as f32);
             let (x, y) = self.zoom_at.unwrap_or((0.5, 0.5));
-            let left = (x * widest as f32 - bw / 2.).clamp(0., (widest as f32 - bw).max(0.));
-            let top = (y * h - bh / 2.).clamp(0., (h - bh).max(0.));
+            let left = (x * widest - bw / 2.).clamp(0., (widest - bw).max(0.));
+            let top = (y * tall - bh / 2.).clamp(0., (tall - bh).max(0.));
             self.loupe_scroll
                 .set_offset(gpui_kit::point(px(-left), px(-top)));
         }
@@ -2764,13 +2825,9 @@ impl VersionMenu {
             })
         });
         let path = self.file.abs_path.clone();
-        let quick = menu_item(
-            crate::quick_look::QUICK_LOOK_LABEL,
-            Some("cmd-y"),
-            move |window, cx| {
-                quick_look(Path::new(&path), window, cx);
-            },
-        );
+        let quick = menu_item(QUICK_LOOK_LABEL, Some("cmd-y"), move |window, cx| {
+            quick_look(Path::new(&path), window, cx);
+        });
         let path = self.file.abs_path.clone();
         let reveal = menu_item("Show in Finder", Some("shift-cmd-r"), move |_, cx| {
             cx.reveal_path(Path::new(&path));

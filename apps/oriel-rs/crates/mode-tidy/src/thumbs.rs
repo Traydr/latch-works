@@ -352,10 +352,36 @@ pub fn picture(
     fit: gpui_kit::ObjectFit,
     cx: &mut App,
 ) -> gpui_kit::AnyElement {
+    let thumb = thumbs.update(cx, |thumbs, cx| thumbs.get(row, size, cx));
+    draw(thumb, row, fit, cx)
+}
+
+/// [`picture`] at `size`, showing the picture at `meanwhile` (decoded already, or asked for too)
+/// until the one at `size` is decoded: the loupe's actual size, over its fitted picture.
+pub fn picture_meanwhile(
+    thumbs: &gpui_kit::Entity<Thumbs>,
+    row: &FileRow,
+    size: u32,
+    meanwhile: u32,
+    fit: gpui_kit::ObjectFit,
+    cx: &mut App,
+) -> gpui_kit::AnyElement {
+    let thumb = thumbs.update(cx, |thumbs, cx| match thumbs.get(row, size, cx) {
+        Thumb::Pending => thumbs.get(row, meanwhile, cx),
+        thumb => thumb,
+    });
+    draw(thumb, row, fit, cx)
+}
+
+fn draw(
+    thumb: Thumb,
+    row: &FileRow,
+    fit: gpui_kit::ObjectFit,
+    cx: &mut App,
+) -> gpui_kit::AnyElement {
     use gpui_kit::component::{ActiveTheme as _, Icon};
     use gpui_kit::{IntoElement as _, ParentElement as _, Styled as _, StyledImage as _, div, img};
 
-    let thumb = thumbs.update(cx, |thumbs, cx| thumbs.get(row, size, cx));
     let theme = cx.theme();
     match thumb {
         Thumb::Ready(image) => img(image).size_full().object_fit(fit).into_any_element(),

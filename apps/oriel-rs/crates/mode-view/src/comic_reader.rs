@@ -166,6 +166,12 @@ impl ComicReader {
         }));
     }
 
+    /// View left the screen: the top bar stops fading, so the pointer is never hidden over
+    /// another mode. [`Self::reveal_chrome`] starts it again.
+    pub fn stop_fading(&mut self) {
+        self._idle = None;
+    }
+
     pub fn comic(&self) -> &Arc<Comic> {
         &self.comic
     }

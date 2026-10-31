@@ -167,6 +167,57 @@ async fn silent_tracks_are_told_apart_from_sound(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+async fn a_video_never_plays_out_of_sight(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch(cx, "video-sight");
+    add_archive(cx, &session).await;
+    go(cx, &session, TidyPage::Duplicates);
+    settle(cx, &session).await;
+    let index = set_with(cx, &session, "with-sound-small.mp4");
+    click(cx, &session, ("set-row", index));
+    let video = |cx: &mut TestAppContext| {
+        cx.read(|cx| {
+            let duplicates = session.tidy.read(cx).duplicates().read(cx);
+            (duplicates.video_file(), duplicates.is_video_playing(cx))
+        })
+    };
+
+    // Space opens the loupe, and Space again plays the version it shows; → flips to the next,
+    // and the first one's player goes, sound and all.
+    press(cx, &session, "space");
+    press(cx, &session, "space");
+    let (playing, _) = video(cx);
+    assert!(playing.is_some(), "the loupe plays its video");
+    assert_eq!(video(cx), (playing, true));
+    press(cx, &session, "right");
+    assert_eq!(video(cx), (None, false), "a flip stops the video");
+
+    // Played again, it pauses while another mode is on screen, and is still there, paused, when
+    // Tidy comes back.
+    press(cx, &session, "space");
+    let (playing, _) = video(cx);
+    assert!(playing.is_some());
+    assert_eq!(video(cx), (playing, true));
+    session
+        .shell
+        .update(cx, |shell, cx| shell.go(ModeId::View, cx));
+    cx.run_until_parked();
+    assert_eq!(video(cx), (playing, false), "a hidden mode's video pauses");
+    session
+        .shell
+        .update(cx, |shell, cx| shell.go(ModeId::Tidy, cx));
+    cx.run_until_parked();
+    assert_eq!(video(cx).0, playing);
+
+    // Another page, as Duplicates unmounted, drops it.
+    press(cx, &session, "space");
+    go(cx, &session, TidyPage::History);
+    assert_eq!(video(cx), (None, false), "another page stops the video");
+}
+
+#[gpui_kit::test]
 async fn spot_variants_moves_sets_of_variants_out_of_review(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
