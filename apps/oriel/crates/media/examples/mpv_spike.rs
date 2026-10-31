@@ -1176,6 +1176,22 @@ struct Usage {
 }
 
 impl Usage {
+    /// On Windows the decoder runs inside the process (`d3d11va-copy`), so the process's own
+    /// counters are the whole of it.
+    #[cfg(windows)]
+    fn now() -> Self {
+        let (cpu, rss) = windows_usage::cpu_and_working_set();
+        Self {
+            at: Instant::now(),
+            cpu,
+            rss_kb: rss / 1024,
+            decoder_cpu: Duration::ZERO,
+            decoder_rss_kb: 0,
+            decoders: 0,
+        }
+    }
+
+    #[cfg(not(windows))]
     fn now() -> Self {
         let at = Instant::now();
         let output = Command::new("ps")
@@ -1247,14 +1263,74 @@ fn phys_footprint() -> Option<u64> {
     (status == 0).then(|| unsafe { usage.assume_init() }.ri_phys_footprint)
 }
 
-/// Off macOS the spike reads no footprint yet; the Windows agent measures with Task Manager or
-/// `GetProcessMemoryInfo`.
-#[cfg(not(target_os = "macos"))]
+/// On Windows, the process's private bytes, which Task Manager's Commit size column shows.
+#[cfg(windows)]
+fn phys_footprint() -> Option<u64> {
+    Some(windows_usage::private_bytes())
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
 fn phys_footprint() -> Option<u64> {
     None
 }
 
+/// This process's counters on Windows, where there is no `ps`.
+#[cfg(windows)]
+mod windows_usage {
+    use std::time::Duration;
+
+    use windows_sys::Win32::Foundation::FILETIME;
+    use windows_sys::Win32::System::ProcessStatus::{
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
+    };
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+
+    fn counters() -> PROCESS_MEMORY_COUNTERS_EX {
+        // SAFETY: plain data, filled in by the call; `cb` names the larger struct it is.
+        let mut counters: PROCESS_MEMORY_COUNTERS_EX = unsafe { std::mem::zeroed() };
+        counters.cb = size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
+        // SAFETY: the pseudo handle needs no closing, and the struct is as large as `cb` says.
+        unsafe {
+            K32GetProcessMemoryInfo(
+                GetCurrentProcess(),
+                (&raw mut counters).cast::<PROCESS_MEMORY_COUNTERS>(),
+                counters.cb,
+            )
+        };
+        counters
+    }
+
+    /// User and kernel CPU time, and the working set in bytes.
+    pub fn cpu_and_working_set() -> (Duration, u64) {
+        let zero = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+        // SAFETY: four FILETIMEs for the call to fill in, for this process's pseudo handle.
+        unsafe {
+            GetProcessTimes(
+                GetCurrentProcess(),
+                &mut created,
+                &mut exited,
+                &mut kernel,
+                &mut user,
+            )
+        };
+        let ticks =
+            |time: FILETIME| u64::from(time.dwHighDateTime) << 32 | u64::from(time.dwLowDateTime);
+        // FILETIME counts 100 ns.
+        let cpu = Duration::from_nanos((ticks(kernel) + ticks(user)) * 100);
+        (cpu, counters().WorkingSetSize as u64)
+    }
+
+    pub fn private_bytes() -> u64 {
+        counters().PrivateUsage as u64
+    }
+}
+
 /// `ps`'s `[[dd-]hh:]mm:ss.cc`.
+#[cfg(not(windows))]
 fn cpu_time(text: &str) -> Duration {
     let seconds = text
         .rsplit(':')
