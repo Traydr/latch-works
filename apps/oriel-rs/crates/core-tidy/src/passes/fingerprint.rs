@@ -18,8 +18,8 @@ use crate::passes::{
     same_row_params, still_selected,
 };
 use crate::similarity::{
-    Fingerprint, FingerprintError, Hash64, SAMPLE_POSITIONS, animation_frame_times,
-    fingerprint_animation, fingerprint_still, video_frame_hash,
+    Fingerprint, FingerprintError, FrameRun, Hash64, SAMPLE_POSITIONS, animation_frame_times,
+    fingerprint_animation, fingerprint_still, frame_run_hashes, plan_frame_runs, single_frame_runs,
 };
 
 /// How many files of a root the pass would fingerprint now.
@@ -54,13 +54,15 @@ struct Pending {
     kind: FileKind,
     frames: Option<i64>,
     duration_ms: Option<f64>,
+    width: Option<i64>,
+    height: Option<i64>,
 }
 
 pub fn run_fingerprint_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
     let mut params = SqlParams::new().with("version", FINGERPRINT_VERSION);
     let sql = format!(
         "SELECT f.id, f.root_id, r.path AS root_path, f.rel_path, f.size, f.mtime_ms, f.kind,
-        f.frames, f.duration_ms
+        f.frames, f.duration_ms, f.width, f.height
       FROM files f JOIN roots r ON r.id = f.root_id
       WHERE f.fingerprint_version < $version AND {FINGERPRINTABLE_SQL}
         {}
@@ -82,6 +84,8 @@ pub fn run_fingerprint_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
                 kind: kind_column(row, 6)?,
                 frames: row.get(7)?,
                 duration_ms: row.get(8)?,
+                width: row.get(9)?,
+                height: row.get(10)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -106,9 +110,11 @@ pub fn run_fingerprint_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
         Ok(())
     })?;
 
-    // A video's five frames are five ffmpeg runs of one thread each, taken one per core like
-    // stills, so the cores stay busy and a pause or a step aside waits for one frame, never a
-    // whole video in turn. The video is recorded once its last frame is in.
+    // A video's five frames are decoded in as few ffmpeg runs of one thread as give the same
+    // bytes (`plan_frame_runs`): one run for the samples that start from the same keyframe. The
+    // runs are taken one per core like stills, the longest first so that no long video is left
+    // alone at the end, and a pause or a step aside waits for one run, never a whole video in
+    // turn. The video is recorded once its last run is in.
     let ffmpeg = context.media.ffmpeg.as_deref();
     let slots: Vec<VideoSlot<'_>> = videos
         .iter()
@@ -124,40 +130,56 @@ pub fn run_fingerprint_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
     let (Some(ffmpeg), false) = (ffmpeg, slots.is_empty()) else {
         return Ok(());
     };
-    let frames: Vec<(&VideoSlot<'_>, usize)> = slots
-        .iter()
-        .flat_map(|slot| (0..SAMPLE_POSITIONS.len()).map(move |position| (slot, position)))
-        .collect();
-    run_concurrently(&frames, per_core(), progress, |&(slot, position)| {
-        let current = slot.is_current(context)?;
-        if current {
-            let path = to_absolute_path(&slot.pending.root_path, &slot.pending.file.rel_path);
-            let seconds = slot.duration_ms * SAMPLE_POSITIONS[position] / 1000.0;
-            let frame = video_frame_hash(ffmpeg, &path, seconds, progress.cancel_token());
-            if matches!(frame, Err(FingerprintError::Cancelled)) {
-                return Err(Cancelled.into());
-            }
-            slot.frame_in(position, frame);
+    let cancel = progress.cancel_token();
+    run_concurrently(&slots, per_core(), progress, |slot| {
+        if !slot.is_current(context)? {
+            count_done();
+            return Ok(());
         }
-        if slot.last_frame_done() {
-            if current {
-                record_print(context, &slot.pending.file, slot.print())?;
+        let runs = match context.media.ffprobe.as_deref() {
+            Some(ffprobe) => {
+                let path = slot.path();
+                plan_frame_runs(ffprobe, &path, slot.duration_ms, cancel).map_err(|_| Cancelled)?
             }
+            None => single_frame_runs(slot.duration_ms),
+        };
+        slot.plan(runs);
+        Ok(())
+    })?;
+    let mut runs: Vec<(&VideoSlot<'_>, &FrameRun)> = slots
+        .iter()
+        .flat_map(|slot| slot.runs().iter().map(move |run| (slot, run)))
+        .collect();
+    runs.sort_by(|(a, a_run), (b, b_run)| b.cost(b_run).total_cmp(&a.cost(a_run)));
+    run_concurrently(&runs, per_core(), progress, |&(slot, run)| {
+        let path = slot.path();
+        let frames = frame_run_hashes(ffmpeg, &path, run, cancel);
+        if frames
+            .iter()
+            .any(|frame| matches!(frame, Err(FingerprintError::Cancelled)))
+        {
+            return Err(Cancelled.into());
+        }
+        slot.frames_in(run, frames);
+        if slot.last_run_done() {
+            record_print(context, &slot.pending.file, slot.print())?;
             count_done();
         }
         Ok(())
     })
 }
 
-/// A video whose frames the pass decodes one per lane.
+/// A video whose runs the pass decodes one per lane.
 struct VideoSlot<'a> {
     pending: &'a Pending,
     duration_ms: f64,
-    /// Whether the catalog still has the file as selected, without a print: asked once, by
-    /// whichever of its frames starts first.
+    /// Whether the catalog still has the file as selected, without a print: asked once, as the
+    /// pass plans the video's runs.
     current: OnceLock<Result<bool, String>>,
+    /// The ffmpeg runs that make its frames; none when it is no longer current.
+    runs: OnceLock<Vec<FrameRun>>,
     frames: Mutex<Vec<Option<Result<Hash64, FingerprintError>>>>,
-    /// Frames not finished yet.
+    /// Runs not finished yet.
     left: AtomicUsize,
 }
 
@@ -167,9 +189,14 @@ impl<'a> VideoSlot<'a> {
             pending,
             duration_ms,
             current: OnceLock::new(),
+            runs: OnceLock::new(),
             frames: Mutex::new(vec![None; SAMPLE_POSITIONS.len()]),
-            left: AtomicUsize::new(SAMPLE_POSITIONS.len()),
+            left: AtomicUsize::new(0),
         }
+    }
+
+    fn path(&self) -> std::path::PathBuf {
+        to_absolute_path(&self.pending.root_path, &self.pending.file.rel_path)
     }
 
     fn is_current(&self, context: &PassContext<'_>) -> anyhow::Result<bool> {
@@ -181,12 +208,30 @@ impl<'a> VideoSlot<'a> {
             .map_err(|message| anyhow::anyhow!(message))
     }
 
-    fn frame_in(&self, position: usize, frame: Result<Hash64, FingerprintError>) {
-        self.frames.lock().unwrap_or_else(PoisonError::into_inner)[position] = Some(frame);
+    fn plan(&self, runs: Vec<FrameRun>) {
+        self.left.store(runs.len(), Ordering::Release);
+        let _ = self.runs.set(runs);
     }
 
-    /// Counts a frame finished; true for the video's last.
-    fn last_frame_done(&self) -> bool {
+    fn runs(&self) -> &[FrameRun] {
+        self.runs.get().map_or(&[], Vec::as_slice)
+    }
+
+    /// What a run costs to decode, roughly: its seconds of video at the video's size.
+    fn cost(&self, run: &FrameRun) -> f64 {
+        let pixels = (self.pending.width.unwrap_or(0) * self.pending.height.unwrap_or(0)) as f64;
+        run.decoded_seconds() * pixels.max(1.0)
+    }
+
+    fn frames_in(&self, run: &FrameRun, made: Vec<Result<Hash64, FingerprintError>>) {
+        let mut frames = self.frames.lock().unwrap_or_else(PoisonError::into_inner);
+        for (position, frame) in run.positions().zip(made) {
+            frames[position] = Some(frame);
+        }
+    }
+
+    /// Counts a run finished; true for the video's last.
+    fn last_run_done(&self) -> bool {
         self.left.fetch_sub(1, Ordering::AcqRel) == 1
     }
 
@@ -220,7 +265,7 @@ fn fingerprint_picture(
     context: &PassContext<'_>,
     pending: &Pending,
 ) -> Option<Result<Fingerprint, FingerprintError>> {
-    let vips = context.media.vips.as_deref()?;
+    let vips = context.media.loaded_vips()?;
     let path = to_absolute_path(&pending.root_path, &pending.file.rel_path);
     Some(if pending.frames.unwrap_or(1) > 1 {
         vips.probe(&path)

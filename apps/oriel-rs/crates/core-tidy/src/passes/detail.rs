@@ -48,7 +48,7 @@ pub fn run_detail_pass(context: &PassContext<'_>, file_ids: &[FileId]) -> anyhow
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     })?;
-    let Some(vips) = context.media.vips.clone() else {
+    let Some(vips) = context.media.loaded_vips() else {
         return Ok(());
     };
 
@@ -67,7 +67,7 @@ pub fn run_detail_pass(context: &PassContext<'_>, file_ids: &[FileId]) -> anyhow
             }
             // Recorded either way, so a file that fails is not tried again.
             let path = to_absolute_path(root_path, &file.rel_path);
-            let (print, error) = match detail_of_still(&vips, &path) {
+            let (print, error) = match detail_of_still(vips, &path) {
                 Ok(print) => (Some(print), None),
                 Err(error) => (None, Some(error_text(&error.to_string()))),
             };

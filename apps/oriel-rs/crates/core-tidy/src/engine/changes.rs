@@ -1062,7 +1062,7 @@ impl Inner {
     ) -> anyhow::Result<()> {
         match candidate.category {
             OptimizeCategory::StillToAvif => {
-                let vips = self.media.vips.as_deref().context("no libvips")?;
+                let vips = self.media.loaded_vips().context("no libvips")?;
                 encode_still_to_avif(vips, Libavif::get()?, source, out)?;
             }
             OptimizeCategory::AnimationToMp4 => {

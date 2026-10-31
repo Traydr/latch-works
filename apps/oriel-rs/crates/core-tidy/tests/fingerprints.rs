@@ -6,10 +6,11 @@ mod support;
 
 use std::path::Path;
 
+use oriel_core_tidy::media::probe_video;
 use oriel_core_tidy::similarity::{
     Fingerprint, Hash64, Vips, accepts_libvips_version, animation_frame_times, detail_of_still,
-    fingerprint_animation, fingerprint_still, fingerprint_video, is_variant, normalize_detail,
-    perceptual_hash,
+    fingerprint_animation, fingerprint_still, fingerprint_video, frame_run_pixels, is_variant,
+    normalize_detail, perceptual_hash, plan_frame_runs, video_frame_pixels,
 };
 use support::{
     ProbeVector, corpus_dir, from_hex, has_ffmpeg, libvips_path, vectors, write_large_png,
@@ -191,4 +192,53 @@ fn pairs_compare_as_glazier_core_compares_them() {
         );
         assert_eq!(variant, pair.variant, "{} and {}", pair.left, pair.right);
     }
+}
+
+#[test]
+fn a_run_of_samples_makes_the_bytes_their_single_runs_make() {
+    // The pinned ffmpeg and ffprobe, as the fingerprint pass runs them, on the videos of the
+    // archive the differential runs scan and on the corpus clip.
+    let media = oriel_core_tidy::passes::Media::locate();
+    let (Some(ffmpeg), Some(ffprobe)) = (media.ffmpeg.as_deref(), media.ffprobe.as_deref()) else {
+        eprintln!("No pinned ffmpeg and ffprobe; the runs of samples were not checked.");
+        return;
+    };
+    let clips =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../conformance/glazier-core/archive");
+    let mut videos: Vec<_> = std::fs::read_dir(clips.join("clips"))
+        .unwrap()
+        .chain(std::fs::read_dir(clips.join("dup")).unwrap())
+        .map(|entry| entry.unwrap().path())
+        .chain([corpus_dir().join("clip.mp4")])
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|ext| ["mp4", "mov", "webm"].contains(&ext.to_str().unwrap()))
+        })
+        .collect();
+    videos.sort();
+    let mut compared = 0;
+    for path in &videos {
+        let duration_ms = probe_video(ffprobe, path, None)
+            .unwrap()
+            .duration_ms
+            .unwrap();
+        for run in plan_frame_runs(ffprobe, path, duration_ms, None).unwrap() {
+            if run.positions().len() < 2 {
+                continue;
+            }
+            let frames = frame_run_pixels(ffmpeg, path, &run, None)
+                .unwrap()
+                .unwrap_or_else(|| panic!("{}: the run of {:?} failed", path.display(), run));
+            for (frame, &seconds) in frames.iter().zip(run.seconds()) {
+                let single = video_frame_pixels(ffmpeg, path, seconds, None).unwrap();
+                assert_eq!(frame, &single, "{} at {seconds} s", path.display());
+                compared += 1;
+            }
+        }
+    }
+    // Six MP4 and QuickTime clips share one run of five, and one has a keyframe in the middle.
+    assert!(
+        compared >= 30,
+        "only {compared} frames came from runs of samples"
+    );
 }

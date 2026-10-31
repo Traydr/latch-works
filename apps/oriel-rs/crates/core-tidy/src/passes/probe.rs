@@ -77,7 +77,7 @@ pub fn run_probe_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
 fn probe(context: &PassContext<'_>, file: &Pending) -> anyhow::Result<Outcome> {
     let path = to_absolute_path(&file.root_path, &file.rel_path);
     if file.kind == FileKind::Image {
-        let Some(vips) = &context.media.vips else {
+        let Some(vips) = context.media.loaded_vips() else {
             return Ok(Outcome::Skipped);
         };
         return Ok(match vips.probe(&path) {

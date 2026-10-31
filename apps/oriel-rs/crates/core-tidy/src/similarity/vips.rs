@@ -24,7 +24,7 @@ use std::{
     path::{Path, PathBuf},
     ptr::{self, NonNull},
     slice,
-    sync::Mutex,
+    sync::{Mutex, OnceLock},
 };
 
 use libloading::Library;
@@ -135,9 +135,16 @@ struct Api {
 /// libvips' `vips_init` is not safe to race.
 static INIT: Mutex<()> = Mutex::new(());
 
-/// A loaded libvips. It is `Send` and `Sync`, as libvips is: the fingerprint passes run four
-/// files at once.
+/// libvips, from one dylib. It is `Send` and `Sync`, as libvips is: the passes decode a file per
+/// core. One made by [`Vips::deferred`] loads the dylib the first time it is asked for anything,
+/// so an app that never decodes a picture never pays for it (4 MB resident at launch).
 pub struct Vips {
+    path: PathBuf,
+    loaded: OnceLock<Result<Loaded>>,
+}
+
+/// A loaded and started libvips.
+struct Loaded {
     api: Api,
     // Declared last, so the library is unloaded after nothing can call into it.
     _library: Library,
@@ -288,6 +295,89 @@ impl Image<'_> {
 impl Vips {
     /// Loads libvips from `library` (sharp's `libvips-cpp.*.dylib`, say) and starts it.
     pub fn open(library: &Path) -> Result<Vips> {
+        Ok(Vips {
+            path: library.to_path_buf(),
+            loaded: OnceLock::from(Ok(Loaded::open(library)?)),
+        })
+    }
+
+    /// libvips from `library`, loaded and started the first time it is used, and then refused,
+    /// as [`Vips::open_located`] refuses it, if it is not sharp's 8.18 line.
+    pub fn deferred(library: &Path) -> Vips {
+        Vips {
+            path: library.to_path_buf(),
+            loaded: OnceLock::new(),
+        }
+    }
+
+    fn loaded(&self) -> Result<&Loaded> {
+        self.loaded
+            .get_or_init(|| {
+                let loaded = Loaded::open(&self.path).and_then(|loaded| {
+                    let version = loaded.version();
+                    if !accepts_libvips_version(&version) {
+                        return Err(VipsError(format!(
+                            "libvips {version} ({}) is not 8.18.x, so its fingerprints would not \
+                             be glazier-core's",
+                            self.path.display()
+                        )));
+                    }
+                    log::info!("libvips {version} loaded from {}", self.path.display());
+                    Ok(loaded)
+                });
+                if let Err(error) = &loaded {
+                    log::warn!("Tidy runs without libvips: {error}");
+                }
+                loaded
+            })
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+
+    /// Whether libvips loads, loading it now if it has not yet.
+    pub fn loads(&self) -> bool {
+        self.loaded().is_ok()
+    }
+
+    /// The dylib it loads from.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Its version once loaded, without loading it.
+    pub fn loaded_version(&self) -> Option<String> {
+        match self.loaded.get() {
+            Some(Ok(loaded)) => Some(loaded.version()),
+            _ => None,
+        }
+    }
+
+    /// The loaded libvips' version, as `major.minor.micro`; empty when it does not load.
+    pub fn version(&self) -> String {
+        self.loaded()
+            .map_or_else(|_| String::new(), Loaded::version)
+    }
+
+    /// A picture as `size`×`size` grey, the way glazier-core's `greyPixels` reads it: EXIF
+    /// orientation applied and transparency laid on white. `page` picks an animation's frame.
+    pub fn grey_pixels(&self, path: &Path, size: u32, page: Option<u32>) -> Result<Vec<u8>> {
+        self.loaded()?.grey_pixels(path, size, page)
+    }
+
+    /// A still as 8-bit sRGB RGBA, rows top to bottom, as Convert decodes it for the encoder.
+    pub fn rgba_pixels(&self, path: &Path) -> Result<(u32, u32, Vec<u8>)> {
+        self.loaded()?.rgba_pixels(path)
+    }
+
+    /// What the probe pass reads of a picture: its size, frames, alpha and frame delays.
+    pub fn probe(&self, path: &Path) -> Result<ImageProbe> {
+        self.loaded()?.probe(path)
+    }
+}
+
+impl Loaded {
+    /// Loads libvips from `library` and starts it.
+    fn open(library: &Path) -> Result<Loaded> {
         // SAFETY: loading libvips runs its initialisers, which have no preconditions.
         let library = unsafe { Library::new(library) }
             .map_err(|error| VipsError(format!("Could not load libvips: {error}")))?;
@@ -314,14 +404,14 @@ impl Vips {
         }
 
         let api = Api::load(&library)?;
-        Ok(Vips {
+        Ok(Loaded {
             api,
             _library: library,
         })
     }
 
     /// The loaded libvips' version, as `major.minor.micro`.
-    pub fn version(&self) -> String {
+    fn version(&self) -> String {
         // SAFETY: plain calls.
         let part = |flag| unsafe { (self.api.version)(flag) };
         format!("{}.{}.{}", part(0), part(1), part(2))
@@ -329,7 +419,7 @@ impl Vips {
 
     /// A picture as `size`×`size` grey, the way glazier-core's `greyPixels` reads it: EXIF
     /// orientation applied and transparency laid on white. `page` picks an animation's frame.
-    pub fn grey_pixels(&self, path: &Path, size: u32, page: Option<u32>) -> Result<Vec<u8>> {
+    fn grey_pixels(&self, path: &Path, size: u32, page: Option<u32>) -> Result<Vec<u8>> {
         let size = c_int::try_from(size).map_err(|_| VipsError("Too large a size.".into()))?;
         let page = match page {
             Some(page) => c_int::try_from(page).map_err(|_| VipsError("No such page.".into()))?,
@@ -600,7 +690,7 @@ impl Vips {
     /// In sharp's pipeline order: the first page, an embedded ICC profile (or CMYK) to sRGB, the
     /// EXIF turn and mirror, an alpha band if there is none, the 16-bit cast and the conversion
     /// to sRGB, then 8 bits. Returns the width, the height and the samples.
-    pub fn rgba_pixels(&self, path: &Path) -> Result<(u32, u32, Vec<u8>)> {
+    fn rgba_pixels(&self, path: &Path) -> Result<(u32, u32, Vec<u8>)> {
         let file = file_name(path)?;
         let api = &self.api;
         let enums = &api.enums;
@@ -732,7 +822,7 @@ impl Vips {
 
     /// Reads an image's header without decoding its pixels, as glazier-core's `probeImage` does
     /// through sharp's `metadata()`, which opens the file as the pipeline does.
-    pub fn probe(&self, path: &Path) -> Result<ImageProbe> {
+    fn probe(&self, path: &Path) -> Result<ImageProbe> {
         let file = file_name(path)?;
         let (image, _) = self.open_input(&file, -1)?;
         let (width, height) = (image.width(), image.height());
@@ -1225,6 +1315,27 @@ impl Vips {
             path.display()
         );
         Ok((vips, path, source))
+    }
+
+    /// Finds libvips as [`Vips::open_located`] does, to load on first use: a dylib whose name
+    /// gives a version outside sharp's 8.18 line is refused now, any other once it is loaded.
+    pub fn locate_deferred() -> Result<(Vips, PathBuf, LibvipsSource)> {
+        let (path, source) = locate_libvips().map_err(VipsError)?;
+        let named = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_prefix("libvips-cpp.")?.strip_suffix(".dylib"))
+            .filter(|version| version.split('.').all(|part| part.parse::<u32>().is_ok()));
+        if let Some(version) = named
+            && !accepts_libvips_version(version)
+        {
+            return Err(VipsError(format!(
+                "libvips {version} from {source} ({}) is not 8.18.x, so its fingerprints would \
+                 not be glazier-core's",
+                path.display()
+            )));
+        }
+        Ok((Vips::deferred(&path), path, source))
     }
 }
 

@@ -138,10 +138,22 @@ pub struct Media {
     pub ffprobe: Option<PathBuf>,
 }
 
+impl Media {
+    /// libvips, loaded now if it was found but not loaded yet; `None` when it is missing or
+    /// will not load, so the passes leave pictures for later as when it was never found.
+    pub fn loaded_vips(&self) -> Option<&Vips> {
+        self.vips.as_deref().filter(|vips| vips.loads())
+    }
+}
+
 impl std::fmt::Debug for Media {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let vips = self.vips.as_ref().map(|vips| {
+            vips.loaded_version()
+                .unwrap_or_else(|| format!("{} (not loaded yet)", vips.path().display()))
+        });
         f.debug_struct("Media")
-            .field("vips", &self.vips.as_ref().map(|vips| vips.version()))
+            .field("vips", &vips)
             .field("ffmpeg", &self.ffmpeg)
             .field("ffprobe", &self.ffprobe)
             .finish()

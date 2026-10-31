@@ -128,6 +128,24 @@ struct ClusterCache {
     clusters: Arc<Vec<SimilarCluster>>,
 }
 
+/// Where the catalog stands: two equal states have no change to the catalog between them. Every
+/// write goes through the catalog's one connection, which counts the rows it changes, and SQLite
+/// says when another connection wrote; the engine's own counters go with them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CatalogState {
+    changes: u64,
+    data_version: i64,
+    generation: u64,
+    fingerprints: u64,
+}
+
+/// A result worked out from the catalog alone, kept with the state the catalog was in once it
+/// was made (its own writes included), for as long as the catalog stays in that state.
+struct Kept<T> {
+    state: CatalogState,
+    value: T,
+}
+
 struct Inner {
     catalog: Catalog,
     data: DataRoot,
@@ -152,6 +170,14 @@ struct Inner {
     capabilities: OnceLock<crate::contract::EncoderCapabilities>,
     /// Convert's estimates per root and category, kept while the category holds the same files.
     estimates: Mutex<HashMap<(RootId, crate::contract::OptimizeCategory), changes::CachedEstimate>>,
+    /// What finding Convert's candidates gives, per root: Overview's numbers, Convert's summary,
+    /// and that the Library's convertible files are recorded. Finding them took 60 to 110 ms on
+    /// the 21k fixture, asked for again and again while nothing changed. Any change to the
+    /// catalog, an analysis writing its prints or a change applied, makes them be found again.
+    /// The candidates themselves, 10,000 files' rows there, are not kept.
+    overviews: Mutex<HashMap<RootId, Kept<Tidy>>>,
+    summaries: Mutex<HashMap<RootId, Kept<OptimizeSummary>>>,
+    convertible: Mutex<HashMap<RootId, Kept<()>>>,
 }
 
 /// Tidy's engine. Clones share one catalog and one queue of work.
@@ -172,9 +198,10 @@ impl std::fmt::Debug for TidyEngine {
 impl Media {
     /// The app's own tools: libvips by [`crate::similarity::locate_libvips`] (8.18.x only), and
     /// the pinned ffmpeg and ffprobe by [`MediaTools::locate`]. One that cannot be found is left
-    /// out, with a warning, and the passes that need it wait.
+    /// out, with a warning, and the passes that need it wait. libvips is loaded the first time
+    /// something decodes a picture (a scan, an analysis, a change), not as Tidy opens.
     pub fn locate() -> Media {
-        let vips = match Vips::open_located() {
+        let vips = match Vips::locate_deferred() {
             Ok((vips, _, _)) => Some(Arc::new(vips)),
             Err(error) => {
                 log::warn!("Tidy runs without libvips: {error}");
@@ -264,6 +291,9 @@ impl TidyEngine {
                 places: crate::plans::holding::HoldingPlaces::new(data_dir),
                 capabilities: OnceLock::new(),
                 estimates: Mutex::new(HashMap::new()),
+                overviews: Mutex::new(HashMap::new()),
+                summaries: Mutex::new(HashMap::new()),
+                convertible: Mutex::new(HashMap::new()),
             }),
         })
     }
@@ -510,9 +540,11 @@ impl TidyEngine {
         root_id: RootId,
     ) -> impl Future<Output = anyhow::Result<OptimizeSummary>> + Send + 'static {
         self.query(move |inner, connection| {
-            Ok(summarize_candidates(
-                &inner.candidates(connection, root_id)?,
-            ))
+            inner.kept(&inner.summaries, root_id, connection, |connection| {
+                Ok(summarize_candidates(
+                    &inner.candidates(connection, root_id)?,
+                ))
+            })
         })
     }
 
@@ -928,6 +960,51 @@ impl Inner {
         })
     }
 
+    /// Where the catalog stands now, for [`Kept`] results.
+    fn catalog_state(&self, connection: &Connection) -> anyhow::Result<CatalogState> {
+        Ok(CatalogState {
+            changes: connection.total_changes(),
+            data_version: connection.query_row("PRAGMA data_version", [], |row| row.get(0))?,
+            generation: self.generation.load(Ordering::Acquire),
+            fingerprints: self.fingerprints.load(Ordering::Acquire),
+        })
+    }
+
+    /// The result `make` gives for `key`, made again only when the catalog changed since it was
+    /// last made. One made while the engine's counters moved is not kept.
+    fn kept<K: std::hash::Hash + Eq, T: Clone>(
+        &self,
+        cache: &Mutex<HashMap<K, Kept<T>>>,
+        key: K,
+        connection: &mut Connection,
+        make: impl FnOnce(&mut Connection) -> anyhow::Result<T>,
+    ) -> anyhow::Result<T> {
+        let before = self.catalog_state(connection)?;
+        if let Some(kept) = cache
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&key)
+            .filter(|kept| kept.state == before)
+        {
+            return Ok(kept.value.clone());
+        }
+        let value = make(connection)?;
+        let after = self.catalog_state(connection)?;
+        if (after.data_version, after.generation, after.fingerprints)
+            == (before.data_version, before.generation, before.fingerprints)
+        {
+            cache.lock().unwrap_or_else(PoisonError::into_inner).insert(
+                key,
+                Kept {
+                    state: after,
+                    value: value.clone(),
+                },
+            );
+        }
+        Ok(value)
+    }
+
+    /// Convert's candidates under a root, recorded as the Library's convertible files.
     fn candidates(
         &self,
         connection: &mut Connection,
@@ -937,6 +1014,12 @@ impl Inner {
         let scan = find_optimize_candidates(connection, root_id, &holds)?;
         let ids: Vec<FileId> = scan.candidates.iter().map(|c| c.record.id).collect();
         record_convertible(connection, root_id, &ids)?;
+        // The Library's convertible files are these until the catalog changes.
+        let state = self.catalog_state(connection)?;
+        self.convertible
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(root_id, Kept { state, value: () });
         Ok(scan)
     }
 
@@ -956,12 +1039,20 @@ impl Inner {
             None => list_roots(connection)?.iter().map(|root| root.id).collect(),
         };
         for root_id in roots {
-            self.candidates(connection, root_id)?;
+            self.kept(&self.convertible, root_id, connection, |connection| {
+                self.candidates(connection, root_id).map(drop)
+            })?;
         }
         Ok(())
     }
 
     fn overview(&self, connection: &mut Connection, root_id: RootId) -> anyhow::Result<Tidy> {
+        self.kept(&self.overviews, root_id, connection, |connection| {
+            self.make_overview(connection, root_id)
+        })
+    }
+
+    fn make_overview(&self, connection: &mut Connection, root_id: RootId) -> anyhow::Result<Tidy> {
         let settings = read_settings(connection)?;
         let sets = self.duplicate_sets(connection, Some(root_id), settings.similarity)?;
         let open = open_sets(&sets, &Dismissals::load(connection)?, DuplicateScope::All);

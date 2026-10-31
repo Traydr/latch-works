@@ -16,7 +16,7 @@ use super::{
 pub const SAMPLE_POSITIONS: [f64; 5] = [0.1, 0.3, 0.5, 0.7, 0.9];
 
 /// How long ffmpeg may take to hand back one frame, as glazier-core allows.
-const FRAME_TIMEOUT: Duration = Duration::from_secs(60);
+pub(super) const FRAME_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// A still's fingerprint, or five frames' for anything that moves.
 #[derive(Clone, Debug, PartialEq)]
@@ -188,6 +188,16 @@ pub fn video_frame_hash(
     seconds: f64,
     cancel: Option<&CancelToken>,
 ) -> Result<Hash64, FingerprintError> {
+    hash_of(&video_frame_pixels(ffmpeg, path, seconds, cancel)?)
+}
+
+/// The 32×32 grey pixels [`video_frame_hash`] hashes, from one ffmpeg run for this frame.
+pub fn video_frame_pixels(
+    ffmpeg: &Path,
+    path: &Path,
+    seconds: f64,
+    cancel: Option<&CancelToken>,
+) -> Result<Vec<u8>, FingerprintError> {
     let expected = PHASH_INPUT_SIZE * PHASH_INPUT_SIZE;
     let mut run = ToolRun::new(ffmpeg, FRAME_TIMEOUT)
         .args([
@@ -226,10 +236,12 @@ pub fn video_frame_hash(
             last
         }));
     }
-    hash_of(&output.stdout[..expected])
+    let mut pixels = output.stdout;
+    pixels.truncate(expected);
+    Ok(pixels)
 }
 
-fn hash_of(pixels: &[u8]) -> Result<Hash64, FingerprintError> {
+pub(super) fn hash_of(pixels: &[u8]) -> Result<Hash64, FingerprintError> {
     perceptual_hash(pixels).ok_or_else(|| {
         FingerprintError::Decode(VipsError(format!(
             "A pHash needs 32×32 grey pixels, not {} bytes.",
@@ -274,7 +286,7 @@ fn js_number(text: &str) -> f64 {
 
 /// `value.toFixed(3)` for a non-negative value: the exact binary value rounded to three decimals,
 /// a tie going up, where Rust's formatting would round a tie to even.
-fn to_fixed_3(value: f64) -> String {
+pub(super) fn to_fixed_3(value: f64) -> String {
     // Eighty decimals hold every bit of any value from 2⁻²⁷ up, and anything smaller is 0.000.
     let exact = format!("{value:.80}");
     let (whole, fraction) = exact.split_once('.').unwrap_or((&exact, ""));

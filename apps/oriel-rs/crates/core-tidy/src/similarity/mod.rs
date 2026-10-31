@@ -8,6 +8,7 @@ pub mod detail;
 pub mod fingerprint;
 pub mod group;
 pub mod phash;
+pub mod video_frames;
 pub mod vips;
 
 pub use detail::{
@@ -17,12 +18,17 @@ pub use detail::{
 pub use fingerprint::{
     Fingerprint, FingerprintError, SAMPLE_POSITIONS, animation_frame_times, fingerprint_animation,
     fingerprint_still, fingerprint_video, fingerprint_video_with, sampled_pages, video_frame_hash,
+    video_frame_pixels,
 };
 pub use group::{
     ClusterKind, DisjointSets, FingerprintedFile, SimilarCluster, group_similar_files,
     motion_threshold, still_threshold,
 };
 pub use phash::{Hash64, PHASH_INPUT_SIZE, perceptual_hash};
+pub use video_frames::{
+    FrameRun, fingerprint_video_in_runs, frame_run_hashes, frame_run_pixels, plan_frame_runs,
+    single_frame_runs,
+};
 pub use vips::{
     ImageProbe, LIBVIPS_VARIABLE, LibvipsSource, Vips, VipsError, accepts_libvips_version,
     locate_libvips,

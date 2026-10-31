@@ -676,8 +676,7 @@ fn execute_step(
             let expected = source_facts(deps, step)?;
             let vips = deps
                 .media
-                .vips
-                .as_deref()
+                .loaded_vips()
                 .context("libvips is unavailable, so stills cannot be converted.")?;
             let libavif = deps.libavif.clone().map_err(|error| anyhow!(error))?;
             convert(
