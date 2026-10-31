@@ -82,12 +82,7 @@ impl KnownFolder {
 
     /// Which modes use the folder, as "In View and Sync" (`usedBy`).
     pub fn describe_use(&self) -> String {
-        let labels: Vec<&str> = self.modes.iter().map(|mode| mode.label()).collect();
-        match labels.as_slice() {
-            [] => "From the old apps".into(),
-            [only] => format!("In {only}"),
-            [rest @ .., last] => format!("In {} and {last}", rest.join(", ")),
-        }
+        describe_use(&self.modes)
     }
 
     /// Every folder the modes work on, with the modes that use each, in the order first found
@@ -95,18 +90,45 @@ impl KnownFolder {
     /// modes use is one entry; paths count as the same once `.` and `..` are resolved, so callers
     /// resolve symlinks first if two spellings should meet.
     pub fn collect<'a>(sources: impl IntoIterator<Item = (ModeId, &'a [PathBuf])>) -> Vec<Self> {
+        Self::collect_with(sources, &[])
+    }
+
+    /// [`Self::collect`], then the folders the import found in Electron Oriel that no mode uses
+    /// yet, with no modes (`migrated`), so every mode offers them too.
+    pub fn collect_with<'a>(
+        sources: impl IntoIterator<Item = (ModeId, &'a [PathBuf])>,
+        found: &[PathBuf],
+    ) -> Vec<Self> {
         let mut known: Vec<Self> = Vec::new();
+        let sources = sources
+            .into_iter()
+            .map(|(mode, folders)| (Some(mode), folders))
+            .chain([(None, found)]);
         for (mode, folders) in sources {
             for folder in folders {
                 let path = normalize(folder);
                 match known.iter_mut().find(|known| known.path == path) {
-                    Some(known) if !known.modes.contains(&mode) => known.modes.push(mode),
-                    Some(_) => {}
-                    None => known.push(Self::new(path, [mode])),
+                    Some(known) => {
+                        if let Some(mode) = mode.filter(|mode| !known.modes.contains(mode)) {
+                            known.modes.push(mode);
+                        }
+                    }
+                    None => known.push(Self::new(path, mode)),
                 }
             }
         }
         known
+    }
+}
+
+/// Which of the modes use a folder, as "In View and Sync" (`usedBy`); a folder only the import
+/// found is "From the old apps".
+pub fn describe_use(modes: &[ModeId]) -> String {
+    let labels: Vec<&str> = modes.iter().map(|mode| mode.label()).collect();
+    match labels.as_slice() {
+        [] => "From the old apps".into(),
+        [only] => format!("In {only}"),
+        [rest @ .., last] => format!("In {} and {last}", rest.join(", ")),
     }
 }
 
@@ -341,6 +363,21 @@ mod tests {
                 KnownFolder::new("/a/other", [ModeId::Tidy, ModeId::Sync]),
             ]
         );
+    }
+
+    #[test]
+    fn the_folders_the_import_found_come_last_with_no_modes() {
+        let tidy = [PathBuf::from("/a/archive")];
+        let found = [PathBuf::from("/a/archive"), PathBuf::from("/a/old")];
+        let known = KnownFolder::collect_with([(ModeId::Tidy, &tidy[..])], &found);
+        assert_eq!(
+            known,
+            [
+                KnownFolder::new("/a/archive", [ModeId::Tidy]),
+                KnownFolder::new("/a/old", []),
+            ]
+        );
+        assert_eq!(known[1].describe_use(), "From the old apps");
     }
 
     #[test]

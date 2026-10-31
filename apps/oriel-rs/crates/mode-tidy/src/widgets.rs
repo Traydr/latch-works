@@ -1,12 +1,10 @@
 //! The small parts Tidy's pages share, after the `lw-*` classes Electron Oriel's pages use: the
-//! empty state, the card, the caption, a row's icon tile, the key hint inside a button, and the
-//! progress of a running change with its Stop.
+//! empty state, the card, the caption, a row's icon tile, the key hint inside a button, and a
+//! page's main button while its change runs or waits.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::progress::Progress;
-use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon};
 use gpui_kit::{
     AnyElement, App, Div, ElementId, FontWeight, InteractiveElement as _, IntoElement as _,
     ParentElement as _, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
@@ -145,75 +143,17 @@ pub fn primary_action(
     Button::new(id).primary().label(label).child(key_hint(keys))
 }
 
-/// A running change's Pause, or Resume once paused, for [`run_progress`].
-pub type OnPause = Box<dyn Fn(&gpui_kit::ClickEvent, &mut gpui_kit::Window, &mut App)>;
-
-/// What a running change shows where its button was (`RunProgress`): what it does, how far it
-/// has got, Pause where the page allows it (`pause`, and whether it is paused now), and Stop.
-pub fn run_progress(
-    id: &'static str,
-    label: SharedString,
-    done: u64,
-    total: u64,
-    pause: Option<(bool, OnPause)>,
-    on_stop: impl Fn(&gpui_kit::ClickEvent, &mut gpui_kit::Window, &mut App) + 'static,
-    cx: &App,
-) -> Div {
-    let counted = if total > 0 {
-        format!(
-            "{label} {} of {}",
-            format::count(done as i64),
-            format::count(total as i64)
-        )
-    } else {
-        label.to_string()
-    };
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_2()
-        .child(Spinner::new().small())
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .w(px(180.))
-                .child(div().text_xs().truncate().child(counted))
-                .child(
-                    Progress::new(SharedString::from(format!("{id}-progress")))
-                        .value(if total > 0 {
-                            done.min(total) as f32 / total as f32 * 100.
-                        } else {
-                            0.
-                        })
-                        .loading(total == 0),
-                ),
-        )
-        .children(pause.map(|(paused, on_pause)| {
-            Button::new(SharedString::from(format!("{id}-pause")))
-                .ghost()
-                .small()
-                .icon(Icon::new(if paused {
-                    IconName::Play
-                } else {
-                    IconName::Pause
-                }))
-                .accessibility_label(if paused { "Resume" } else { "Pause" })
-                .tooltip(if paused { "Resume" } else { "Pause" })
-                .on_click(on_pause)
-        }))
-        .child(
-            Button::new(SharedString::from(format!("{id}-stop")))
-                .ghost()
-                .small()
-                .icon(Icon::new(IconName::Square))
-                .accessibility_label("Stop")
-                .tooltip("Stop (finished steps stay done and can be undone)")
-                .on_click(on_stop),
-        )
-        .text_color(cx.theme().foreground)
+/// A page's main button while the change it started runs or waits in the queue: still in its
+/// place, disabled, with a spinner while it runs and "Queued" while it waits. How far it has got,
+/// with its Pause and Stop, is in the activity panel at the window's bottom right. Apply it after
+/// the button's own `disabled`.
+pub fn while_changing(button: Button, status: Option<crate::actions::ChangeStatus>) -> Button {
+    use crate::actions::ChangeStatus;
+    match status {
+        None => button,
+        Some(ChangeStatus::Running) => button.loading(true).disabled(true),
+        Some(ChangeStatus::Queued) => button.label("Queued").disabled(true),
+    }
 }
 
 /// A file as a tile (`MediaTile`): its picture in its own shape on a letterbox, then its name,
@@ -311,39 +251,6 @@ pub fn repeated_names(
         .filter(|row| !seen.insert(row.name.as_str()))
         .map(|row| row.name.clone())
         .collect()
-}
-
-/// The running change a page started, shown where its main button was.
-pub fn change_progress(
-    state: &gpui_kit::Entity<crate::state::TidyState>,
-    source: &str,
-    id: &'static str,
-    cx: &App,
-) -> Option<AnyElement> {
-    let change = state.read(cx).change_for(source)?;
-    let progress = change.progress(cx);
-    let label = if progress.phase().is_empty() {
-        change.name(cx)
-    } else {
-        progress.phase().clone()
-    };
-    let stopper = state.clone();
-    let pauser = state.clone();
-    let pause: OnPause = Box::new(move |_, _, cx| {
-        pauser.update(cx, |state, cx| state.toggle_change_pause(cx));
-    });
-    Some(
-        run_progress(
-            id,
-            label,
-            progress.done(),
-            progress.total(),
-            Some((progress.is_paused(), pause)),
-            move |_, _, cx| stopper.update(cx, |state, cx| state.stop_change(cx)),
-            cx,
-        )
-        .into_any_element(),
-    )
 }
 
 /// The reasons files stay as they are, collapsed under their count (`LeftList`).

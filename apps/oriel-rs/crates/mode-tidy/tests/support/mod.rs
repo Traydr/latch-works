@@ -18,7 +18,7 @@ use oriel_core_paths::DataRoot;
 use oriel_core_tidy::passes::Media;
 use oriel_mode_tidy::changes::{Changes, EngineChanges, NotYet};
 use oriel_mode_tidy::{TidyMode, TidyPage, TidyState};
-use oriel_ui::{ModeId, ShellState};
+use oriel_ui::{ActivityIndicator, ModeId, ShellState};
 
 /// The changes the read-side cases run with: "not available yet", as the app has them until the
 /// executor is trusted with files.
@@ -92,22 +92,29 @@ pub fn media_ready() -> bool {
 }
 
 /// Tidy alone in a window, with its Settings section drawn in place of the page while
-/// `settings` is set, as the shell draws it.
+/// `settings` is set, and the activity indicator over it at the bottom right, as the shell draws
+/// them.
 pub struct Harness {
     pub tidy: Entity<TidyMode>,
+    pub shell: Entity<ShellState>,
     pub settings: bool,
 }
 
 impl Render for Harness {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.settings {
+        let content = if self.settings {
             let section = self
                 .tidy
                 .update(cx, |tidy, cx| tidy.settings_section(window, cx));
             div().size_full().child(section).into_any_element()
         } else {
             self.tidy.clone().into_any_element()
-        }
+        };
+        div()
+            .relative()
+            .size_full()
+            .child(content)
+            .child(ActivityIndicator::new(self.shell.read(cx).jobs()))
     }
 }
 
@@ -154,13 +161,18 @@ pub fn launch_in(cx: &mut TestAppContext, root: PathBuf, changes: Changes) -> Se
             },
             cx,
             |window, cx| {
-                let shell = cx.new(|_| ShellState::new(ModeId::Tidy, false));
+                let shell = cx.new(|cx| ShellState::new(ModeId::Tidy, false, cx));
                 let tidy =
                     cx.new(|cx| TidyMode::with_data(&shell, &data, changes.clone(), window, cx));
-                parts = Some((tidy.clone(), shell));
-                cx.new(|_| Harness {
-                    tidy,
-                    settings: false,
+                parts = Some((tidy.clone(), shell.clone()));
+                let jobs = shell.read(cx).jobs().clone();
+                cx.new(|cx| {
+                    cx.observe(&jobs, |_, _, cx| cx.notify()).detach();
+                    Harness {
+                        tidy,
+                        shell,
+                        settings: false,
+                    }
                 })
             },
         )

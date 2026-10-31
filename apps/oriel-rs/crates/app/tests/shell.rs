@@ -2,8 +2,8 @@
 //! starts in View and switches modes from the switcher and the menu, reopens in the mode it
 //! showed last, keeps View's folder while another mode shows, and has one Settings page at the
 //! section of the mode on screen. Then what the shell adds around them that is worth pinning:
-//! the window's state round trip, quitting while work runs, the activity marks, and the names
-//! VoiceOver reads.
+//! the window's state round trip, quitting while work runs, the activity marks, every mode's jobs
+//! in one place, and the names VoiceOver reads.
 
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
@@ -21,7 +21,10 @@ use oriel_media::still::{Still, WebpSettings};
 use oriel_mode_tidy::TidyPage;
 use oriel_rs::quit::QuitPlatform;
 use oriel_rs::shell::Shell;
-use oriel_ui::{LocalStorage, ModeActivity, ModeId, Toast, ToastExt as _};
+use oriel_ui::{
+    ActivityJob, JobCommand, JobControl, JobState, LocalStorage, ModeActivity, ModeId, Toast,
+    ToastExt as _,
+};
 
 /// A folder of its own under the temp folder, emptied first.
 fn scratch(test: &str) -> PathBuf {
@@ -652,6 +655,106 @@ fn the_switcher_shows_the_work_of_modes_not_on_screen(cx: &mut TestAppContext) {
     press(cx, handle, "cmd-2");
     assert!(!is_drawn(cx, handle, "mode-Tidy-activity"));
     assert!(is_drawn(cx, handle, "mode-View-activity"));
+}
+
+#[gpui_kit::test]
+fn every_modes_jobs_show_in_one_place_at_the_bottom_right(cx: &mut TestAppContext) {
+    let data = DataRoot::at(scratch("jobs").join("data")).unwrap();
+    start(cx, &data);
+    let opened = open_shell(cx, &data);
+    let handle = opened.handle;
+    let jobs = cx.update(|cx| opened.shell.read(cx).state().read(cx).jobs().clone());
+    let commands = Rc::new(std::cell::RefCell::new(Vec::new()));
+    let _listening = cx.update(|cx| {
+        let commands = commands.clone();
+        cx.subscribe(&jobs, move |_, command: &JobCommand, _| {
+            commands.borrow_mut().push((
+                command.mode(),
+                command.key().to_owned(),
+                command.control(),
+            ));
+        })
+    });
+    let publish = |cx: &mut TestAppContext, mode, list: Vec<ActivityJob>| {
+        jobs.update(cx, |jobs, cx| jobs.set_jobs(mode, list, cx));
+        frame(cx, handle);
+    };
+    // Nothing runs, so nothing shows.
+    assert!(!is_drawn(cx, handle, "activity-indicator"));
+
+    publish(
+        cx,
+        ModeId::View,
+        vec![ActivityJob::new("scan", "Scanning Pictures").pausable(true)],
+    );
+    publish(
+        cx,
+        ModeId::Sync,
+        vec![
+            ActivityJob::new("run", "Pushing")
+                .progress(0.4)
+                .detail("1 GB of 2.5 GB · 0:30 left")
+                .stoppable(true),
+        ],
+    );
+    publish(
+        cx,
+        ModeId::Tidy,
+        vec![
+            ActivityJob::new("queued-0", "Clean up")
+                .state(JobState::Queued)
+                .stoppable(true),
+        ],
+    );
+    // Collapsed: the work that runs first, and how much more runs and waits.
+    assert_eq!(
+        label_of(cx, handle, "activity-indicator").as_deref(),
+        Some("View · Scanning Pictures · 1 more running · 1 queued")
+    );
+    assert_eq!(
+        label_of(cx, handle, "activity-indicator-queued").as_deref(),
+        Some("1 queued")
+    );
+    // In every mode, and over Settings too.
+    press(cx, handle, "cmd-3");
+    assert!(is_drawn(cx, handle, "activity-indicator"));
+    press(cx, handle, "cmd-,");
+    assert!(is_drawn(cx, handle, "activity-indicator"));
+    press(cx, handle, "escape");
+
+    // Open: every job, running first, each with the controls it takes.
+    click(cx, handle, "activity-indicator");
+    assert!(is_drawn(cx, handle, "activity-panel"));
+    assert_eq!(
+        label_of(cx, handle, "activity-sync-run-state").as_deref(),
+        Some("1 GB of 2.5 GB · 0:30 left")
+    );
+    assert_eq!(
+        label_of(cx, handle, "activity-tidy-queued-0-state").as_deref(),
+        Some("Queued")
+    );
+    assert!(!is_drawn(cx, handle, "activity-sync-run-pause"));
+    click(cx, handle, "activity-view-scan-pause");
+    click(cx, handle, "activity-sync-run-stop");
+    click(cx, handle, "activity-tidy-queued-0-stop");
+    assert_eq!(
+        *commands.borrow(),
+        [
+            (ModeId::View, "scan".to_owned(), JobControl::Pause),
+            (ModeId::Sync, "run".to_owned(), JobControl::Stop),
+            (ModeId::Tidy, "queued-0".to_owned(), JobControl::Stop),
+        ]
+    );
+
+    // Once every mode is idle, nothing shows, and the next work starts collapsed.
+    for mode in ModeId::ALL {
+        publish(cx, mode, Vec::new());
+    }
+    assert!(!is_drawn(cx, handle, "activity-panel"));
+    assert!(!is_drawn(cx, handle, "activity-indicator"));
+    publish(cx, ModeId::Sync, vec![ActivityJob::new("run", "Planning")]);
+    assert!(is_drawn(cx, handle, "activity-indicator"));
+    assert!(!is_drawn(cx, handle, "activity-panel"));
 }
 
 #[gpui_kit::test]

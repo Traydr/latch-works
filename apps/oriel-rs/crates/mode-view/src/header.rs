@@ -1,19 +1,16 @@
-//! View's top bar, the one Tidy and Sync have (`GalleryHeader.tsx`): the folder's name and where
-//! it is ("parent / folder", cut from the start when long so the folder's name stays); then the
-//! scan's status, what the folder holds, the selection's place, and the folder steps (Parent,
-//! Prev Folder, Next Folder).
-
-use std::path::Path;
+//! View's top bar, the one Tidy and Sync have (`GalleryHeader.tsx`): the folder's name, once (the
+//! owner asked for it alone, rather than beside a "parent / folder" line that named it again);
+//! then the scan's status once it is done, what the folder holds, the selection's place, and the
+//! folder steps (Parent, Prev Folder, Next Folder) at the toolbar's normal size.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Icon, Sizable as _,
+    ActiveTheme as _, Disableable as _, Icon,
     button::{Button, ButtonVariants as _},
 };
 use gpui_kit::{
     App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div,
-    prelude::FluentBuilder as _, px,
+    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div, px,
 };
 use oriel_ui::TopBar;
 
@@ -41,16 +38,6 @@ fn pill(id: &'static str, text: SharedString, cx: &App) -> impl IntoElement {
         .child(text)
 }
 
-/// `currentFolderPathLabel`: the folder's parent and its name, "Pictures / 2024", or the name
-/// alone for a folder with no parent.
-pub(crate) fn folder_caption(folder: &Path) -> String {
-    let name = display_name(folder);
-    match folder.parent() {
-        Some(parent) => format!("{} / {name}", display_name(parent)),
-        None => name,
-    }
-}
-
 impl ViewMode {
     pub(crate) fn render_top_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let catalog = self.catalog.read(cx);
@@ -61,18 +48,15 @@ impl ViewMode {
             .map(display_name)
             .unwrap_or_else(|| "View".to_string());
         let mut bar = TopBar::new(&self.shell, title);
-        if let Some(root) = root.as_deref() {
-            bar = bar.meta(folder_caption(root));
-        }
 
-        // The scan's status: while it runs, after an error, and for a while after it is done.
+        // The scan's status after an error, and for a while after it is done. While it runs it
+        // is in the shell's activity panel, with the rest of the app's work.
         let state = catalog.state();
         let ready = state == ScanState::Done
             && catalog
                 .finished_at()
                 .is_some_and(|finished| finished.elapsed() < READY_STATUS_FOR);
-        if root.is_some() && (state == ScanState::Loading || state == ScanState::Error || ready) {
-            let scanning = state == ScanState::Loading;
+        if root.is_some() && (state == ScanState::Error || ready) {
             let text: SharedString = match catalog.message_path() {
                 Some(path) => format!("{}: {path}", catalog.message()).into(),
                 None => catalog.message().clone(),
@@ -96,15 +80,6 @@ impl ViewMode {
                     .bg(theme.muted)
                     .text_xs()
                     .text_color(theme.muted_foreground)
-                    .when(scanning, |this| {
-                        this.child(
-                            div()
-                                .flex_shrink_0()
-                                .size(px(6.))
-                                .rounded_full()
-                                .bg(gpui_kit::rgb(0xf59e0b)),
-                        )
-                    })
                     .child(div().truncate().child(text)),
             );
         }
@@ -149,11 +124,12 @@ impl ViewMode {
             let parent = self.parent_folder(cx);
             let previous = self.sibling_folder(-1, cx);
             let next = self.sibling_folder(1, cx);
+            // Medium, GPUI Kit's normal size: a 32 px target with a 16 px icon, as the sidebar's
+            // toggle at the bar's other end. The small ones were too fine a target.
             bar = bar
                 .trailing(
                     Button::new("parent-folder")
                         .ghost()
-                        .small()
                         .icon(Icon::new(IconName::ArrowUp))
                         .label("Parent")
                         .tooltip("Open the parent folder")
@@ -163,7 +139,6 @@ impl ViewMode {
                 .trailing(
                     Button::new("previous-folder")
                         .ghost()
-                        .small()
                         .icon(Icon::new(IconName::ChevronLeft))
                         .label("Prev Folder")
                         .tooltip("Open the previous sibling folder")
@@ -173,7 +148,6 @@ impl ViewMode {
                 .trailing(
                     Button::new("next-folder")
                         .ghost()
-                        .small()
                         .label("Next Folder")
                         .icon(Icon::new(IconName::ChevronRight))
                         .tooltip("Open the next sibling folder")

@@ -3,7 +3,7 @@
 //! after the page, with the title as its heading.
 
 use gpui_kit::component::{
-    ActiveTheme as _, Icon, Sizable as _,
+    ActiveTheme as _, Icon,
     button::{Button, ButtonVariants as _},
 };
 use gpui_kit::{
@@ -80,9 +80,10 @@ impl RenderOnce for TopBar {
             .border_b_1()
             .border_color(cx.theme().border)
             .child(
+                // Medium, a 32 px target with a 16 px icon: the small one was too fine a target
+                // beside the title.
                 Button::new("toggle-sidebar")
                     .ghost()
-                    .small()
                     .icon(Icon::new(toggle_icon))
                     .accessibility_label(toggle_label)
                     .tooltip(toggle_tooltip)

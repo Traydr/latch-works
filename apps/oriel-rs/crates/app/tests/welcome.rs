@@ -110,7 +110,7 @@ fn the_first_starts_welcome_sets_one_folder_up_for_view_and_tidy_then_shows_no_m
     ));
     press(cx, handle, "cmd-2");
     wait_until(cx, handle, "Tidy's folder", |cx| {
-        label_of(cx, handle, "tidy-root-switcher").as_deref() == Some("archive")
+        label_of(cx, handle, "location-switcher").as_deref() == Some("archive")
     });
     assert!(data.shell().join("welcomed").exists());
 

@@ -1,11 +1,13 @@
 //! View's part of the sidebar (`ViewSidebar.tsx`), as Tidy and Sync have theirs: the folder the
-//! owner opened, which opens another, then where View is inside it as a short tree. The parent is
-//! a muted step up, the folder on screen is the current row, and its subfolders sit indented
-//! beneath it. In the rail, Open and Parent as icons.
+//! owner opened in the location switcher every mode has, whose menu opens another, then where
+//! View is inside it as a short tree. The parent is a muted step up, the folder on screen is the
+//! current row, and its subfolders sit indented beneath it. In the rail, the switcher's tile and
+//! Parent as an icon.
 
 use std::path::Path;
 
 use gpui_kit::assets::IconName;
+use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Icon, Sizable as _,
     button::{Button, ButtonVariants as _},
@@ -15,7 +17,10 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div,
     prelude::FluentBuilder as _, px,
 };
+use gpui_kit::{App, Entity};
+use oriel_ui::ModeId;
 use oriel_ui::layout::NavItem;
+use oriel_ui::locations::{LocationItem, LocationSwitcher, location_id, shared_locations};
 
 use crate::ViewMode;
 use crate::gallery::display_name;
@@ -40,15 +45,7 @@ impl ViewMode {
                 .items_center()
                 .gap_1()
                 .w_full()
-                .child(
-                    Button::new("sidebar-open-folder")
-                        .ghost()
-                        .large()
-                        .icon(Icon::new(IconName::FolderOpen))
-                        .tooltip("Open a folder  ⌘O")
-                        .accessibility_label("Open a folder")
-                        .on_click(cx.listener(|this, _, _, cx| this.choose_folder(cx))),
-                )
+                .child(self.location_switcher(true, cx))
                 .child(
                     Button::new("sidebar-parent")
                         .ghost()
@@ -65,75 +62,12 @@ impl ViewMode {
                 .into_any_element();
         }
 
+        let switcher = self.location_switcher(false, cx);
         let theme = cx.theme();
-        let opened = self.navigation_ceiling.clone();
         let catalog = self.catalog.read(cx);
         let root = catalog.root().cloned();
         let children = catalog.children().clone();
         let children_loading = catalog.children_loading();
-
-        // A button, so Tab reaches it and Return or Space presses it, as Electron Oriel's is.
-        let opened_button = gpui_kit::base::Button::new("sidebar-open-folder")
-            .accessibility_label("Open a folder")
-            .flex()
-            .flex_row()
-            .items_center()
-            .justify_start()
-            .gap(px(10.))
-            .h(px(52.))
-            .mx_2()
-            .px_2()
-            .rounded(theme.radius_lg)
-            .hover(|style| style.bg(theme.sidebar_accent))
-            .child(
-                div()
-                    .flex()
-                    .flex_shrink_0()
-                    .items_center()
-                    .justify_center()
-                    .size(px(32.))
-                    .rounded(theme.radius_lg)
-                    .bg(theme.background)
-                    .border_1()
-                    .border_color(theme.border)
-                    .child(Icon::new(IconName::FolderOpen).size(px(16.))),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(px(13.))
-                            .font_weight(gpui_kit::FontWeight::SEMIBOLD)
-                            .child(match &opened {
-                                Some(opened) => display_name(opened),
-                                None => "No folder open".into(),
-                            }),
-                    )
-                    .child(
-                        // Where the folder is, cut from the start when long so the nearest
-                        // folders stay (`StartTruncate`).
-                        div()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .when(opened.is_some(), |this| this.text_ellipsis_start())
-                            .when(opened.is_none(), |this| this.text_ellipsis())
-                            .text_xs()
-                            .text_color(theme.muted_foreground)
-                            .child(match &opened {
-                                Some(opened) => opened
-                                    .parent()
-                                    .map(|parent| parent.display().to_string())
-                                    .unwrap_or_default(),
-                                None => "Open one to see it".into(),
-                            }),
-                    ),
-            )
-            .on_click(cx.listener(|this, _, _, cx| this.choose_folder(cx)));
 
         let mut list = div().flex().flex_col().gap(px(2.)).px_2().pb_2();
         if let Some(root) = &root {
@@ -196,7 +130,7 @@ impl ViewMode {
             .flex()
             .flex_col()
             .w_full()
-            .child(opened_button)
+            .child(switcher)
             .when(root.is_some(), |this| {
                 this.child(
                     div()
@@ -212,4 +146,74 @@ impl ViewMode {
             })
             .into_any_element()
     }
+
+    /// The folder the owner opened, in the location switcher every mode has: its menu lists it,
+    /// the folders the other modes use (one opens here), and Open Folder….
+    fn location_switcher(&self, rail: bool, cx: &mut Context<Self>) -> LocationSwitcher {
+        let view = cx.entity();
+        let opened = self.navigation_ceiling.clone();
+        let switcher = LocationSwitcher::new(
+            match &opened {
+                Some(opened) => display_name(opened),
+                None => "No folder open".into(),
+            },
+            move |menu, _, cx| folder_menu(&view, menu, cx),
+        )
+        .rail(rail);
+        match &opened {
+            Some(opened) => switcher
+                .path_caption(
+                    opened
+                        .parent()
+                        .map(|parent| parent.display().to_string())
+                        .unwrap_or_default(),
+                )
+                .tooltip(opened.display().to_string()),
+            None => switcher.caption("Open one to see it"),
+        }
+    }
+}
+
+/// The switcher's menu, as it is when it opens.
+fn folder_menu(view: &Entity<ViewMode>, mut menu: PopupMenu, cx: &App) -> PopupMenu {
+    let this = view.read(cx);
+    let shell = this.shell.read(cx);
+    let opened = this.navigation_ceiling.clone();
+    if let Some(opened) = &opened {
+        let mut modes = shell.modes_using(opened).to_vec();
+        if !modes.contains(&ModeId::View) {
+            modes.insert(0, ModeId::View);
+        }
+        let (target, folder) = (view.clone(), opened.to_path_buf());
+        menu = menu.item(
+            LocationItem::new(location_id(opened), display_name(opened))
+                .modes(&modes)
+                .into_item()
+                .checked(true)
+                .on_click(move |_, _, cx| {
+                    target.update(cx, |view, cx| view.open_folder(folder.clone(), cx));
+                }),
+        );
+    }
+    let offered = shell
+        .offered_to(ModeId::View)
+        .into_iter()
+        .filter(|folder| opened.as_deref() != Some(folder.path()))
+        .collect();
+    let picker = view.clone();
+    menu = shared_locations(
+        menu,
+        "Open one you already use",
+        offered,
+        move |folder, _, cx| {
+            let folder = folder.to_path_buf();
+            picker.update(cx, |view, cx| view.open_folder(folder, cx));
+        },
+    );
+    let chooser = view.clone();
+    menu.separator().item(
+        PopupMenuItem::new("Open Folder…  ⌘O").on_click(move |_, _, cx| {
+            chooser.update(cx, |view, cx| view.choose_folder(cx));
+        }),
+    )
 }

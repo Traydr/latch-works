@@ -5,7 +5,7 @@
 //! [`TidyEvent`], which [`crate::TidyMode`] passes on to the shell. A file or folder another mode
 //! hands Tidy is shown by [`take`]: at the Library, filtered to it, in the folder of Tidy's that
 //! holds it. A folder no folder of Tidy's holds is added, once the owner agrees for a file's
-//! folder. In a sandboxed run (`ORIEL_RS_DATA_DIR` set) only folders inside the sandbox can be,
+//! folder. A folder picked in the location switcher's menu is [`offer`]ed. In a sandboxed run (`ORIEL_RS_DATA_DIR` set) only folders inside the sandbox can be,
 //! so for any other Tidy says why instead.
 
 use std::path::{Path, PathBuf};
@@ -111,16 +111,57 @@ pub fn take(state: &Entity<TidyState>, target: HandOff, window: &mut Window, cx:
         explain_sandbox(&candidate, &data, window, cx);
         return;
     }
-    confirm_adding(state, candidate, window, cx);
+    confirm_adding(
+        state,
+        candidate,
+        Some("No folder Tidy tidies holds this file."),
+        window,
+        cx,
+    );
 }
 
-/// Asks before Tidy takes on a file's folder (`desktop.confirm`).
-fn confirm_adding(state: &Entity<TidyState>, folder: PathBuf, window: &mut Window, cx: &mut App) {
+/// A folder picked in the location switcher's menu, which another mode uses (or the import
+/// found): Tidy switches to it when it is one of Tidy's folders, shows it in the Library when one
+/// holds it, and otherwise offers to add it. In a sandboxed run a folder outside the sandbox is
+/// refused with the rule.
+pub fn offer(state: &Entity<TidyState>, folder: PathBuf, window: &mut Window, cx: &mut App) {
+    let folder = resolved(folder);
+    let current = state.read(cx);
+    if let Some(root) = current
+        .roots()
+        .iter()
+        .find(|root| relative_inside(Path::new(&root.path), &folder).as_deref() == Some(""))
+    {
+        let root_id = root.id;
+        state.update(cx, |state, cx| state.select_root(root_id, cx));
+        return;
+    }
+    if closest_folder(current.roots(), &folder, |root| Path::new(&root.path)).is_some() {
+        take(state, HandOff::Folder(folder), window, cx);
+        return;
+    }
+    let data = current.data().clone();
+    if !data.admits_tidy_root(&folder) {
+        explain_sandbox(&folder, &data, window, cx);
+        return;
+    }
+    confirm_adding(state, folder, None, window, cx);
+}
+
+/// Asks before Tidy takes on a folder (`desktop.confirm`): a file's folder, saying why, or a
+/// folder picked from another mode's.
+fn confirm_adding(
+    state: &Entity<TidyState>,
+    folder: PathBuf,
+    why: Option<&str>,
+    window: &mut Window,
+    cx: &mut App,
+) {
     let state = state.clone();
     let title = format!("Tidy “{}”?", file_name(&folder));
     let description = format!(
-        "No folder Tidy tidies holds this file. Tidy adds {} and scans it; nothing in it changes \
-         until you ask.",
+        "{}Tidy adds {} and scans it; nothing in it changes until you ask.",
+        why.map(|why| format!("{why} ")).unwrap_or_default(),
         folder.display()
     );
     window.open_alert_dialog(cx, move |alert, _, _| {

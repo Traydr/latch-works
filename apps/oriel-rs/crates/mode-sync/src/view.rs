@@ -10,21 +10,21 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::Input;
-use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Icon, Selectable as _, Sizable as _, WindowExt as _,
 };
 use gpui_kit::{
-    AnyElement, App, Context, FontWeight, Hsla, InteractiveElement as _, IntoElement,
+    AnyElement, App, Context, Entity, FontWeight, Hsla, InteractiveElement as _, IntoElement,
     ParentElement as _, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
     TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px, relative, uniform_list,
 };
 use oriel_core_domain::format_bytes;
 use oriel_core_index::SyncPlanAction;
 use oriel_core_sync::{RunAction, format_count, parse_iso_timestamp};
-use oriel_ui::layout::NavItem;
+use oriel_ui::locations::{LocationItem, LocationSwitcher, shared_locations};
 use oriel_ui::segmented::{Segmented, SegmentedItem};
 use oriel_ui::{ModeId, ModeLayout, OfferedFolders, SettingsGroup, SettingsRow, TopBar};
 
@@ -237,17 +237,9 @@ impl SyncMode {
                 None => self.render_welcome(cx).into_any_element(),
             },
         };
-        let this = cx.entity();
         ModeLayout::new(&self.shell)
             .navigation_label("Profiles")
             .navigation(self.render_profiles(rail, cx))
-            .footer(
-                NavItem::new("sync-add-profile", IconName::Plus, "Add profile")
-                    .rail(rail)
-                    .on_click(move |_, window, cx| {
-                        this.update(cx, |this, cx| this.start_create_profile(window, cx));
-                    }),
-            )
             .child(
                 div()
                     .id("sync-page")
@@ -279,159 +271,32 @@ impl SyncMode {
                     .min_h_0()
                     .min_w_0()
                     .child(content)
-                    .when(self.shows_run_panel(), |this| {
+                    // A run in progress shows in the shell's activity panel; this one is its
+                    // result.
+                    .when(self.shows_run_panel() && !self.run.running, |this| {
                         this.child(self.render_run_panel(cx))
                     })
                     .when(self.log_open, |this| this.child(self.render_log(cx))),
             )
     }
 
+    /// The profile on screen, in the location switcher every mode has: its name, then its folder
+    /// and server. Its menu lists the profiles, then the folders the other modes use that no
+    /// profile syncs (one starts a profile for it), then New Profile….
     fn render_profiles(&self, rail: bool, cx: &mut Context<Self>) -> impl IntoElement {
-        let active = self.store.active_profile_id().map(str::to_owned);
-        let theme = cx.theme().clone();
-        let running = self.run.running;
-        let current_counts = self.plan.as_ref().map(|reviewed| reviewed.plan.counts);
-        div()
-            .flex()
-            .flex_col()
-            .w_full()
-            .when(!rail, |this| {
-                this.child(
-                    div()
-                        .px(px(18.))
-                        .pt_3()
-                        .pb(px(6.))
-                        .text_xs()
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(theme.muted_foreground)
-                        .child("Profiles"),
-                )
+        let sync = cx.entity();
+        let switcher = match self.store.active_profile() {
+            Some(profile) => LocationSwitcher::new(profile.name.clone(), move |menu, _, cx| {
+                profile_menu(&sync, menu, cx)
             })
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_0p5()
-                    .px_2()
-                    .when(rail, |this| this.items_center())
-                    .children(self.store.profiles().iter().map(|profile| {
-                        let current = active.as_deref() == Some(profile.id.as_str());
-                        let (caption, tone) = profile_status(
-                            profile,
-                            self.store.token_state(&profile.id),
-                            current.then_some(current_counts).flatten(),
-                        );
-                        let caption = if current && running {
-                            "Running…".to_owned()
-                        } else {
-                            caption
-                        };
-                        let id = profile.id.clone();
-                        let dot = div()
-                            .size(px(8.))
-                            .flex_shrink_0()
-                            .rounded_full()
-                            .bg(tone_color(tone, cx));
-                        let initial = profile
-                            .name
-                            .trim()
-                            .chars()
-                            .next()
-                            .map(|initial| initial.to_uppercase().to_string())
-                            .unwrap_or_else(|| "?".to_owned());
-                        gpui_kit::base::Button::new(SharedString::from(format!(
-                            "sync-profile-{}",
-                            profile.id
-                        )))
-                        // A press leaves focus where it was, as the sidebar's other items do.
-                        .on_mouse_down(gpui_kit::MouseButton::Left, |_, window, _| {
-                            window.prevent_default();
-                        })
-                        .accessibility_label(profile.name.clone())
-                        .aria_selected(current)
-                        .disabled(running && !current)
-                        .relative()
-                        .flex_row()
-                        .items_center()
-                        .flex_shrink_0()
-                        .rounded(theme.radius)
-                        .gap(px(10.))
-                        .text_size(px(13.))
-                        .border_2()
-                        .border_color(theme.transparent)
-                        .map(|this| {
-                            if rail {
-                                this.size(px(48.)).justify_center()
-                            } else {
-                                this.w_full().min_h(px(32.)).py(px(6.)).px(px(8.))
-                            }
-                        })
-                        .text_color(if current {
-                            theme.foreground
-                        } else {
-                            theme.sidebar_foreground
-                        })
-                        .hover(|style| style.bg(theme.accent))
-                        .focus_visible(|style| style.border_color(theme.ring))
-                        .when(current, |this| {
-                            this.bg(theme.sidebar_accent)
-                                .font_weight(FontWeight::MEDIUM)
-                        })
-                        .map(|this| {
-                            if rail {
-                                this.child(
-                                    div()
-                                        .size(px(28.))
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .rounded(theme.radius)
-                                        .bg(theme.background)
-                                        .border_1()
-                                        .border_color(theme.border)
-                                        .text_size(px(13.))
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .child(initial),
-                                )
-                                .child(div().absolute().top(px(6.)).right(px(6.)).child(dot))
-                                .tooltip({
-                                    let tip =
-                                        SharedString::from(format!("{} · {caption}", profile.name));
-                                    move |window, cx| {
-                                        gpui_kit::component::tooltip::Tooltip::new(tip.clone())
-                                            .build(window, cx)
-                                    }
-                                })
-                            } else {
-                                this.child(dot)
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .child(div().truncate().child(profile.name.clone()))
-                                            .child(
-                                                div()
-                                                    .truncate()
-                                                    .text_xs()
-                                                    .font_weight(FontWeight::NORMAL)
-                                                    .text_color(theme.muted_foreground)
-                                                    .child(caption),
-                                            ),
-                                    )
-                                    .when(current && running, |this| {
-                                        this.child(Spinner::new().small())
-                                    })
-                            }
-                        })
-                        .on_click(cx.listener(
-                            move |this, _, window, cx| {
-                                this.select_profile(&id, window, cx);
-                            },
-                        ))
-                    })),
-            )
+            .caption(describe_profile_place(profile))
+            .tooltip(format!("{} → {}", profile.source_root, profile.api_url)),
+            None => LocationSwitcher::new("No profile yet", move |menu, _, cx| {
+                profile_menu(&sync, menu, cx)
+            })
+            .caption("Add one to sync a folder"),
+        };
+        switcher.rail(rail)
     }
 
     fn error_banner(&self) -> Option<impl IntoElement> {
@@ -1601,21 +1466,16 @@ impl SyncMode {
             .collect()
     }
 
+    /// A finished push's or prune's result, until Done: how it ended, its throughput, and Prune
+    /// or Retry where they apply. While it runs it is in the shell's activity panel instead.
     fn render_run_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let progress = &self.run.progress;
-        let running = self.run.running;
         let item_run = matches!(progress.kind, Some(RunAction::Push | RunAction::Prune));
         let elapsed = progress.ended_at.unwrap_or_else(|| self.run.now_ms());
         let body: AnyElement = if item_run && progress.queued_at.is_some() {
             self.render_item_run(elapsed, cx).into_any_element()
         } else {
-            let title = match progress.kind {
-                Some(RunAction::Doctor) => "Running doctor".to_owned(),
-                Some(RunAction::Plan) => "Planning".to_owned(),
-                Some(kind) => format!("Preparing {}", kind.as_str()),
-                None => "Preparing run".to_owned(),
-            };
             div()
                 .flex()
                 .flex_col()
@@ -1635,11 +1495,7 @@ impl SyncMode {
                                 .min_w_0()
                                 .truncate()
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .child(if running {
-                                    title
-                                } else {
-                                    self.run.label.clone()
-                                }),
+                                .child(self.run.label.clone()),
                         )
                         .child(
                             div()
@@ -1648,11 +1504,7 @@ impl SyncMode {
                                 .child(run::format_clock(elapsed)),
                         ),
                 )
-                .child(
-                    Progress::new("run-preparing")
-                        .loading(running)
-                        .value(if running { 0. } else { 100. }),
-                )
+                .child(Progress::new("run-preparing").value(100.))
                 .child(
                     div()
                         .truncate()
@@ -1697,73 +1549,52 @@ impl SyncMode {
             .shadow_lg()
             .child(body)
             .child(div().flex().flex_col().gap_2().p_4().map(|this| {
-                if running {
-                    this.child(
-                        Button::new("run-cancel")
-                            .label(format!(
-                                "Cancel {}",
-                                progress.kind.map_or("run", RunAction::as_str)
-                            ))
-                            .on_click(cx.listener(|this, _, _, cx| this.cancel_run(cx))),
-                    )
-                    .when(progress.kind == Some(RunAction::Push), |this| {
-                        this.child(div().text_xs().text_color(theme.muted_foreground).child(
-                            "Items already uploading stop with it. Pushing again \
-                                         picks up what is left.",
-                        ))
-                    })
-                } else {
-                    this.child(
-                        Button::new("run-done")
-                            .primary()
-                            .label("Done")
-                            .on_click(cx.listener(|this, _, _, cx| this.dismiss_run_panel(cx))),
-                    )
-                    .when(
-                        progress.kind == Some(RunAction::Push)
-                            && matches!(prune, PruneAvailability::Enabled { .. }),
-                        |this| {
-                            let count = match prune {
-                                PruneAvailability::Enabled { delete_count } => delete_count,
-                                PruneAvailability::Disabled { .. } => 0,
-                            };
-                            this.child(
-                                Button::new("run-prune")
-                                    .danger()
-                                    .label(format!("Prune {}…", format_count(count)))
-                                    .tooltip(format!(
-                                        "Delete the {} the reviewed plan lists",
-                                        run::describe_remote_entries(count)
-                                    ))
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.confirm_prune(window, cx);
-                                    })),
-                            )
-                        },
-                    )
-                    .when(
-                        progress.kind == Some(RunAction::Push) && progress.failed > 0,
-                        |this| {
-                            this.child(
-                                Button::new("run-retry")
-                                    .label(format!(
-                                        "Retry {} failed",
-                                        format_count(progress.failed)
-                                    ))
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.push_now(window, cx);
-                                    })),
-                            )
-                        },
-                    )
-                }
+                this.child(
+                    Button::new("run-done")
+                        .primary()
+                        .label("Done")
+                        .on_click(cx.listener(|this, _, _, cx| this.dismiss_run_panel(cx))),
+                )
+                .when(
+                    progress.kind == Some(RunAction::Push)
+                        && matches!(prune, PruneAvailability::Enabled { .. }),
+                    |this| {
+                        let count = match prune {
+                            PruneAvailability::Enabled { delete_count } => delete_count,
+                            PruneAvailability::Disabled { .. } => 0,
+                        };
+                        this.child(
+                            Button::new("run-prune")
+                                .danger()
+                                .label(format!("Prune {}…", format_count(count)))
+                                .tooltip(format!(
+                                    "Delete the {} the reviewed plan lists",
+                                    run::describe_remote_entries(count)
+                                ))
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.confirm_prune(window, cx);
+                                })),
+                        )
+                    },
+                )
+                .when(
+                    progress.kind == Some(RunAction::Push) && progress.failed > 0,
+                    |this| {
+                        this.child(
+                            Button::new("run-retry")
+                                .label(format!("Retry {} failed", format_count(progress.failed)))
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.push_now(window, cx);
+                                })),
+                        )
+                    },
+                )
             }))
     }
 
     fn render_item_run(&self, elapsed: f64, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let progress = &self.run.progress;
-        let running = self.run.running;
         let by_bytes = progress.bytes_total > 0;
         let processed = progress.pushed + progress.failed + progress.skipped;
         let bytes_processed = progress.bytes_done + progress.bytes_failed;
@@ -1780,12 +1611,11 @@ impl SyncMode {
             _ if progress.failed > 0 => format!("{name} finished with failures"),
             _ => format!("{name} complete"),
         };
-        let bar_color = if !running
-            && (progress.failed > 0
-                || matches!(progress.phase, RunPhase::Error | RunPhase::Cancelled))
+        let bar_color = if progress.failed > 0
+            || matches!(progress.phase, RunPhase::Error | RunPhase::Cancelled)
         {
             theme.danger
-        } else if !running && progress.phase == RunPhase::Done {
+        } else if progress.phase == RunPhase::Done {
             theme.success
         } else {
             theme.primary
@@ -1810,29 +1640,7 @@ impl SyncMode {
                     .p_4()
                     .border_b_1()
                     .border_color(theme.border)
-                    .child(if running {
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_baseline()
-                            .child(
-                                div()
-                                    .text_2xl()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(format!("{}%", (ratio * 100.).floor() as u32)),
-                            )
-                            .child(
-                                div()
-                                    .ml_auto()
-                                    .text_xs()
-                                    .text_color(theme.muted_foreground)
-                                    .child(match self.run.remaining_ms() {
-                                        Some(left) => format!("{} left", run::format_clock(left)),
-                                        None => "Estimating…".to_owned(),
-                                    }),
-                            )
-                            .into_any_element()
-                    } else {
+                    .child(
                         div()
                             .flex()
                             .flex_row()
@@ -1849,9 +1657,8 @@ impl SyncMode {
                                     .text_xs()
                                     .text_color(theme.muted_foreground)
                                     .child(run::format_clock(elapsed)),
-                            )
-                            .into_any_element()
-                    })
+                            ),
+                    )
                     .child(
                         Progress::new("run-progress")
                             .value(ratio * 100.)
@@ -1875,13 +1682,6 @@ impl SyncMode {
                                     "{} / {} items",
                                     format_count(processed),
                                     format_count(progress.item_total)
-                                )
-                            })
-                            .when(running, |this| {
-                                this.child(
-                                    div()
-                                        .ml_auto()
-                                        .child(format!("{} so far", run::format_clock(elapsed))),
                                 )
                             }),
                     ),
@@ -1911,11 +1711,7 @@ impl SyncMode {
                                     .ml_auto()
                                     .text_size(px(13.))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .child(format!(
-                                        "{}/s{}",
-                                        format_bytes(rate),
-                                        if running { "" } else { " on average" }
-                                    )),
+                                    .child(format!("{}/s on average", format_bytes(rate))),
                             ),
                     )
                     .child(
@@ -2182,4 +1978,83 @@ fn stat(label: &'static str, value: String, tone: Option<Hsla>) -> impl IntoElem
                 .when_some(tone, |this, tone| this.text_color(tone))
                 .child(value),
         )
+}
+
+/// Where a profile syncs, as its switcher says it: "archive → pane.example.com".
+fn describe_profile_place(profile: &Profile) -> String {
+    let folder = std::path::Path::new(&profile.source_root)
+        .file_name()
+        .map_or_else(
+            || profile.source_root.clone(),
+            |name| name.to_string_lossy().into_owned(),
+        );
+    let server = profile
+        .api_url
+        .split_once("://")
+        .map_or(profile.api_url.as_str(), |(_, rest)| rest)
+        .trim_end_matches('/');
+    format!("{folder} → {server}")
+}
+
+/// The switcher's menu, as it is when it opens. While a run holds its profile, the others wait.
+fn profile_menu(sync: &Entity<SyncMode>, mut menu: PopupMenu, cx: &App) -> PopupMenu {
+    let this = sync.read(cx);
+    let shell = this.shell.read(cx);
+    let active = this.store.active_profile_id().map(str::to_owned);
+    let running = this.run.running;
+    let current_counts = this.plan.as_ref().map(|reviewed| reviewed.plan.counts);
+    for profile in this.store.profiles() {
+        let current = active.as_deref() == Some(profile.id.as_str());
+        let (status, tone) = profile_status(
+            profile,
+            this.store.token_state(&profile.id),
+            current.then_some(current_counts).flatten(),
+        );
+        let status = if current && running {
+            "Running…".to_owned()
+        } else {
+            status
+        };
+        let source = std::path::Path::new(&profile.source_root);
+        let resolved = oriel_runtime::paths::canonicalize(source).unwrap_or(source.to_path_buf());
+        let mut modes = shell.modes_using(&resolved).to_vec();
+        if !modes.contains(&ModeId::Sync) {
+            modes.push(ModeId::Sync);
+        }
+        let (target, id) = (sync.clone(), profile.id.clone());
+        menu = menu.item(
+            LocationItem::new(
+                SharedString::from(format!("sync-profile-{}", profile.id)),
+                profile.name.clone(),
+            )
+            .modes(&modes)
+            .status(tone_color(tone, cx), status)
+            .into_item()
+            .checked(current)
+            .disabled(running && !current)
+            .on_click(move |_, window, cx| {
+                target.update(cx, |this, cx| this.select_profile(&id, window, cx));
+            }),
+        );
+    }
+    let picker = sync.clone();
+    menu = shared_locations(
+        menu,
+        "Sync one you already use",
+        shell.offered_to(ModeId::Sync),
+        move |folder, window, cx| {
+            let folder = folder.to_path_buf();
+            picker.update(cx, |this, cx| {
+                this.start_create_profile_for(folder, window, cx);
+            });
+        },
+    );
+    let adder = sync.clone();
+    menu.separator().item(
+        PopupMenuItem::new("New Profile…")
+            .disabled(running)
+            .on_click(move |_, window, cx| {
+                adder.update(cx, |this, cx| this.start_create_profile(window, cx));
+            }),
+    )
 }

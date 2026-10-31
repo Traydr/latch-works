@@ -51,7 +51,7 @@ pub fn open_sync(cx: &mut TestAppContext, data: &DataRoot) -> (AnyWindowHandle, 
             },
             cx,
             |window, cx| {
-                let shell = cx.new(|_| ShellState::new(ModeId::Sync, false));
+                let shell = cx.new(|cx| ShellState::new(ModeId::Sync, false, cx));
                 cx.new(|cx| SyncMode::with_data(&shell, &data, window, cx))
             },
         )
@@ -144,7 +144,7 @@ pub fn run_sync_spec(cx: &mut TestAppContext, target: &Target, data_folder: &Pat
     frame(cx, handle);
 
     // A profile is created against the running Pane View.
-    click(cx, handle, "sync-add-profile");
+    click(cx, handle, "sync-welcome-add");
     assert_eq!(
         cx.update(|cx| sync.read(cx).screen().clone()),
         Screen::Form { editing: None }
@@ -159,7 +159,7 @@ pub fn run_sync_spec(cx: &mut TestAppContext, target: &Target, data_folder: &Pat
     );
     type_into(cx, handle, "profile-token", &target.token);
     click(cx, handle, "profile-save");
-    let profile_id = cx.update(|cx| {
+    cx.update(|cx| {
         let sync = sync.read(cx);
         assert_eq!(sync.error(), None);
         let profile = sync
@@ -167,14 +167,10 @@ pub fn run_sync_spec(cx: &mut TestAppContext, target: &Target, data_folder: &Pat
             .active_profile()
             .expect("the profile is active");
         assert_eq!(profile.name, PROFILE_NAME);
-        profile.id.clone()
     });
     cx.update_window(handle, |_, window, _| {
-        let row = window.find(gpui_kit::SharedString::from(format!(
-            "sync-profile-{profile_id}"
-        )));
-        assert_eq!(row.label(), Some(PROFILE_NAME));
-        assert_eq!(row.selected(), Some(true));
+        let switcher = window.find(oriel_ui::locations::SWITCHER_ID);
+        assert_eq!(switcher.label(), Some(PROFILE_NAME));
     })
     .unwrap();
     assert_eq!(

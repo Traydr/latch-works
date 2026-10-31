@@ -31,16 +31,17 @@ use gpui_kit::{
     Global, IntoElement as _, KeyBinding, PathPromptOptions, Render, SharedString, Subscription,
     Task, UniformListScrollHandle, Window, actions,
 };
+use oriel_core_domain::format_bytes;
 use oriel_core_index::SyncPlanAction;
 use oriel_core_paths::DataRoot;
 use oriel_core_sync::{
     ApiTarget, DoctorOptions, DoctorResult, HashMode, LockstepPlan, Observer, PaneViewClient,
     PlanOptions, PruneOptions, PushOptions, RunAction, RunEvent, RunStatus, RunSummary,
-    UnfinalizedSyncRun, cache_root, doctor, plan_sync, prune_deleted, push_changes,
+    UnfinalizedSyncRun, cache_root, doctor, format_count, plan_sync, prune_deleted, push_changes,
 };
 use oriel_runtime::{CancelToken, Cancelled, TokioHandle, TokioRuntime};
 use oriel_ui::folders::closest_folder;
-use oriel_ui::{HandOff, ModeActivity, ModeId, ShellState};
+use oriel_ui::{ActivityJob, HandOff, JobCommand, JobControl, ModeActivity, ModeId, ShellState};
 
 pub use plan_tree::{PlanFolder, PlanRow};
 pub use profiles::{Profile, ProfileInput, ProfilePatch, ProfileStore, TokenState};
@@ -49,6 +50,9 @@ pub use secrets::FileSecretStorage;
 
 /// The key context of Sync's page.
 pub const KEY_CONTEXT: &str = "Sync";
+
+/// The run's key in the shell's activity panel: Sync runs one thing at a time.
+const RUN_JOB: &str = "run";
 
 /// `ORIEL_RS_SYNC_PLAN=1` plans the active profile at start.
 pub const PLAN_VARIABLE: &str = "ORIEL_RS_SYNC_PLAN";
@@ -388,6 +392,10 @@ impl SyncMode {
         let filter = input("Filter paths", false, window, cx);
         let subscriptions = vec![
             cx.observe(shell, |_, _, cx| cx.notify()),
+            cx.subscribe(
+                &shell.read(cx).jobs().clone(),
+                |this, _, command: &JobCommand, cx| this.on_job_command(command, cx),
+            ),
             cx.subscribe_in(&filter, window, |this, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.rebuild_rows(cx);
@@ -604,6 +612,70 @@ impl SyncMode {
         self.shell.update(cx, |shell, cx| {
             shell.set_activity(ModeId::Sync, activity, cx)
         });
+        let jobs = self.activity_job().into_iter().collect();
+        let board = self.shell.read(cx).jobs().clone();
+        board.update(cx, |board, cx| board.set_jobs(ModeId::Sync, jobs, cx));
+    }
+
+    /// The run as the shell's activity panel lists it, while it runs: what it does, how far it
+    /// has got, and Stop, which cancels it as Cancel did (`ownRun`).
+    fn activity_job(&self) -> Option<ActivityJob> {
+        if !self.run.running {
+            return None;
+        }
+        let progress = &self.run.progress;
+        let item_run = matches!(progress.kind, Some(RunAction::Push | RunAction::Prune));
+        let label = match progress.kind {
+            Some(RunAction::Plan) => "Planning".to_owned(),
+            Some(RunAction::Doctor) => "Running doctor".to_owned(),
+            Some(RunAction::Push) if progress.queued_at.is_some() => "Pushing".to_owned(),
+            Some(RunAction::Prune) if progress.queued_at.is_some() => "Pruning".to_owned(),
+            Some(kind) => format!("Preparing {}", kind.as_str()),
+            None => "Preparing run".to_owned(),
+        };
+        let mut job = ActivityJob::new(RUN_JOB, label).stoppable(true);
+        if item_run && progress.queued_at.is_some() {
+            let processed = progress.pushed + progress.failed + progress.skipped;
+            let done = if progress.bytes_total > 0 {
+                format!(
+                    "{} of {}",
+                    format_bytes((progress.bytes_done + progress.bytes_failed) as f64),
+                    format_bytes(progress.bytes_total as f64)
+                )
+            } else {
+                format!(
+                    "{} of {} items",
+                    format_count(processed),
+                    format_count(progress.item_total)
+                )
+            };
+            let left = match self.run.remaining_ms() {
+                Some(left) => format!("{} left", run::format_clock(left)),
+                None => "Estimating…".to_owned(),
+            };
+            job = job
+                .progress(self.run.ratio().unwrap_or(0.))
+                .detail(format!("{done} · {left}"));
+        } else if progress.scan_files_found > 0 {
+            job = job.detail(format!(
+                "{} files · {} hashed",
+                format_count(progress.scan_files_found),
+                format_bytes(progress.bytes_hashed as f64)
+            ));
+        } else if !self.run.label.is_empty() {
+            job = job.detail(self.run.label.clone());
+        }
+        Some(job)
+    }
+
+    /// Stop pressed on the run in the shell's activity panel.
+    fn on_job_command(&mut self, command: &JobCommand, cx: &mut Context<Self>) {
+        if command.mode() == ModeId::Sync
+            && command.key() == RUN_JOB
+            && command.control() == JobControl::Stop
+        {
+            self.cancel_run(cx);
+        }
     }
 
     /* Profiles */

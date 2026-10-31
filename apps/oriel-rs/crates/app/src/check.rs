@@ -6,6 +6,8 @@
 //!   waits for it, so ⌘Q twice quits.
 //! - `ORIEL_RS_SETTINGS=general` (or `view`, `tidy`, `sync`) opens Settings at that section.
 //! - `ORIEL_RS_ABOUT=1` opens the About dialog, to see the licences a bundle lists.
+//! - `ORIEL_RS_ACTIVITY_PANEL=1` opens the activity panel whenever work runs, to see it without
+//!   a click.
 
 use gpui_kit::{App, Entity};
 use oriel_ui::{ModeActivity, ModeId, SettingsSection, ShellState};
@@ -13,10 +15,16 @@ use oriel_ui::{ModeActivity, ModeId, SettingsSection, ShellState};
 pub const ACTIVITY_VARIABLE: &str = "ORIEL_RS_ACTIVITY";
 pub const SETTINGS_VARIABLE: &str = "ORIEL_RS_SETTINGS";
 pub const ABOUT_VARIABLE: &str = "ORIEL_RS_ABOUT";
+pub const ACTIVITY_PANEL_VARIABLE: &str = "ORIEL_RS_ACTIVITY_PANEL";
 
 /// Whether `ORIEL_RS_ABOUT` asks for the About dialog at start.
 pub fn about_from_environment() -> bool {
     std::env::var(ABOUT_VARIABLE).is_ok_and(|value| value == "1")
+}
+
+/// Whether `ORIEL_RS_ACTIVITY_PANEL` asks for the activity panel open while work runs.
+pub fn activity_panel_from_environment() -> bool {
+    std::env::var(ACTIVITY_PANEL_VARIABLE).is_ok_and(|value| value == "1")
 }
 
 /// Applies whichever of the variables are set.

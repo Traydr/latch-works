@@ -4,7 +4,6 @@
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui_kit::{
     AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement as _,
@@ -206,7 +205,7 @@ impl CleanupPage {
         else {
             return;
         };
-        if state.is_changing() {
+        if state.change_status(SOURCE).is_some() {
             return;
         }
         let cleanup = tidy.cleanup;
@@ -223,6 +222,7 @@ impl CleanupPage {
             }
             [] => {}
             _ => state.perform_all(
+                "Clean up",
                 steps,
                 format!("Cleaned up {}", root.name),
                 SOURCE,
@@ -238,6 +238,7 @@ impl CleanupPage {
         };
         self.state.update(cx, |state, cx| {
             state.perform_all(
+                "Remove silent soundtracks",
                 vec![TidyStep::SilentVideos(root_id)],
                 "Removed silent soundtracks".into(),
                 "cleanup:silent",
@@ -299,6 +300,7 @@ impl CleanupPage {
                     ),
                     [] => {}
                     _ => state.perform_all(
+                        "Fix extensions",
                         steps,
                         format!("Fixed {}", format::plural(extensions, "extension")),
                         "cleanup:extensions",
@@ -336,7 +338,7 @@ impl CleanupPage {
             return None;
         }
         let shown = rows.len() as i64;
-        let running = self.state.read(cx).change_for(source).is_some();
+        let status = self.state.read(cx).change_status(source);
         let theme = cx.theme();
         let border = theme.border;
         let muted = theme.muted_foreground;
@@ -386,18 +388,16 @@ impl CleanupPage {
                         )
                         .child(widgets::caption(format::count(count), cx))
                         .child(div().flex_1())
-                        .child(if running {
-                            Spinner::new().small().into_any_element()
-                        } else {
+                        .child(widgets::while_changing(
                             Button::new(SharedString::from(format!("cleanup-{id}-run")))
                                 .outline()
                                 .small()
                                 .label(action)
                                 .on_click(
                                     cx.listener(move |this, _, window, cx| run(this, window, cx)),
-                                )
-                                .into_any_element()
-                        }),
+                                ),
+                            status,
+                        )),
                 )
                 .child(
                     div()
@@ -442,7 +442,7 @@ impl Render for CleanupPage {
         let shell = state.shell.clone();
         let tidy = state.overview.data().cloned();
         let error = state.overview.error().cloned();
-        let running = widgets::change_progress(&self.state, SOURCE, "cleanup-run-all", cx);
+        let status = state.change_status(SOURCE);
         let changing = state.is_changing();
         let Some(tidy) = tidy else {
             let body = match error {
@@ -471,19 +471,20 @@ impl Render for CleanupPage {
         let measuring = tidy.analysis.sound_measured < tidy.analysis.sound_measurable;
         let theme = cx.theme();
         let muted = theme.muted_foreground;
-        let action: Option<AnyElement> = match running {
-            Some(running) => Some(running),
-            None => (total > 0).then(|| {
+        // Another page's change running, this one queues behind it.
+        let action: Option<AnyElement> = (total > 0 || status.is_some()).then(|| {
+            widgets::while_changing(
                 widgets::primary_action(
                     "cleanup-run-all",
                     format!("Clean up {}", format::count(total)),
                     "⌘↩",
                 )
-                .disabled(changing)
-                .on_click(cx.listener(|this, _, window, cx| this.clean_up(window, cx)))
-                .into_any_element()
-            }),
-        };
+                .disabled(total == 0)
+                .on_click(cx.listener(|this, _, window, cx| this.clean_up(window, cx))),
+                status,
+            )
+            .into_any_element()
+        });
         let top_bar = TopBar::new(&shell, "Clean up")
             .when(total > 0, |bar| {
                 bar.trailing(widgets::caption(format::plural(total, "item"), cx))
@@ -528,7 +529,7 @@ impl Render for CleanupPage {
                     let picture = thumbs::picture(&self.thumbs, row, 160, ObjectFit::Cover, cx);
                     let id = row.id;
                     let source: SharedString = format!("cleanup:silent:{id}").into();
-                    let busy = self.state.read(cx).change_for(&source).is_some();
+                    let busy = self.state.read(cx).change_status(&source);
                     div()
                         .flex()
                         .flex_row()
@@ -546,9 +547,7 @@ impl Render for CleanupPage {
                                 .child(picture),
                         )
                         .child(Self::name_and_folder(&row.name, &row.dir, cx))
-                        .child(if busy {
-                            Spinner::new().small().into_any_element()
-                        } else {
+                        .child(widgets::while_changing(
                             Button::new(("cleanup-silent-one", id as u64))
                                 .ghost()
                                 .small()
@@ -566,9 +565,9 @@ impl Render for CleanupPage {
                                             cx,
                                         );
                                     });
-                                }))
-                                .into_any_element()
-                        })
+                                })),
+                            busy,
+                        ))
                         .child(
                             div()
                                 .w(px(48.))

@@ -331,7 +331,7 @@ fn launch(cx: &mut TestAppContext, data: &Path) -> Session {
             },
             cx,
             |window, cx| {
-                let shell = cx.new(|_| ShellState::new(ModeId::View, false));
+                let shell = cx.new(|cx| ShellState::new(ModeId::View, false, cx));
                 let view = cx.new(|cx| ViewMode::with_data(&shell, &data, window, cx));
                 let harness = cx.new(|_| Harness {
                     view: view.clone(),
@@ -995,7 +995,8 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
             window.find("volume-panel").bounds()
         })
         .unwrap();
-    let quarter = point(panel.size.width / 2., px(13. + 112. * 0.75));
+    // The track starts below the border, the top padding and half the thumb: 1 + 12 + 7 px.
+    let quarter = point(panel.size.width / 2., px(20. + 112. * 0.75));
     cx.update_window(session.handle, |_, window, cx| {
         window.click_at("volume-panel", quarter, cx);
     })
@@ -1112,6 +1113,61 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
     assert_eq!(viewer_label(cx, &session), None);
 }
 
+/// `e` held down steps on as fast as the key repeats, past stills and a video, and never stalls:
+/// each repeat lands one item on, with no time for a decode between, and the viewer ends where
+/// the steps say, its still drawn. A step from a video to a still once dropped the video's
+/// player with the keys, and the next `e` reached nothing.
+#[gpui_kit::test]
+fn holding_e_steps_past_stills_and_a_video_without_stalling(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("hold-e");
+    if !fixture.videos {
+        eprintln!("skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)");
+        return;
+    }
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("mixed"));
+    let order = tile_paths(cx, &session);
+    assert!(
+        order.iter().any(|path| path.ends_with("reel.mp4")) && order.len() > 2,
+        "stills and a video: {order:?}"
+    );
+    double_click(cx, &session, tile_id(&order[0]));
+
+    let steps = order.len() * 4 + 1;
+    cx.update_window(session.handle, |_, window, cx| {
+        window.key_down("e", false, cx);
+        for _ in 1..steps {
+            window.key_down("e", true, cx);
+        }
+        window.key_up("e", cx);
+    })
+    .unwrap();
+    let last = order[steps % order.len()]
+        .file_name()
+        .unwrap()
+        .to_string_lossy();
+    assert_eq!(
+        viewer_label(cx, &session),
+        Some(format!("Viewer for {last}")),
+        "every repeat stepped"
+    );
+    settle(cx, &session);
+    cx.update(|cx| {
+        let viewer = session.view.read(cx).viewer().unwrap().read(cx);
+        assert!(viewer.is_current_ready(), "the item shows");
+    });
+    // And the keys still reach it.
+    press(cx, &session, "e");
+    let next = order[(steps + 1) % order.len()]
+        .file_name()
+        .unwrap()
+        .to_string_lossy();
+    assert_eq!(
+        viewer_label(cx, &session),
+        Some(format!("Viewer for {next}"))
+    );
+}
+
 /// `useViewerChromeIdle`: the viewer's controls fade after 2.5 s left alone and a key brings them
 /// back; a paused video keeps them.
 #[gpui_kit::test]
@@ -1164,7 +1220,7 @@ fn the_viewer_controls_fade_when_left_alone_but_stay_over_a_paused_video(cx: &mu
 
 /// `MediaTile`'s hover: a video tile plays under the pointer, muted and looping by default, and
 /// stops when the pointer leaves; with "Autoplay video on hover" off it does not. The tile's
-/// caption has the video's picture size from ffprobe, and the header the folder's place.
+/// caption has the video's picture size from ffprobe, and the header the folder's name.
 #[gpui_kit::test]
 fn a_video_tile_plays_under_the_pointer_and_stops_when_it_leaves(cx: &mut TestAppContext) {
     let fixture = Fixture::new("hover");
@@ -1174,10 +1230,12 @@ fn a_video_tile_plays_under_the_pointer_and_stops_when_it_leaves(cx: &mut TestAp
     }
     let session = launch(cx, &fixture.root.join("data"));
     open_folder(cx, &session, &fixture.absolute("videos"));
+    // The folder is named once, by its name alone.
     assert_eq!(
-        label(cx, &session, "top-bar-meta").as_deref(),
-        Some("archive / videos")
+        label(cx, &session, "top-bar-title").as_deref(),
+        Some("videos")
     );
+    assert_eq!(label(cx, &session, "top-bar-meta"), None);
     let clip = fixture.absolute("videos/clip-a.mp4");
     let gallery = cx.update(|cx| session.view.read(cx).gallery().clone());
     let probed = wait_until(cx, &session, |cx| {
@@ -1381,8 +1439,8 @@ fn voiceover_reads_views_sidebar_and_icon_buttons_by_name(cx: &mut TestAppContex
         (Some(Role::Navigation), Some("View".to_owned()))
     );
     assert_eq!(
-        role_and_name(cx, &session, "sidebar-open-folder"),
-        named("Open a folder")
+        role_and_name(cx, &session, "location-switcher"),
+        named("comics")
     );
     let alpha = fixture.absolute("comics/alpha");
     click(
@@ -1417,8 +1475,8 @@ fn voiceover_reads_views_sidebar_and_icon_buttons_by_name(cx: &mut TestAppContex
         (Some(Role::Navigation), Some("View".to_owned()))
     );
     assert_eq!(
-        role_and_name(cx, &session, "sidebar-open-folder"),
-        named("Open a folder")
+        role_and_name(cx, &session, "location-switcher"),
+        named("comics")
     );
     assert_eq!(
         role_and_name(cx, &session, "sidebar-parent"),

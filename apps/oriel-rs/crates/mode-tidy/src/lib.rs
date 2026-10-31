@@ -163,6 +163,15 @@ impl TidyMode {
             }),
             // The pages' Open in View and Sync this folder go to the shell.
             cx.subscribe(&state, |_, _, event: &TidyEvent, cx| cx.emit(event.clone())),
+            // Pause, Resume and Stop from the shell's activity panel.
+            cx.subscribe_in(
+                &shell.read(cx).jobs().clone(),
+                window,
+                |this, _, command: &oriel_ui::JobCommand, window, cx| {
+                    this.state
+                        .update(cx, |state, cx| state.on_job_command(command, window, cx));
+                },
+            ),
             // A hand-off that came while the engine started is shown once its folders are in.
             cx.observe_in(&state, window, |this, state, window, cx| {
                 if state.read(cx).is_ready()

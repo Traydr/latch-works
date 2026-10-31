@@ -49,7 +49,7 @@ use gpui_kit::{
 };
 use oriel_core_domain::GallerySortMode;
 use oriel_core_paths::DataRoot;
-use oriel_ui::{ModeActivity, ModeId, ModeLayout, ShellState, commands};
+use oriel_ui::{ActivityJob, ModeActivity, ModeId, ModeLayout, ShellState, commands};
 
 use crate::browser::{Browse, Comic, Tile, build_comics, build_tiles, sort_media};
 use crate::catalog::{Catalog, CatalogUpdate, ScanRequest, ScanState};
@@ -596,14 +596,36 @@ impl ViewMode {
         }
     }
 
-    /// What the shell shows on View's switcher: a dot while a scan runs or thumbnails are made.
+    /// What the shell shows of View's work: on the switcher, a dot while a scan runs or
+    /// thumbnails are made; in the activity panel, the scan, with what it has found so far.
+    /// Thumbnails stay out of the panel: they are made for the tiles on screen as the gallery
+    /// scrolls, so they would come and go there with every scroll.
     fn report_activity(&mut self, cx: &mut Context<Self>) {
-        let scanning = self.catalog.read(cx).is_scanning();
+        let catalog = self.catalog.read(cx);
+        let scanning = catalog.is_scanning();
         let thumbnailing = !self.gallery.read(cx).thumbnails().read(cx).is_idle();
         let activity = (scanning || thumbnailing).then_some(ModeActivity::Working);
+        let jobs: Vec<ActivityJob> = scanning
+            .then(|| {
+                let label = match catalog.root() {
+                    Some(root) => format!("Scanning {}", gallery::display_name(root)),
+                    None => "Scanning folder".to_owned(),
+                };
+                let found = catalog.items().len();
+                let job = ActivityJob::new("scan", label);
+                if found > 0 {
+                    job.detail(format!("{found} found"))
+                } else {
+                    job
+                }
+            })
+            .into_iter()
+            .collect();
+        let board = self.shell.read(cx).jobs().clone();
         self.shell.update(cx, |shell, cx| {
             shell.set_activity(ModeId::View, activity, cx);
         });
+        board.update(cx, |board, cx| board.set_jobs(ModeId::View, jobs, cx));
     }
 
     /// The gallery's tiles for the catalog and settings as they are: `buildBrowserEntryCollection`

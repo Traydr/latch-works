@@ -1,9 +1,10 @@
 //! What every mode's window shares: which mode shows, whether the sidebar is the rail, the work
 //! each mode reports, which section of Settings is open, and the folders the modes work on.
 
-use gpui_kit::Context;
 use gpui_kit::assets::IconName;
+use gpui_kit::{AppContext as _, Context, Entity};
 
+use crate::activity::Activity;
 use crate::folders::KnownFolder;
 
 /// Oriel's three modes, in the switcher's order (⌘1–3).
@@ -150,19 +151,27 @@ pub struct ShellState {
     mode: ModeId,
     rail: bool,
     activity: [Option<ModeActivity>; 3],
+    jobs: Entity<Activity>,
     settings: Option<SettingsSection>,
     folders: Vec<KnownFolder>,
 }
 
 impl ShellState {
-    pub fn new(mode: ModeId, rail: bool) -> Self {
+    pub fn new(mode: ModeId, rail: bool, cx: &mut Context<Self>) -> Self {
         Self {
             mode,
             rail,
             activity: [None; 3],
+            jobs: cx.new(|_| Activity::default()),
             settings: None,
             folders: Vec::new(),
         }
+    }
+
+    /// Every mode's jobs, running and queued, which the shell draws at the window's bottom
+    /// right; each mode publishes its own there with [`Activity::set_jobs`].
+    pub fn jobs(&self) -> &Entity<Activity> {
+        &self.jobs
     }
 
     /// Every folder a mode works on that is still there, with the modes that use it.
@@ -178,6 +187,15 @@ impl ShellState {
             .filter(|folder| !folder.is_used_by(mode))
             .cloned()
             .collect()
+    }
+
+    /// The modes that use `folder`, resolved as the known folders are; none for a folder no mode
+    /// uses or one that is gone.
+    pub fn modes_using(&self, folder: &std::path::Path) -> &[ModeId] {
+        self.folders
+            .iter()
+            .find(|known| known.path() == folder)
+            .map_or(&[], KnownFolder::modes)
     }
 
     /// The shell gathers the modes' folders here whenever one of them may have changed.

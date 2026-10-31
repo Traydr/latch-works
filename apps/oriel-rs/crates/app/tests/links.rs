@@ -2,7 +2,8 @@
 //! offered to View, and the modes hand files and folders on. View shows a file in Tidy, at the
 //! Library filtered to it; Tidy's Inspector and Overview open a file and the whole folder in
 //! View; and Tidy's Overview starts a Sync profile for its folder. Then what Oriel RS adds: Tidy
-//! offers only folders inside its sandbox, and says why it cannot take one outside.
+//! offers only folders inside its sandbox, and says why it cannot take one outside; and every
+//! mode's location switcher offers one shared list of folders, each opened in that mode alone.
 
 mod support;
 
@@ -14,6 +15,7 @@ use oriel_core_paths::DataRoot;
 use oriel_mode_sync::Screen;
 use oriel_mode_tidy::{TidyPage, last_toast};
 use oriel_ui::folders::offered_folder_id;
+use oriel_ui::locations::{SWITCHER_ID, location_id};
 use oriel_ui::{HandOff, ModeId};
 
 use support::*;
@@ -295,4 +297,130 @@ fn tidy_takes_only_folders_inside_its_sandbox(cx: &mut TestAppContext) {
     );
     click(cx, handle, offered);
     wait_until(cx, handle, "Tidy's scan", |cx| tidies(&opened, &inside, cx));
+}
+
+/// The bounds of the location switcher on screen, and of its menu once it is open.
+fn switcher(
+    cx: &mut TestAppContext,
+    handle: gpui_kit::AnyWindowHandle,
+) -> gpui_kit::Bounds<gpui_kit::Pixels> {
+    cx.update_window(handle, |_, window, _| window.find(SWITCHER_ID).bounds())
+        .unwrap()
+}
+
+/// Opens the switcher's menu and says how it reads `folder`'s row: its name and which modes use
+/// it. The menu is the switcher's width, from its left edge: the sidebar's, inside its margins.
+fn open_locations(
+    cx: &mut TestAppContext,
+    handle: gpui_kit::AnyWindowHandle,
+    folder: &Path,
+) -> Option<(String, String)> {
+    let trigger = switcher(cx, handle);
+    click(cx, handle, SWITCHER_ID);
+    cx.update_window(handle, |_, window, _| {
+        let menu = window.find("popup-menu").bounds();
+        // The switcher's recorded bounds take in its focus line, a pixel or two out.
+        let near = |a: gpui_kit::Pixels, b: gpui_kit::Pixels| (a - b).abs() <= gpui_kit::px(2.);
+        assert!(
+            near(menu.origin.x, trigger.origin.x) && near(menu.size.width, trigger.size.width),
+            "the menu {menu:?} spans the switcher {trigger:?}"
+        );
+        window.try_find(location_id(folder)).map(|row| {
+            (
+                row.label().unwrap_or_default().to_owned(),
+                row.description().unwrap_or_default().to_owned(),
+            )
+        })
+    })
+    .unwrap()
+}
+
+#[gpui_kit::test]
+fn every_mode_switches_location_from_one_shared_list(cx: &mut TestAppContext) {
+    let root = scratch("links-locations");
+    let archive = root.join("archive");
+    write_archive(&archive);
+    let data = DataRoot::at(root.join("data")).unwrap();
+    start(cx, &data);
+    let opened = open_shell(cx, &data);
+    let handle = opened.handle;
+
+    // A folder added in Tidy is Tidy's location, in its switcher and its menu.
+    press(cx, handle, "cmd-2");
+    wait_until(cx, handle, "Tidy's engine", |cx| tidy_ready(&opened, cx));
+    let tidy = cx.update(|cx| opened.shell.read(cx).tidy().clone());
+    cx.update_window(handle, |_, window, cx| {
+        tidy.update(cx, |tidy, cx| tidy.add_folder(archive.clone(), window, cx));
+    })
+    .unwrap();
+    wait_until(cx, handle, "Tidy's scan", |cx| {
+        tidies(&opened, &archive, cx)
+    });
+    assert_eq!(
+        label_of(cx, handle, SWITCHER_ID).as_deref(),
+        Some("archive")
+    );
+    let size = switcher(cx, handle).size;
+    assert_eq!(
+        open_locations(cx, handle, &archive),
+        Some(("archive".into(), "In Tidy".into()))
+    );
+    press(cx, handle, "escape");
+
+    // View, with no folder of its own, offers it at the same place and size; picking it opens it.
+    press(cx, handle, "cmd-1");
+    assert_eq!(
+        label_of(cx, handle, SWITCHER_ID).as_deref(),
+        Some("No folder open")
+    );
+    assert_eq!(switcher(cx, handle).size, size);
+    assert_eq!(
+        open_locations(cx, handle, &archive),
+        Some(("archive".into(), "In Tidy".into()))
+    );
+    click(cx, handle, location_id(&archive));
+    wait_until(cx, handle, "View to list the archive", |cx| {
+        view_shows(&opened, &archive, cx)
+    });
+    assert_eq!(
+        label_of(cx, handle, SWITCHER_ID).as_deref(),
+        Some("archive")
+    );
+    assert_eq!(
+        open_locations(cx, handle, &archive),
+        Some(("archive".into(), "In View and Tidy".into()))
+    );
+    press(cx, handle, "escape");
+
+    // Sync offers it too, and picking it starts a profile for it; Sync's selection stays its own.
+    press(cx, handle, "cmd-3");
+    assert_eq!(
+        label_of(cx, handle, SWITCHER_ID).as_deref(),
+        Some("No profile yet")
+    );
+    assert_eq!(switcher(cx, handle).size, size);
+    assert_eq!(
+        open_locations(cx, handle, &archive),
+        Some(("archive".into(), "In View and Tidy".into()))
+    );
+    click(cx, handle, location_id(&archive));
+    cx.update(|cx| {
+        let sync = opened.shell.read(cx).sync().read(cx);
+        assert_eq!(*sync.screen(), Screen::Form { editing: None });
+        assert_eq!(
+            sync.form_source_root(cx).as_ref(),
+            archive.to_string_lossy()
+        );
+    });
+
+    // In the rail the switcher is the same tile in every mode.
+    let shell = cx.update(|cx| opened.shell.read(cx).state().clone());
+    shell.update(cx, |state, cx| state.toggle_rail(cx));
+    frame(cx, handle);
+    let tile = switcher(cx, handle).size;
+    assert!(tile.width < size.width);
+    for key in ["cmd-1", "cmd-2"] {
+        press(cx, handle, key);
+        assert_eq!(switcher(cx, handle).size, tile, "{key}");
+    }
 }

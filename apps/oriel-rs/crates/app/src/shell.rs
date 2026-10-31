@@ -29,7 +29,8 @@ use oriel_mode_view::{ViewEvent, ViewMode};
 use oriel_ui::commands::shell_key_context;
 use oriel_ui::settings::SettingsFrame;
 use oriel_ui::{
-    HandOff, KnownFolder, LocalStorage, ModeId, SettingsSection, ShellState, Toast, ToastExt as _,
+    ActivityIndicator, HandOff, KnownFolder, LocalStorage, ModeId, SettingsSection, ShellState,
+    Toast, ToastExt as _,
 };
 
 use crate::actions::{
@@ -89,10 +90,15 @@ pub struct Shell {
     /// What the modes last said they work on: View's folder, Tidy's, Sync's. The known folders
     /// are gathered again only when this changes, or when another mode comes on screen.
     folder_sources: Option<[Vec<PathBuf>; 3]>,
+    /// The folders the import found in Electron Oriel (its report's), offered in every mode
+    /// until one uses them. The report is written once, before the start that puts it in place.
+    imported_folders: Vec<PathBuf>,
     /// The first start's welcome while it shows, and whether its dialog is open yet.
     welcome: Option<(Entity<Welcome>, bool, Subscription)>,
     /// `ORIEL_RS_ABOUT=1` asked for the About dialog at start, which opens once the window draws.
     about_at_start: bool,
+    /// `ORIEL_RS_ACTIVITY_PANEL=1` asked for the activity panel open whenever work runs.
+    open_activity_on_work: bool,
     /// The shell's measurements, when `ORIEL_RS_SPIKE_SHELL` asks for them.
     pub(crate) spike: Option<crate::spike::ShellSpike>,
     _subscriptions: Vec<Subscription>,
@@ -105,6 +111,7 @@ impl Shell {
         let mut this = Self::build(data, Rc::new(SystemQuit), true, window, cx);
         crate::check::apply_from_environment(&this.state, cx);
         this.about_at_start = crate::check::about_from_environment();
+        this.open_activity_on_work = crate::check::activity_panel_from_environment();
         this.spike = crate::spike::ShellSpike::from_environment();
         if this.spike.is_some() {
             crate::spike::start(window, cx);
@@ -137,7 +144,7 @@ impl Shell {
             .and_then(ModeId::from_key)
             .unwrap_or(ModeId::View);
         let rail = LocalStorage::get(cx, SIDEBAR_KEY) == Some("rail");
-        let state = cx.new(|_| ShellState::new(mode, rail));
+        let state = cx.new(|cx| ShellState::new(mode, rail, cx));
         let view = if from_environment {
             cx.new(|cx| ViewMode::new(&state, window, cx))
         } else {
@@ -155,6 +162,7 @@ impl Shell {
         };
         let quit = QuitGuard::install(&state, quit, cx);
         let tidy_state = tidy.read(cx).state().clone();
+        let jobs = state.read(cx).jobs().clone();
 
         let subscriptions = vec![
             cx.observe_in(&state, window, |this, _, window, cx| {
@@ -216,6 +224,13 @@ impl Shell {
             cx.observe(&view, |this, _, cx| this.gather_folders(false, cx)),
             cx.observe(&tidy_state, |this, _, cx| this.gather_folders(false, cx)),
             cx.observe(&sync, |this, _, cx| this.gather_folders(false, cx)),
+            // What every mode is doing, drawn once at the window's bottom right.
+            cx.observe(&jobs, |this, jobs, cx| {
+                if this.open_activity_on_work && !jobs.read(cx).is_idle() {
+                    jobs.update(cx, |jobs, cx| jobs.set_open(true, cx));
+                }
+                cx.notify();
+            }),
         ];
         let shell = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
@@ -229,6 +244,7 @@ impl Shell {
             rail,
             progress: None,
         };
+        let data_shell = data.shell();
         let mut this = Self {
             normal_bounds: WindowState::read(&data.shell()).map(|state| state.bounds()),
             data,
@@ -245,8 +261,12 @@ impl Shell {
             window_state: None,
             save_window: None,
             folder_sources: None,
+            imported_folders: oriel_migrate::Report::read(&data_shell)
+                .map(|report| report.folders.iter().map(PathBuf::from).collect())
+                .unwrap_or_default(),
             welcome: None,
             about_at_start: false,
+            open_activity_on_work: false,
             spike: None,
             _subscriptions: subscriptions,
         };
@@ -389,9 +409,10 @@ impl Shell {
         });
     }
 
-    /// Gathers the folders the modes work on onto the shell's state (`knownFolders`), when what
-    /// the modes say changed, or always when `force`: a folder since moved or deleted is not
-    /// offered, so another look at the disk is due when a mode comes on screen.
+    /// Gathers the folders the modes work on, and those the import found, onto the shell's state
+    /// (`knownFolders`), when what the modes say changed, or always when `force`: a folder since
+    /// moved or deleted is not offered, so another look at the disk is due when a mode comes on
+    /// screen.
     fn gather_folders(&mut self, force: bool, cx: &mut Context<Self>) {
         let sources = [
             self.view.read(cx).opened_folder().into_iter().collect(),
@@ -409,20 +430,19 @@ impl Shell {
             return;
         }
         // Symlinks resolved, so two spellings of one folder meet; one that is gone drops out.
-        let resolved: Vec<Vec<PathBuf>> = sources
-            .iter()
-            .map(|folders| {
-                folders
-                    .iter()
-                    .filter_map(|folder| oriel_runtime::paths::canonicalize(folder).ok())
-                    .filter(|folder| folder.is_dir())
-                    .collect()
-            })
-            .collect();
-        let known = KnownFolder::collect(
+        let resolve = |folders: &[PathBuf]| -> Vec<PathBuf> {
+            folders
+                .iter()
+                .filter_map(|folder| oriel_runtime::paths::canonicalize(folder).ok())
+                .filter(|folder| folder.is_dir())
+                .collect()
+        };
+        let resolved: Vec<Vec<PathBuf>> = sources.iter().map(|folders| resolve(folders)).collect();
+        let known = KnownFolder::collect_with(
             ModeId::ALL
                 .into_iter()
                 .zip(resolved.iter().map(Vec::as_slice)),
+            &resolve(&self.imported_folders),
         );
         self.folder_sources = Some(sources);
         self.state
@@ -661,6 +681,7 @@ impl Render for Shell {
             .id("shell")
             .key_context(shell_key_context(mode))
             .track_focus(&self.focus_handle)
+            .relative()
             .size_full()
             .on_action(cx.listener(|this, _: &ShowView, _, cx| this.go(ModeId::View, cx)))
             .on_action(cx.listener(|this, _: &ShowTidy, _, cx| this.go(ModeId::Tidy, cx)))
@@ -686,5 +707,6 @@ impl Render for Shell {
                 }
             }))
             .child(content)
+            .child(ActivityIndicator::new(self.state.read(cx).jobs()))
     }
 }

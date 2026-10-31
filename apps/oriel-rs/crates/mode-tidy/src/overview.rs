@@ -267,6 +267,7 @@ impl OverviewPage {
                 state.perform(PlanRequest::Cleanup { root_id }, source, window, cx);
             }
             StepId::Silent => state.perform_all(
+                "Remove silent soundtracks",
                 vec![TidyStep::SilentVideos(root_id)],
                 "Removed silent soundtracks".into(),
                 StepId::Silent.source(),
@@ -295,7 +296,7 @@ impl OverviewPage {
         else {
             return;
         };
-        if state.is_changing() {
+        if state.change_status(TIDY_SOURCE).is_some() {
             return;
         }
         let categories = state.convert_categories();
@@ -326,7 +327,7 @@ impl OverviewPage {
         }
         let title = format!("Tidied up {}", root.name);
         self.state.update(cx, |state, cx| {
-            state.perform_all(steps, title, TIDY_SOURCE, window, cx);
+            state.perform_all("Tidy up", steps, title, TIDY_SOURCE, window, cx);
         });
         cx.notify();
     }
@@ -605,33 +606,14 @@ impl OverviewPage {
             format!("{} to do", format::plural(todo, "thing"))
         };
 
-        let action: AnyElement = match state.change_for(TIDY_SOURCE) {
-            Some(change) => {
-                let progress = change.progress(cx);
-                let label = if progress.phase().is_empty() {
-                    change.name(cx)
-                } else {
-                    progress.phase().clone()
-                };
-                let stopper = self.state.clone();
-                widgets::run_progress(
-                    "overview-tidy",
-                    label,
-                    progress.done(),
-                    progress.total(),
-                    // Tidy up runs its steps one after another, so it stops but never pauses.
-                    None,
-                    move |_, _, cx| stopper.update(cx, |state, cx| state.stop_change(cx)),
-                    cx,
-                )
-                .into_any_element()
-            }
-            None => widgets::primary_action("overview-tidy-up", "Tidy up", "⌘↩")
+        // Another page's change running, Tidy up queues behind it.
+        let action: AnyElement = widgets::while_changing(
+            widgets::primary_action("overview-tidy-up", "Tidy up", "⌘↩")
                 .large()
-                .disabled(state.is_changing())
-                .on_click(cx.listener(|this, _, window, cx| this.tidy_up(window, cx)))
-                .into_any_element(),
-        };
+                .on_click(cx.listener(|this, _, window, cx| this.tidy_up(window, cx))),
+            state.change_status(TIDY_SOURCE),
+        )
+        .into_any_element();
 
         let shown: Vec<(Step, StepState)> = steps
             .into_iter()

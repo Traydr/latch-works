@@ -2,6 +2,10 @@
 //! job through [`crate::changes::TidyChanges`], is reported in a toast that offers Undo, and goes
 //! on ⌘Z's history. Tidy up runs several plans one after another as one change with one Undo.
 //!
+//! One change runs at a time. A change asked for while another runs waits in Tidy's queue, which
+//! the activity panel at the window's bottom right lists as queued, and starts when the one before
+//! it has been reported; Stop in the panel takes it off the queue.
+//!
 //! While a change runs the shell shows its ring and quitting waits for it; the catalog's version
 //! moves when it ends, so every page reads again, and the roots the change asks to scan or
 //! analyse again are.
@@ -86,10 +90,57 @@ pub struct RunningChange {
     /// What the plan running does; `None` for an undo.
     pub kind: Option<PlanKind>,
     job: Option<ChangeJob>,
+    /// Stop was pressed while the plan was drafted, before there was a job to stop.
+    stop_asked: bool,
     _subscriptions: Vec<Subscription>,
 }
 
+/// Where the change a page started is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChangeStatus {
+    Running,
+    /// Waiting in the queue for the change before it to finish.
+    Queued,
+}
+
+type StartChange = Box<dyn FnOnce(&mut TidyState, &mut Window, &mut Context<TidyState>)>;
+
+/// A change asked for while another held the turn: it starts when its turn comes, unless Stop
+/// takes it off the queue first.
+pub struct QueuedChange {
+    pub(crate) id: u64,
+    /// What the activity panel calls it until it runs, such as "Convert".
+    pub label: SharedString,
+    pub source: Option<SharedString>,
+    start: StartChange,
+    /// Runs if it leaves the queue without running, as `PerformOptions::on_failed` does.
+    on_dropped: Option<OnUndone>,
+}
+
+/// What a queued change is called before its plan names it.
+fn queued_label(kind: PlanKind) -> &'static str {
+    match kind {
+        PlanKind::Hold => "Move to holding",
+        PlanKind::Move => "Move files",
+        PlanKind::Rename => "Rename",
+        PlanKind::FixExtension => "Fix extensions",
+        PlanKind::Optimize => "Convert",
+        PlanKind::Reencode => "Re-encode videos",
+        PlanKind::StripAudio => "Remove silent soundtracks",
+        PlanKind::ResolveDuplicates => "Resolve duplicates",
+        PlanKind::CleanJunk => "Clean junk",
+        PlanKind::RemoveEmptyFolders => "Remove empty folders",
+        PlanKind::Cleanup => "Clean up",
+        PlanKind::ShrinkVideos => "Shrink videos",
+    }
+}
+
 impl RunningChange {
+    /// Whether its plan is drafted and its job runs, so it can be paused.
+    pub fn has_job(&self) -> bool {
+        self.job.is_some()
+    }
+
     pub fn progress(&self, cx: &App) -> JobProgress {
         match &self.job {
             Some(ChangeJob::Perform(job)) => job.read(cx).progress().clone(),
@@ -231,16 +282,83 @@ impl TidyState {
         self.results.get(source)
     }
 
-    /// Whether a change runs, so a page's main action waits for it.
+    /// Whether a change runs, or holds the turn between the steps of one; another waits in the
+    /// queue.
     pub fn is_changing(&self) -> bool {
-        self.change.is_some()
+        self.change_turn || self.change.is_some()
     }
 
-    /// Stops the change running; finished steps stay done and can be undone.
+    /// Stops the change running; finished steps stay done and can be undone. A change still
+    /// drafting its plan stops as soon as its job starts.
     pub fn stop_change(&mut self, cx: &mut Context<Self>) {
-        if let Some(change) = &self.change {
+        if let Some(change) = &mut self.change {
+            change.stop_asked = true;
             change.cancel(cx);
         }
+    }
+
+    /// Where the change started from `source` is: running, or queued behind another.
+    pub fn change_status(&self, source: &str) -> Option<ChangeStatus> {
+        if self.change_for(source).is_some() {
+            return Some(ChangeStatus::Running);
+        }
+        self.queue
+            .iter()
+            .any(|queued| queued.source.as_deref() == Some(source))
+            .then_some(ChangeStatus::Queued)
+    }
+
+    /// Starts a change at once when none holds the turn, else queues it behind the others.
+    fn when_free(
+        &mut self,
+        label: impl Into<SharedString>,
+        source: Option<SharedString>,
+        on_dropped: Option<OnUndone>,
+        start: impl FnOnce(&mut TidyState, &mut Window, &mut Context<TidyState>) + 'static,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.change_turn {
+            self.change_turn = true;
+            start(self, window, cx);
+            return;
+        }
+        let id = self.next_queued;
+        self.next_queued += 1;
+        self.queue.push_back(QueuedChange {
+            id,
+            label: label.into(),
+            source,
+            start: Box::new(start),
+            on_dropped,
+        });
+        self.report_activity(cx);
+        cx.notify();
+    }
+
+    /// The change holding the turn has been reported: the next in the queue starts.
+    fn release_turn(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.change_turn = false;
+        if let Some(next) = self.queue.pop_front() {
+            self.change_turn = true;
+            (next.start)(self, window, cx);
+        }
+        self.report_activity(cx);
+        cx.notify();
+    }
+
+    /// Takes the queued change `id` off the queue without running it.
+    pub(crate) fn drop_queued(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.queue.iter().position(|queued| queued.id == id) else {
+            return;
+        };
+        if let Some(queued) = self.queue.remove(index)
+            && let Some(on_dropped) = queued.on_dropped
+        {
+            window.defer(cx, move |window, cx| on_dropped(window, cx));
+        }
+        self.report_activity(cx);
+        cx.notify();
     }
 
     /// Drafts and applies `request`, tracking it as the running change; answers with the draft
@@ -263,6 +381,7 @@ impl TidyState {
             source,
             kind: Some(kind),
             job: None,
+            stop_asked: false,
             _subscriptions: Vec::new(),
         });
         self.report_activity(cx);
@@ -279,6 +398,9 @@ impl TidyState {
                     if let Some(change) = &mut this.change {
                         change.job = Some(ChangeJob::Perform(job));
                         change._subscriptions = vec![subscription, observing];
+                        if change.stop_asked {
+                            change.cancel(cx);
+                        }
                     }
                     finished
                 })
@@ -320,6 +442,7 @@ impl TidyState {
             source: None,
             kind: None,
             job: Some(ChangeJob::Undo(job)),
+            stop_asked: false,
             _subscriptions: vec![subscription, observing],
         });
         self.report_activity(cx);
@@ -344,8 +467,8 @@ impl TidyState {
         }
     }
 
-    /// Runs a plan now and reports it with a toast that offers Undo (`perform`). What the plan
-    /// left out is in the toast's detail.
+    /// Runs a plan, at once or after the changes queued before it, and reports it with a toast
+    /// that offers Undo (`perform`). What the plan left out is in the toast's detail.
     pub fn perform(
         &mut self,
         request: PlanRequest,
@@ -353,19 +476,32 @@ impl TidyState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.change.is_some() {
-            if let Some(on_failed) = options.on_failed.clone() {
-                window.defer(cx, move |window, cx| on_failed(window, cx));
-            }
-            show_toast(window, Toast::info("Another change is running"), cx);
-            return;
-        }
+        let label = queued_label(request.kind());
+        let (source, on_dropped) = (options.source.clone(), options.on_failed.clone());
+        self.when_free(
+            label,
+            source,
+            on_dropped,
+            move |this, window, cx| this.perform_now(request, options, window, cx),
+            window,
+            cx,
+        );
+    }
+
+    fn perform_now(
+        &mut self,
+        request: PlanRequest,
+        options: PerformOptions,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let finished = self.start_perform(request, options.source.clone(), cx);
         cx.spawn_in(window, async move |this, cx| {
             let outcome = finished.await;
             this.update_in(cx, |this, window, cx| {
                 this.change_ended(cx);
                 this.announce(outcome, &options, window, cx);
+                this.release_turn(window, cx);
             })
             .ok();
         })
@@ -488,7 +624,8 @@ impl TidyState {
         })
     }
 
-    /// Undoes a plan, says so unless `options.quiet`, and runs `options.on_undone` once it is.
+    /// Undoes a plan, at once or after the changes queued before it, says so unless
+    /// `options.quiet`, and runs `options.on_undone` once it is.
     pub fn undo_plan(
         &mut self,
         plan: PlanSummary,
@@ -496,10 +633,24 @@ impl TidyState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.change.is_some() {
-            show_toast(window, Toast::info("Another change is running"), cx);
-            return;
-        }
+        let label = format!("Undo “{}”", plan.title);
+        self.when_free(
+            label,
+            None,
+            None,
+            move |this, window, cx| this.undo_plan_now(plan, options, window, cx),
+            window,
+            cx,
+        );
+    }
+
+    fn undo_plan_now(
+        &mut self,
+        plan: PlanSummary,
+        options: PerformOptions,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.forget_plans(&[plan.id]);
         let finished = self.start_undo(plan.id, cx);
         cx.spawn_in(window, async move |this, cx| {
@@ -529,6 +680,7 @@ impl TidyState {
                         cx,
                     ),
                 }
+                this.release_turn(window, cx);
             })
             .ok();
         })
@@ -538,7 +690,27 @@ impl TidyState {
     /// Runs Tidy up's steps one after another, each drafted once the one before has finished, and
     /// reports them as one change with one Undo (`performAll`). A step that turns out to have
     /// nothing to do is skipped.
+    /// `label` names it in the activity panel while it waits ("Tidy up"); `title` reports it.
     pub fn perform_all(
+        &mut self,
+        label: &'static str,
+        steps: Vec<TidyStep>,
+        title: String,
+        source: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.when_free(
+            label,
+            Some(source.into()),
+            None,
+            move |this, window, cx| this.perform_all_now(steps, title, source, window, cx),
+            window,
+            cx,
+        );
+    }
+
+    fn perform_all_now(
         &mut self,
         steps: Vec<TidyStep>,
         title: String,
@@ -546,16 +718,13 @@ impl TidyState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.change.is_some() {
-            show_toast(window, Toast::info("Another change is running"), cx);
-            return;
-        }
         let this = cx.entity().downgrade();
         cx.spawn_in(window, async move |_, cx| {
             let (plans, notes, follow_up) = run_steps(&this, steps, source, cx).await;
             this.update_in(cx, |this, window, cx| {
                 this.follow_up(&follow_up, window, cx);
                 this.announce_all(plans, notes, title, source, window, cx);
+                this.release_turn(window, cx);
             })
             .ok();
         })
@@ -638,10 +807,24 @@ impl TidyState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.change.is_some() {
-            show_toast(window, Toast::info("Another change is running"), cx);
-            return;
-        }
+        let label = format!("Undo “{title}”");
+        self.when_free(
+            label,
+            None,
+            None,
+            move |this, window, cx| this.undo_all_now(plans, title, window, cx),
+            window,
+            cx,
+        );
+    }
+
+    fn undo_all_now(
+        &mut self,
+        plans: Vec<PlanSummary>,
+        title: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let ids: Vec<PlanId> = plans.iter().map(|plan| plan.id).collect();
         self.forget_plans(&ids);
         let this = cx.entity().downgrade();
@@ -676,6 +859,7 @@ impl TidyState {
                     Some(message) => Toast::error("Undo did not finish").detail(message),
                 };
                 show_toast(window, toast, cx);
+                this.release_turn(window, cx);
             })
             .ok();
         })

@@ -157,7 +157,7 @@ impl ShrinkPage {
             .summary
             .data()
             .is_none_or(|summary| summary.items.is_empty());
-        if empty || state.is_changing() {
+        if empty || state.change_status(SOURCE).is_some() {
             return;
         }
         let (_, limit_bytes) = Self::batch(cx);
@@ -191,8 +191,7 @@ impl Focusable for ShrinkPage {
 impl Render for ShrinkPage {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let shell = self.state.read(cx).shell.clone();
-        let changing = self.state.read(cx).is_changing();
-        let running = widgets::change_progress(&self.state, SOURCE, "shrink-run", cx);
+        let status = self.state.read(cx).change_status(SOURCE);
         let Some(summary) = self.summary.data().cloned() else {
             let body = match self.summary.error().cloned() {
                 Some(error) => {
@@ -283,17 +282,17 @@ impl Render for ShrinkPage {
                 .child(widgets::caption("Each run", cx))
                 .child(segmented)
         });
-        let action: AnyElement = match running {
-            Some(running) => running,
-            None => widgets::primary_action(
+        let action: AnyElement = widgets::while_changing(
+            widgets::primary_action(
                 "shrink-run",
                 format!("Shrink {}", format::count(batch.len() as i64)),
                 "⌘↩",
             )
-            .disabled(batch.is_empty() || changing)
-            .on_click(cx.listener(|this, _, window, cx| this.shrink(window, cx)))
-            .into_any_element(),
-        };
+            .disabled(batch.is_empty())
+            .on_click(cx.listener(|this, _, window, cx| this.shrink(window, cx))),
+            status,
+        )
+        .into_any_element();
         let top_bar = TopBar::new(&shell, "Shrink")
             .when_some(meta, |bar, meta| bar.trailing(widgets::caption(meta, cx)))
             .when_some(batches, |bar, batches| bar.trailing(batches))

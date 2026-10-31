@@ -214,7 +214,7 @@ impl ConvertPage {
             return;
         };
         let categories = state.convert_categories();
-        if categories.is_empty() || state.is_changing() {
+        if categories.is_empty() || state.change_status(SOURCE).is_some() {
             return;
         }
         self.state.update(cx, |state, cx| {
@@ -404,7 +404,7 @@ impl Render for ConvertPage {
             .into_iter()
             .filter(|group| !enabled.contains(group))
             .collect();
-        let running = widgets::change_progress(&self.state, SOURCE, "convert-run", cx);
+        let status = state.change_status(SOURCE);
         let changing = state.is_changing();
 
         let Some(tidy) = tidy else {
@@ -504,17 +504,18 @@ impl Render for ConvertPage {
                     "Pictures use AVIF at quality 70. Video tracks MP4 can hold are copied as they are.",
                 )
             });
-        let action: AnyElement = match running {
-            Some(running) => running,
-            None => widgets::primary_action(
+        // Another page's change running, this one queues behind it.
+        let action: AnyElement = widgets::while_changing(
+            widgets::primary_action(
                 "convert-run",
                 format!("Convert {}", format::count(files)),
                 "⌘↩",
             )
-            .disabled(files == 0 || changing)
-            .on_click(cx.listener(|this, _, window, cx| this.convert(window, cx)))
-            .into_any_element(),
-        };
+            .disabled(files == 0)
+            .on_click(cx.listener(|this, _, window, cx| this.convert(window, cx))),
+            status,
+        )
+        .into_any_element();
         let top_bar = TopBar::new(&shell, "Convert")
             .when_some(meta, |bar, meta| {
                 bar.trailing(

@@ -86,6 +86,7 @@ scripted input:
 | `ORIEL_RS_OPEN=<folder>` | View opens the folder at start |
 | `ORIEL_RS_SETTINGS=general` | Settings opens at that section (`general`, `view`, `tidy`, `sync`) |
 | `ORIEL_RS_ACTIVITY=tidy=0.4,sync=working` | Fakes mode activity; a faked progress makes ⌘Q wait, so press it twice |
+| `ORIEL_RS_ACTIVITY_PANEL=1` | Opens the activity panel at the bottom right whenever work runs |
 | `ORIEL_RS_SYNC_PLAN=1` | Sync plans the active profile at start |
 | `ORIEL_RS_VIDEO=avplayer` | Video through AVPlayer instead of libmpv |
 | `ORIEL_RS_ABOUT=1` | Opens the About dialog at start, to see the version and the licences a bundle lists |
@@ -98,6 +99,8 @@ scripted input:
 | `ORIEL_RS_APPLICATIONS_DIR=<folder>` | Where that move goes, read only when the offer is forced |
 | `ORIEL_RS_QUICK_LOOK=<file>` | Tidy shows the file in Quick Look once it is up |
 | `ORIEL_RS_TIDY_PICKER=1` | Tidy opens its folder picker (Add Folder…) once it is up |
+| `ORIEL_RS_TIDY_RUN=convert,cleanup` | Once the folder on screen is scanned, Tidy starts those pages' changes; the second queues behind the first. It changes files: point it only at a copy |
+| `ORIEL_RS_LOCATIONS_MENU=1` | Opens the sidebar's location switcher about 4 s after the window first draws |
 | `ORIEL_RS_CHANGES_ONLY=<scenario>` | `core-tidy`'s changes test runs one differential scenario |
 | `ORIEL_RS_CHANGES_OUT=<file>` | `core-tidy`'s changes test writes Rust's report there |
 | `ORIEL_SPIKE_PANEL=volume\|speed` | `mpv_spike` opens the player's volume or speed panel, for screenshots |

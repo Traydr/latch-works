@@ -3,9 +3,10 @@
 //! running, and a version that moves whenever the catalog changes, so the pages read again.
 //!
 //! Pages observe this entity. They never touch the engine's jobs themselves: a scan, an analysis
-//! or a change starts here, and its progress reaches the shell's switcher from here.
+//! or a change starts here, and its progress reaches the shell from here: the switcher's ring and
+//! the activity panel at the window's bottom right, whose Pause, Resume and Stop come back here.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 
 use gpui_kit::{
@@ -18,9 +19,12 @@ use oriel_core_tidy::contract::{
 };
 use oriel_core_tidy::{AnalysisReport, ScanReport, TidyEngine};
 use oriel_runtime::{Job, JobEvent};
-use oriel_ui::{LocalStorage, ModeActivity, ModeId, ShellState, Toast};
+use oriel_ui::{
+    ActivityJob, JobCommand, JobControl, JobState, LocalStorage, ModeActivity, ModeId, ShellState,
+    Toast,
+};
 
-use crate::actions::{RunningChange, UndoEntry};
+use crate::actions::{QueuedChange, RunningChange, UndoEntry};
 use crate::changes::{Changes, HoldingList, PlanSummary};
 use crate::links::TidyEvent;
 use crate::loaded::Loaded;
@@ -32,6 +36,13 @@ pub const VIEW_KEY: &str = "oriel.tidy.view";
 pub const ROOT_KEY: &str = "oriel.tidy.root";
 /// Convert's switches, shared by Convert's Options and Overview's Tidy up.
 pub const CONVERT_GROUPS_KEY: &str = "glazier.convert-groups";
+
+/// The keys Tidy's jobs have in the activity panel; a queued change's is this prefix and its
+/// number.
+const CHANGE_JOB: &str = "change";
+const SCAN_JOB: &str = "scan";
+const ANALYSIS_JOB: &str = "analysis";
+const QUEUED_JOB: &str = "queued-";
 
 /// A starting filter for the Library, set when another page links to a set of files.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -125,21 +136,6 @@ pub struct Running<T> {
     _subscriptions: Vec<Subscription>,
 }
 
-/// Which job the sidebar's card shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Work {
-    Change,
-    Scan,
-    Analysis,
-}
-
-/// A scan or analysis that failed, for the sidebar's card until it is dismissed.
-#[derive(Clone, Debug, PartialEq)]
-pub struct FailedWork {
-    pub label: SharedString,
-    pub message: SharedString,
-}
-
 /// What the Library, Duplicates and the search were asked to open with.
 #[derive(Default)]
 pub struct Requests {
@@ -171,7 +167,12 @@ pub struct TidyState {
     scan: Option<Running<ScanReport>>,
     analysis: Option<Running<AnalysisReport>>,
     pub(crate) change: Option<RunningChange>,
-    failed: Option<FailedWork>,
+    /// Whether a change holds Tidy's turn for changes: from when it starts until it is reported,
+    /// across each step of Tidy up or of an Undo of several plans.
+    pub(crate) change_turn: bool,
+    /// The changes asked for while another held the turn, in the order they were asked for.
+    pub(crate) queue: VecDeque<QueuedChange>,
+    pub(crate) next_queued: u64,
     pub(crate) undo: Vec<UndoEntry>,
     /// The newest finished plan started from each place in the UI (`resultFor`).
     pub(crate) results: HashMap<SharedString, PlanSummary>,
@@ -258,7 +259,9 @@ impl TidyState {
             scan: None,
             analysis: None,
             change: None,
-            failed: None,
+            change_turn: false,
+            queue: VecDeque::new(),
+            next_queued: 0,
             undo: Vec::new(),
             results: HashMap::new(),
             requests: Requests::default(),
@@ -404,19 +407,13 @@ impl TidyState {
             .is_some_and(|scan| scan.root_id == root_id)
     }
 
-    /// Whether any scan, analysis or change runs.
+    /// Whether any scan, analysis or change runs, or a change waits for its turn.
     pub fn is_busy(&self) -> bool {
-        self.scan.is_some() || self.analysis.is_some() || self.change.is_some()
-    }
-
-    pub fn failed_work(&self) -> Option<&FailedWork> {
-        self.failed.as_ref()
-    }
-
-    pub fn dismiss_failed_work(&mut self, cx: &mut Context<Self>) {
-        if self.failed.take().is_some() {
-            cx.notify();
-        }
+        self.scan.is_some()
+            || self.analysis.is_some()
+            || self.change.is_some()
+            || self.change_turn
+            || !self.queue.is_empty()
     }
 
     pub fn convert_groups(&self) -> &BTreeSet<ConvertGroup> {
@@ -657,7 +654,6 @@ impl TidyState {
             return;
         };
         let job = engine.start_scan_only(root_id, cx);
-        self.failed = None;
         // Registered before `watch`'s, whose handler drops these subscriptions with the slot.
         let mut subscriptions =
             vec![
@@ -748,25 +744,29 @@ impl TidyState {
                     phase = now;
                     this.changed(cx);
                 }
+                // How far it has got, for the activity panel.
+                this.report_activity(cx);
                 cx.notify();
             }),
-            cx.subscribe_in(job, window, move |this, job, event: &JobEvent, _, cx| {
-                let name = job.read(cx).name().clone();
-                *slot(this) = None;
-                if let JobEvent::Failed(error) = event
-                    && !error.is_cancelled()
-                {
-                    this.failed = Some(FailedWork {
-                        label: name,
-                        message: error.message(),
-                    });
-                }
-                this.report_activity(cx);
-                // What the job wrote after its last phase began shows now; an analysis no longer
-                // ends with its scan, whose new scan time used to re-read every page.
-                this.changed(cx);
-                this.reload_roots(cx);
-            }),
+            cx.subscribe_in(
+                job,
+                window,
+                move |this, job, event: &JobEvent, window, cx| {
+                    let name = job.read(cx).name().clone();
+                    *slot(this) = None;
+                    if let JobEvent::Failed(error) = event
+                        && !error.is_cancelled()
+                    {
+                        let toast = Toast::error(format!("{name} failed")).detail(error.message());
+                        crate::widgets::show_toast(window, toast, cx);
+                    }
+                    this.report_activity(cx);
+                    // What the job wrote after its last phase began shows now; an analysis no longer
+                    // ends with its scan, whose new scan time used to re-read every page.
+                    this.changed(cx);
+                    this.reload_roots(cx);
+                },
+            ),
         ]
     }
 
@@ -779,92 +779,58 @@ impl TidyState {
         }
     }
 
-    /// The work the job card shows, as glazier-core's card picks it: the first that runs or is
-    /// paused, else the first that waits for its turn; a change before a scan before an analysis.
-    pub fn shown_work(&self, cx: &App) -> Option<Work> {
-        let mut active = Vec::new();
-        if let Some(change) = &self.change {
-            active.push((Work::Change, change.progress(cx)));
-        }
-        if let Some(scan) = &self.scan {
-            active.push((Work::Scan, scan.job.read(cx).progress().clone()));
-        }
-        if let Some(analysis) = &self.analysis {
-            active.push((Work::Analysis, analysis.job.read(cx).progress().clone()));
-        }
-        active
-            .iter()
-            .find(|(_, progress)| !progress.is_waiting())
-            .or(active.first())
-            .map(|(work, _)| *work)
-    }
-
-    /// How many jobs there are besides the one the card shows ("2 more queued").
-    pub fn queued_work(&self) -> usize {
-        let active = usize::from(self.change.is_some())
-            + usize::from(self.scan.is_some())
-            + usize::from(self.analysis.is_some());
-        active.saturating_sub(1)
-    }
-
-    /// Pauses or resumes the work the card shows (`pauseJob`); the step in flight finishes.
-    /// Pauses the running change, or resumes it, from the page that started it (`RunProgress`).
-    pub fn toggle_change_pause(&mut self, cx: &mut Context<Self>) {
-        if let Some(change) = &self.change {
-            let paused = change.progress(cx).is_paused();
-            change.set_paused(!paused, cx);
-        }
-    }
-
-    pub fn toggle_pause(&mut self, cx: &mut Context<Self>) {
-        fn toggle<T: 'static>(job: &Entity<Job<T>>, cx: &mut App) {
-            job.update(cx, |job, cx| {
-                let paused = job.is_paused();
-                job.set_paused(!paused, cx);
+    /// Pause, Resume or Stop pressed in the activity panel on one of Tidy's jobs: the change
+    /// running, a change waiting in the queue, the scan or the analysis. A paused job finishes the
+    /// step in flight first (`pauseJob`); a stopped one keeps what it finished (`cancelJob`).
+    pub fn on_job_command(
+        &mut self,
+        command: &JobCommand,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        fn control<T: 'static>(job: &Entity<Job<T>>, control: JobControl, cx: &mut App) {
+            job.update(cx, |job, cx| match control {
+                JobControl::Pause => job.set_paused(true, cx),
+                JobControl::Resume => job.set_paused(false, cx),
+                JobControl::Stop => job.cancel(cx),
             });
         }
-        match self.shown_work(cx) {
-            Some(Work::Change) => {
+        if command.mode() != ModeId::Tidy {
+            return;
+        }
+        match (command.key(), command.control()) {
+            (CHANGE_JOB, JobControl::Stop) => self.stop_change(cx),
+            (CHANGE_JOB, pause) => {
                 if let Some(change) = &self.change {
-                    let paused = change.progress(cx).is_paused();
-                    change.set_paused(!paused, cx);
+                    change.set_paused(pause == JobControl::Pause, cx);
                 }
             }
-            Some(Work::Scan) => {
+            (SCAN_JOB, how) => {
                 if let Some(scan) = &self.scan {
-                    toggle(&scan.job, cx);
+                    control(&scan.job, how, cx);
                 }
             }
-            Some(Work::Analysis) => {
+            (ANALYSIS_JOB, how) => {
                 if let Some(analysis) = &self.analysis {
-                    toggle(&analysis.job, cx);
+                    control(&analysis.job, how, cx);
                 }
             }
-            None => {}
+            (key, JobControl::Stop) => {
+                if let Some(id) = key
+                    .strip_prefix(QUEUED_JOB)
+                    .and_then(|id| id.parse::<u64>().ok())
+                {
+                    self.drop_queued(id, window, cx);
+                }
+            }
+            _ => {}
         }
         self.report_activity(cx);
     }
 
-    /// Stops the work the card shows (`cancelJob`); what it finished stays.
-    pub fn stop_shown_work(&mut self, cx: &mut Context<Self>) {
-        match self.shown_work(cx) {
-            Some(Work::Change) => self.stop_change(cx),
-            Some(Work::Scan) => {
-                if let Some(scan) = &self.scan {
-                    scan.job.update(cx, |job, cx| job.cancel(cx));
-                }
-            }
-            Some(Work::Analysis) => {
-                if let Some(analysis) = &self.analysis {
-                    analysis.job.update(cx, |job, cx| job.cancel(cx));
-                }
-            }
-            None => {}
-        }
-    }
-
-    /// Tells the shell what Tidy is doing: a ring while a change runs, a dot while a scan or an
-    /// analysis does (`jobActivity`).
+    /// Tells the shell what Tidy is doing: on the switcher, a ring while a change runs and a dot
+    /// while a scan or an analysis does (`jobActivity`); in the activity panel, every job, with
+    /// what waits for its turn as queued.
     pub(crate) fn report_activity(&mut self, cx: &mut Context<Self>) {
         let activity = if let Some(change) = &self.change {
             // A paused change cannot finish (one job runs at a time), so it does not hold
@@ -874,14 +840,70 @@ impl TidyState {
             } else {
                 ModeActivity::Progress(change.fraction(cx))
             })
-        } else if self.scan.is_some() || self.analysis.is_some() {
+        } else if self.change_turn || self.scan.is_some() || self.analysis.is_some() {
             Some(ModeActivity::Working)
         } else {
             None
         };
+        let jobs = self.activity_jobs(cx);
+        let board = self.shell.read(cx).jobs().clone();
         self.shell.update(cx, |shell, cx| {
             shell.set_activity(ModeId::Tidy, activity, cx);
         });
+        board.update(cx, |board, cx| board.set_jobs(ModeId::Tidy, jobs, cx));
+    }
+
+    /// Tidy's jobs as the activity panel lists them: the change, then the scan and the analysis,
+    /// then the changes queued behind them.
+    fn activity_jobs(&self, cx: &App) -> Vec<ActivityJob> {
+        fn job_of(
+            key: &'static str,
+            name: SharedString,
+            progress: &oriel_runtime::JobProgress,
+        ) -> ActivityJob {
+            let label = if progress.phase().is_empty() {
+                name
+            } else {
+                progress.phase().clone()
+            };
+            let state = if progress.is_paused() {
+                JobState::Paused
+            } else if progress.is_waiting() {
+                JobState::Queued
+            } else if progress.is_background() {
+                JobState::Background
+            } else {
+                JobState::Running
+            };
+            ActivityJob::new(key, label)
+                .state(state)
+                .counts(progress.done(), progress.total())
+                // Work waiting for its turn has nothing to pause yet; a paused job resumes.
+                .pausable(state != JobState::Queued)
+                .stoppable(true)
+        }
+        let mut jobs = Vec::new();
+        if let Some(change) = &self.change {
+            let progress = change.progress(cx);
+            let job = job_of(CHANGE_JOB, change.name(cx), &progress);
+            // Until its plan is drafted it has no job to pause.
+            let pausable = job.is_pausable() && change.has_job();
+            jobs.push(job.pausable(pausable));
+        }
+        if let Some(scan) = &self.scan {
+            let job = scan.job.read(cx);
+            jobs.push(job_of(SCAN_JOB, job.name().clone(), job.progress()));
+        }
+        if let Some(analysis) = &self.analysis {
+            let job = analysis.job.read(cx);
+            jobs.push(job_of(ANALYSIS_JOB, job.name().clone(), job.progress()));
+        }
+        jobs.extend(self.queue.iter().map(|queued| {
+            ActivityJob::new(format!("{QUEUED_JOB}{}", queued.id), queued.label.clone())
+                .state(JobState::Queued)
+                .stoppable(true)
+        }));
+        jobs
     }
 
     // Settings.
