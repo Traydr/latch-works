@@ -27,7 +27,7 @@
 - **Effort**: L
 - **Risk**: MEDIUM. Every Windows path is new and unrun, and Tidy moves files. The sandbox and
   throwaway archives keep that away from the owner's library.
-- **Depends on**: 063 (Phase 8 written, on `agent/063-0-spike`)
+- **Depends on**: 063 (Phase 8 written, merged to `main` in #192)
 - **Planned at**: commit `3e0cf587`, 2026-10-31
 
 ## Goal
@@ -55,7 +55,7 @@ moves its `oriel` folder aside to `oriel-electron-<date>`, and leaves the other 
 
 ## Ground rules
 
-- **Branch and commits.** Work on `agent/063-0-spike`. Commit each fix on its own, with a short
+- **Branch and commits.** Work on a branch made from `main`, such as `agent/064-oriel-windows`. Commit each fix on its own, with a short
   imperative subject in the branch's style, such as `fix(oriel): load libavif beside the exe on
   Windows`. Push, or open a PR, only when the owner asks.
 - **Throwaway data only.** Every check runs with `ORIEL_DATA_DIR` set to a scratch folder, such as
@@ -74,7 +74,7 @@ moves its `oriel` folder aside to `oriel-electron-<date>`, and leaves the other 
 
 ## Step 1: run the install script
 
-From a clone of the repository, on `agent/063-0-spike`:
+From a clone of the repository, on your branch from `main`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File apps\oriel\scripts\install-windows.ps1
