@@ -132,6 +132,7 @@ impl ToolRun {
             stdout: collected.stdout,
             stderr: collected.stderr,
             timed_out: collected.timed_out,
+            killed: collected.killed,
         })
     }
 }
@@ -148,11 +149,17 @@ pub struct ToolOutput {
     pub stderr: String,
     /// Whether the run was killed for lasting longer than its timeout.
     pub timed_out: bool,
+    /// Whether the run killed the tool, for its timeout or its stdout bound.
+    killed: bool,
 }
 
 impl ToolOutput {
-    /// The exit code, `None` when the tool was killed.
+    /// The exit code, `None` when the tool was killed. A process Windows terminates still
+    /// has an exit code (1, from `TerminateProcess`), so a kill this run made is checked too.
     pub fn code(&self) -> Option<i32> {
+        if self.killed {
+            return None;
+        }
         self.status.code()
     }
 
@@ -268,6 +275,7 @@ struct Collected {
     stderr: String,
     timed_out: bool,
     cancelled: bool,
+    killed: bool,
 }
 
 /// Waits for both pipes to end, killing the tool at the deadline, past the stdout bound, or on
@@ -317,6 +325,7 @@ fn collect(
         stderr: stderr.unwrap_or_default(),
         timed_out,
         cancelled,
+        killed,
     }
 }
 
