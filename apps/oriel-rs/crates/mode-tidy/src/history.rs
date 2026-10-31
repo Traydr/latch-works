@@ -1,6 +1,10 @@
 //! History (`views/HistoryView.tsx`): every change Tidy made to the folder, newest first, by
 //! day, with what it did and its Undo. Duplicate decisions made one after another read as one
 //! entry. An entry opens to list its steps; U undoes the entry in focus.
+//!
+//! The log is drawn a screen at a time ([`crate::windowed`]): a day's heading, each entry, and
+//! the button for earlier changes are items of one column, each entry drawing its part of its
+//! day's card.
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -28,6 +32,7 @@ use crate::loaded::Loaded;
 use crate::pages::TidyPage;
 use crate::state::TidyState;
 use crate::widgets;
+use crate::windowed::{Piece, Windowed};
 
 const PAGE: usize = 200;
 
@@ -42,6 +47,85 @@ struct Entry {
     key: String,
     /// Newest first.
     plans: Vec<PlanSummary>,
+}
+
+/// One item of the log's column.
+enum Item {
+    /// A day's heading, over the day's card; `at` is when its newest entry was made.
+    Day { first: bool, at: i64 },
+    /// An entry, the `index`th of its day's card.
+    Entry {
+        entry: Rc<Entry>,
+        index: usize,
+        last: bool,
+    },
+    /// The button that shows earlier changes, while the last answer filled the page asked for.
+    More,
+}
+
+/// What an item's height follows: an entry's grows as it opens and its steps come in.
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum ItemKey {
+    Day(bool),
+    Entry {
+        key: String,
+        first: bool,
+        last: bool,
+        open: bool,
+        steps: usize,
+    },
+    More,
+}
+
+/// The log as read: its entries, and the column's items, made once per answer.
+struct Log {
+    entries: Vec<Rc<Entry>>,
+    items: Vec<Item>,
+    newest_undoable: Option<String>,
+}
+
+impl Log {
+    fn of(plans: &[PlanSummary]) -> Self {
+        let entries: Vec<Rc<Entry>> = group_plans(plans).into_iter().map(Rc::new).collect();
+        let newest_undoable = entries
+            .iter()
+            .find(|entry| entry.plans.iter().any(can_undo))
+            .map(|entry| entry.key.clone());
+        // A day's entries in a card under its heading. Days are told apart by their date, as
+        // their headings are ("Today", "Yesterday", the date).
+        let mut items = Vec::new();
+        let mut day: Option<String> = None;
+        let mut card: Vec<Rc<Entry>> = Vec::new();
+        let flush = |items: &mut Vec<Item>, card: &mut Vec<Rc<Entry>>| {
+            let count = card.len();
+            for (index, entry) in card.drain(..).enumerate() {
+                items.push(Item::Entry {
+                    entry,
+                    index,
+                    last: index + 1 == count,
+                });
+            }
+        };
+        for entry in &entries {
+            let at = entry.plans.first().map_or(0, |plan| plan.created_at);
+            let date = format::date(at);
+            if day.as_ref() != Some(&date) {
+                flush(&mut items, &mut card);
+                items.push(Item::Day {
+                    first: day.is_none(),
+                    at,
+                });
+                day = Some(date);
+            }
+            card.push(entry.clone());
+        }
+        flush(&mut items, &mut card);
+        Self {
+            entries,
+            items,
+            newest_undoable,
+        }
+    }
 }
 
 fn group_plans(plans: &[PlanSummary]) -> Vec<Entry> {
@@ -116,6 +200,8 @@ pub struct HistoryPage {
     state: Entity<TidyState>,
     focus: FocusHandle,
     plans: Loaded<Vec<PlanSummary>>,
+    /// The answer as the log shows it.
+    log: Option<Rc<Log>>,
     wanted: usize,
     expanded: HashSet<String>,
     steps: HashMap<PlanId, PlanStepPage>,
@@ -131,6 +217,7 @@ impl HistoryPage {
             state: state.clone(),
             focus: cx.focus_handle(),
             plans: Loaded::default(),
+            log: None,
             wanted: PAGE,
             expanded: HashSet::new(),
             steps: HashMap::new(),
@@ -165,9 +252,14 @@ impl HistoryPage {
             limit: self.wanted as i64,
         };
         let plans = state.changes.list_plans(&engine, request);
-        self.plans.load(plans, |this| &mut this.plans, cx);
+        self.plans
+            .load_then(plans, |this| &mut this.plans, Self::loaded, cx);
         self.steps.clear();
         cx.notify();
+    }
+
+    fn loaded(&mut self, _: &mut Context<Self>) {
+        self.log = self.plans.data().map(|plans| Rc::new(Log::of(plans)));
     }
 
     fn toggle(&mut self, entry: &Entry, cx: &mut Context<Self>) {
@@ -241,9 +333,9 @@ impl HistoryPage {
             return;
         }
         let entries = self
-            .plans
-            .data()
-            .map(|plans| group_plans(plans))
+            .log
+            .as_ref()
+            .map(|log| log.entries.clone())
             .unwrap_or_default();
         let at = self
             .focused
@@ -328,6 +420,257 @@ impl HistoryPage {
     }
 }
 
+impl HistoryPage {
+    /// The log: only the items on screen are drawn, in a column that scrolls as if all were.
+    fn render_log(
+        &mut self,
+        has_more: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let Some(log) = self.log.clone() else {
+            return div().flex_1().into_any_element();
+        };
+        let more = has_more.then_some(&Item::More);
+        let items: Vec<&Item> = log.items.iter().chain(more).collect();
+        let keys: Vec<ItemKey> = items
+            .iter()
+            .map(|item| match item {
+                Item::Day { first, .. } => ItemKey::Day(*first),
+                Item::Entry { entry, index, last } => {
+                    let open = self.expanded.contains(&entry.key);
+                    ItemKey::Entry {
+                        key: entry.key.clone(),
+                        first: *index == 0,
+                        last: *last,
+                        open,
+                        steps: if open { self.step_count(entry) } else { 0 },
+                    }
+                }
+                Item::More => ItemKey::More,
+            })
+            .collect();
+        // The column's own scroll lives as long as it is drawn frame after frame, as the
+        // scrolling element's would: History shown again starts at the top.
+        let column = window.use_keyed_state("history-column", cx, |_, _| Windowed::default());
+        // The space above the first day, a rem (`pt_4`).
+        let before = f32::from(window.rem_size());
+        let (pieces, _) = column.update(cx, |column, _| {
+            column.plan(&keys, |index| guess(&keys[index]), before, 0., window)
+        });
+        let scroll = column.read(cx).scroll().clone();
+        let now = format::now_ms();
+        let children: Vec<AnyElement> = pieces
+            .into_iter()
+            .map(|piece| match piece {
+                Piece::Room(height) => Piece::room(height),
+                Piece::Item(index) => match &items[index] {
+                    Item::Day { first, at } => div()
+                        .mx_auto()
+                        .w_full()
+                        .max_w(px(760.))
+                        .px_6()
+                        .when(!*first, |this| this.pt_2())
+                        .child(
+                            div()
+                                .h(px(36.))
+                                .flex()
+                                .items_center()
+                                .text_xs()
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(cx.theme().muted_foreground)
+                                .child(format::day(*at, now)),
+                        )
+                        .into_any_element(),
+                    Item::Entry { entry, index, last } => {
+                        self.render_entry(entry, *index, *last, &log, cx)
+                    }
+                    Item::More => div()
+                        .mx_auto()
+                        .w_full()
+                        .max_w(px(760.))
+                        .px_6()
+                        .pt_2()
+                        .child(
+                            Button::new("history-more")
+                                .outline()
+                                .small()
+                                .label("Show earlier changes")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.wanted += PAGE;
+                                    this.reload(cx);
+                                })),
+                        )
+                        .into_any_element(),
+                },
+            })
+            .collect();
+        div()
+            .id("history-scroll")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .track_scroll(&scroll)
+            .pt_4()
+            .pb(px(112.))
+            .children(children)
+            .into_any_element()
+    }
+
+    /// The steps listed under an open entry, once read.
+    fn step_count(&self, entry: &Entry) -> usize {
+        entry
+            .plans
+            .iter()
+            .filter_map(|plan| self.steps.get(&plan.id))
+            .map(|page| page.steps.len())
+            .sum()
+    }
+
+    /// An entry, as its part of its day's card: the card's top edge over its first entry, its
+    /// bottom edge under its last, and a rule between entries.
+    fn render_entry(
+        &self,
+        entry: &Rc<Entry>,
+        index: usize,
+        last: bool,
+        log: &Log,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let theme = cx.theme();
+        let (border, muted, accent, card, radius) = (
+            theme.border,
+            theme.muted_foreground,
+            theme.accent,
+            theme.group_box,
+            theme.radius_lg,
+        );
+        let open = self.expanded.contains(&entry.key);
+        let focused = self.focused.as_ref() == Some(&entry.key);
+        let first = entry.plans.first().cloned();
+        let undoable = entry.plans.iter().any(can_undo);
+        let status = first.as_ref().and_then(|plan| status_label(plan.status));
+        let title = entry_title(entry);
+        let detail = entry_detail(entry);
+        let time = first
+            .as_ref()
+            .map(|plan| format::time(plan.created_at))
+            .unwrap_or_default();
+        let steps = open.then(|| self.render_steps(entry, cx));
+        let key = entry.key.clone();
+        let newest = log.newest_undoable.as_ref() == Some(&key);
+        let (toggle_entry, undo_entry) = (entry.clone(), entry.clone());
+        let row = div()
+            .flex()
+            .flex_col()
+            .when(index > 0, |this| this.border_t_1().border_color(border))
+            .child(
+                div()
+                    .id(SharedString::from(format!("history-{key}")))
+                    .test_support()
+                    .aria_label(SharedString::from(title.clone()))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_3()
+                    .min_h(px(52.))
+                    .px_4()
+                    .cursor_pointer()
+                    .when(focused, |this| this.bg(accent))
+                    .hover(|style| style.bg(accent))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.toggle(&toggle_entry, cx);
+                    }))
+                    .child(
+                        Icon::new(if open {
+                            IconName::ChevronDown
+                        } else {
+                            IconName::ChevronRight
+                        })
+                        .size(px(14.))
+                        .text_color(muted),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .truncate()
+                                    .text_size(px(13.))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(title),
+                            )
+                            .child(widgets::caption(
+                                [
+                                    Some(time),
+                                    status.map(String::from),
+                                    (!detail.is_empty()).then_some(detail),
+                                ]
+                                .into_iter()
+                                .flatten()
+                                .collect::<Vec<_>>()
+                                .join(" · "),
+                                cx,
+                            )),
+                    )
+                    .when(undoable, |this| {
+                        this.child(
+                            Button::new(SharedString::from(format!("history-undo-{key}")))
+                                .map(|button| {
+                                    if newest {
+                                        button.outline()
+                                    } else {
+                                        button.ghost()
+                                    }
+                                })
+                                .small()
+                                .label("Undo")
+                                .tooltip("Undo  U")
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    cx.stop_propagation();
+                                    this.undo(&undo_entry, window, cx);
+                                })),
+                        )
+                    }),
+            )
+            .children(steps);
+        div()
+            .mx_auto()
+            .w_full()
+            .max_w(px(760.))
+            .px_6()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .bg(card)
+                    .border_color(border)
+                    .border_l_1()
+                    .border_r_1()
+                    .when(index == 0, |this| this.border_t_1().rounded_t(radius))
+                    .when(last, |this| this.border_b_1().rounded_b(radius))
+                    .overflow_hidden()
+                    .child(row),
+            )
+            .into_any_element()
+    }
+}
+
+/// An item's height until it has been drawn: a heading, an entry closed, or the button.
+fn guess(key: &ItemKey) -> f32 {
+    match key {
+        ItemKey::Day(true) => 36.,
+        ItemKey::Day(false) => 44.,
+        ItemKey::Entry { last, steps, .. } => {
+            53. + f32::from(u8::from(*last)) + 28. * *steps as f32
+        }
+        ItemKey::More => 40.,
+    }
+}
+
 impl Focusable for HistoryPage {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus.clone()
@@ -335,9 +678,8 @@ impl Focusable for HistoryPage {
 }
 
 impl Render for HistoryPage {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let shell = self.state.read(cx).shell.clone();
-        let now = format::now_ms();
         let body: AnyElement = match (self.plans.data(), self.plans.error()) {
             (None, Some(error)) => widgets::empty_state(
                 "history-error",
@@ -359,177 +701,8 @@ impl Render for HistoryPage {
             )
             .into_any_element(),
             (Some(plans), _) => {
-                let entries = group_plans(plans);
                 let has_more = plans.len() == self.wanted;
-                let newest_undoable = entries
-                    .iter()
-                    .find(|entry| entry.plans.iter().any(can_undo))
-                    .map(|entry| entry.key.clone());
-                let mut days: Vec<(String, Vec<Entry>)> = Vec::new();
-                for entry in entries {
-                    let label =
-                        format::day(entry.plans.first().map_or(0, |plan| plan.created_at), now);
-                    match days.last_mut() {
-                        Some((last, list)) if *last == label => list.push(entry),
-                        _ => days.push((label, vec![entry])),
-                    }
-                }
-                let theme = cx.theme();
-                let (border, muted, accent) = (theme.border, theme.muted_foreground, theme.accent);
-                let mut sections = Vec::new();
-                for (label, entries) in days {
-                    let mut rows = Vec::new();
-                    for (index, entry) in entries.into_iter().enumerate() {
-                        let open = self.expanded.contains(&entry.key);
-                        let focused = self.focused.as_ref() == Some(&entry.key);
-                        let first = entry.plans.first().cloned();
-                        let undoable = entry.plans.iter().any(can_undo);
-                        let status = first.as_ref().and_then(|plan| status_label(plan.status));
-                        let title = entry_title(&entry);
-                        let detail = entry_detail(&entry);
-                        let time = first
-                            .as_ref()
-                            .map(|plan| format::time(plan.created_at))
-                            .unwrap_or_default();
-                        let steps = open.then(|| self.render_steps(&entry, cx));
-                        let key = entry.key.clone();
-                        let entry = Rc::new(entry);
-                        let (toggle_entry, undo_entry) = (entry.clone(), entry.clone());
-                        rows.push(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .when(index > 0, |this| this.border_t_1().border_color(border))
-                                .child(
-                                    div()
-                                        .id(SharedString::from(format!("history-{key}")))
-                                        .test_support()
-                                        .aria_label(SharedString::from(title.clone()))
-                                        .flex()
-                                        .flex_row()
-                                        .items_center()
-                                        .gap_3()
-                                        .min_h(px(52.))
-                                        .px_4()
-                                        .cursor_pointer()
-                                        .when(focused, |this| this.bg(accent))
-                                        .hover(|style| style.bg(accent))
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.toggle(&toggle_entry, cx);
-                                        }))
-                                        .child(
-                                            Icon::new(if open {
-                                                IconName::ChevronDown
-                                            } else {
-                                                IconName::ChevronRight
-                                            })
-                                            .size(px(14.))
-                                            .text_color(muted),
-                                        )
-                                        .child(
-                                            div()
-                                                .flex()
-                                                .flex_col()
-                                                .flex_1()
-                                                .min_w_0()
-                                                .child(
-                                                    div()
-                                                        .truncate()
-                                                        .text_size(px(13.))
-                                                        .font_weight(FontWeight::MEDIUM)
-                                                        .child(title),
-                                                )
-                                                .child(widgets::caption(
-                                                    [
-                                                        Some(time),
-                                                        status.map(String::from),
-                                                        (!detail.is_empty()).then_some(detail),
-                                                    ]
-                                                    .into_iter()
-                                                    .flatten()
-                                                    .collect::<Vec<_>>()
-                                                    .join(" · "),
-                                                    cx,
-                                                )),
-                                        )
-                                        .when(undoable, |this| {
-                                            let newest = newest_undoable.as_ref() == Some(&key);
-                                            this.child(
-                                                Button::new(SharedString::from(format!(
-                                                    "history-undo-{key}"
-                                                )))
-                                                .map(|button| {
-                                                    if newest {
-                                                        button.outline()
-                                                    } else {
-                                                        button.ghost()
-                                                    }
-                                                })
-                                                .small()
-                                                .label("Undo")
-                                                .tooltip("Undo  U")
-                                                .on_click(cx.listener(
-                                                    move |this, _, window, cx| {
-                                                        cx.stop_propagation();
-                                                        this.undo(&undo_entry, window, cx);
-                                                    },
-                                                )),
-                                            )
-                                        }),
-                                )
-                                .children(steps)
-                                .into_any_element(),
-                        );
-                    }
-                    sections.push(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .h(px(36.))
-                                    .flex()
-                                    .items_center()
-                                    .text_xs()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(muted)
-                                    .child(label),
-                            )
-                            .child(widgets::card(cx).overflow_hidden().children(rows))
-                            .into_any_element(),
-                    );
-                }
-                div()
-                    .id("history-scroll")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .child(
-                        div()
-                            .mx_auto()
-                            .w_full()
-                            .max_w(px(760.))
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .px_6()
-                            .pt_4()
-                            .pb(px(112.))
-                            .children(sections)
-                            .when(has_more, |this| {
-                                this.child(
-                                    Button::new("history-more")
-                                        .outline()
-                                        .small()
-                                        .label("Show earlier changes")
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.wanted += PAGE;
-                                            this.reload(cx);
-                                        })),
-                                )
-                            }),
-                    )
-                    .into_any_element()
+                self.render_log(has_more, window, cx)
             }
         };
         div()

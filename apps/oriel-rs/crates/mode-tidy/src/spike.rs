@@ -312,3 +312,43 @@ pub(crate) fn memory() -> (u64, u64) {
 pub(crate) fn memory() -> (u64, u64) {
     (0, 0)
 }
+
+/// The CPU time, user and system, of the thread that asks, in milliseconds. Asked on the main
+/// thread, it is what a page's drawing cost there, which frame intervals cannot show once a
+/// frame takes less than the display's own interval.
+#[cfg(target_os = "macos")]
+pub(crate) fn thread_cpu_ms() -> f64 {
+    let mut time = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: a plain out-parameter.
+    if unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) } != 0 {
+        return 0.;
+    }
+    time.tv_sec as f64 * 1e3 + time.tv_nsec as f64 / 1e6
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn thread_cpu_ms() -> f64 {
+    0.
+}
+
+/// This process's CPU time on every thread, user and system, in milliseconds.
+#[cfg(target_os = "macos")]
+pub(crate) fn process_cpu_ms() -> f64 {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
+    // SAFETY: a plain out-parameter.
+    if unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) } != 0 {
+        return 0.;
+    }
+    // SAFETY: zeroed is a valid `rusage`, and the call filled it.
+    let usage = unsafe { usage.assume_init() };
+    let millis = |time: libc::timeval| time.tv_sec as f64 * 1e3 + f64::from(time.tv_usec) / 1e3;
+    millis(usage.ru_utime) + millis(usage.ru_stime)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn process_cpu_ms() -> f64 {
+    0.
+}

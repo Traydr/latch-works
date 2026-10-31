@@ -290,6 +290,10 @@ impl SettingsSection {
     }
 
     pub fn render_section(&mut self, _: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        // The Encoders row is the first thing that needs them; asking runs ffmpeg and loads
+        // libavif, which Tidy no longer does as it opens.
+        self.state
+            .update(cx, |state, cx| state.ask_capabilities(cx));
         let state = self.state.read(cx);
         let Some(settings) = state.settings().cloned() else {
             return div().into_any_element();

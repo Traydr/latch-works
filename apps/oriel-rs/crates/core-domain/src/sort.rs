@@ -107,7 +107,7 @@ pub fn name_ranks<T: NamedPath>(items: &[T]) -> Vec<u32> {
         let threads = threads_for(items.len());
         let keys = SortKeys::of(&names, threads);
         let mut order: Vec<u32> = (0..count).collect();
-        order.sort_by(|a, b| keys.get(*a).cmp(keys.get(*b)));
+        keys.sort(&mut order);
         order_ties_by_path(&mut order, &keys, &paths);
         if let Some(ranks) = ranks_in(&order, &compare, threads) {
             return ranks;
@@ -158,11 +158,12 @@ fn order_ties_by_path(order: &mut [u32], keys: &SortKeys, paths: &[&str]) {
         slot[*index as usize] = at as u32;
     }
     for run in ties {
-        order[run].sort_by(|a, b| {
-            path_keys
-                .get(slot[*a as usize])
-                .cmp(path_keys.get(slot[*b as usize]))
-        });
+        let run = &mut order[run];
+        let mut slots: Vec<u32> = run.iter().map(|index| slot[*index as usize]).collect();
+        path_keys.sort(&mut slots);
+        for (index, at) in run.iter_mut().zip(slots) {
+            *index = members[at as usize];
+        }
     }
 }
 
@@ -281,6 +282,34 @@ impl SortKeys {
         let index = index as usize;
         let start = index.checked_sub(1).map_or(0, |before| self.ends[before]);
         &self.bytes[start..self.ends[index]]
+    }
+
+    /// The first 16 bytes of a key, as a number that orders as they do, short keys padded with
+    /// zeros. Two keys whose heads differ order as their heads do; heads that tie say nothing.
+    fn head(&self, index: u32) -> u128 {
+        let key = self.get(index);
+        let mut head = [0; 16];
+        let length = key.len().min(16);
+        head[..length].copy_from_slice(&key[..length]);
+        u128::from_be_bytes(head)
+    }
+
+    /// Sorts `order`, indices of these keys, by key; keys that tie come by index, as a stable
+    /// sort of indices listed in order leaves them. The keys' heads are compared first, side by
+    /// side in one list, and the keys themselves only when their heads tie.
+    fn sort(&self, order: &mut [u32]) {
+        let mut heads: Vec<(u128, u32)> = order
+            .iter()
+            .map(|index| (self.head(*index), *index))
+            .collect();
+        heads.sort_unstable_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| self.get(a.1).cmp(self.get(b.1)))
+                .then(a.1.cmp(&b.1))
+        });
+        for (index, (_, sorted)) in order.iter_mut().zip(heads) {
+            *index = sorted;
+        }
     }
 }
 

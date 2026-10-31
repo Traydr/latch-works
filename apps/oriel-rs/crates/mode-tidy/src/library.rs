@@ -1030,10 +1030,12 @@ impl LibraryPage {
             engine.selection_summary(files.iter().copied().take(MAX_BULK_FILES).collect()),
             cx,
         );
+        // Which codecs the menu offers; the engine asks ffmpeg the first time only.
+        let capabilities = crate::loaded::engine_call(engine.capabilities(), cx);
         cx.spawn_in(window, async move |this, cx| {
             let held = summary.await.ok();
+            let capabilities = capabilities.await.ok();
             this.update_in(cx, |this, window, cx| {
-                let capabilities = this.state.read(cx).capabilities().copied();
                 let entries = menu::menu_entries(
                     &files,
                     target.as_ref(),

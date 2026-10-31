@@ -39,6 +39,7 @@ pub mod state;
 mod synthetic;
 mod thumbs;
 mod widgets;
+mod windowed;
 
 pub use actions::{PerformOptions, TidyStep};
 pub use changes::{Changes, EngineChanges, NotYet, TidyChanges};

@@ -408,14 +408,16 @@ async fn the_job_card_pauses_resumes_and_counts_what_waits(cx: &mut TestAppConte
 async fn settings_list_the_encoders_when_one_is_missing(cx: &mut TestAppContext) {
     let session = launch(cx, "encoders");
     settle(cx, &session).await;
-    wait_for(cx, &session, "the encoders", |cx| {
-        session.state.read(cx).capabilities().is_some()
-    })
-    .await;
+    // Tidy asks which encoders there are only once Settings shows them.
+    assert!(cx.read(|cx| session.state.read(cx).capabilities().is_none()));
     session.harness.update(cx, |harness, cx| {
         harness.settings = true;
         cx.notify();
     });
+    wait_for(cx, &session, "the encoders", |cx| {
+        session.state.read(cx).capabilities().is_some()
+    })
+    .await;
     render(cx, &session);
     let summary = label(cx, &session, "tidy-settings-encoders").unwrap();
     let missing = !summary.ends_with("All 8 available");

@@ -26,8 +26,9 @@ use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, KeyDownEvent, ObjectFit, ParentElement as _, Render,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _,
-    UniformListScrollHandle, Window, div, prelude::FluentBuilder as _, px, uniform_list,
+    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription,
+    TestSupportExt as _, UniformListScrollHandle, Window, div, prelude::FluentBuilder as _, px,
+    uniform_list,
 };
 use oriel_core_tidy::contract::{
     DuplicateKind, DuplicateScope, DuplicateSet, DuplicateSetPage, DuplicateSetRequest, FileId,
@@ -63,6 +64,18 @@ const ARM_DELAY: Duration = Duration::from_millis(400);
 /// The queue's rows.
 const QUEUE_ROW: f32 = 60.;
 
+/// A set of more versions than this scrolls, a line of four at a time.
+const FITS: usize = 6;
+
+/// The height of a line of versions once the grid scrolls, and the space below the last line,
+/// which the decision bar floats over. The space between lines and above the first is a rem
+/// (`gap_4`, `pt_4`).
+const LINE: f32 = 300.;
+const GRID_BOTTOM: f32 = 76.;
+
+/// Lines above and below the screen whose pictures are decoded ahead of a scroll, but not drawn.
+const NEAR_LINES: usize = 1;
+
 /// A set's sets and the catalog version they were read at.
 type Queue = (DuplicateSetPage, u64);
 
@@ -93,6 +106,8 @@ pub struct DuplicatesPage {
     armed_at: Instant,
     active_key: Option<String>,
     video: Option<(FileId, Entity<TileVideo>)>,
+    /// The scroll of the version grid drawn last, for the pages spike.
+    grid_scroll: Option<ScrollHandle>,
     seen: (
         Option<RootId>,
         u64,
@@ -133,6 +148,7 @@ impl DuplicatesPage {
             armed_at: Instant::now(),
             active_key: None,
             video: None,
+            grid_scroll: None,
             seen: (None, 0, None, false, None),
             queue_scroll: UniformListScrollHandle::new(),
             _subscriptions: subscriptions,
@@ -799,6 +815,11 @@ impl DuplicatesPage {
                 .all(|row| thumbs.is_done(Path::new(&row.file.abs_path), 768))
     }
 
+    /// The version grid's scroll, while the set on screen has one.
+    pub(crate) fn spike_grid_scroll_handle(&self) -> Option<ScrollHandle> {
+        self.grid_scroll.clone()
+    }
+
     /// Whether the video playing has shown its first picture.
     pub(crate) fn spike_video_shows(&self, cx: &App) -> bool {
         self.video
@@ -1151,6 +1172,10 @@ impl DuplicatesPage {
             .into_any_element()
     }
 
+    /// The versions, a tile each: as many as fit fill the stage, and more scroll in lines of
+    /// four. Only the lines on screen are drawn, with the line of the video playing, and the
+    /// pictures of the lines just past the screen are decoded ahead; a line not drawn keeps its
+    /// place, so the grid scrolls as if every line were there.
     fn render_grid(
         &mut self,
         set: &DuplicateSet,
@@ -1161,7 +1186,7 @@ impl DuplicatesPage {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let count = rows.len();
-        let scrolls = count > 6;
+        let scrolls = count > FITS;
         let columns = match count {
             0..=1 => 1,
             2 => 2,
@@ -1178,43 +1203,88 @@ impl DuplicatesPage {
                 .collect()
         };
         let several = kept.len() > 1;
-        let tiles: Vec<AnyElement> = rows
-            .iter()
-            .enumerate()
-            .map(|(index, row)| {
-                let keeper = keeper_of(set, rows, index, kept)
-                    .cloned()
-                    .unwrap_or_else(|| row.file.clone());
-                self.render_tile(
-                    set,
-                    row,
-                    index,
-                    &keeper,
-                    kept,
-                    reason,
-                    shared.contains(&row.file.dir),
-                    several,
-                    window,
+        let focused = self.keyboard_focus.then(|| self.focus_row());
+        let total_lines = count.div_ceil(columns);
+        // The scroll lives as long as the set's grid is drawn frame after frame, as an element's
+        // own would: a new set, or the page shown again, starts at the top.
+        let scroll = scrolls.then(|| {
+            window
+                .use_keyed_state(
+                    SharedString::from(format!("version-grid-{}", set.key)),
                     cx,
+                    |_, _| ScrollHandle::new(),
                 )
-            })
-            .collect();
+                .read(cx)
+                .clone()
+        });
+        self.grid_scroll = scroll.clone();
+        let (drawn, near) = match &scroll {
+            Some(scroll) => {
+                let playing = self.video.as_ref().and_then(|(id, _)| {
+                    rows.iter()
+                        .position(|row| row.file.id == *id)
+                        .map(|index| index / columns)
+                });
+                lines_to_draw(scroll, total_lines, playing, window)
+            }
+            None => ((0..total_lines).collect(), Vec::new()),
+        };
+        let gap = f32::from(window.rem_size());
         let mut lines = Vec::new();
-        let mut tiles = tiles.into_iter().peekable();
-        while tiles.peek().is_some() {
-            let line: Vec<AnyElement> = tiles.by_ref().take(columns).collect();
-            let missing = columns - line.len();
+        let mut next = 0;
+        for line in drawn {
+            if line > next {
+                lines.push(skipped_lines(line - next, gap));
+            }
+            next = line + 1;
+            let range = line * columns..((line + 1) * columns).min(count);
+            let missing = columns - range.len();
+            let tiles: Vec<AnyElement> = range
+                .map(|index| {
+                    let row = &rows[index];
+                    let keeper = keeper_of(set, rows, index, kept)
+                        .cloned()
+                        .unwrap_or_else(|| row.file.clone());
+                    self.render_tile(
+                        set,
+                        row,
+                        index,
+                        &keeper,
+                        kept,
+                        reason,
+                        shared.contains(&row.file.dir),
+                        several,
+                        focused == Some(index),
+                        window,
+                        cx,
+                    )
+                })
+                .collect();
             lines.push(
                 div()
                     .flex()
                     .flex_row()
                     .gap_4()
                     .when(!scrolls, |this| this.flex_1().min_h_0())
-                    .when(scrolls, |this| this.h(px(300.)).flex_shrink_0())
-                    .children(line)
+                    .when(scrolls, |this| this.h(px(LINE)).flex_shrink_0())
+                    .children(tiles)
                     .children((0..missing).map(|_| div().flex_1()))
                     .into_any_element(),
             );
+        }
+        if total_lines > next {
+            lines.push(skipped_lines(total_lines - next, gap));
+        }
+        // The lines just past the screen: their pictures are asked for after the ones on it, so
+        // they decode next.
+        if !near.is_empty() {
+            self.thumbs.update(cx, |thumbs, cx| {
+                for line in near {
+                    for row in &rows[line * columns..((line + 1) * columns).min(count)] {
+                        thumbs.get(&row.file, 768, cx);
+                    }
+                }
+            });
         }
         div()
             .id("version-grid")
@@ -1225,8 +1295,9 @@ impl DuplicatesPage {
             .gap_4()
             .px_5()
             .pt_4()
-            .pb(px(76.))
+            .pb(px(GRID_BOTTOM))
             .when(scrolls, |this| this.overflow_y_scroll())
+            .when_some(scroll, |this, scroll| this.track_scroll(&scroll))
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
                 if !*hovered {
                     this.hover_row = None;
@@ -1248,6 +1319,7 @@ impl DuplicatesPage {
         reason: &model::Reason,
         show_name: bool,
         several: bool,
+        focused: bool,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -1265,7 +1337,6 @@ impl DuplicatesPage {
         let number = index + 1;
         let is_kept = kept.contains(&file.id);
         let suggested = reason.close_call && is_kept && !self.overrides.contains_key(&set.key);
-        let focused = self.keyboard_focus && self.focus_row() == index;
         let read_only = self.dismissed_mode;
         let facts = facts_of(&file, keeper);
         let copy_of = copy_of_number(set, index);
@@ -2064,6 +2135,53 @@ impl DuplicatesPage {
             ))
             .into_any_element()
     }
+}
+
+/// The lines of a scrolling version grid to draw, in order: those on screen and the line of
+/// the video playing; and the lines just past the screen, whose pictures are decoded ahead.
+///
+/// The screen is the window's height, which the grid never exceeds, so a frame after a resize
+/// draws enough even before the grid's own bounds have caught up.
+fn lines_to_draw(
+    scroll: &ScrollHandle,
+    total: usize,
+    playing: Option<usize>,
+    window: &Window,
+) -> (Vec<usize>, Vec<usize>) {
+    // The space between lines and above the first, a rem each.
+    let gap = f32::from(window.rem_size());
+    let pitch = LINE + gap;
+    let screen = f32::from(window.viewport_size().height);
+    // The space above the first line, the lines and the gaps between them, the space below.
+    let content = total as f32 * pitch + GRID_BOTTOM;
+    let bounds = f32::from(scroll.bounds().size.height);
+    let most = if bounds > 0. {
+        (content - bounds).max(0.)
+    } else {
+        content
+    };
+    let top = (-f32::from(scroll.offset().y)).clamp(0., most);
+    let first = (((top - gap) / pitch).floor().max(0.) as usize).min(total);
+    let last = (((top + screen - gap) / pitch).ceil().max(0.) as usize).clamp(first, total);
+    let mut drawn: Vec<usize> = (first..last).collect();
+    if let Some(line) = playing.filter(|line| !(first..last).contains(line) && *line < total) {
+        let at = drawn.partition_point(|drawn| *drawn < line);
+        drawn.insert(at, line);
+    }
+    let near = (first.saturating_sub(NEAR_LINES)..first)
+        .chain(last..(last + NEAR_LINES).min(total))
+        .filter(|line| Some(*line) != playing)
+        .collect();
+    (drawn, near)
+}
+
+/// The room `lines` lines of versions not drawn take, `gap` apart, less the gap the grid puts
+/// after it.
+fn skipped_lines(lines: usize, gap: f32) -> AnyElement {
+    div()
+        .flex_shrink_0()
+        .h(px(lines as f32 * (LINE + gap) - gap))
+        .into_any_element()
 }
 
 /// A number or a Keep on a picture (`lw-badge`).

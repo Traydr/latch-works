@@ -158,6 +158,9 @@ pub struct TidyState {
     settings: Option<Settings>,
     /// What this machine can encode with, once ffmpeg has said.
     capabilities: Option<EncoderCapabilities>,
+    /// Whether the engine was asked for them: asking runs ffmpeg and loads libavif, so it waits
+    /// until Settings or the Library's menu needs them.
+    capabilities_asked: bool,
     root_id: Option<RootId>,
     page: TidyPage,
     catalog_version: u64,
@@ -246,6 +249,7 @@ impl TidyState {
             roots: Vec::new(),
             settings: None,
             capabilities: None,
+            capabilities_asked: false,
             root_id: None,
             page,
             catalog_version: 0,
@@ -269,19 +273,6 @@ impl TidyState {
         match opened {
             Ok(engine) => {
                 self.engine = Engine::Ready(engine.clone());
-                let capabilities = engine.capabilities();
-                cx.spawn(async move |this, cx| {
-                    let capabilities = crate::loaded::engine_call(capabilities, cx).await;
-                    this.update(cx, |this, cx| match capabilities {
-                        Ok(capabilities) => {
-                            this.capabilities = Some(capabilities);
-                            cx.notify();
-                        }
-                        Err(error) => log::warn!("Tidy could not list its encoders: {error:#}"),
-                    })
-                    .ok();
-                })
-                .detach();
                 cx.spawn(async move |this, cx| {
                     let (roots, settings) = (
                         crate::loaded::engine_call(engine.roots(), cx).await,
@@ -360,9 +351,32 @@ impl TidyState {
         self.settings.as_ref()
     }
 
-    /// What this machine can encode with, once known.
+    /// What this machine can encode with, once known: see [`TidyState::ask_capabilities`].
     pub fn capabilities(&self) -> Option<&EncoderCapabilities> {
         self.capabilities.as_ref()
+    }
+
+    /// Asks the engine once what this machine can encode with, for Settings' Encoders row.
+    pub fn ask_capabilities(&mut self, cx: &mut Context<Self>) {
+        if self.capabilities_asked {
+            return;
+        }
+        let Some(capabilities) = self.engine().map(TidyEngine::capabilities) else {
+            return;
+        };
+        self.capabilities_asked = true;
+        cx.spawn(async move |this, cx| {
+            let capabilities = crate::loaded::engine_call(capabilities, cx).await;
+            this.update(cx, |this, cx| match capabilities {
+                Ok(capabilities) => {
+                    this.capabilities = Some(capabilities);
+                    cx.notify();
+                }
+                Err(error) => log::warn!("Tidy could not list its encoders: {error:#}"),
+            })
+            .ok();
+        })
+        .detach();
     }
 
     pub fn page(&self) -> TidyPage {

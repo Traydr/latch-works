@@ -2,7 +2,6 @@
 //! them (sort, scroll and select). The real Library reads the catalog ([`crate::library`]); this
 //! one shows only when the spike asks for it with `ORIEL_RS_SPIKE_LIBRARY`.
 
-use std::cmp::Ordering;
 use std::time::{Duration, Instant};
 
 use gpui_kit::component::table::{Column, ColumnSort, DataTable, TableDelegate, TableState};
@@ -10,9 +9,33 @@ use gpui_kit::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, SharedString,
     Styled as _, Window, div,
 };
-use oriel_core_domain::{NamedPath, name_ranks};
+use oriel_core_domain::{NamedPath, compare_by_name, name_ranks};
 
 use crate::spike::LibrarySpike;
+
+/// Rows tied in a column's value from which ranking every row by name is the cheaper way to
+/// break their ties, as `name_ranks` itself keys a list from this length.
+const RANK_TIES_FROM: usize = 256;
+
+/// A row's place, packed in the low bits of its number in [`LibraryDelegate::order`].
+fn place(packed: u128) -> usize {
+    (packed & u128::from(u32::MAX)) as usize
+}
+
+/// The runs of `order` whose rows tie in the column's value, longer than one.
+fn tie_runs(order: &[u128]) -> Vec<std::ops::Range<usize>> {
+    let mut runs = Vec::new();
+    let mut start = 0;
+    for end in 1..=order.len() {
+        if end == order.len() || order[end] >> 64 != order[start] >> 64 {
+            if end - start > 1 {
+                runs.push(start..end);
+            }
+            start = end;
+        }
+    }
+    runs
+}
 
 /// One file, as the Library lists it.
 #[derive(Clone, Debug)]
@@ -140,23 +163,28 @@ impl LibraryColumn {
         }
     }
 
-    /// Ascending order for this column; names and folders in the shared natural order, as
-    /// Electron Oriel's Library sorts them, through the rows' ranks in it, which answer as
-    /// `compare_by_name` does.
-    fn compare(self, a: &LibraryRow, b: &LibraryRow) -> Ordering {
-        let by_name = || a.name_rank.cmp(&b.name_rank);
+    /// A row's value in this column as one number that orders as the column does ascending:
+    /// names and folders by their ranks in the shared natural order, as Electron Oriel's
+    /// Library sorts them (the ranks answer as `compare_by_name` does), formats by their place
+    /// among `formats`, sorted. Every column but those two breaks its ties by name.
+    fn value(self, row: &LibraryRow, formats: &[&str]) -> u64 {
         match self {
-            LibraryColumn::Name => by_name(),
-            LibraryColumn::Folder => a.folder_rank.cmp(&b.folder_rank),
-            LibraryColumn::Kind => a.kind.cmp(&b.kind).then_with(by_name),
-            LibraryColumn::Format => a.format.cmp(b.format).then_with(by_name),
-            LibraryColumn::Size => a.bytes.cmp(&b.bytes).then_with(by_name),
-            LibraryColumn::Dimensions => (u64::from(a.width) * u64::from(a.height))
-                .cmp(&(u64::from(b.width) * u64::from(b.height)))
-                .then_with(by_name),
-            LibraryColumn::Duration => a.duration_ms.cmp(&b.duration_ms).then_with(by_name),
-            LibraryColumn::Modified => a.modified_ms.cmp(&b.modified_ms).then_with(by_name),
+            LibraryColumn::Name => u64::from(row.name_rank),
+            LibraryColumn::Folder => u64::from(row.folder_rank),
+            LibraryColumn::Kind => row.kind as u64,
+            LibraryColumn::Format => formats.binary_search(&row.format).unwrap_or(0) as u64,
+            LibraryColumn::Size => row.bytes,
+            LibraryColumn::Dimensions => u64::from(row.width) * u64::from(row.height),
+            // No length before every length.
+            LibraryColumn::Duration => row.duration_ms.map_or(0, |ms| u64::from(ms) + 1),
+            // Flipping the sign bit orders the times as unsigned numbers.
+            LibraryColumn::Modified => (row.modified_ms as u64) ^ (1 << 63),
         }
+    }
+
+    /// Whether rows that tie in this column are ordered by name.
+    fn ties_by_name(self) -> bool {
+        !matches!(self, LibraryColumn::Name | LibraryColumn::Folder)
     }
 }
 
@@ -178,10 +206,11 @@ impl LibraryDelegate {
         }
     }
 
-    /// Ranks the rows in natural order once, by name for every column (names break the other
-    /// columns' ties) and by folder for the folder's, so later sorts compare numbers.
+    /// Ranks the rows in natural order once, by name for the name's column and by folder for
+    /// the folder's, so later sorts compare numbers. The other columns break their ties by
+    /// name, through the ranks once they are made ([`Self::sort_by`]).
     fn rank(&mut self, column: LibraryColumn) {
-        if !self.ranked.0 {
+        if column == LibraryColumn::Name && !self.ranked.0 {
             let ranks = name_ranks(&self.rows);
             for (row, rank) in self.rows.iter_mut().zip(ranks) {
                 row.name_rank = rank;
@@ -209,16 +238,89 @@ impl LibraryDelegate {
 
     pub fn sort(&mut self, column: LibraryColumn, sort: ColumnSort) {
         let started = Instant::now();
-        if sort != ColumnSort::Default {
-            self.rank(column);
-        }
         match sort {
-            ColumnSort::Ascending => self.rows.sort_by(|a, b| column.compare(a, b)),
-            ColumnSort::Descending => self.rows.sort_by(|a, b| column.compare(b, a)),
+            ColumnSort::Ascending => self.sort_by(column, false),
+            ColumnSort::Descending => self.sort_by(column, true),
             // Back to the catalog's own order: by path, as the scan found them.
             ColumnSort::Default => self.rows.sort_by(|a, b| a.path.cmp(&b.path)),
         }
         self.last_sort = Some(started.elapsed());
+    }
+
+    /// Sorts by `column`, as a stable sort by the column's comparison would, either way round:
+    /// by the column's value, then by name, rows that still tie keeping their order.
+    ///
+    /// Each row's value, its rank by name and its place are packed into one number, and the
+    /// numbers are sorted rather than the rows, which are then moved once. The ranks are made
+    /// only when the sort needs them: for the name's column, or for ties enough that ranking
+    /// every row costs less than comparing the tied ones through the collator.
+    fn sort_by(&mut self, column: LibraryColumn, descending: bool) {
+        self.rank(column);
+        let mut formats: Vec<&'static str> = Vec::new();
+        if column == LibraryColumn::Format {
+            formats = self.rows.iter().map(|row| row.format).collect();
+            formats.sort_unstable();
+            formats.dedup();
+        }
+        let by_name = column.ties_by_name();
+        let mut order = self.order(column, &formats, by_name && self.ranked.0, descending);
+        if by_name && !self.ranked.0 {
+            let ties = tie_runs(&order);
+            if ties.iter().map(ExactSizeIterator::len).sum::<usize>() >= RANK_TIES_FROM {
+                self.rank(LibraryColumn::Name);
+                order = self.order(column, &formats, true, descending);
+            } else {
+                // A stable sort, so rows whose names tie too keep their order.
+                let rows = &self.rows;
+                for run in ties {
+                    order[run].sort_by(|a, b| {
+                        let (a, b) = (&rows[place(*a)], &rows[place(*b)]);
+                        if descending {
+                            compare_by_name(b, a)
+                        } else {
+                            compare_by_name(a, b)
+                        }
+                    });
+                }
+            }
+        }
+        let mut rows: Vec<Option<LibraryRow>> = std::mem::take(&mut self.rows)
+            .into_iter()
+            .map(Some)
+            .collect();
+        self.rows = order
+            .into_iter()
+            .map(|packed| rows[place(packed)].take().expect("each row moves once"))
+            .collect();
+    }
+
+    /// Each row as one number, sorted: its value in `column` above its rank by name (with
+    /// `ranked`) above its place, each flipped for `descending` but the place, so equal rows
+    /// keep their order either way round, as a stable sort keeps them.
+    fn order(
+        &self,
+        column: LibraryColumn,
+        formats: &[&str],
+        ranked: bool,
+        descending: bool,
+    ) -> Vec<u128> {
+        let mut order: Vec<u128> = self
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(index, row)| {
+                let (mut value, mut rank) = (
+                    column.value(row, formats),
+                    if ranked { row.name_rank } else { 0 },
+                );
+                if descending {
+                    (value, rank) = (!value, !rank);
+                }
+                (u128::from(value) << 64) | (u128::from(rank) << 32) | index as u128
+            })
+            .collect();
+        order.sort_unstable();
+        order
     }
 
     fn text(&self, row_ix: usize, column: LibraryColumn) -> SharedString {

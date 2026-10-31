@@ -12,13 +12,16 @@
 //!   Inspector and grid, each until the frame that shows the answer;
 //! - `scroll`: the Library's list and grid, top to bottom, every frame's interval;
 //! - `set`, `loupe`, `play`: Duplicates' next set, its loupe and a video in a tile;
+//! - `grid`: the version grid of the first set, top to bottom, every frame's interval;
 //! - `rescan`: Rescan, until Overview shows the result;
 //! - `watch`: a page drawn again every frame for a while, every frame's interval;
 //! - `memory`: this process's memory and the pictures Tidy holds, once the work before rested.
 //!
 //! A step is done at the first of two frames in a row that find nothing it asked for on its
 //! way (a frame can still ask for more as it draws). Every step also says how long its longest
-//! frame took, which is how long the main thread was busy with it. The frames are drawn all the
+//! frame took, which is how long the main thread was busy with it, and the CPU time it took on
+//! the main thread and in all; a scroll or a watch says the main thread's CPU time per frame,
+//! which is what one frame costs even when the display's own interval hides it. The frames are drawn all the
 //! time the spike runs, as the Library's spike does. `ORIEL_RS_SPIKE_TIDY_ONLY` picks groups of
 //! steps, and `ORIEL_RS_SPIKE_TIDY_HOLD` keeps the app open at the end, to be looked at.
 
@@ -34,7 +37,7 @@ use crate::TidyMode;
 use crate::library::{Filters, LibraryMode};
 use crate::loaded::reads_in_flight;
 use crate::pages::TidyPage;
-use crate::spike::{frame_stats, memory};
+use crate::spike::{frame_stats, memory, process_cpu_ms, thread_cpu_ms};
 
 /// The file the spike writes its lines to; the spike runs when it is set.
 pub const LOG_VARIABLE: &str = "ORIEL_RS_SPIKE_TIDY";
@@ -65,6 +68,10 @@ enum Action {
     Sort(&'static str),
     /// The list or grid on screen, top to bottom at this many pixels a second.
     Scroll(f32),
+    /// Duplicates' version grid, top to bottom at this many pixels a second.
+    GridScroll(f32),
+    /// Waits until every picture asked for is in.
+    Settle,
     Type(&'static str),
     ClearSearch,
     Filter(Filters),
@@ -88,6 +95,8 @@ impl Action {
             Action::Go(_) => "page",
             Action::Sort(_) => "sort",
             Action::Scroll(_) => "scroll",
+            Action::GridScroll(_) => "grid",
+            Action::Settle => "settle",
             Action::Type(_) | Action::ClearSearch => "type",
             Action::Filter(_) => "filter",
             Action::Inspector(_) => "inspector",
@@ -129,6 +138,9 @@ struct Running {
     /// When the step was taken; `None` until the deferred step has run.
     asked: Option<Instant>,
     frames: Vec<Instant>,
+    /// The main thread's and the process's CPU time when the step was taken, and at each frame.
+    cpu_asked: (f64, f64),
+    cpu: Vec<(f64, f64)>,
     typed: usize,
     next_key: Instant,
     last_key: Option<Instant>,
@@ -202,6 +214,7 @@ impl PageSpike {
                 }
             } else if let Some(asked) = running.asked {
                 running.frames.push(now);
+                running.cpu.push((thread_cpu_ms(), process_cpu_ms()));
                 if let Some(line) = advance(running, asked, now, mode, window, cx) {
                     running.finished = Some(now);
                     self.write(&line);
@@ -214,6 +227,8 @@ impl PageSpike {
                 action: action.clone(),
                 asked: None,
                 frames: Vec::new(),
+                cpu_asked: (0., 0.),
+                cpu: Vec::new(),
                 typed: 0,
                 next_key: now,
                 last_key: None,
@@ -227,11 +242,13 @@ impl PageSpike {
             // before the next one.
             cx.defer_in(window, move |mode, window, cx| {
                 let asked = Instant::now();
+                let cpu_asked = (thread_cpu_ms(), process_cpu_ms());
                 perform(&action, mode, window, cx);
                 if let Some(spike) = mode.page_spike.as_mut()
                     && let Some(running) = spike.running.as_mut()
                 {
                     running.asked = Some(asked);
+                    running.cpu_asked = cpu_asked;
                 }
             });
         } else {
@@ -338,6 +355,8 @@ fn schedule(only: Option<&str>) -> VecDeque<(String, Action)> {
     }
     if wanted("duplicates") {
         push("duplicates", Action::Go(TidyPage::Duplicates));
+        push("versions", Action::GridScroll(3_000.));
+        push("versions", Action::Settle);
         for index in 1..=10 {
             push(&format!("next-{index}"), Action::NextSet);
         }
@@ -366,7 +385,12 @@ fn perform(action: &Action, mode: &mut TidyMode, window: &mut Window, cx: &mut C
             let handle = library.read(cx).spike_scroll_handle(cx);
             handle.set_offset(point(px(0.), px(0.)));
         }
-        Action::Type(_) | Action::Watch(_) | Action::Memory => {}
+        Action::GridScroll(_) => {
+            if let Some(handle) = duplicates.read(cx).spike_grid_scroll_handle() {
+                handle.set_offset(point(px(0.), px(0.)));
+            }
+        }
+        Action::Type(_) | Action::Watch(_) | Action::Memory | Action::Settle => {}
         Action::ClearSearch => {
             library.update(cx, |library, cx| library.spike_clear_search(window, cx));
         }
@@ -433,16 +457,29 @@ fn advance(
     }
     let timed_out = elapsed >= TIMEOUT;
     let done = match &running.action {
-        Action::Scroll(speed) => {
-            let handle = mode.library.read(cx).spike_scroll_handle(cx);
-            let max = f32::from(handle.max_offset().y);
+        Action::Scroll(speed) | Action::GridScroll(speed) => {
+            let handle = match running.action {
+                Action::Scroll(_) => Some(mode.library.read(cx).spike_scroll_handle(cx)),
+                _ => mode.duplicates.read(cx).spike_grid_scroll_handle(),
+            };
+            let max = handle
+                .as_ref()
+                .map_or(0., |handle| f32::from(handle.max_offset().y));
             let target = speed * elapsed.as_secs_f32();
-            handle.set_offset(point(px(0.), px(-target.min(max))));
-            if (max > 0. && target >= max) || timed_out {
+            if let Some(handle) = &handle {
+                handle.set_offset(point(px(0.), px(-target.min(max))));
+            }
+            if handle.is_none() || (max > 0. && target >= max) || timed_out {
                 let mut line = frame_stats(&running.frames, *speed);
+                if let Action::GridScroll(_) = running.action {
+                    line = line.replacen(r#""event":"scroll""#, r#""event":"grid""#, 1);
+                }
                 line.insert_str(0, &format!(r#""label":"{}","#, running.label));
                 let decoded = decodes_since(running.decoded_before, mode, cx);
-                line.push_str(&format!(r#",{decoded},"max_offset_px":{max:.0}"#));
+                let per_frame = main_cpu_per_frame(running);
+                line.push_str(&format!(
+                    r#",{decoded},"max_offset_px":{max:.0},"main_cpu_ms_per_frame":{per_frame:.2}"#
+                ));
                 return Some(line);
             }
             false
@@ -458,6 +495,8 @@ fn advance(
             if elapsed >= *length {
                 let mut line = frame_stats(&running.frames, 0.);
                 line.insert_str(0, &format!(r#""label":"{}","#, running.label));
+                let per_frame = main_cpu_per_frame(running);
+                line.push_str(&format!(r#","main_cpu_ms_per_frame":{per_frame:.2}"#));
                 return Some(line.replacen(r#""event":"scroll""#, r#""event":"watch""#, 1));
             }
             false
@@ -517,6 +556,16 @@ fn advance(
         .confirmed
         .map_or(elapsed, |at| at.duration_since(asked));
     let versions = mode.duplicates.read(cx).rows().len();
+    // The CPU time to the frame the step settled at.
+    let (main_cpu, cpu) = running
+        .frames
+        .iter()
+        .position(|frame| *frame == settled_at)
+        .and_then(|at| running.cpu.get(at))
+        .or(running.cpu.last())
+        .map_or((0., 0.), |(main, all)| {
+            (main - running.cpu_asked.0, all - running.cpu_asked.1)
+        });
     let shown = running.shown_at.map_or(String::new(), |at| {
         format!(
             r#","shown_ms":{:.1}"#,
@@ -524,7 +573,7 @@ fn advance(
         )
     });
     Some(format!(
-        r#""event":"{}","label":"{}","settled_ms":{:.1},"read_ms":{:.1},"first_frame_ms":{first_frame:.1},"max_frame_ms":{:.1},"frames":{},{decoded},"versions":{versions},"timed_out":{timed_out}{after_last_key}{shown}"#,
+        r#""event":"{}","label":"{}","settled_ms":{:.1},"read_ms":{:.1},"first_frame_ms":{first_frame:.1},"max_frame_ms":{:.1},"frames":{},"main_cpu_ms":{main_cpu:.1},"cpu_ms":{cpu:.1},{decoded},"versions":{versions},"timed_out":{timed_out}{after_last_key}{shown}"#,
         running.action.event(),
         running.label,
         elapsed.as_secs_f64() * 1e3,
@@ -532,6 +581,16 @@ fn advance(
         intervals.last().copied().unwrap_or_default(),
         running.frames.len(),
     ))
+}
+
+/// The main thread's CPU time per frame since the step was taken.
+fn main_cpu_per_frame(running: &Running) -> f64 {
+    match running.cpu.last() {
+        Some((main, _)) if !running.frames.is_empty() => {
+            (main - running.cpu_asked.0) / running.frames.len() as f64
+        }
+        _ => 0.,
+    }
 }
 
 /// The decodes since `before`, as JSON fields: how many, the videos' frames among them, and the
