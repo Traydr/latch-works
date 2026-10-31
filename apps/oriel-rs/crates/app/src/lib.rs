@@ -59,6 +59,8 @@ pub fn run() {
         single_instance::Claim::First(instance) => instance,
         single_instance::Claim::Handed => return,
     };
+    // An import of Electron Oriel's data staged last run goes in place before anything opens.
+    oriel_migrate::finish_pending(&data);
 
     // macOS hands over paths (a drop on the Dock icon, Open With, a second launch) before the
     // window exists as well as after, so they wait in a channel for it.

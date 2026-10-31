@@ -27,6 +27,8 @@ oriel-ui.workspace = true
 oriel-mode-view.workspace = true
 oriel-mode-tidy.workspace = true
 oriel-mode-sync.workspace = true
+# The import of Electron Oriel's data, which the welcome and Settings › General offer.
+oriel-migrate.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The shell spike's CPU and memory readings (`proc_pid_rusage`), as View's spike reads them.

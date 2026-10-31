@@ -1,7 +1,6 @@
 //! Settings › General, Oriel RS's own settings (`GeneralSettings` in Electron Oriel): the one
-//! theme every mode follows, where its data lives, and its version. Electron Oriel's third row,
-//! importing the old apps' preferences, has no counterpart: Oriel RS keeps its own data
-//! (plan 063, decision 2).
+//! theme every mode follows, where its data lives, and its version. Electron Oriel's third row
+//! imports the old apps' data; Oriel RS's imports Electron Oriel's (plan 063, decision 17).
 
 use std::path::PathBuf;
 
@@ -32,6 +31,7 @@ impl RenderOnce for GeneralSettings {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let current = ThemeChoice::stored(cx);
         let folder = self.data_folder;
+        let import_into = folder.clone();
 
         div()
             .flex()
@@ -52,16 +52,39 @@ impl RenderOnce for GeneralSettings {
                 ),
             )
             .child(
-                SettingsGroup::new("Data").child(
-                    SettingsRow::new("Data folder")
-                        .description(folder.display().to_string())
-                        .child(
-                            Button::new("reveal-data-folder")
-                                .icon(Icon::new(IconName::FolderOpen))
-                                .label("Show in Finder")
-                                .on_click(move |_, _, cx| cx.open_with_system(&folder)),
-                        ),
-                ),
+                SettingsGroup::new("Data")
+                    .child(
+                        SettingsRow::new("Data folder")
+                            .description(folder.display().to_string())
+                            .child(
+                                Button::new("reveal-data-folder")
+                                    .icon(Icon::new(IconName::FolderOpen))
+                                    .label(if cfg!(target_os = "macos") {
+                                        "Show in Finder"
+                                    } else {
+                                        "Show in Explorer"
+                                    })
+                                    .on_click(move |_, _, cx| cx.open_with_system(&folder)),
+                            ),
+                    )
+                    .child(
+                        SettingsRow::new("Electron Oriel")
+                            .description(
+                                "Bring its folders, settings, Tidy's catalog and held files, and \
+                                 Sync's profiles in. Its own data stays as it is.",
+                            )
+                            .child(
+                                Button::new("import-electron-oriel")
+                                    .label("Import…")
+                                    .on_click(move |_, window, cx| {
+                                        if let Ok(data) =
+                                            oriel_core_paths::DataRoot::at(import_into.clone())
+                                        {
+                                            crate::welcome::open_import_dialog(data, window, cx);
+                                        }
+                                    }),
+                            ),
+                    ),
             )
             .child(
                 div()

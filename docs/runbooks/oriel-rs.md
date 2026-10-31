@@ -93,6 +93,55 @@ scripted input:
 View's Debug logging setting prints each thumbnail event to the terminal as a `[thumbnails] …`
 line on stderr; Performance monitoring adds a Timings group to View's Diagnostics.
 
+## Importing Electron Oriel's data
+
+Oriel RS imports what Electron Oriel keeps (plan 063, decision 17): the welcome offers it on the
+first start when Electron Oriel's data is there, and Settings › General › Electron Oriel ›
+Import… runs it again at any time. The engine is `crates/migrate` (`oriel-migrate`). It only
+reads Electron Oriel's folders, so Electron Oriel keeps working beside Oriel RS, and it refuses
+while Electron Oriel (or Frame View, Glazier or Lockstep) runs: their Chromium single-instance
+lock (`SingletonLock` on macOS, `lockfile` on Windows) and, on the owner's own home, the process
+list say so.
+
+| Area | From `~/.latch-works/…` | To `~/.latch-works/oriel-rs/…` | How |
+| --- | --- | --- | --- |
+| Window | `oriel/window-state.json` | `shell/window-state.json` | As it is |
+| Preferences | `oriel/Local Storage/leveldb` (the `file://` origin) | `shell/local-storage.json` | Read from Chromium's LevelDB files, never opened as a database |
+| Welcome | `oriel/welcomed` | `shell/welcomed` | As it is, or written now |
+| View | `frame-view/frame-view-settings.json`, `media-index.sqlite`, `frame-view/thumbnails/` | `view/…`, the same names | As they are; the index through a copy |
+| Tidy | `glazier/catalog.sqlite`, `glazier/holding/` | `tidy/catalog.sqlite`, `tidy/holding/` | Through a copy; held places rewritten to `tidy/holding`, and files held at the top of another volume copied in |
+| Sync | `lockstep/lockstep-settings.json`, `lockstep/secret-storage.key` (or `lockstep.json`) | `sync/…`, the same names | As they are (key 0600); `lockstep.json` becomes one profile, as Electron Oriel makes it |
+| Hash cache | `hash-cache/` | `hash-cache/` | As it is |
+
+An SQLite file is never opened where it is: it is copied with its `-wal` and `-shm`, and the copy
+is opened and checkpointed. Files are copied with `std::fs::copy`, which clones on APFS. Tidy's
+`glazier/thumbnails` is left out (Oriel RS keeps Tidy's thumbnails in memory), and so are
+Chromium's own caches.
+
+The import stages every area in `<root>/import-staging` while the app runs; an area that fails is
+reported and left out, and the others go on. The next start puts the staged areas in place before
+anything opens them, so the window offers Restart Now. What Oriel RS already had in an area moves
+to `<root>/before-import-<time>/<area>`, never deleted; `<root>/sandbox` is never touched. The
+report goes to `shell/migration.json`, with Electron Oriel's report's fields.
+
+`ORIEL_RS_IMPORT_FROM=<folder>` names a folder that stands in for the home folder. A run with
+`ORIEL_RS_DATA_DIR` set and no stand-in finds nothing, so a check never reads the real home, and
+a stand-in's import never reads outside it. `ORIEL_RS_IMPORT=1` starts the welcome's import as
+soon as it has looked, for checking the progress and the summary.
+
+A dry run against a copy of real data, with Electron Oriel quit first (a copy taken while it runs
+carries its `SingletonLock`; delete that from the copy):
+
+```sh
+cd apps/oriel-rs
+ORIEL_RS_DATA_DIR=/tmp/oriel-rs-dry-run ORIEL_RS_IMPORT_FROM=/tmp/home-copy \
+  cargo run -p oriel-migrate --example import
+```
+
+where `/tmp/home-copy/.latch-works` holds copies of `oriel`, `frame-view`, `glazier`,
+`lockstep`, `lockstep.json` and `hash-cache`. It prints counts and sizes, never names. The same
+variables with `ORIEL_RS_WELCOME=1` run it through the welcome instead.
+
 ## The sandbox
 
 Tidy takes any folder Electron Oriel's Tidy takes, and changes files in it, when the app runs on
@@ -254,6 +303,54 @@ symbol table, so read a crash report against the unstripped build of the same UU
 <target>/dist/oriel-rs`. The app carries no data: it uses
 `~/.latch-works/oriel-rs/` as a development build does.
 
+### The DMG
+
+`cargo run -p xtask -- dmg` (or `package`, which on macOS does the same) makes the bundle as above,
+then `Oriel-RS-<version>-arm64.dmg` beside it: the app and a link to `/Applications`, compressed
+with `hdiutil` (ULFO, as Electron Oriel's), with no background art, verified with `hdiutil
+verify`. It prints the image's path: `target/release/bundle/` (under `$CARGO_TARGET_DIR` when that
+is set). The 0.0.1 image is 101 MB, for the 206 MB app.
+
+Try an image without installing it:
+
+```sh
+hdiutil attach -nobrowse -mountpoint /tmp/oriel-rs-dmg <image>
+ditto "/tmp/oriel-rs-dmg/Oriel RS.app" "/tmp/oriel-rs-try/Oriel RS.app"
+ORIEL_RS_DATA_DIR=/tmp/oriel-rs-try/data "/tmp/oriel-rs-try/Oriel RS.app/Contents/MacOS/oriel-rs"
+hdiutil detach /tmp/oriel-rs-dmg
+```
+
+**Installing.** Open the image and drag Oriel RS onto Applications. Started from anywhere else (the
+mounted image, Downloads), the app offers to move itself, as Electron Oriel does: "Move to
+Applications", "Not Now" (asks again next launch) or "Don't Ask Again" (remembered in
+`shell/move-to-applications-declined`). Moving copies the bundle into `/Applications`
+(`~/Applications` when that is not writable; Electron Oriel asks for an administrator instead),
+replacing an older copy only when you say so and never one that is running, moves the old copy to
+the Trash unless it is on a read-only volume (the image, or App Translocation's mount), and starts
+again from Applications. Development builds, binaries outside a bundle and runs with
+`ORIEL_RS_DATA_DIR` set are not offered the move. A check sets `ORIEL_RS_MOVE_OFFER=1` to be
+offered it anyway, and `ORIEL_RS_APPLICATIONS_DIR=<folder>` (read only in such a run) to move into
+a scratch folder instead of Applications; the relaunch passes every `ORIEL_RS_*` variable on.
+
+**An unsigned copy someone else downloads.** The bundle is signed ad hoc, which runs on the Mac
+that built it. A copy that arrives through a browser or AirDrop carries the quarantine attribute,
+and Gatekeeper refuses an app with no Developer ID: macOS says it "cannot be opened" or "is
+damaged". Either Control-click (right-click) the app in Finder, choose Open, then Open again in the
+dialog (on macOS 15 and later: try to open it once, then System Settings > Privacy & Security >
+Open Anyway), or clear the attribute once from Terminal:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Oriel RS.app"
+```
+
+The owner builds it themselves on their own Mac, which needs neither (decision 19).
+
+### Windows
+
+`cargo run -p xtask -- package windows` makes a Velopack Setup.exe on Windows;
+`package windows --stage-only [--exe <oriel-rs.exe>]` lays out the folder it installs on any
+system. [The Windows runbook](oriel-rs-windows.md) has the rest.
+
 ## Measuring
 
 `cargo run -p xtask -- measure` takes Phase 9's scorecard rows for Oriel RS the way the
@@ -313,54 +410,6 @@ cargo run -p xtask -- measure scroll idle \
 - **Electron Oriel.** `--electron` runs `e2e/scripts/frame-performance.ts` once a round, after
   Oriel RS in odd rounds and before it in even ones, and folds its numbers into the same lines
   (`FRAME_PERF_FIXTURE_ROOT`, a fresh `FRAME_PERF_WORK_DIR` under the out folder). It needs the
-### The DMG
-
-`cargo run -p xtask -- dmg` (or `package`, which on macOS does the same) makes the bundle as above,
-then `Oriel-RS-<version>-arm64.dmg` beside it: the app and a link to `/Applications`, compressed
-with `hdiutil` (ULFO, as Electron Oriel's), with no background art, verified with `hdiutil
-verify`. It prints the image's path: `target/release/bundle/` (under `$CARGO_TARGET_DIR` when that
-is set). The 0.0.1 image is 101 MB, for the 206 MB app.
-
-Try an image without installing it:
-
-```sh
-hdiutil attach -nobrowse -mountpoint /tmp/oriel-rs-dmg <image>
-ditto "/tmp/oriel-rs-dmg/Oriel RS.app" "/tmp/oriel-rs-try/Oriel RS.app"
-ORIEL_RS_DATA_DIR=/tmp/oriel-rs-try/data "/tmp/oriel-rs-try/Oriel RS.app/Contents/MacOS/oriel-rs"
-hdiutil detach /tmp/oriel-rs-dmg
-```
-
-**Installing.** Open the image and drag Oriel RS onto Applications. Started from anywhere else (the
-mounted image, Downloads), the app offers to move itself, as Electron Oriel does: "Move to
-Applications", "Not Now" (asks again next launch) or "Don't Ask Again" (remembered in
-`shell/move-to-applications-declined`). Moving copies the bundle into `/Applications`
-(`~/Applications` when that is not writable; Electron Oriel asks for an administrator instead),
-replacing an older copy only when you say so and never one that is running, moves the old copy to
-the Trash unless it is on a read-only volume (the image, or App Translocation's mount), and starts
-again from Applications. Development builds, binaries outside a bundle and runs with
-`ORIEL_RS_DATA_DIR` set are not offered the move. A check sets `ORIEL_RS_MOVE_OFFER=1` to be
-offered it anyway, and `ORIEL_RS_APPLICATIONS_DIR=<folder>` (read only in such a run) to move into
-a scratch folder instead of Applications; the relaunch passes every `ORIEL_RS_*` variable on.
-
-**An unsigned copy someone else downloads.** The bundle is signed ad hoc, which runs on the Mac
-that built it. A copy that arrives through a browser or AirDrop carries the quarantine attribute,
-and Gatekeeper refuses an app with no Developer ID: macOS says it "cannot be opened" or "is
-damaged". Either Control-click (right-click) the app in Finder, choose Open, then Open again in the
-dialog (on macOS 15 and later: try to open it once, then System Settings > Privacy & Security >
-Open Anyway), or clear the attribute once from Terminal:
-
-```sh
-xattr -dr com.apple.quarantine "/Applications/Oriel RS.app"
-```
-
-The owner builds it themselves on their own Mac, which needs neither (decision 19).
-
-### Windows
-
-`cargo run -p xtask -- package windows` makes a Velopack Setup.exe on Windows;
-`package windows --stage-only [--exe <oriel-rs.exe>]` lays out the folder it installs on any
-system. [The Windows runbook](oriel-rs-windows.md) has the rest.
-
   e2e package's prerequisites (`docs/runbooks/e2e.md`) and takes about 12 minutes a round.
 
 The spikes' variables, for a run by hand, are documented at the top of each spike:
