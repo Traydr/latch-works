@@ -1,7 +1,7 @@
 //! Tidy: Overview is home. Duplicates, Convert and Clean up are the work, in the order it is best
 //! done, and Shrink is the optional AV1 re-encode after them; Library and History are the
 //! archive; Holding sits at the foot of the sidebar. As Electron Oriel's Tidy mode draws them
-//! (`apps/oriel/src/modes/tidy/renderer`), on `oriel-core-tidy`'s engine.
+//! (its `modes/tidy/renderer`), on `oriel-core-tidy`'s engine.
 //!
 //! [`TidyMode`] is the mode's root: the sidebar, the page on screen, the shell's Tidy commands
 //! (Add Folder…, Rescan, Undo, Select All, Find, the pages on ⌥⌘1–7, the shortcut sheet) and the

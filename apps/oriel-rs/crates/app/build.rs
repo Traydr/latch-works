@@ -1,6 +1,6 @@
 //! The Windows executable's icon and version information, which Explorer, the taskbar and its
-//! shortcuts show, and from which GPUI loads the window's icon (resource 1). The icon is Electron
-//! Oriel's `oriel-icon.ico`, the same artwork the Mac bundle takes from `oriel-icon.icns`, with
+//! shortcuts show, and from which GPUI loads the window's icon (resource 1). The icon is
+//! `assets/oriel-icon.ico`, the same artwork the Mac bundle takes from `oriel-icon.icns`, with
 //! every size from 16 to 256 pixels in it. Elsewhere this does nothing.
 
 use std::env;
@@ -13,11 +13,11 @@ fn main() {
         return;
     }
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("cargo sets it"));
-    let icon = manifest.join("../../../oriel/media/oriel-icon.ico");
+    let icon = manifest.join("../../assets/oriel-icon.ico");
     println!("cargo:rerun-if-changed={}", icon.display());
     let icon = icon
         .canonicalize()
-        .expect("apps/oriel/media/oriel-icon.ico is in the repository");
+        .expect("assets/oriel-icon.ico is in the workspace");
 
     let version = env::var("CARGO_PKG_VERSION").expect("cargo sets it");
     let mut parts = version

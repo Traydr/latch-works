@@ -1,5 +1,5 @@
 //! The differential run of changes against glazier-core (plan 063, Phase 6): every Tidy case of
-//! `e2e/tests/glazier/` (Convert, Clean up, Shrink, Tidy up, duplicates, Spot variants) as the
+//! Electron's e2e (Convert, Clean up, Shrink, Tidy up, duplicates, Spot variants) as the
 //! scenario of decisions glazier-core's `engine/differential.test.ts` made, replayed through this
 //! engine on its own copy of the same archive. After each decision, and again after each Undo,
 //! the archive, holding (rows and files), the journal (plans and their steps) and Overview must

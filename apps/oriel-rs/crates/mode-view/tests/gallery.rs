@@ -1,4 +1,4 @@
-//! Electron Oriel's `e2e/tests/frame-view/gallery.spec.ts`, case by case, as GPUI Kit headless
+//! Electron Oriel's e2e gallery spec, case by case, as GPUI Kit headless
 //! UI tests on a fixture archive shaped like the e2e suite's (`e2e/src/fixture.ts`): the same
 //! folders and names, and modified times in the same permuted order, so date order is neither
 //! name order nor the order the files were written.

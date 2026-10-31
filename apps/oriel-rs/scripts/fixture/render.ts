@@ -313,7 +313,7 @@ function videoCodecArguments(entry: VideoEntry, threads: number): string[] {
 }
 
 /**
- * A clip as `e2e/tests/glazier/shrink.spec.ts` makes one, `testsrc2` with temporal noise and a
+ * A clip as Electron Oriel's e2e Shrink spec made one, `testsrc2` with temporal noise and a
  * sine tone, at the entry's size, rate and length, with its label drawn in.
  */
 export async function writeVideo(

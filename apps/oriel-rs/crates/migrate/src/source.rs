@@ -2,7 +2,7 @@
 //!
 //! Electron Oriel keeps the shell's data in `~/.latch-works/oriel` and each mode's in the folder
 //! its standalone app used beside it (`frame-view`, `glazier`, `lockstep`), with Sync's shared
-//! `hash-cache` and the Lockstep CLI's `lockstep.json` (`packages/app-data`, `main.ts`). It is the
+//! `hash-cache` and the Lockstep CLI's `lockstep.json` (`app-data`, `main.ts`). It is the
 //! same on macOS and Windows. Only a move that failed leaves a folder where Electron first put it,
 //! `<appData>/<App>`: `~/Library/Application Support/Oriel` on macOS, `%APPDATA%\Oriel` on
 //! Windows.

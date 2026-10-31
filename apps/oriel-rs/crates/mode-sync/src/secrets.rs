@@ -1,5 +1,4 @@
-//! Where Sync keeps tokens: `FileSecretStorage` from Electron Oriel
-//! (`apps/oriel/src/modes/sync/main/services/fileSecretStorage.ts`), in the same format.
+//! Where Sync keeps tokens: Electron Oriel's `FileSecretStorage`, in the same format.
 //!
 //! A random 32-byte key sits in `secret-storage.key` in Sync's folder, readable by the user
 //! alone (0600, in a 0700 folder). A token is sealed with AES-256-GCM under a fresh 12-byte nonce

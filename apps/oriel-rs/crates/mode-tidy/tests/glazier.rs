@@ -1,4 +1,4 @@
-//! Electron Oriel's Tidy cases (`e2e/tests/glazier/*.spec.ts`) as GPUI Kit headless UI tests, on
+//! Electron Oriel's Tidy cases (its e2e Glazier specs) as GPUI Kit headless UI tests, on
 //! a copy of the archive glazier-core's differential suite scans
 //! (`apps/oriel-rs/conformance/glazier-core/archive`, dates included). It holds the e2e
 //! workbench's files and the Spot variants spec's pages, so its numbers are larger than the

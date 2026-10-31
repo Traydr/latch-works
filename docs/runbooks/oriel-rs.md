@@ -1,7 +1,8 @@
 # Oriel RS Runbook
 
-Oriel RS is Oriel ported to Rust on GPUI with GPUI Kit, as an experiment beside the Electron
-app: [plan 063](../plans/063-oriel-rs.md). Its code is the Cargo workspace in `apps/oriel-rs`.
+Oriel RS is Oriel ported to Rust on GPUI with GPUI Kit ([plan 063](../plans/063-oriel-rs.md)),
+and has replaced the Electron app, which is gone from the repository. Its code is the Cargo
+workspace in `apps/oriel-rs`.
 It keeps its own data in `~/.latch-works/oriel-rs/`. It reads Electron Oriel's folders only to
 import them, and never writes them.
 
@@ -50,8 +51,8 @@ runbook](oriel-rs-windows.md). Linux is not supported.
 
 ## Run it
 
-Fetch the pinned ffmpeg and ffprobe once, the same builds and SHA-256 hashes as Electron Oriel's
-(`apps/oriel/media-tools.ts`). They land in `apps/oriel-rs/.media-tools`, which Git ignores;
+Fetch the pinned ffmpeg and ffprobe once, the builds Electron Oriel pinned, by URL and SHA-256
+(`crates/tools/src/pins.rs`). They land in `apps/oriel-rs/.media-tools`, which Git ignores;
 `ORIEL_RS_MEDIA_TOOLS=<folder>` points the app at others. The tool tests skip, saying so, until
 they are there.
 
@@ -182,25 +183,81 @@ node apps/oriel-rs/scripts/fixture/make-fixture.ts                   # 21,135 fi
 
 The script is seeded and resumable, and refuses any output outside the sandbox or `/tmp`.
 
+## What Tidy changes on disk
+
+Tidy keeps Electron Oriel's Tidy rules (once the Glazier app's, plan 058). Scanning never writes
+inside a root; the catalog (`tidy/catalog.sqlite` in the data folder) is rebuildable by
+rescanning and never authoritative. Every change applies at once and ends with a toast that has
+**Undo**, duplicate decisions included; ⌘Z undoes the last change and History lists them all.
+Nothing asks first except forgetting a folder. Before each step Tidy re-reads the file and skips
+it if its size, mtime or ctime moved since the scan ("changed since the scan": rescan and apply
+again). Undo reverses a change's finished steps, newest first.
+
+| Action | What happens on disk | Undo |
+| --- | --- | --- |
+| Move to holding (and resolving duplicates) | The file moves into its root's holding folder, `tidy/holding/<root id>-<root name>/<batch>/<its path>`. A root on another volume holds in `.latch-works/oriel-rs/holding/` at that volume's top, so a removal stays a rename; a root that is a whole volume holds in the data folder by copying. | Moved back, unless something now sits at the original path. |
+| Clean up | System junk goes to holding, empty folders are removed, and extensions that do not match the bytes are renamed (an AVIF saved as `.jpg` becomes `.avif`). | Each step is reversed. |
+| Move to… / Rename / Fix extension | Renamed in place, or moved to the chosen folder (copied then deleted across volumes, keeping mtime). | Moved back. |
+| Convert, Shrink, remove a silent track | The result is written to `<target>.glazier-tmp`, checked (it decodes; dimensions, duration and tracks as planned; re-encodes at least 5% smaller), given the original's mtime and renamed into place; the original goes to holding. Video goes through the pinned ffmpeg. | The result goes to holding and the original comes back. |
+| Restore (Holding, ⌘⌫) | The held file moves back to its original path. | — |
+| Empty to Trash (Holding, ⇧⌘⌫) | Each holding batch goes to the system Trash (the Recycle Bin on Windows), without asking: the Trash is the safety net. | Only from the Trash. |
+
+A file whose conversion came out no smaller is kept as it is, and Convert stops offering it
+until its bytes change. Members of open duplicate sets are not converted until they are reviewed.
+A converted file keeps the original's modification date, so date sorting in View and Pane View
+holds, but not its creation date or extended attributes (Finder tags). A change cut short by a
+crash or a forced quit is marked stopped on the next launch, and the `*.glazier-tmp` files
+beside its pending targets are deleted; its finished steps stay finished and can be undone.
+
+After every scan and change, background analysis fingerprints every still (a 64-bit perceptual
+hash) and every video and animation (frames at 10, 30, 50, 70 and 90% of its length), and
+measures each soundtrack's loudness: one whose loudest moment stays below −60 dBFS is silent.
+It waits behind anything the owner asks for; Settings › Background analysis turns it off, after
+which Overview offers **Check now**. Similar matches need the same aspect ratio (within 3%).
+
+Tidy never talks to Pane View. To bring the web library in line afterwards, `lockstep plan`
+(converted files show as new paths, their originals as missing), `lockstep push`, then
+`lockstep prune`, or Sync's Plan, Push and Prune. Holding is outside every root and never
+syncs; `.latch-works` is a system folder to `media-domain`, so no scan reads it.
+
 ## Keeping the two implementations in step
 
-Each rule Oriel RS ports from a TypeScript package is pinned by vectors in
-`apps/oriel-rs/conformance/<package>/`. The package's Vitest suite checks that TypeScript still
-produces them, and `cargo test` checks that Rust does. When a TypeScript rule changes on purpose,
-rewrite the vectors and port the change:
+Each rule Oriel RS ports from a TypeScript package that Pane View, the Lockstep CLI or Gather Box
+still use is pinned by vectors in `apps/oriel-rs/conformance/<package>/` (`media-domain`,
+`media-format`, `media-index`, `lockstep-core`). The package's Vitest suite checks that
+TypeScript still produces them, and `cargo test` checks that Rust does. When a TypeScript rule
+changes on purpose, rewrite the vectors and port the change:
 
 ```sh
 ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test
 ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-format test
-UPDATE_FINGERPRINT_VECTORS=1 pnpm --filter @latch-works/glazier-core exec vitest run \
-  src/similarity/fingerprint-vectors.test.ts
+ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-index test
+ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/lockstep-core test
 ```
 
 Then `pnpm oriel-rs:check` shows what Rust must change. Known differences are listed in the
 tests themselves (the 19 Han pairs in `crates/core-domain/tests/conformance.rs`).
 
-Fingerprints match glazier-core's only through the libvips build sharp ships. The Rust tests load
-it from `node_modules`; `ORIEL_RS_LIBVIPS=<dylib>` points them at another.
+The rest is frozen: Oriel RS is the only implementation left, and these files are what it must
+still produce. Nothing regenerates them; change one only with the Rust change that needs it.
+
+- `conformance/glazier-core/` and `conformance/fingerprints/`: what glazier-core, Tidy's
+  TypeScript engine, made of the committed archives and the fingerprint corpus before it was
+  removed with Electron Oriel. Fingerprints match them only through the libvips build sharp
+  ships; the Rust tests load it from `node_modules` (`ORIEL_RS_LIBVIPS=<dylib>` points them at
+  another).
+- `conformance/glazier-core/smoke-fixture.json`: glazier-core's last report of the smoke fixture
+  (`make-fixture.ts --profile smoke`), the baseline for a differential run on a larger archive
+  than the committed one. It matched Oriel RS's with 0 differences when it was frozen:
+
+  ```sh
+  cd apps/oriel-rs && cargo run --release -p oriel-core-tidy --example tidy_differential -- \
+    ~/.latch-works/oriel-rs/sandbox/spike-fixture-smoke /tmp/smoke-report.json \
+    conformance/glazier-core/smoke-fixture.json
+  ```
+- `conformance/media-index/view-index.*`: the View index Electron Oriel's schema made.
+- `conformance/lockstep-core/secret-storage/electron/`: a Sync profile and token Electron Oriel
+  wrote, which Oriel RS must read.
 
 ## Video through libmpv
 
@@ -304,7 +361,7 @@ when that is set) with:
 | FFmpeg's `COPYING.GPLv3` and `LICENSE.md` from its pinned source release, and `NOTICE.txt`: download URLs and hashes, ffmpeg's configure flags, the licence those flags make it (GPL-3.0-or-later) and where its source is | `Contents/Resources/licenses/media-tools/` | |
 | The licence files of each of the 536 crates in the binary, listed in `README.txt` with each one's licence expression; the 62 that ship no licence file of their own point at shared MIT and Apache-2.0 texts | `Contents/Resources/licenses/rust-crates/` | |
 | `index.json`, one entry per folder, which the About dialog lists | `Contents/Resources/licenses/` | |
-| Electron Oriel's icon, `Info.plist` (`dev.traydr.latchworks.oriel-rs`) | `Contents/` | |
+| The icon, `assets/oriel-icon.icns` (Electron Oriel's artwork), `Info.plist` (`dev.traydr.latchworks.oriel-rs`) | `Contents/` | |
 
 205 MB in all, against Electron Oriel's 503 MB. `LSMinimumSystemVersion` is the newest macOS any
 part needs, so the libavif set makes the app's macOS 15 and later (Oriel RS's own floor is 13).
@@ -335,7 +392,7 @@ The image is laid out as Electron Oriel's, whose Forge config gives appdmg the l
 | Volume | "Oriel RS", with the app's icon (`.VolumeIcon.icns` and the root's custom-icon flag) | "Oriel", the same icon |
 | Window | 660 × 400, no toolbar, icons 128 px | the same |
 | Icons | the app at (180, 180), the link to `/Applications` at (480, 180) | the same |
-| Background | `apps/oriel-rs/crates/xtask/installer/dmg-background.svg`, Electron Oriel's art reading "Drag Oriel RS onto Applications to install it." | `apps/oriel/installer/dmg-background.svg` |
+| Background | `apps/oriel-rs/crates/xtask/installer/dmg-background.svg`, Electron Oriel's art reading "Drag Oriel RS onto Applications to install it." | the same art, reading "Oriel" |
 | Format | HFS+, compressed to ULFO (LZFSE, macOS 10.11 and later) | the same |
 
 xtask does what appdmg does, in Rust and without AppleScript or Finder: it creates a blank HFS+
@@ -454,10 +511,6 @@ cargo run -p xtask -- measure scroll idle \
   start `e2e/scripts/start-pane-view.ts` before each run (`--rounds 1`): it drops and recreates
   the `latch_works_e2e` database, and each push writes the smoke fixture's 247 files to the
   `latch-works-e2e` bucket on the local RustFS. Nothing goes to a remote URL.
-- **Electron Oriel.** `--electron` runs `e2e/scripts/frame-performance.ts` once a round, after
-  Oriel RS in odd rounds and before it in even ones, and folds its numbers into the same lines
-  (`FRAME_PERF_FIXTURE_ROOT`, a fresh `FRAME_PERF_WORK_DIR` under the out folder). It needs the
-  e2e package's prerequisites (`docs/runbooks/e2e.md`) and takes about 12 minutes a round.
 
 The spikes' variables, for a run by hand, are documented at the top of each spike:
 - View's in `crates/mode-view/src/spike.rs`; `ORIEL_RS_SPIKE_WORKFLOWS=1` times each sort order,

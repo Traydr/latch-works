@@ -1,5 +1,5 @@
 //! The changes differential's Rust half: replays the decisions glazier-core made in each scenario
-//! (`packages/glazier-core/src/test-support/changes.ts`) through this engine, on its own copy of
+//! (its `test-support/changes.ts`) through this engine, on its own copy of
 //! the archive, and reports what each left in the form glazier-core's report has, so the two can
 //! be compared.
 

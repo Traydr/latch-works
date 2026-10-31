@@ -3,8 +3,6 @@
  * Captures every showcase screenshot from the real applications, in sequence:
  *
  * - Pane View: the running web app at localhost:3000 (capture-pane-view.mjs).
- * - Oriel: the real Electron app over CDP, its View, Tidy and Sync modes, Sync doing a real
- *   plan + push against the local Pane View sync API (capture-oriel.mjs).
  * - Gather Box: the real unpacked extension's side panel in Chrome
  *   (capture-gather-box.mjs).
  *
@@ -22,7 +20,9 @@ import { fileURLToPath } from "node:url";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 
-const captures = ["capture-pane-view.mjs", "capture-oriel.mjs", "capture-gather-box.mjs"];
+// Oriel's screenshots are of the Electron app, which had its own script; the Rust app has none
+// yet, so they stay as they were captured.
+const captures = ["capture-pane-view.mjs", "capture-gather-box.mjs"];
 
 const failures = [];
 

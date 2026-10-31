@@ -1,4 +1,4 @@
-//! Electron Oriel's `e2e/tests/lockstep/sync.spec.ts` as GPUI tests: five cases in order against
+//! Electron Oriel's e2e Sync spec as GPUI tests: five cases in order against
 //! one Pane View, driven through Sync's real views with clicks and typing, and checked on screen,
 //! in Pane View's snapshot and on disk. `sync.rs` runs them against a small Pane View on a local
 //! port; `stack.rs` against the local compose stack.

@@ -1,4 +1,4 @@
-//! The shell's cases from Electron Oriel's `e2e/tests/oriel/shell.spec.ts`, as GPUI tests: it
+//! The shell's cases from Electron Oriel's e2e shell spec, as GPUI tests: it
 //! starts in View and switches modes from the switcher and the menu, reopens in the mode it
 //! showed last, keeps View's folder while another mode shows, and has one Settings page at the
 //! section of the mode on screen. Then what the shell adds around them that is worth pinning:

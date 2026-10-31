@@ -323,9 +323,9 @@ pub fn make() -> Result<PathBuf> {
     // The symbol table is a fifth of the binary, and nothing reads it at run time.
     capture("/usr/bin/strip", &["-x".as_ref(), executable.as_os_str()])?;
     fs::write(contents.join("PkgInfo"), "APPL????")?;
-    // Electron Oriel's icon, the same artwork for the same app.
+    // The same artwork as Electron Oriel's icon, for the same app.
     fs::copy(
-        repository.join("apps/oriel/media/oriel-icon.icns"),
+        workspace.join("assets/oriel-icon.icns"),
         resources.join(ICON_FILE),
     )?;
 

@@ -100,6 +100,7 @@ async function emptyBucket(client: S3Client): Promise<void> {
     const page = await client.send(
       new ListObjectsV2Command({ Bucket: E2E_BUCKET, ContinuationToken: token }),
     );
+
     const objects = (page.Contents ?? []).flatMap((object) =>
       object.Key ? [{ Key: object.Key }] : [],
     );

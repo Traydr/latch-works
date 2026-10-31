@@ -1,7 +1,8 @@
-//! `sync.spec.ts`'s five cases against the local compose stack: the e2e Pane View on port 3100,
-//! seeded with `e2e/.fixtures/archive` through the Lockstep CLI, as `docs/runbooks/e2e.md` sets
-//! it up. It pushes `e2e/.fixtures/lockstep-source` and then prunes the seeded archive from the
-//! e2e database, as the Electron spec does, so each run needs a freshly seeded server:
+//! Electron Oriel's e2e Sync spec's five cases against the local compose stack: the e2e Pane
+//! View on port 3100, seeded with `e2e/.fixtures/archive` through the Lockstep CLI, as
+//! `docs/runbooks/e2e.md` sets it up. It pushes `e2e/.fixtures/lockstep-source` and then
+//! prunes the seeded archive from the e2e database, as the Electron spec did, so each run needs
+//! a freshly seeded server:
 //!
 //! ```sh
 //! (cd docs/localhost && docker compose up -d)

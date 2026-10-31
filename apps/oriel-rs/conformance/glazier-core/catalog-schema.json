@@ -1,5 +1,5 @@
 {
-  "about": "Made by packages/glazier-core/src/conformance.test.ts from catalog/database.ts, a catalog it creates; do not edit. Regenerate with ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/glazier-core exec vitest run src/conformance.test.ts. Non-ASCII characters are escaped.",
+  "about": "Made by glazier-core's conformance.test.ts from catalog/database.ts, a catalog it creates; do not edit. Frozen when Electron Oriel and glazier-core were removed (plan 063): Oriel RS's engine is the only implementation, and this is what it must still produce. Non-ASCII characters are escaped.",
   "userVersion": 9,
   "master": [
     {

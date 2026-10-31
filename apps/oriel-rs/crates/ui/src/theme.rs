@@ -1,5 +1,5 @@
 //! The house style as a GPUI Kit theme: `themes/oriel.json` holds Oriel Light and Oriel Dark,
-//! from the `lw-*` tokens in `apps/oriel/src/index.css`. One theme for every mode: the system's
+//! from Electron Oriel's `lw-*` CSS tokens. One theme for every mode: the system's
 //! appearance unless the owner picks one in Settings › General, as Electron Oriel's
 //! `ThemeProvider` does.
 //!

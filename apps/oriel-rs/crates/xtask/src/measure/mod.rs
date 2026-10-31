@@ -5,7 +5,6 @@
 //! cargo run -p xtask -- measure <rows…> [--app [<label>=]<Oriel RS.app or binary>]…
 //!     [--rounds N] [--out <folder>] [--fixture <folder>] [--env K=V]…
 //!     [--sync-url <http://127.0.0.1:port>] [--sync-token <token>] [--sync-source <folder>]
-//!     [--electron]
 //! ```
 //!
 //! It replaces the scratch drivers Phase 9 used (`rs_run.py`, `rs_tidy.py`, `mode_idle.py`, the
@@ -32,7 +31,6 @@
 //! command is an A/B. Each run's raw JSON goes to `<out>/<app>/r<round>/<row>.json`; the medians
 //! and spreads go to `<out>/summary.md` and `summary.json`, and to stdout.
 
-mod electron;
 mod process;
 mod spike_log;
 mod stats;
@@ -158,8 +156,7 @@ options:
   --sync-url <url>         Sync's Pane View: http://127.0.0.1 or http://localhost only
   --sync-token <token>     its token (default the e2e stack's)
   --sync-source <folder>   what Sync plans and pushes
-                           (default ~/.latch-works/oriel-rs/sandbox/spike-fixture-smoke)
-  --electron               also run Electron Oriel's e2e/scripts/frame-performance.ts each round";
+                           (default ~/.latch-works/oriel-rs/sandbox/spike-fixture-smoke)";
 
 /// One app under measurement.
 pub struct App {
@@ -299,7 +296,7 @@ impl Outcome {
 /// A finished run, as the summary reads it.
 pub struct Record {
     pub row: Row,
-    /// Index into the apps, Electron Oriel last when `--electron` is on.
+    /// Index into the apps.
     pub app: usize,
     pub metrics: Vec<Metric>,
 }
@@ -314,7 +311,6 @@ struct Options {
     sync_url: Option<String>,
     sync_token: Option<String>,
     sync_source: Option<PathBuf>,
-    electron: bool,
 }
 
 fn parse_options(args: &[String]) -> Result<Options> {
@@ -329,7 +325,6 @@ fn parse_options(args: &[String]) -> Result<Options> {
         sync_url: None,
         sync_token: None,
         sync_source: None,
-        electron: false,
     };
     let mut args = args.iter();
     while let Some(arg) = args.next() {
@@ -369,7 +364,6 @@ fn parse_options(args: &[String]) -> Result<Options> {
             "--sync-url" => options.sync_url = Some(value()?),
             "--sync-token" => options.sync_token = Some(value()?),
             "--sync-source" => options.sync_source = Some(current.join(value()?)),
-            "--electron" => options.electron = true,
             flag if flag.starts_with("--") => bail!("measure: unknown option {flag}\n\n{USAGE}"),
             row => options.rows.push(row.to_owned()),
         }
@@ -443,16 +437,6 @@ pub fn command(args: &[String]) -> Result<()> {
     fs::create_dir_all(&out).with_context(|| format!("creating {}", out.display()))?;
     let out = out.canonicalize()?;
     check_inputs(&rows, &fixture, &sandbox, &sync_source)?;
-    let electron_rows = [
-        Row::ColdStart,
-        Row::Fill,
-        Row::Scroll,
-        Row::WarmStart,
-        Row::Video,
-    ];
-    if options.electron && !rows.iter().any(|row| electron_rows.contains(row)) {
-        bail!("--electron measures View's rows and video: name one of them");
-    }
 
     let mut settings = Settings {
         workspace,
@@ -483,11 +467,7 @@ pub fn command(args: &[String]) -> Result<()> {
         )?);
     }
 
-    let mut labels: Vec<String> = apps.iter().map(|app| app.label.clone()).collect();
-    let electron_index = options.electron.then(|| {
-        labels.push("Electron".into());
-        labels.len() - 1
-    });
+    let labels: Vec<String> = apps.iter().map(|app| app.label.clone()).collect();
     support::log(format!(
         "measure: {} round(s) of {} into {}",
         options.rounds,
@@ -505,11 +485,6 @@ pub fn command(args: &[String]) -> Result<()> {
     let mut records: Vec<Record> = Vec::new();
     for round in 1..=options.rounds {
         let order = stats::turns(round - 1, apps.len());
-        // Electron Oriel runs all its View phases in one go: after Oriel RS in odd rounds and
-        // before it in even ones, as Phase 9's series alternated them.
-        if let Some(index) = electron_index.filter(|_| round % 2 == 0) {
-            records.extend(electron::run(&settings, &out, round, index, options.rounds));
-        }
         for row in &rows {
             for &index in &order {
                 let app = &apps[index];
@@ -520,9 +495,6 @@ pub fn command(args: &[String]) -> Result<()> {
                 };
                 records.push(run_one(*row, &turn, &settings, index, options.rounds)?);
             }
-        }
-        if let Some(index) = electron_index.filter(|_| round % 2 == 1) {
-            records.extend(electron::run(&settings, &out, round, index, options.rounds));
         }
         write_summary(&out, &labels, &apps, &rows, &records, options.rounds)?;
     }
@@ -665,13 +637,10 @@ fn write_summary(
     rounds: usize,
 ) -> Result<String> {
     let lines = table::lines(labels.len(), rows, records);
-    let mut legend: Vec<String> = apps
+    let legend: Vec<String> = apps
         .iter()
         .map(|app| format!("{}: `{}`", app.label, app.path.display()))
         .collect();
-    if labels.len() > apps.len() {
-        legend.push("Electron: `e2e/scripts/frame-performance.ts`".into());
-    }
     let markdown = table::markdown(labels, &lines, rounds, &legend);
     fs::write(out.join("summary.md"), &markdown)?;
     let summary = json!({

@@ -1,10 +1,8 @@
 //! Sync's tokens in the same format in Oriel RS and Electron Oriel (plan 063, "Same formats"): Rust
 //! writes a profile with a token in a temp folder and reads it back, and reads the files Electron
 //! Oriel's `FileSecretStorage` and `ProfileService` wrote
-//! (`conformance/lockstep-core/secret-storage/electron`, from
-//! `apps/oriel/tests/sync/main/secretStorage.conformance.test.ts`). With
-//! `ORIEL_RS_UPDATE_VECTORS=1` it also writes its own into `.../oriel-rs`, which that suite reads.
-//! The token is made up for this check.
+//! (`conformance/lockstep-core/secret-storage/electron`, kept as they were when Electron Oriel was
+//! removed). The token is made up for this check.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,10 +12,9 @@ use oriel_mode_sync::secrets::{FileSecretStorage, KEY_FILE_NAME};
 
 const TOKEN: &str = "conformance-sync-token-0123456789abcdef";
 
-fn conformance(side: &str) -> PathBuf {
+fn electron_files() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../conformance/lockstep-core/secret-storage")
-        .join(side)
+        .join("../../conformance/lockstep-core/secret-storage/electron")
 }
 
 fn input() -> ProfileInput {
@@ -64,21 +61,13 @@ fn writes_a_token_it_reads_back_sealed_under_a_private_key_never_in_the_clear() 
             .decrypt(&sealed)
             .is_err()
     );
-
-    if std::env::var("ORIEL_RS_UPDATE_VECTORS").as_deref() == Ok("1") {
-        let target = conformance("oriel-rs");
-        fs::create_dir_all(&target).unwrap();
-        for file in [SETTINGS_FILE_NAME, KEY_FILE_NAME] {
-            fs::copy(folder.path().join(file), target.join(file)).unwrap();
-        }
-    }
 }
 
 #[test]
 fn reads_the_profile_and_token_electron_oriel_wrote() {
     let folder = tempfile::tempdir().unwrap();
     for file in [SETTINGS_FILE_NAME, KEY_FILE_NAME] {
-        fs::copy(conformance("electron").join(file), folder.path().join(file)).unwrap();
+        fs::copy(electron_files().join(file), folder.path().join(file)).unwrap();
     }
     let (store, error) = ProfileStore::open(folder.path());
     assert_eq!(error, None);

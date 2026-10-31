@@ -5,11 +5,8 @@ dist/
 .output/
 .tanstack/
 .vite/
-# Electron Forge output, here too so a retired app's leftover builds stay ignored.
-apps/*/out/
-apps/*/.packaged-runtime/
-# Oriel's pinned ffmpeg and ffprobe, downloaded when it is packaged.
-apps/*/.media-tools/
+# Oriel RS's pinned ffmpeg and ffprobe (`cargo run -p oriel-tools --bin fetch-media-tools`).
+apps/oriel-rs/.media-tools/
 # Oriel RS's Cargo build output (plan 063).
 apps/oriel-rs/target/
 # Oriel RS's LGPL libmpv sets and vendored prebuilt libraries, made by its xtask (`cargo run -p

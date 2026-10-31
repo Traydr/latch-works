@@ -3,7 +3,7 @@
   "name": "Oriel",
   "author": "Latch Works",
   "url": "https://github.com/Traydr/latch-works",
-  "_ref": "The lw-* tokens in apps/oriel/src/index.css: the system font at 13 px, 32 px controls, surfaces lifted by a soft ring, neutral selection, one violet accent.",
+  "_ref": "Electron Oriel's lw-* CSS tokens: the system font at 13 px, 32 px controls, surfaces lifted by a soft ring, neutral selection, one violet accent.",
   "themes": [
     {
       "name": "Oriel Light",

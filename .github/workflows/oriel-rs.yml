@@ -1,7 +1,8 @@
 name: Oriel RS
 
-# Plan 063's experiment: formats, lints and tests the Rust workspace, and checks that the
-# TypeScript packages still produce the conformance vectors the Rust tests read. Off by default:
+# Formats, lints and tests the Rust workspace, and checks that the TypeScript packages Pane View,
+# the Lockstep CLI and Gather Box share still produce the conformance vectors the Rust tests read
+# (the vectors of what Electron Oriel and glazier-core made are frozen). Off by default:
 # it runs only when started by hand (Actions › Oriel RS › Run workflow), as the owner runs
 # `pnpm oriel-rs:check` locally.
 on:
@@ -48,8 +49,6 @@ jobs:
           pnpm --filter @latch-works/media-format test
           pnpm --filter @latch-works/media-index test
           pnpm --filter @latch-works/lockstep-core test
-          pnpm --filter @latch-works/glazier-core test
-          pnpm --filter @latch-works/oriel exec vitest run tests/sync/main/secretStorage.conformance.test.ts
 
       - name: Fetch the pinned ffmpeg and ffprobe, and the prebuilt libvips and libavif
         working-directory: apps/oriel-rs

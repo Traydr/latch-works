@@ -201,8 +201,10 @@ export class GatherController {
     this.elements.handBackItems.addEventListener("click", (event) => {
       const button = event.target instanceof Element ? event.target.closest("button") : null;
       const row = button?.closest("li");
+
       const item =
         row instanceof HTMLElement ? this.handBackItems[Number(row.dataset.index)] : undefined;
+
       const action = button?.dataset.action;
 
       if (item && (action === "open" || action === "add")) {

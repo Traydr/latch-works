@@ -1,5 +1,5 @@
 {
-  "about": "Made by packages/glazier-core/src/engine/differential.test.ts with ORIEL_RS_UPDATE_VECTORS=1; do not edit. The archive both engines scan a copy of, with the dates a copy carries and the folders Git cannot hold.",
+  "about": "Made by glazier-core's engine/differential.test.ts; do not edit. Frozen when Electron Oriel and glazier-core were removed (plan 063): Oriel RS's engine is the only implementation, and this is what it must still produce. The archive both engines scan a copy of, with the dates a copy carries and the folders Git cannot hold.",
   "files": [
     {
       "path": "._sunset.png",

@@ -18,8 +18,8 @@
 //!    Refresh, and comic mode on and off, 0.7 s apart, with the time each took on the main thread.
 //! 8. `done`; the app quits if `ORIEL_RS_SPIKE_QUIT=1`.
 //!
-//! `ORIEL_RS_SPIKE_WINDOW=1280x900` sizes the window first, as `e2e/scripts/frame-performance.ts`
-//! sizes Electron Oriel's.
+//! `ORIEL_RS_SPIKE_WINDOW=1280x900` sizes the window first, as Electron Oriel's
+//! performance script sized its window.
 
 use std::fs::{File, OpenOptions};
 use std::io::Write as _;

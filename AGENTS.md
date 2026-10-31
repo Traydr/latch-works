@@ -2,17 +2,17 @@
 
 ## Project structure and module organization
 
-Latch Works is a TypeScript pnpm workspace. Product code lives under `apps/`: `pane-view` is the
-web viewer; `oriel` is the Electron desktop app, whose View, Tidy and Sync modes (once Frame View,
-Glazier and the Lockstep desktop app) live in `src/modes/`; `gather-box` is a Chrome extension;
-`lockstep-cli` is the sync CLI; and `showcase` is the Astro site. `oriel-rs` is a Rust
-experiment, Oriel ported to GPUI (plan 063, `docs/runbooks/oriel-rs.md`); it is a Cargo
-workspace outside `pnpm test`, checked with `pnpm oriel-rs:check`. Shared code belongs in
+Latch Works is a TypeScript pnpm workspace with one Rust app. Product code lives under `apps/`:
+`pane-view` is the web viewer; `oriel-rs` is the desktop app, in Rust on GPUI (plan 063,
+`docs/runbooks/oriel-rs.md`), whose View, Tidy and Sync modes (once Frame View, Glazier and the
+Lockstep desktop app) live in its `crates/mode-*`; `gather-box` is a Chrome extension;
+`lockstep-cli` is the sync CLI; and `showcase` is the Astro site. `oriel-rs` is a Cargo workspace
+outside `pnpm test`, checked with `pnpm oriel-rs:check`. Shared TypeScript code belongs in
 `packages/`.
 
 Keep source in each workspace's `src/`. Tests sit beside modules as `*.test.ts` or in
-`apps/*/tests/`. Put decisions, plans, and runbooks in `docs/`. Keep `dist/`, `out/`, and
-`.output/` untracked.
+`apps/*/tests/`. Put decisions, plans, and runbooks in `docs/`. Keep `dist/`, `.output/` and
+Cargo's `target/` untracked.
 
 ## Build, test, and development commands
 
@@ -20,7 +20,7 @@ Keep source in each workspace's `src/`. Tests sit beside modules as `*.test.ts` 
 - `pnpm test`: run all Vitest suites.
 - `pnpm typecheck`: check TypeScript across the workspace.
 - `pnpm lint:all`: run Biome and the repository's Oxlint anti-slop rules.
-- `pnpm build:all`: build all workspaces and Electron distributables.
+- `pnpm build:all`: build all TypeScript workspaces.
 - `pnpm check:all`: build, format, lint, typecheck, and run Knip. This command rewrites files
   through `pnpm format`, so inspect the resulting diff.
 - `pnpm --filter @latch-works/pane-view dev`: start Pane View on port 3000. Use another package
@@ -31,7 +31,7 @@ Keep source in each workspace's `src/`. Tests sit beside modules as `*.test.ts` 
 Use TypeScript ESM. Biome enforces two-space indentation, a 100-column limit, lint rules, and
 organized imports. Run `pnpm format` after edits. Use kebab-case file names such as
 `sync-plan.ts`, PascalCase for components and classes, and camelCase for functions and values.
-Export shared APIs through `src/index.ts`. Preserve Electron's main/preload/renderer boundary.
+Export shared APIs through `src/index.ts`.
 
 ## Testing guidelines
 
@@ -46,12 +46,10 @@ the place to confirm user-facing features. Run a focused suite first, for exampl
 repository does not define a numeric coverage threshold.
 
 The end-to-end suite lives in `e2e/` (Playwright) and is the final check before a PR is ready:
-`pnpm e2e:pane` runs Pane View against the local compose stack, seeded through the Lockstep CLI;
-`pnpm e2e:frame`, `pnpm e2e:glazier` and `pnpm e2e:lockstep` drive Oriel's View, Tidy and Sync
-modes in the packaged Oriel build (Sync pushes into that server; Tidy builds its own archive, with
-no server); `pnpm e2e:oriel` covers the shell and the first start's migration.
+`pnpm e2e:pane` runs Pane View against the local compose stack, seeded through the Lockstep CLI.
 It is not part of `pnpm test`; see `docs/runbooks/e2e.md` for prerequisites and how to run one
-spec.
+spec. The desktop app's end-to-end cases are GPUI headless tests in `apps/oriel-rs`, run by
+`pnpm oriel-rs:check`.
 
 ## Commit and pull request guidelines
 

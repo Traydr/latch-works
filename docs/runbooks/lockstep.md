@@ -34,21 +34,14 @@ Optional environment overrides:
 
 ## Desktop token storage (Oriel's Sync mode)
 
-The desktop app is now Sync, one of Oriel's modes (`apps/oriel`, plan 059). It stores each
+The desktop app is now Sync, one of Oriel RS's modes (`apps/oriel-rs`, plan 063). It stores each
 profile's sync token encrypted with AES-256-GCM under a random key in its data folder,
-`~/.latch-works/lockstep/secret-storage.key` (`%USERPROFILE%\.latch-works\lockstep` on
-Windows), created on first use with mode 0600. It does this on every platform and in packaged
-builds too, instead of Electron `safeStorage`: Oriel is signed ad hoc, so its signature changes
-with each rebuild, and the Keychain asked for access again after every one. The key is
-protected by the home folder's permissions alone, so keep it out of backups and syncs you would
-not trust with the tokens. Profiles and settings stay in `lockstep-settings.json` beside it, and
-the token is never written there in the clear.
-
-A data folder that already has settings copies in the key older builds kept in
-`~/.config/lockstep/` (or `$XDG_CONFIG_HOME/lockstep/`), so their tokens still decrypt. Tokens
-the standalone Lockstep app saved with `safeStorage` do not decrypt with this key: until Oriel's
-first-start migration re-saves them (plan 059, Phase 5), such a profile asks for its token
-again.
+`secret-storage.key` in `sync/` (`~/.latch-works/oriel-rs/sync`), created on first use with mode
+0600, in the format Electron Oriel used. It uses this key file instead of the Keychain because an
+unsigned build's signature changes with each rebuild, and the Keychain would ask for access again
+after every one. The key is protected by the home folder's permissions alone, so keep it out of
+backups and syncs you would not trust with the tokens. Profiles and settings stay in
+`lockstep-settings.json` beside it, and the token is never written there in the clear.
 
 For scripted `push` or `prune` without interactive confirmation, pass `--yes`:
 

@@ -1,12 +1,15 @@
 //! The differential run on any folder: copies it under the temp folder (Tidy's sandbox admits
 //! nothing else), scans and analyses the copy with Spot variants off and on, and writes the
-//! report glazier-core's `engine/differential.test.ts` writes for the same folder with
-//! `GLAZIER_DIFFERENTIAL_SOURCE` and `GLAZIER_DIFFERENTIAL_OUT`. Given that report as a third
-//! argument, it lists where the two differ.
+//! report glazier-core's `engine/differential.test.ts` wrote for a folder. Given an expected
+//! report as a third argument, it lists where the two differ.
+//!
+//! The last report glazier-core made of the smoke fixture (`make-fixture.ts --profile smoke`)
+//! is kept as the baseline, `conformance/glazier-core/smoke-fixture.json`:
 //!
 //! ```sh
 //! cargo run --release -p oriel-core-tidy --example tidy_differential -- \
-//!   <folder> <rust-report.json> [<glazier-core-report.json>]
+//!   ~/.latch-works/oriel-rs/sandbox/spike-fixture-smoke /tmp/smoke.json \
+//!   conformance/glazier-core/smoke-fixture.json
 //! ```
 
 #[path = "../tests/support/report.rs"]

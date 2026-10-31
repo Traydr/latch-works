@@ -1,5 +1,5 @@
 //! The window's size, position and whether it was maximised, kept as Electron Oriel keeps them
-//! (`apps/oriel/src/main/window-state.ts`): `window-state.json` in the shell's folder, holding
+//! (its `window-state.ts`): `window-state.json` in the shell's folder, holding
 //! `{"bounds":{"x":…,"y":…,"width":…,"height":…},"maximized":false}` in whole points. A maximised
 //! or full-screen window keeps the bounds it returns to.
 //!

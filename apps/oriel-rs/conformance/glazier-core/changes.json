@@ -1,5 +1,5 @@
 {
-  "about": "Made by packages/glazier-core/src/engine/differential.test.ts; do not edit. e2e's Tidy cases as decisions, each on a fresh copy of archive/ (or shrink-archive/), with what each decision left; Oriel RS replays the decisions and must leave the same.",
+  "about": "Made by glazier-core's engine/differential.test.ts; do not edit. Frozen when Electron Oriel and glazier-core were removed (plan 063): Oriel RS's engine is the only implementation, and this is what it must still produce. e2e's Tidy cases as decisions, each on a fresh copy of archive/ (or shrink-archive/), with what each decision left; Oriel RS replays the decisions and must leave the same.",
   "scenarios": {
     "duplicates": {
       "archive": "archive",

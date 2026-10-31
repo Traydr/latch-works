@@ -1,4 +1,4 @@
-//! Electron Oriel's `e2e/tests/oriel/welcome.spec.ts` as a GPUI test: the first start's welcome
+//! Electron Oriel's e2e welcome spec as a GPUI test: the first start's welcome
 //! sets one folder up for View and Tidy, then shows no more. Oriel RS's Tidy works only inside
 //! its sandbox, so the case first chooses a folder outside it, where "Tidy it" is off and says
 //! why, then changes to one inside.

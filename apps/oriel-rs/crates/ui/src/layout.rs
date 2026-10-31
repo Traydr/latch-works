@@ -1,6 +1,6 @@
 //! One mode's window: the sidebar, with the mode switcher at its top, the mode's own navigation
 //! below and Settings at its foot, beside the mode's content. Every mode's sidebar is full or the
-//! rail together, as the owner last chose (`apps/oriel/src/shell/ModeLayout.tsx`).
+//! rail together, as the owner last chose for Electron Oriel.
 
 use std::rc::Rc;
 use std::time::Duration;

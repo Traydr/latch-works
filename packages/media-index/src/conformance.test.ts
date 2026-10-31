@@ -1,7 +1,9 @@
 /*
  * Conformance vectors for media-index. Oriel RS's Rust port (apps/oriel-rs/crates/core-index)
- * must produce the same, so the archive scan, the sync plan and View's media index cannot drift
- * between the two apps (plan 063, "Keeping two implementations honest").
+ * must produce the same, so the archive scan and the sync plan cannot drift between the two
+ * (plan 063, "Keeping two implementations honest"). View's media index (view-index.json and
+ * view-index.sqlite) came from Electron Oriel's schema; it is frozen since Electron Oriel was
+ * removed, and only the Rust reads it.
  *
  * This suite checks that the TypeScript still makes the committed vectors in
  * apps/oriel-rs/conformance/media-index, and `cargo test -p oriel-core-index` checks the Rust
@@ -21,7 +23,6 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import {
   detectMediaType,
@@ -378,136 +379,6 @@ function makeSyncPlanVectors() {
   };
 }
 
-/*
- * View's media index. Its schema lives in Electron Oriel (apps/oriel/src/modes/view/main/db/
- * mediaIndexService.ts), which this package cannot import, so the statements it runs are read
- * from that file and run here exactly, with its pragmas, through the same node:sqlite. The rows
- * are written with the values its `upsertBatch` and `finishScan` write. The file is committed so
- * the Rust can open what the TypeScript made; it is rewritten only when updating, since SQLite
- * stamps its version into the header.
- */
-
-const ELECTRON_INDEX_SOURCE = path.join(
-  repositoryRoot,
-  "apps/oriel/src/modes/view/main/db/mediaIndexService.ts",
-);
-
-const indexFile = path.join(vectorDirectory, "view-index.sqlite");
-
-function electronIndexSchema(): string {
-  const source = readFileSync(ELECTRON_INDEX_SOURCE, "utf8");
-  const match = /this\.sqlite\.exec\(`([^`]*CREATE TABLE[^`]*)`\)/.exec(source);
-  const schema = match?.[1];
-
-  if (schema === undefined) {
-    throw new Error(`No CREATE TABLE statements found in ${ELECTRON_INDEX_SOURCE}`);
-  }
-
-  return schema;
-}
-
-function createElectronIndex(file: string): DatabaseSync {
-  const database = new DatabaseSync(file);
-
-  database.exec("PRAGMA journal_mode = WAL;");
-  database.exec("PRAGMA synchronous = NORMAL;");
-  database.exec(electronIndexSchema());
-
-  return database;
-}
-
-function writeIndexRows(database: DatabaseSync): void {
-  database
-    .prepare(
-      "insert into scan_runs (root_path, recursive, started_at_ms, completed_at_ms, status) values (?, ?, ?, ?, ?)",
-    )
-    .run("/archive", 1, 1767268800000, 1767268801000, "done");
-
-  const insert = database.prepare(
-    "insert into media_index (path, root_path, name, extension, media_type, size, mtime_ms, width, height, duration_ms, codec, last_seen_scan_id, updated_at_ms) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-  );
-
-  insert.run(
-    "/archive/b.jpg",
-    "/archive",
-    "b.jpg",
-    "jpg",
-    "image",
-    2048,
-    1767268800123.4568,
-    null,
-    null,
-    null,
-    null,
-    1,
-    1767268801000,
-  );
-  insert.run(
-    "/archive/clips/été.mp4",
-    "/archive",
-    "été.mp4",
-    "mp4",
-    "video",
-    1048576,
-    1767268860000,
-    1920,
-    1080,
-    4000,
-    "h264",
-    1,
-    1767268801000,
-  );
-}
-
-function describeIndex(database: DatabaseSync) {
-  return {
-    userVersion: database.prepare("PRAGMA user_version").all(),
-    sqliteMaster: database
-      .prepare("select type, name, tbl_name, sql from sqlite_master order by type, name")
-      .all(),
-    scanRuns: database
-      .prepare(
-        "select id, root_path, recursive, started_at_ms, completed_at_ms, status from scan_runs order by id",
-      )
-      .all(),
-    mediaIndex: database
-      .prepare(
-        "select path, root_path, name, extension, media_type, size, mtime_ms, typeof(mtime_ms) as mtime_type, width, height, duration_ms, codec, last_seen_scan_id, updated_at_ms from media_index order by path",
-      )
-      .all(),
-  };
-}
-
-function makeViewIndexVectors() {
-  const folder = temporaryFolder("media-index-view-index-");
-  const database = createElectronIndex(path.join(folder, "media-index.sqlite"));
-
-  writeIndexRows(database);
-
-  const made = describeIndex(database);
-
-  if (updating) {
-    rmSync(indexFile, { force: true });
-    mkdirSync(vectorDirectory, { recursive: true });
-    database.exec(`VACUUM INTO '${indexFile.replaceAll("'", "''")}'`);
-  }
-
-  database.close();
-
-  // The committed file holds what Electron Oriel's statements make today.
-  const committed = new DatabaseSync(indexFile, { readOnly: true });
-
-  expect(describeIndex(committed)).toEqual(made);
-  committed.close();
-
-  return {
-    about: about(
-      "apps/oriel/src/modes/view/main/db/mediaIndexService.ts's schema, with view-index.sqlite beside it",
-    ),
-    ...made,
-  };
-}
-
 describe("media-index conformance vectors", () => {
   it("scans the tree as the committed scan", async () => {
     expectCommitted("scan.json", await makeScanVectors());
@@ -515,9 +386,5 @@ describe("media-index conformance vectors", () => {
 
   it("plans syncs as the committed plans", () => {
     expectCommitted("sync-plan.json", makeSyncPlanVectors());
-  });
-
-  it("makes View's media index as the committed index", () => {
-    expectCommitted("view-index.json", makeViewIndexVectors());
   });
 });

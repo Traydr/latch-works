@@ -1,5 +1,5 @@
 //! View: a folder's media as a gallery, the viewer, the capsule player and the comic reader, as
-//! Electron Oriel's View mode (`apps/oriel/src/modes/view`) has them.
+//! Electron Oriel's View mode had them.
 //!
 //! View reads; it never writes inside a folder it shows. What it keeps goes under
 //! `DataRoot::view()`, laid out as Electron Oriel lays out its View folder: the settings file

@@ -1,6 +1,5 @@
-//! The ffmpeg and ffprobe builds Oriel RS runs: the ones `apps/oriel/media-tools.ts` pins, by
-//! the same URLs and SHA-256 hashes, so both apps run the same builds. A test fails when the two
-//! lists differ.
+//! The ffmpeg and ffprobe builds Oriel RS runs, by URL and SHA-256: the builds Electron Oriel
+//! pinned, so Tidy's outputs stayed the same across the port.
 //!
 //! Tidy needs these rather than any ffmpeg (plan 060): `ffmpeg-static`'s 6.0 has an SVT-AV1 that
 //! runs without SIMD on Apple silicon, about 16 times slower, and no SVT-AV1 at all on Windows.
@@ -81,57 +80,6 @@ pub fn tool_files(platform: &str) -> [&'static str; 2] {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A platform, its version, and its archives' URLs and hashes.
-    type Pin = (String, String, Vec<(String, String)>);
-
-    /// Reads the pins out of `media-tools.ts`'s `PINS` map, in order.
-    fn electron_pins() -> Vec<Pin> {
-        let source = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../oriel/media-tools.ts"),
-        )
-        .expect("Electron Oriel's media-tools.ts");
-        let quoted = |line: &str| line.split('"').nth(1).map(str::to_owned);
-        let mut pins: Vec<Pin> = Vec::new();
-        let mut url = None;
-        let map = source
-            .lines()
-            .map(str::trim)
-            .skip_while(|line| !line.starts_with("const PINS"))
-            .take_while(|line| *line != "]);");
-        for line in map {
-            if line.starts_with('"') && line.ends_with("\",") && line.contains('-') {
-                pins.push((quoted(line).unwrap(), String::new(), Vec::new()));
-            } else if let Some(pin) = pins.last_mut() {
-                if line.starts_with("version:") {
-                    pin.1 = quoted(line).unwrap();
-                } else if line.starts_with("url:") {
-                    url = quoted(line);
-                } else if line.starts_with("sha256:") {
-                    pin.2.push((url.take().unwrap(), quoted(line).unwrap()));
-                }
-            }
-        }
-        pins
-    }
-
-    #[test]
-    fn pins_match_electron_oriels() {
-        let ours: Vec<_> = PINS
-            .iter()
-            .map(|pin| {
-                let archives = pin.archives.iter();
-                (
-                    pin.platform.to_owned(),
-                    pin.version.to_owned(),
-                    archives
-                        .map(|archive| (archive.url.to_owned(), archive.sha256.to_owned()))
-                        .collect::<Vec<_>>(),
-                )
-            })
-            .collect();
-        assert_eq!(ours, electron_pins());
-    }
 
     #[test]
     fn platforms_are_named_as_node_names_them() {

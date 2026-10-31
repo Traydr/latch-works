@@ -1,6 +1,6 @@
 //! Fingerprint parity with glazier-core (plan 063): Spot variants' thresholds were measured on
 //! prints glazier-core made, so the prints made here must equal them bit for bit. The vectors are
-//! what glazier-core makes of the corpus; `fingerprint-vectors.test.ts` keeps them current.
+//! what glazier-core made of the corpus, frozen since glazier-core was removed.
 
 mod support;
 

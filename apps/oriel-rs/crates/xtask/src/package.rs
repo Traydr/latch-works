@@ -311,7 +311,7 @@ fn pack(repository: &Path, version: &str, stage: &Path, out: &Path) -> Result<()
     if out.exists() {
         fs::remove_dir_all(out)?;
     }
-    let icon = repository.join("apps/oriel/media/oriel-icon.ico");
+    let icon = support::workspace().join("assets/oriel-icon.ico");
     let args: Vec<&OsStr> = vec![
         "pack".as_ref(),
         "--packId".as_ref(),

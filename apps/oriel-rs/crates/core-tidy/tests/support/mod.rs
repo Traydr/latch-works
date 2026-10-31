@@ -158,7 +158,7 @@ impl Drop for Scratch {
 }
 
 /// Writes the large still as an 8-bit RGB PNG, which decodes to the same pixels as the one
-/// glazier-core's suite writes with sharp.
+/// glazier-core's suite wrote with sharp.
 pub fn write_large_png(dir: &Path, drawn: &DrawnVector) -> PathBuf {
     let path = dir.join(format!("{}.png", drawn.name));
     image::save_buffer(

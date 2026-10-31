@@ -1,5 +1,5 @@
-//! glazier-core's rules up to changing files, against the vectors its own suite writes
-//! (`packages/glazier-core/src/conformance.test.ts`): sniffing, the junk rules, the keeper,
+//! glazier-core's rules up to changing files, against the vectors its own suite wrote before it
+//! was removed (its `conformance.test.ts`), now frozen: sniffing, the junk rules, the keeper,
 //! similar groups, duplicate sets with Spot variants, Convert's candidates and Shrink's estimate,
 //! and how ffprobe's JSON is read. A difference here is a rule that drifted between the two apps.
 

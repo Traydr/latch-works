@@ -13,7 +13,7 @@
 //!   queries behind Overview, the Library and Duplicates, and every change with its Undo.
 //!
 //! Every rule keeps glazier-core's names and is pinned by the vectors in
-//! `apps/oriel-rs/conformance/glazier-core`, which glazier-core's own suite writes.
+//! `conformance/glazier-core`, which glazier-core's own suite wrote before it was removed.
 
 pub mod catalog;
 pub mod collation;

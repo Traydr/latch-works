@@ -1,5 +1,5 @@
 {
-  "about": "Made by packages/glazier-core/src/engine/differential.test.ts with ORIEL_RS_UPDATE_VECTORS=1; do not edit. The clips Shrink's scenario changes, with the dates a copy carries.",
+  "about": "Made by glazier-core's engine/differential.test.ts; do not edit. Frozen when Electron Oriel and glazier-core were removed (plan 063): Oriel RS's engine is the only implementation, and this is what it must still produce. The clips Shrink's scenario changes, with the dates a copy carries.",
   "files": [
     {
       "path": "clips/busy.mp4",

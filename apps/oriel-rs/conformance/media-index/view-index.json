@@ -1,5 +1,5 @@
 {
-  "about": "Made by packages/media-index/src/conformance.test.ts from apps/oriel/src/modes/view/main/db/mediaIndexService.ts's schema, with view-index.sqlite beside it; do not edit. Regenerate with ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-index test. Non-ASCII characters are escaped.",
+  "about": "Made by packages/media-index/src/conformance.test.ts from Electron Oriel's View index schema (its mediaIndexService.ts), with view-index.sqlite beside it; do not edit. Frozen when Electron Oriel was removed (plan 063): the media-index suite no longer makes it, and Oriel RS must still read it. Non-ASCII characters are escaped.",
   "userVersion": [{ "user_version": 0 }],
   "sqliteMaster": [
     {

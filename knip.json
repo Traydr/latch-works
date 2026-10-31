@@ -34,33 +34,12 @@
         "src/**/*.test.ts"
       ]
     },
-    "apps/oriel": {
-      "entry": [
-        "forge.config.ts",
-        "vite.main.config.mts",
-        "vite.preload.config.mts",
-        "vite.renderer.config.mts",
-        "vite.transcoder.config.mts",
-        "src/main.ts",
-        "src/preload.ts",
-        "src/modes/view/main/catalog/catalog.worker.ts",
-        "src/modes/view/main/thumbnail/thumbnail.worker.ts",
-        "src/modes/tidy/transcoder-preload.ts",
-        "src/modes/tidy/engine/engine-process.ts",
-        "src/modes/tidy/engine/avif-worker.ts",
-        "src/modes/tidy/transcoder/transcoder.ts",
-        "tests/**/*.test.ts"
-      ],
-      "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe"],
-      "ignoreBinaries": ["vpk", "ditto"]
-    },
     "apps/lockstep-cli": {
       "entry": ["src/**/*.test.ts"]
     },
     "apps/oriel-rs": {
-      "entry": ["scripts/**/*.{ts,mts}"],
-      "ignoreBinaries": ["ffmpeg"],
-      "ignoreDependencies": ["@jsquash/avif"]
+      "entry": ["scripts/**/*.ts"],
+      "ignoreBinaries": ["ffmpeg"]
     },
     "apps/showcase": {
       "entry": ["src/pages/**/*.{astro,ts,tsx}", "scripts/*.mjs"]
@@ -68,13 +47,7 @@
     "packages/media-domain": {
       "entry": ["src/**/*.test.ts"]
     },
-    "packages/app-data": {
-      "entry": ["src/**/*.test.ts"]
-    },
     "packages/media-index": {
-      "entry": ["src/**/*.test.ts"]
-    },
-    "packages/glazier-core": {
       "entry": ["src/**/*.test.ts"]
     },
     "packages/media-format": {
@@ -87,8 +60,7 @@
       "entry": ["src/**/*.test.ts"]
     },
     "e2e": {
-      "entry": ["scripts/*.ts", "tests/**/*.setup.ts", "tests/**/*.spec.ts"],
-      "ignoreBinaries": ["electron-forge"]
+      "entry": ["scripts/*.ts", "tests/**/*.setup.ts", "tests/**/*.spec.ts"]
     }
   }
 }

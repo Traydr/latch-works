@@ -1,5 +1,5 @@
 {
-  "about": "Made by packages/glazier-core/src/engine/differential.test.ts; do not edit. What glazier-core's engine makes of archive/, Spot variants off and on; Oriel RS's must be the same.",
+  "about": "Made by glazier-core's engine/differential.test.ts; do not edit. Frozen when Electron Oriel and glazier-core were removed (plan 063): Oriel RS's engine is the only implementation, and this is what it must still produce. What glazier-core's engine makes of archive/, Spot variants off and on; Oriel RS's must be the same.",
   "off": {
     "overview": {
       "files": 26,

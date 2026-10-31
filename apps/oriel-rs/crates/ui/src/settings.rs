@@ -1,4 +1,4 @@
-//! The one Settings page, over the whole window (`apps/oriel/src/shell/Settings.tsx`): the
+//! The one Settings page, over the whole window (Electron Oriel's `Settings.tsx`): the
 //! sections on the left, Oriel's own and then one per mode, and the one showing on the right.
 //! The way back sits at the sidebar's bottom left, where Settings was. A mode draws its own
 //! section from [`SettingsGroup`]s of [`SettingsRow`]s, as System Settings groups them.

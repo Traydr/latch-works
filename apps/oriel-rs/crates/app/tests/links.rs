@@ -1,4 +1,4 @@
-//! Electron Oriel's `e2e/tests/oriel/links.spec.ts` as a GPUI test: a folder Tidy tidies is
+//! Electron Oriel's e2e links spec as a GPUI test: a folder Tidy tidies is
 //! offered to View, and the modes hand files and folders on. View shows a file in Tidy, at the
 //! Library filtered to it; Tidy's Inspector and Overview open a file and the whole folder in
 //! View; and Tidy's Overview starts a Sync profile for its folder. Then what Oriel RS adds: Tidy

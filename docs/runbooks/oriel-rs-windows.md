@@ -54,7 +54,7 @@ step refuses a set where a DLL imports one that neither the set nor Windows has.
 `licenses\libavif\` holds each package's licence files and a NOTICE with every URL and hash.
 
 Then `vpk pack --packId OrielRS --packVersion <version> --packTitle "Oriel RS" --packAuthors Traydr
---runtime win-x64 --packDir <stage> --mainExe oriel-rs.exe --icon apps\oriel\media\oriel-icon.ico
+--runtime win-x64 --packDir <stage> --mainExe oriel-rs.exe --icon apps\oriel-rs\assets\oriel-icon.ico
 --outputDir target\release\package\windows\velopack`, Electron Oriel's arguments less the MSI and
 the splash, and the files are renamed `Oriel-RS-<version>-win-x64-Setup.exe` and
 `-Portable.zip`. The pack id `OrielRS` installs beside Electron Oriel's `Oriel`. Downloads are
