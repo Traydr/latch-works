@@ -711,6 +711,14 @@ impl Gallery {
                 .collect()
         };
         let (visible_sources, nearby_sources) = (sources(visible.clone()), sources(nearby.clone()));
+        // A video in sight may play soon, in its tile or the viewer: an engine primed now has
+        // paid the first open's costs by then. Nothing is primed while no video is in sight.
+        if self.tiles[visible.clone()]
+            .iter()
+            .any(|tile| matches!(tile, Tile::Media { media, .. } if media.is_video()))
+        {
+            oriel_media::mpv::prime();
+        }
         // Room for the drawn tiles, the overscan, and a screen's worth more for scrolling back.
         let capacity = nearby.len() + visible.len() * 2;
         self.images

@@ -11,8 +11,9 @@ gpui-kit.workspace = true
 anyhow.workspace = true
 log.workspace = true
 # still/ adds its dependencies below this line.
-# GPUI's `RenderImage` is made of `image::Frame`s, from the same `image` 0.25 GPUI uses.
-image = { version = "0.25", default-features = false }
+# GPUI's `RenderImage` is made of `image::Frame`s, from the same `image` 0.25 GPUI uses, whose
+# WebP decoder (GPUI enables it too) reads the rare tile libwebp is not trusted with.
+image = { version = "0.25", default-features = false, features = ["webp"] }
 smallvec = "1"
 # libwebp, built from source and linked statically: the encoder sharp's thumbnails use.
 libwebp-sys = "0.14"
@@ -20,12 +21,14 @@ libwebp-sys = "0.14"
 # mpv/ adds its dependencies below this line.
 # libmpv (GPL, or LGPL built with -Dgpl=false) is loaded at run time from a dylib, never linked.
 libloading = "0.8"
+# The clip a new engine plays once (`mpv/prime.rs`): made by the pinned ffmpeg, kept in View's
+# data folder.
+oriel-core-paths.workspace = true
+oriel-tools.workspace = true
 
 [dev-dependencies]
 # The libmpv spike's footprint reading (`proc_pid_rusage`).
 libc = "0.2"
-# The pinned ffmpeg makes the clip the engine tests play.
-oriel-tools.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # still/ adds its macOS dependencies below this line.

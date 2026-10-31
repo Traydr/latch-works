@@ -35,6 +35,7 @@ mod engine;
 mod ffi;
 #[cfg(target_os = "macos")]
 mod opengl;
+mod prime;
 mod render;
 mod samples;
 mod software;
@@ -54,7 +55,7 @@ use self::render::{Picture, Rendered, Shared};
 use crate::video::{SeekMode, VideoError, VideoStatus};
 
 pub use any::{AnyPlayer, VideoEngine};
-pub use engine::prewarm;
+pub use engine::{prewarm, prime};
 
 /// Whether libmpv can be loaded on this Mac: from the app bundle, `ORIEL_RS_LIBMPV`, the
 /// development build, or IINA's copy outside a bundle. AVPlayer plays when it cannot.

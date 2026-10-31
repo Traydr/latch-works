@@ -8,6 +8,7 @@
 //! cargo run --release -p oriel-media --example mpv_spike -- errors <video> [<video> ...]
 //! cargo run --release -p oriel-media --example mpv_spike -- verify <video> <seconds>...
 //! cargo run --release -p oriel-media --example mpv_spike -- colour <video> <rrggbb>
+//! cargo run --release -p oriel-media --example mpv_spike -- rest <seconds>
 //! ```
 //!
 //! `ORIEL_RS_MPV_RENDER=sw` measures the software path, else the OpenGL one;
@@ -23,17 +24,19 @@
 //! player exactly to each time and compares the picture GPUI would draw with the frames
 //! Homebrew's ffmpeg decodes around it, to show which frame it landed on. `colour` shows a
 //! flat-colour clip beside a GPUI swatch of the colour it was made from and prints the
-//! picture's mean colour as GPUI draws it; with `ORIEL_SPIKE_HOLD=<seconds>` the window stays
-//! for a screenshot, with the capsule's volume or speed panel open under
+//! picture's mean colour as GPUI draws it; `rest` opens nothing and prints the footprint every
+//! 5 s for that many seconds. With `ORIEL_SPIKE_HOLD=<seconds>` the window stays for a
+//! screenshot, with the capsule's volume or speed panel open under
 //! `ORIEL_SPIKE_PANEL=volume|speed`.
 //!
-//! Four switches mirror the gallery: `ORIEL_SPIKE_SILENT=1` opens the sweep's tiles without
+//! Five switches mirror the gallery: `ORIEL_SPIKE_SILENT=1` opens the sweep's tiles without
 //! sound, as a hover preview with sound off plays; `ORIEL_SPIKE_PREWARM=<ms>` starts an engine
-//! that long before the first open, as hovering a video tile does; `ORIEL_SPIKE_WARM=<video>`
-//! plays that video for a second and closes it first, so `verify` and `colour` run on an engine
-//! a player gave back; and `ORIEL_SPIKE_REST=<seconds>` prints the process's footprint and
-//! threads once every player has gone, at once and after that rest, to show what idle engines
-//! hold.
+//! that long before the first open, as hovering a video tile does; `ORIEL_SPIKE_PRIME=<ms>`
+//! starts and primes one that long before, as View showing a folder with videos does;
+//! `ORIEL_SPIKE_WARM=<video>` plays that video for a second and closes it first, so `verify` and
+//! `colour` run on an engine a player gave back; and `ORIEL_SPIKE_REST=<seconds>` prints the
+//! process's footprint and threads once every player has gone, at once and after that rest, to
+//! show what idle engines hold.
 
 // The capsule player lives in View's crate, which depends on this one, so the spike builds the
 // same file in here rather than depend on View.
@@ -84,9 +87,12 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let mode = args.next().unwrap_or_default();
     let rest: Vec<String> = args.collect();
-    let modes = ["single", "tiles", "sweep", "errors", "verify", "colour"];
+    let modes = [
+        "single", "tiles", "sweep", "errors", "verify", "colour", "rest",
+    ];
     if rest.is_empty() || !modes.contains(&mode.as_str()) {
         eprintln!("usage: mpv_spike single|tiles|sweep|errors|verify|colour <file> [...]");
+        eprintln!("       mpv_spike rest <seconds>");
         std::process::exit(2);
     }
     // SAFETY: set before any thread starts; the capsule player reads it when it opens.
@@ -111,6 +117,13 @@ fn main() {
                     oriel_media::mpv::prewarm();
                     wait(cx, Duration::from_millis(lead)).await;
                 }
+                if let Some(lead) = std::env::var("ORIEL_SPIKE_PRIME")
+                    .ok()
+                    .and_then(|ms| ms.parse().ok())
+                {
+                    oriel_media::mpv::prime();
+                    wait(cx, Duration::from_millis(lead)).await;
+                }
                 if let Some(warm) = std::env::var_os("ORIEL_SPIKE_WARM") {
                     let tile = cx.new(|_| Tile::new(Path::new(&warm), true, true));
                     wait(cx, Duration::from_secs(1)).await;
@@ -125,6 +138,7 @@ fn main() {
                     "errors" => run_errors(cx, &root).await,
                     "verify" => run_verify(cx, &root).await,
                     "colour" => run_colour(cx, &root).await,
+                    "rest" => run_rest(cx, &root).await,
                     _ => {}
                 }
                 if let Some(hold) = std::env::var("ORIEL_SPIKE_HOLD")
@@ -880,6 +894,21 @@ async fn run_verify(cx: &mut AsyncApp, root: &Entity<Spike>) {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
+    }
+}
+
+/// Opens nothing and prints the process's footprint and threads every 5 s: with
+/// `ORIEL_SPIKE_PRIME`, what a primed engine holds while it waits and once it has shut down.
+async fn run_rest(cx: &mut AsyncApp, root: &Entity<Spike>) {
+    let seconds: u64 = cx
+        .update(|cx| root.read(cx).args[0].parse().ok())
+        .unwrap_or(40);
+    let start = Instant::now();
+    println!("pid {}", std::process::id());
+    for at in (0..=seconds).step_by(5) {
+        let at = Duration::from_secs(at.max(1));
+        wait(cx, at.saturating_sub(start.elapsed())).await;
+        println!("at {:.0} s: {}", start.elapsed().as_secs_f64(), at_rest());
     }
 }
 

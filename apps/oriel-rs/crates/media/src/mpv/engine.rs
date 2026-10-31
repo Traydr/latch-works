@@ -7,11 +7,18 @@
 //! once the core has said it is at rest the engine waits for the next player, which loads its
 //! file into it with the shaders already built. [`prewarm`] starts one before any video opens.
 //!
+//! The first file of a process pays more again, prewarmed or not: VideoToolbox's first decode,
+//! the first audio output, the first shaders, about 150 ms with sound off and 190 ms with it on.
+//! [`prime`] starts an engine that pays those ahead, opening a tiny clip once (`mpv/prime.rs`)
+//! before it waits for a player, and View calls it when it shows a folder with videos in sight.
+//! The first video then opens as a later one does, in 35 to 60 ms.
+//!
 //! At most [`KEPT`] wait, each for [`IDLE_KEEP`] after its last file, then shut down. A given-back
 //! engine first lets go of what its last file's frames needed (`Backend::trim`), but its GL
 //! context, shaders and threads still come to about 35 MB of footprint, which View at rest
 //! should not keep.
 
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, Once};
 use std::thread::JoinHandle;
@@ -31,6 +38,9 @@ const IDLE_KEEP: Duration = Duration::from_secs(30);
 const REST_TIMEOUT: Duration = Duration::from_secs(2);
 /// How long the render thread may take to trim an engine at rest.
 const TRIM_TIMEOUT: Duration = Duration::from_millis(500);
+/// How long priming may take, from the clip's load to its first frame drawn at both sizes and
+/// its audio ready, before the engine serves players as it is.
+const PRIME_TIMEOUT: Duration = Duration::from_secs(3);
 /// How long a player's file stays loaded, paused, after the player goes, when it had sound.
 /// Its audio output stays open meanwhile, and a new one opened then, by the next video in the
 /// viewer or the tile hovered next, starts in 2 to 4 ms; once the last one in the process has
@@ -185,7 +195,59 @@ impl Engine {
             .expect("spawn mpv's recycle thread");
     }
 
+    /// Opens `clip` once, on this thread, so that what the first file of a process pays is paid
+    /// now: VideoToolbox's first decode, the first audio output, and the renderer's shaders at
+    /// the picture's own size (the viewer's) and scaled down (a tile's). Then the engine is at
+    /// rest again, as a given-back one is. False if it could not be.
+    fn prime(&mut self, clip: &Path) -> bool {
+        let Some(path) = clip.to_str() else {
+            return false;
+        };
+        let started = Instant::now();
+        let until = |done: &dyn Fn(&Self) -> bool| {
+            while !done(self) {
+                if started.elapsed() > PRIME_TIMEOUT || self.shared.failure().is_some() {
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            true
+        };
+        let restarts = self.core.observed().restarts;
+        // Paused, as a player opens: the first frame is decoded and drawn, and the audio
+        // output opened, which is what costs; the device is never started, so nothing plays.
+        self.load(path.to_owned(), true);
+        let first = until(&|engine| engine.shared.drawn() > 0);
+        let drawn = self.shared.drawn();
+        self.shared.set_max_side(Some(32));
+        let scaled = first && until(&|engine| engine.shared.drawn() > drawn);
+        // mpv starts playback, paused, once the audio output is open as well.
+        let ready = until(&|engine| engine.core.observed().restarts > restarts);
+        if let Some(why) = self.shared.failure() {
+            log::warn!("libmpv's engine could not draw while priming: {why}");
+            return false;
+        }
+        if !(scaled && ready) {
+            log::info!(
+                "libmpv's engine primed only in part in {:?}",
+                started.elapsed()
+            );
+        }
+        self.used = true;
+        self.come_to_rest()
+    }
+
     fn recycle(self) {
+        if self.come_to_rest() {
+            self.wait_for_player();
+        } else {
+            self.shut_down();
+        }
+    }
+
+    /// Ends the file and waits for the core to be as a new one, then trims the renderer. False
+    /// if the core did not come to rest or the renderer did not trim.
+    fn come_to_rest(&self) -> bool {
         // Frames of the last file go now, and with them their IOSurfaces, and so does a load
         // the render thread had not yet handed mpv.
         self.shared.begin_file();
@@ -194,18 +256,16 @@ impl Engine {
         while !self.core.observed().is_at_rest() {
             if started.elapsed() > REST_TIMEOUT {
                 log::warn!("an mpv core did not come to rest; shutting it down");
-                self.shut_down();
-                return;
+                return false;
             }
             std::thread::sleep(Duration::from_millis(5));
         }
         if !self.shared.trim(TRIM_TIMEOUT) {
             log::warn!("an mpv engine did not trim; shutting it down");
-            self.shut_down();
-            return;
+            return false;
         }
         self.core.observed().forget_file();
-        self.wait_for_player();
+        true
     }
 
     /// Puts the engine among the idle ones until a player takes it or [`IDLE_KEEP`] passes.
@@ -289,8 +349,27 @@ fn janitor() {
 /// Starts an engine in the background for the first video to come, unless one waits, is on
 /// its way back from a player, or is starting: the first open then skips loading libmpv and
 /// making the core and its render context. It waits as any idle engine does, and shuts down if
-/// no video comes within [`IDLE_KEEP`].
+/// no video comes within [`IDLE_KEEP`]. For a video about to open, as when the pointer rests on
+/// a video tile: the engine is ready within tens of milliseconds.
 pub fn prewarm() {
+    start_ahead(false);
+}
+
+/// Starts an engine in the background as [`prewarm`] does, and primes it: it opens a tiny clip
+/// once, so that VideoToolbox, the audio output and the renderer's shaders have paid their
+/// first costs before the first video opens (150 to 190 ms of a first open, even prewarmed).
+/// Priming takes about a quarter of a second, so this is for a video that may open soon, as
+/// when View shows a folder that holds videos. Nothing is primed if an engine waits, returns or
+/// starts already, or without the pinned ffmpeg to make the clip with (`mpv/prime.rs`).
+pub fn prime() {
+    start_ahead(true);
+}
+
+fn start_ahead(primed: bool) {
+    // AVPlayer plays when `ORIEL_RS_VIDEO` says so, and libmpv's engine would wait for nothing.
+    if super::VideoEngine::from_env() != super::VideoEngine::Mpv {
+        return;
+    }
     let render = MpvRender::from_env();
     let waiting = IDLE
         .lock()
@@ -308,12 +387,26 @@ pub fn prewarm() {
                 WARMING.store(false, Ordering::Release);
                 return;
             }
+            let clip = primed.then(super::prime::clip).flatten();
             let started = Engine::start(render);
-            WARMING.store(false, Ordering::Release);
-            match started {
-                Ok(engine) => engine.wait_for_player(),
-                Err(error) => log::warn!("could not prewarm libmpv: {error}"),
+            let ready = match started {
+                Ok(mut engine) => match clip {
+                    Some(clip) if !engine.prime(&clip) => {
+                        engine.shut_down();
+                        None
+                    }
+                    _ => Some(engine),
+                },
+                Err(error) => {
+                    log::warn!("could not prewarm libmpv: {error}");
+                    None
+                }
+            };
+            // Waiting before it stops warming, so no caller in between starts another.
+            if let Some(engine) = ready {
+                engine.wait_for_player();
             }
+            WARMING.store(false, Ordering::Release);
         })
         .expect("spawn mpv's prewarm thread");
 }
@@ -324,11 +417,12 @@ mod tests {
 
     use super::*;
 
-    /// A 3 s clip with sound from the pinned ffmpeg, or `None` without it.
-    fn clip(name: &str) -> Option<PathBuf> {
+    /// A 3 s clip with sound from the pinned ffmpeg, in a folder of the test's own, or `None`
+    /// without ffmpeg.
+    fn clip(test: &str, name: &str) -> Option<PathBuf> {
         let tools = oriel_tools::MediaTools::locate().ok()?;
         let folder =
-            std::env::temp_dir().join(format!("oriel-media-engine-{}", std::process::id()));
+            std::env::temp_dir().join(format!("oriel-media-engine-{}-{test}", std::process::id()));
         std::fs::create_dir_all(&folder).ok()?;
         let path = folder.join(name);
         let made = std::process::Command::new(tools.ffmpeg())
@@ -365,7 +459,9 @@ mod tests {
     /// starts from what it says itself. The engine is the same one, with its shaders built.
     #[test]
     fn a_given_back_engine_comes_back_as_new() {
-        let (Some(first), Some(second)) = (clip("first.mp4"), clip("second.mp4")) else {
+        let test = "given-back";
+        let (Some(first), Some(second)) = (clip(test, "first.mp4"), clip(test, "second.mp4"))
+        else {
             eprintln!(
                 "skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)"
             );
@@ -410,5 +506,35 @@ mod tests {
         assert_eq!(engine.core.observed().picture_size(), Some((320, 180)));
         engine.shut_down();
         std::fs::remove_dir_all(first.parent().unwrap()).ok();
+    }
+
+    /// A primed engine waits for its first player as a given-back one does: at rest, with
+    /// nothing of the clip left in what the player reads, and with its shaders built.
+    #[test]
+    fn a_primed_engine_comes_as_new() {
+        let test = "primed";
+        let (Some(prime), Some(next)) = (clip(test, "prime.mp4"), clip(test, "next.mp4")) else {
+            eprintln!(
+                "skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)"
+            );
+            return;
+        };
+        if !super::super::libmpv_available() {
+            eprintln!("skipped: no libmpv (cargo run -p xtask -- libmpv)");
+            return;
+        }
+        let mut engine = Engine::start(MpvRender::OpenGl).expect("an engine starts");
+        assert!(engine.prime(&prime), "the engine primes");
+        assert!(engine.used, "its renderer has drawn");
+        {
+            let observed = engine.core.observed();
+            assert!(observed.is_at_rest());
+            assert!(!observed.file_loaded && observed.failed.is_none());
+        }
+        assert_eq!(engine.shared.drawn(), 0);
+        play(&engine, &next);
+        assert_eq!(engine.core.observed().picture_size(), Some((320, 180)));
+        engine.shut_down();
+        std::fs::remove_dir_all(prime.parent().unwrap()).ok();
     }
 }

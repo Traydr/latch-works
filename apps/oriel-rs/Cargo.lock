@@ -5254,6 +5254,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "objc2-image-io",
  "objc2-quartz-core 0.3.2",
+ "oriel-core-paths",
  "oriel-tools",
  "smallvec",
 ]
