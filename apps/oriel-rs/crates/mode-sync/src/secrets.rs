@@ -10,6 +10,7 @@
 use std::fs;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 use aes_gcm::aead::AeadInPlace as _;
 use aes_gcm::{Aes256Gcm, KeyInit as _, Nonce, Tag};
@@ -22,14 +23,21 @@ const TAG_BYTES: usize = 16;
 pub const KEY_FILE_NAME: &str = "secret-storage.key";
 
 /// Seals and opens tokens with the key in one file, made on first use.
+///
+/// The key is read once and kept, as `FileSecretStorage` keeps it, since the profile list asks
+/// whether each token opens every time it draws.
 #[derive(Clone, Debug)]
 pub struct FileSecretStorage {
     key_path: PathBuf,
+    key: Arc<OnceLock<Vec<u8>>>,
 }
 
 impl FileSecretStorage {
     pub fn new(key_path: PathBuf) -> Self {
-        Self { key_path }
+        Self {
+            key_path,
+            key: Arc::default(),
+        }
     }
 
     /// The storage for Sync's folder: its key in `<folder>/secret-storage.key`.
@@ -43,7 +51,7 @@ impl FileSecretStorage {
 
     /// `iv | tag | ciphertext` of `plain_text`.
     pub fn encrypt(&self, plain_text: &str) -> io::Result<Vec<u8>> {
-        let cipher = Aes256Gcm::new_from_slice(&self.load_key()?)
+        let cipher = Aes256Gcm::new_from_slice(self.load_key()?)
             .map_err(|_| io::Error::other("Sync's secret key has the wrong length"))?;
         let mut iv = [0u8; IV_BYTES];
         getrandom::fill(&mut iv).map_err(io::Error::other)?;
@@ -64,7 +72,7 @@ impl FileSecretStorage {
         if sealed.len() < IV_BYTES + TAG_BYTES {
             return Err(io::Error::other("the sealed token is too short"));
         }
-        let cipher = Aes256Gcm::new_from_slice(&self.load_key()?)
+        let cipher = Aes256Gcm::new_from_slice(self.load_key()?)
             .map_err(|_| io::Error::other("Sync's secret key has the wrong length"))?;
         let (iv, rest) = sealed.split_at(IV_BYTES);
         let (tag, data) = rest.split_at(TAG_BYTES);
@@ -76,7 +84,10 @@ impl FileSecretStorage {
     }
 
     /// The key, made on first use. Creation never overwrites a key another process wrote first.
-    fn load_key(&self) -> io::Result<Vec<u8>> {
+    fn load_key(&self) -> io::Result<&[u8]> {
+        if let Some(key) = self.key.get() {
+            return Ok(key);
+        }
         let key = match fs::read(&self.key_path) {
             Ok(key) => key,
             Err(error) if error.kind() == io::ErrorKind::NotFound => self.create_key()?,
@@ -88,7 +99,7 @@ impl FileSecretStorage {
                 self.key_path.display()
             )));
         }
-        Ok(key)
+        Ok(self.key.get_or_init(|| key))
     }
 
     fn create_key(&self) -> io::Result<Vec<u8>> {

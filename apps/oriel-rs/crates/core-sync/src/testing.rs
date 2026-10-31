@@ -49,7 +49,17 @@ pub struct FakePaneView {
     active_puts: Arc<AtomicUsize>,
     peak_puts: Arc<AtomicUsize>,
     put_delay: Arc<Mutex<Duration>>,
+    put_failure: Arc<Mutex<Option<u16>>>,
+    deletes: Arc<Deletes>,
     stop: Arc<AtomicBool>,
+}
+
+/// How many deletes were in flight, and how long each is held.
+#[derive(Default)]
+struct Deletes {
+    active: AtomicUsize,
+    peak: AtomicUsize,
+    delay: Mutex<Duration>,
 }
 
 impl FakePaneView {
@@ -64,6 +74,8 @@ impl FakePaneView {
             active_puts: Arc::default(),
             peak_puts: Arc::default(),
             put_delay: Arc::default(),
+            put_failure: Arc::default(),
+            deletes: Arc::default(),
             stop: Arc::default(),
         };
         let shared = server.shared();
@@ -92,6 +104,8 @@ impl FakePaneView {
             active_puts: self.active_puts.clone(),
             peak_puts: self.peak_puts.clone(),
             put_delay: self.put_delay.clone(),
+            put_failure: self.put_failure.clone(),
+            deletes: self.deletes.clone(),
         }
     }
 
@@ -142,6 +156,28 @@ impl FakePaneView {
             .unwrap_or_else(PoisonError::into_inner) = delay;
     }
 
+    /// Answers every upload with this status, as an overloaded store would.
+    pub fn fail_uploads(&self, status: u16) {
+        *self
+            .put_failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(status);
+    }
+
+    /// Holds each delete this long before answering, so concurrency shows.
+    pub fn delay_deletes(&self, delay: Duration) {
+        *self
+            .deletes
+            .delay
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = delay;
+    }
+
+    /// The most deletes that were in flight at once.
+    pub fn peak_deletes(&self) -> usize {
+        self.deletes.peak.load(Ordering::SeqCst)
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -163,6 +199,8 @@ struct Shared {
     active_puts: Arc<AtomicUsize>,
     peak_puts: Arc<AtomicUsize>,
     put_delay: Arc<Mutex<Duration>>,
+    put_failure: Arc<Mutex<Option<u16>>>,
+    deletes: Arc<Deletes>,
 }
 
 struct Request {
@@ -225,7 +263,9 @@ fn respond(mut stream: &TcpStream, status: u16, body: &Value) {
         200 => "OK",
         400 => "Bad Request",
         401 => "Unauthorized",
-        _ => "Not Found",
+        404 => "Not Found",
+        429 => "Too Many Requests",
+        _ => "Service Unavailable",
     };
     let _ = write!(
         stream,
@@ -267,7 +307,21 @@ impl Shared {
             return;
         }
         let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
+        let delete = route == "/api/sync/complete-object" && body["action"] == "delete";
+        if delete {
+            let active = self.deletes.active.fetch_add(1, Ordering::SeqCst) + 1;
+            self.deletes.peak.fetch_max(active, Ordering::SeqCst);
+            let delay = *self
+                .deletes
+                .delay
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            thread::sleep(delay);
+        }
         let (status, answer) = self.route(&request.method, &route, &body);
+        if delete {
+            self.deletes.active.fetch_sub(1, Ordering::SeqCst);
+        }
         respond(&stream, status, &answer);
     }
 
@@ -368,7 +422,14 @@ impl Shared {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         thread::sleep(delay);
+        let failure = *self
+            .put_failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let answer = (|| {
+            if let Some(status) = failure {
+                return Some((status, json!({ "error": "SlowDown" })));
+            }
             let declared: usize = request.headers.get("content-length")?.parse().ok()?;
             if declared != request.body.len() {
                 return Some((400, json!({ "error": "IncompleteBody" })));

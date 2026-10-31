@@ -171,7 +171,7 @@ fn a_push_uploads_with_the_signed_headers_and_a_second_plan_keeps_everything() {
 }
 
 #[test]
-fn the_upload_queue_is_three_wide_by_default_and_bounded_as_asked() {
+fn the_upload_queue_starts_three_wide_and_is_bounded_as_asked() {
     let files: Vec<(String, Vec<u8>)> = (0..8)
         .map(|index| (format!("file-{index}.jpg"), vec![b'a' + index as u8; 64]))
         .collect();
@@ -339,6 +339,69 @@ fn prune_applies_the_reviewed_deletes_once_and_skips_a_file_that_came_back() {
     let outcome = setup.server.runs()[0].outcome.clone().unwrap();
     assert_eq!(outcome["status"], "completed");
     assert_eq!(outcome["counts"]["pushed"], 2.0);
+}
+
+#[test]
+fn an_overloaded_store_takes_upload_slots_away() {
+    let files: Vec<(String, Vec<u8>)> = (0..6)
+        .map(|index| (format!("file-{index}.jpg"), vec![b'a' + index as u8; 64]))
+        .collect();
+    let borrowed: Vec<(&str, &[u8])> = files
+        .iter()
+        .map(|(path, bytes)| (path.as_str(), bytes.as_slice()))
+        .collect();
+    let setup = setup(&borrowed);
+    setup.server.delay_uploads(Duration::from_millis(50));
+    setup.server.fail_uploads(503);
+    let client = setup.client();
+    let options = setup.push_options(None);
+    let result = setup
+        .block_on(async move { push_changes(options, &client, None, &CancelToken::new()).await })
+        .unwrap();
+    assert_eq!((result.pushed, result.failed), (0, 6));
+    // Each 503 gives a slot back, down to one at a time.
+    let widths: Vec<usize> = result.upload_widths.iter().map(|&(_, w)| w).collect();
+    assert_eq!(widths, [3, 2, 1]);
+    assert_eq!(setup.server.peak_uploads(), 3);
+}
+
+#[test]
+fn prune_sends_six_deletes_at_once() {
+    let setup = setup(&[("keep.jpg", b"kept")]);
+    for index in 0..14 {
+        setup
+            .server
+            .seed(&format!("gone/{index}.jpg"), format!("{index}").as_bytes());
+    }
+    setup.server.delay_deletes(Duration::from_millis(100));
+    let plan = setup.plan(HashMode::None);
+    let client = setup.client();
+    let options = PruneOptions {
+        api: client.target().clone(),
+        max_changes: None,
+        plan,
+    };
+    let (observer, events) = recorder();
+    let result = setup
+        .block_on(async move {
+            prune_deleted(options, &client, Some(&observer), &CancelToken::new()).await
+        })
+        .unwrap();
+    assert_eq!((result.pruned, result.skipped, result.failed), (14, 0, 0));
+    assert_eq!(setup.server.peak_deletes(), 6);
+    assert!(setup.server.library().is_empty());
+    // Every delete still reports its start and its end, numbered in plan order.
+    let events = events.lock().unwrap();
+    let mut ended: Vec<usize> = events
+        .iter()
+        .filter_map(|event| match event {
+            RunEvent::ItemSuccess { current, .. } => Some(*current),
+            _ => None,
+        })
+        .collect();
+    ended.sort_unstable();
+    assert_eq!(ended, (1..=14).collect::<Vec<_>>());
+    assert!(matches!(events.last(), Some(RunEvent::Complete(_))));
 }
 
 #[test]

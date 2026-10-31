@@ -1462,6 +1462,9 @@ impl SyncMode {
         self.rebuild_rows(cx);
 
         self.run_task = Some(cx.spawn(async move |this, cx| {
+            // The run's own failed completion, which an unfinalized sync run reports before its
+            // error.
+            let mut reported = None;
             // The run's future holds the observer until it ends, so the events end with it.
             while let Some(event) = events.next().await {
                 let mut batch = vec![event];
@@ -1473,6 +1476,12 @@ impl SyncMode {
                         .iter()
                         .any(|event| matches!(event, RunEvent::ItemsQueued { .. }));
                     for event in batch {
+                        if let RunEvent::Complete(summary) = &event
+                            && summary.action == kind
+                            && summary.status == RunStatus::Failed
+                        {
+                            reported = Some(summary.clone());
+                        }
                         this.note_item_state(&event);
                         this.run.apply(event);
                     }
@@ -1500,7 +1509,7 @@ impl SyncMode {
                     finish(this, result, cx)
                 };
                 if let Err(error) = outcome {
-                    this.fail_run(kind, &error, cx);
+                    this.fail_run(reported, &error, cx);
                 }
                 this.run.running = false;
                 this.report_activity(cx);
@@ -1509,17 +1518,26 @@ impl SyncMode {
         }));
     }
 
-    fn fail_run(&mut self, kind: RunAction, error: &anyhow::Error, cx: &mut Context<Self>) {
-        let profile_id = self.store.active_profile_id().map(str::to_owned);
+    /// Ends a run that failed or was cancelled. As in `runService.ts`, the profile's last run
+    /// changes only for a push or prune whose sync run could not be finalized: that failure,
+    /// naming the run, is the one the user must act on. Any other failure shows on the page and
+    /// leaves the last run as it was.
+    fn fail_run(
+        &mut self,
+        reported: Option<RunSummary>,
+        error: &anyhow::Error,
+        cx: &mut Context<Self>,
+    ) {
         if error.chain().any(|cause| cause.is::<Cancelled>()) {
             self.run
                 .finish(RunPhase::Cancelled, Some("Run cancelled.".to_owned()));
             return;
         }
         let message = error.to_string();
-        if let Some(profile_id) = profile_id {
-            let mut summary = RunSummary::now(kind, RunStatus::Failed);
-            summary.message = Some(message.clone());
+        if let (Some(summary), Some(profile_id)) = (
+            reported.filter(|_| error.downcast_ref::<UnfinalizedSyncRun>().is_some()),
+            self.store.active_profile_id().map(str::to_owned),
+        ) {
             self.record_last_run(&profile_id, summary);
         }
         self.run.finish(RunPhase::Error, Some(message.clone()));

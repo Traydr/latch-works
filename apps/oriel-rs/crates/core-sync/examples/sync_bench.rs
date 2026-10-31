@@ -3,13 +3,15 @@
 //!
 //! ```sh
 //! cargo run --release -p oriel-core-sync --example sync_bench -- plan <source> <hash-cache> all
-//! cargo run --release -p oriel-core-sync --example sync_bench -- push <source> <hash-cache> [3]
+//! cargo run --release -p oriel-core-sync --example sync_bench -- push <source> <hash-cache> [3|auto]
 //! cargo run --release -p oriel-core-sync --example sync_bench -- prune <source> <hash-cache>
 //! cargo run --release -p oriel-core-sync --example sync_bench -- snapshot
 //! ```
 //!
 //! `plan` takes the hash mode (`none`, `all` or `remote-aware`) and `offline` to plan against an
-//! empty remote; `push` takes the upload queue's width. Each run prints one JSON line: its wall
+//! empty remote; `push` takes the upload queue's width, or `auto` (the default) for the adaptive
+//! one, and prints the widths it ran at; `prune` also prints the time of the prune alone, after
+//! its plan. Each run prints one JSON line: its wall
 //! time, the time of each status line the run reported, and how many events it sent, which is
 //! what Sync's window has to fold in. The URL is the e2e suite's Pane View unless
 //! `ORIEL_RS_SYNC_STACK_URL` names another on this machine; the bench refuses any other host, so
@@ -221,7 +223,10 @@ fn main() -> anyhow::Result<()> {
         }
         "push" => {
             let (source, cache) = folders(&args)?;
-            let width = args.get(3).map(|width| width.parse()).transpose()?;
+            let width = match args.get(3).map(String::as_str) {
+                None | Some("auto") => None,
+                Some(width) => Some(width.parse()?),
+            };
             let result = futures::executor::block_on(runtime.spawn(async move {
                 push_changes(
                     PushOptions {
@@ -239,11 +244,17 @@ fn main() -> anyhow::Result<()> {
                 )
                 .await
             }))??;
+            let widths: Vec<String> = result
+                .upload_widths
+                .iter()
+                .map(|(at, width)| format!("[{:.0},{width}]", at.as_secs_f64() * 1e3))
+                .collect();
             format!(
-                r#""pushed":{},"failed":{},"bytes":{}"#,
+                r#""pushed":{},"failed":{},"bytes":{},"widths":[{}]"#,
                 result.pushed,
                 result.failed,
-                result.plan.push_bytes()
+                result.plan.push_bytes(),
+                widths.join(",")
             )
         }
         "prune" => {
@@ -262,7 +273,8 @@ fn main() -> anyhow::Result<()> {
                     &cancel,
                 )
                 .await?;
-                prune_deleted(
+                let pruning = Instant::now();
+                let result = prune_deleted(
                     PruneOptions {
                         api,
                         max_changes: None,
@@ -272,11 +284,16 @@ fn main() -> anyhow::Result<()> {
                     Some(&watcher),
                     &cancel,
                 )
-                .await
+                .await?;
+                anyhow::Ok((result, pruning.elapsed()))
             }))??;
+            let (result, pruning) = result;
             format!(
-                r#""pruned":{},"skipped":{},"failed":{}"#,
-                result.pruned, result.skipped, result.failed
+                r#""pruned":{},"skipped":{},"failed":{},"prune_ms":{:.1}"#,
+                result.pruned,
+                result.skipped,
+                result.failed,
+                pruning.as_secs_f64() * 1e3
             )
         }
         other => {

@@ -66,8 +66,16 @@ pub struct PlanOptions {
     pub hash_cache_root: PathBuf,
     pub hash_mode: HashMode,
     pub directory_concurrency: Option<usize>,
+    /// How many files the scan reads, and the plan hashes, at once. Unset, the scan reads 4 at
+    /// once, as lockstep-core's does, and the plan hashes [`PLAN_HASH_CONCURRENCY`].
     pub file_concurrency: Option<usize>,
 }
+
+/// How many files a plan hashes at once when the options leave it unset: 16, where Electron
+/// Oriel's lockstep-core hashes 4 (owner's decision 22). Phase 0 measured cold hashing about 2.5
+/// times faster at 16 on this Mac's SSD. The hashes, and the cache that keeps them, are the same
+/// at any width.
+pub const PLAN_HASH_CONCURRENCY: usize = 16;
 
 pub(crate) fn counts_of(items: &[SyncPlanItem]) -> PlanCounts {
     let count = |action| items.iter().filter(|item| item.action == action).count();
@@ -192,15 +200,13 @@ fn scan_and_hash(
         );
         if !hash_paths.is_empty() {
             let paths: HashSet<String> = hash_paths.into_iter().collect();
-            let mut hashing = HashArchiveItems::new(&scanned.source_root, local)
+            local = HashArchiveItems::new(&scanned.source_root, local)
                 .fingerprints(&scanned.fingerprints)
                 .paths(&paths)
+                .file_concurrency(options.file_concurrency.unwrap_or(PLAN_HASH_CONCURRENCY))
                 .cancel_on(cancel)
-                .on_progress(&on_progress);
-            if let Some(concurrency) = options.file_concurrency {
-                hashing = hashing.file_concurrency(concurrency);
-            }
-            local = hashing.run()?;
+                .on_progress(&on_progress)
+                .run()?;
         }
         cache.update_from_items(&local, &scanned.fingerprints);
         cache.retain_items(&local);

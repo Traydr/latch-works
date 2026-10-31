@@ -5,6 +5,13 @@
 //! sits under a spelling planning treats as the same (case, Unicode, jpeg and jpg), and only
 //! while the source folder is the one prune started with: an unplugged drive would make every
 //! file look gone, so a missing or replaced folder stops the whole prune.
+//!
+//! The deletes go [`PRUNE_CONCURRENCY`] at once, where lockstep-core sends one at a time (owner's
+//! decision 22). None depends on another: Pane View marks each file's library entry deleted on
+//! its own row, keyed by path, and soft-deletes the folders left empty only when the run is
+//! finalized, after every delete. The plan lists files alone, never folders, so there is no order
+//! of children and parents to keep. Each delete still checks its file and the source folder just
+//! before it is sent.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -13,10 +20,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use futures::StreamExt as _;
+use futures::stream::FuturesUnordered;
+
 use oriel_core_domain::{
     normalize_path_for_compare, normalize_path_for_compare_keeping_extensions,
 };
 use oriel_core_index::SyncPlanAction;
+use oriel_runtime::fs_meta::{self, MetadataExt as _};
 use oriel_runtime::{CancelToken, Cancelled};
 
 use crate::api::{ApiTarget, PaneViewClient, types};
@@ -28,6 +39,9 @@ use crate::rules::resolve_local_file_path;
 
 /// Why a planned delete was left alone; shown beside the path.
 const BACK_IN_SOURCE_REASON: &str = "the file is back in the source folder";
+
+/// How many deletes a prune sends at once.
+pub const PRUNE_CONCURRENCY: usize = 6;
 
 /// `PruneDeletedOptions`.
 #[derive(Clone, Debug)]
@@ -72,27 +86,15 @@ impl std::fmt::Display for SourceRootUnavailable {
     }
 }
 
+/// The folder's device and inode, as `fs.stat` gives them: on Windows the volume serial number
+/// and the file index, as libuv reads them there.
 fn root_identity(source_root: &Path) -> anyhow::Result<RootIdentity> {
     match fs::metadata(source_root) {
-        Ok(metadata) if metadata.is_dir() => Ok(identity_of(&metadata)),
+        Ok(metadata) if metadata.is_dir() => {
+            let (device, inode) = fs_meta::dev_ino(source_root, &metadata);
+            Ok(RootIdentity { device, inode })
+        }
         _ => Err(source_root_unavailable(source_root)),
-    }
-}
-
-#[cfg(unix)]
-fn identity_of(metadata: &fs::Metadata) -> RootIdentity {
-    use std::os::unix::fs::MetadataExt as _;
-    RootIdentity {
-        device: metadata.dev(),
-        inode: metadata.ino(),
-    }
-}
-
-#[cfg(not(unix))]
-fn identity_of(_: &fs::Metadata) -> RootIdentity {
-    RootIdentity {
-        device: 0,
-        inode: 0,
     }
 }
 
@@ -182,105 +184,39 @@ pub async fn prune_deleted(
         )
         .await?;
 
-    let alias_index = Arc::new(Mutex::new(DirectoryAliasIndex::new(source_root.clone())));
+    let context = PruneContext {
+        alias_index: Arc::new(Mutex::new(DirectoryAliasIndex::new(source_root.clone()))),
+        cancel,
+        client,
+        identity,
+        observer,
+        planned_local_paths,
+        source_root,
+        sync_run_id: &sync_run_id,
+        total,
+    };
     let (mut pruned, mut skipped, mut failed) = (0usize, 0usize, 0usize);
     let mut run_error: Option<anyhow::Error> = None;
-
-    for (index, path) in to_prune.iter().enumerate() {
-        if cancel.is_cancelled() {
-            break;
-        }
-        let current = index + 1;
-        emit(
-            observer,
-            RunEvent::ItemStart {
-                action: "delete".to_owned(),
-                bytes: None,
-                current,
-                path: path.clone(),
-                total,
-            },
-        );
-
-        let outcome: anyhow::Result<bool> = async {
-            // Is the file still gone, and is the source folder still the one prune started
-            // with: both on one blocking thread, in that order.
-            let absent = {
-                let (root, path, planned, index) = (
-                    source_root.clone(),
-                    path.clone(),
-                    planned_local_paths.clone(),
-                    alias_index.clone(),
-                );
-                tokio::task::spawn_blocking(move || {
-                    let mut index = index.lock().unwrap_or_else(PoisonError::into_inner);
-                    if !is_absent_locally(&root, &path, &planned, &mut index)? {
-                        return Ok(false);
-                    }
-                    if root_identity(&root)? != identity {
-                        return Err(source_root_unavailable(&root));
-                    }
-                    Ok(true)
-                })
-                .await??
-            };
-            if !absent {
-                return Ok(false);
-            }
-            status(observer, format!("[{current}/{total}] deleting {path}"));
-            client
-                .delete_object(path, &sync_run_id, Some(cancel))
-                .await?;
-            Ok(true)
-        }
-        .await;
-
-        match outcome {
-            Ok(true) => {
-                pruned += 1;
-                emit(
-                    observer,
-                    RunEvent::ItemSuccess {
-                        action: "delete".to_owned(),
-                        bytes: None,
-                        current,
-                        path: path.clone(),
-                        total,
-                    },
-                );
-            }
-            Ok(false) => {
-                skipped += 1;
-                emit(
-                    observer,
-                    RunEvent::ItemSkipped {
-                        action: "delete".to_owned(),
-                        current,
-                        path: path.clone(),
-                        reason: BACK_IN_SOURCE_REASON.to_owned(),
-                        total,
-                    },
-                );
-            }
-            Err(_) if cancel.is_cancelled() => break,
-            Err(error) if is_cancelled(&error) => break,
-            Err(error) if is_root_unavailable(&error) => {
-                run_error = Some(anyhow::anyhow!(root_error_message(&error)));
+    let mut queued = to_prune.iter().enumerate();
+    let mut running = FuturesUnordered::new();
+    loop {
+        // A cancel or a lost source folder starts nothing more; what runs finishes or aborts.
+        while running.len() < PRUNE_CONCURRENCY && !cancel.is_cancelled() && run_error.is_none() {
+            let Some((index, path)) = queued.next() else {
                 break;
-            }
-            Err(error) => {
-                failed += 1;
-                emit(
-                    observer,
-                    RunEvent::ItemFailure {
-                        action: "delete".to_owned(),
-                        bytes: None,
-                        current,
-                        error: format_push_error(&error),
-                        path: path.clone(),
-                        total,
-                    },
-                );
+            };
+            running.push(prune_item(&context, index + 1, path));
+        }
+        let Some(outcome) = running.next().await else {
+            break;
+        };
+        match outcome {
+            PruneOutcome::Deleted => pruned += 1,
+            PruneOutcome::Skipped => skipped += 1,
+            PruneOutcome::Failed => failed += 1,
+            PruneOutcome::Stopped => {}
+            PruneOutcome::RootUnavailable(error) => {
+                run_error.get_or_insert(error);
             }
         }
     }
@@ -391,6 +327,137 @@ pub async fn prune_deleted(
     })
 }
 
+/// What a prune shares among the deletes it runs at once.
+struct PruneContext<'a> {
+    alias_index: Arc<Mutex<DirectoryAliasIndex>>,
+    cancel: &'a CancelToken,
+    client: &'a PaneViewClient,
+    identity: RootIdentity,
+    observer: Option<&'a Observer>,
+    planned_local_paths: Arc<HashSet<String>>,
+    source_root: PathBuf,
+    sync_run_id: &'a str,
+    total: usize,
+}
+
+/// How one delete ended.
+enum PruneOutcome {
+    Deleted,
+    /// Its file is back in the source folder.
+    Skipped,
+    Failed,
+    /// A cancel came first.
+    Stopped,
+    /// The source folder is gone or replaced, which ends the whole prune with this error.
+    RootUnavailable(anyhow::Error),
+}
+
+/// One delete, from its start event to its outcome's.
+async fn prune_item(context: &PruneContext<'_>, current: usize, path: &str) -> PruneOutcome {
+    let PruneContext {
+        cancel,
+        observer,
+        total,
+        ..
+    } = *context;
+    if cancel.is_cancelled() {
+        return PruneOutcome::Stopped;
+    }
+    emit(
+        observer,
+        RunEvent::ItemStart {
+            action: "delete".to_owned(),
+            bytes: None,
+            current,
+            path: path.to_owned(),
+            total,
+        },
+    );
+
+    let outcome: anyhow::Result<bool> = async {
+        // Is the file still gone, and is the source folder still the one prune started with:
+        // both on one blocking thread, in that order.
+        let absent = {
+            let (root, path, planned, index, identity) = (
+                context.source_root.clone(),
+                path.to_owned(),
+                context.planned_local_paths.clone(),
+                context.alias_index.clone(),
+                context.identity,
+            );
+            tokio::task::spawn_blocking(move || {
+                let mut index = index.lock().unwrap_or_else(PoisonError::into_inner);
+                if !is_absent_locally(&root, &path, &planned, &mut index)? {
+                    return Ok(false);
+                }
+                if root_identity(&root)? != identity {
+                    return Err(source_root_unavailable(&root));
+                }
+                Ok(true)
+            })
+            .await??
+        };
+        if !absent {
+            return Ok(false);
+        }
+        status(observer, format!("[{current}/{total}] deleting {path}"));
+        context
+            .client
+            .delete_object(path, context.sync_run_id, Some(cancel))
+            .await?;
+        Ok(true)
+    }
+    .await;
+
+    match outcome {
+        Ok(true) => {
+            emit(
+                observer,
+                RunEvent::ItemSuccess {
+                    action: "delete".to_owned(),
+                    bytes: None,
+                    current,
+                    path: path.to_owned(),
+                    total,
+                },
+            );
+            PruneOutcome::Deleted
+        }
+        Ok(false) => {
+            emit(
+                observer,
+                RunEvent::ItemSkipped {
+                    action: "delete".to_owned(),
+                    current,
+                    path: path.to_owned(),
+                    reason: BACK_IN_SOURCE_REASON.to_owned(),
+                    total,
+                },
+            );
+            PruneOutcome::Skipped
+        }
+        Err(_) if cancel.is_cancelled() => PruneOutcome::Stopped,
+        Err(error) if is_cancelled(&error) => PruneOutcome::Stopped,
+        Err(error) if is_root_unavailable(&error) => {
+            PruneOutcome::RootUnavailable(anyhow::anyhow!(root_error_message(&error)))
+        }
+        Err(error) => {
+            emit(
+                observer,
+                RunEvent::ItemFailure {
+                    action: "delete".to_owned(),
+                    bytes: None,
+                    current,
+                    error: format_push_error(&error),
+                    path: path.to_owned(),
+                    total,
+                },
+            );
+            PruneOutcome::Failed
+        }
+    }
+}
+
 /// `isAbsentLocally`: nothing at the path, and no file under a spelling planning treats as the
 /// same that the plan does not already account for. Errors other than "missing" fail the item.
 fn is_absent_locally(
@@ -410,9 +477,13 @@ fn is_absent_locally(
         .all(|path| planned_local_paths.contains(path)))
 }
 
-/// `MissingPathErrorSchema`: ENOENT or ENOTDIR.
+/// `MissingPathErrorSchema`: ENOENT or ENOTDIR (on Windows, a path or a name that is not there,
+/// or a file where a folder was expected).
 fn is_missing(error: &io::Error) -> bool {
-    error.kind() == io::ErrorKind::NotFound || error.raw_os_error() == Some(20)
+    matches!(
+        error.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+    )
 }
 
 /// Coarse file systems store folder times in steps of up to 2 s, so a listing this close to its
@@ -523,7 +594,9 @@ impl DirectoryAliasIndex {
             Err(error) if is_missing(&error) => None,
             Err(error) => return Err(error.into()),
         };
-        let current_state = current.as_ref().map(folder_state);
+        let current_state = current
+            .as_ref()
+            .map(|metadata| folder_state(&directory, metadata));
         let reusable = matches!(
             (self.listings.get(archive_dir), current_state),
             (Some(cached), Some(state)) if cached.reusable && cached.state == state
@@ -564,30 +637,17 @@ fn normalize_name(name: &str, kind: NameKind) -> String {
     }
 }
 
-#[cfg(unix)]
-fn folder_state(metadata: &fs::Metadata) -> FolderState {
-    use std::os::unix::fs::MetadataExt as _;
+/// A folder's identity and times, as `fs.stat` gives them. On Windows the change time is the last
+/// write time, which moves with every entry added, removed or renamed in the folder, which is
+/// the change a listing must notice.
+fn folder_state(path: &Path, metadata: &fs::Metadata) -> FolderState {
+    let (device, inode) = fs_meta::dev_ino(path, metadata);
     FolderState {
-        device: metadata.dev(),
-        inode: metadata.ino(),
+        device,
+        inode,
         modified_ns: i128::from(metadata.mtime()) * 1_000_000_000
             + i128::from(metadata.mtime_nsec()),
         changed_ns: i128::from(metadata.ctime()) * 1_000_000_000
             + i128::from(metadata.ctime_nsec()),
-    }
-}
-
-#[cfg(not(unix))]
-fn folder_state(metadata: &fs::Metadata) -> FolderState {
-    let modified_ns = metadata
-        .modified()
-        .ok()
-        .and_then(|at| at.duration_since(UNIX_EPOCH).ok())
-        .map_or(0, |since| since.as_nanos() as i128);
-    FolderState {
-        device: 0,
-        inode: 0,
-        modified_ns,
-        changed_ns: modified_ns,
     }
 }

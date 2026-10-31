@@ -6,11 +6,18 @@
 //! on the way out, checked once more, and recorded in the library. An item's failure is counted
 //! and the queue goes on; a cancel stops new items, aborts those under way, and finalizes the
 //! run as cancelled.
+//!
+//! The queue runs as many items at once as the caller asks, or, when it does not, as many as
+//! [`UploadWidth`] finds worth running: 3 to start with, as Electron Oriel runs, up to 6 while
+//! each step adds speed (owner's decision 22).
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use futures::StreamExt as _;
+use futures::stream::FuturesUnordered;
 use oriel_core_domain::{MediaItem, format_bytes, get_base_name, get_extension};
 use oriel_core_index::{
     ArchiveFileFingerprint, SyncPlanAction, SyncPlanItem, fingerprints_match, hash_file_contents,
@@ -18,7 +25,9 @@ use oriel_core_index::{
 };
 use oriel_runtime::{CancelToken, Cancelled};
 
-use crate::api::{ApiTarget, PROGRESS_INTERVAL, PaneViewClient, types, until_cancelled};
+use crate::api::{
+    ApiTarget, PROGRESS_INTERVAL, PaneViewClient, is_overload, types, until_cancelled,
+};
 use crate::events::{
     Observer, PlanCounts, RunAction, RunEvent, RunStatus, RunSummary, emit, status,
 };
@@ -31,6 +40,7 @@ use crate::plan::{
 use crate::rules::{
     content_type_for_extension, resolve_local_file_path, resolve_upload_concurrency,
 };
+use crate::upload_width::{UploadSample, UploadWidth};
 
 /// `PushChangesOptions`.
 #[derive(Clone, Debug)]
@@ -44,7 +54,8 @@ pub struct PushOptions {
     pub max_changes: Option<usize>,
     /// The plan to push; without one the push plans first.
     pub plan: Option<LockstepPlan>,
-    /// The upload queue's width, 1 to 8; 3 when unset.
+    /// The upload queue's width, 1 to 8. Unset, [`UploadWidth`] picks it as the push goes,
+    /// from 3 up to 6.
     pub upload_concurrency: Option<usize>,
 }
 
@@ -53,6 +64,8 @@ pub struct PushResult {
     pub failed: usize,
     pub plan: LockstepPlan,
     pub pushed: usize,
+    /// Each width the upload queue ran at, with when it took over, from the first upload.
+    pub upload_widths: Vec<(Duration, usize)>,
 }
 
 /// Every finalization attempt failed, so Pane View still shows the run as running and blocks
@@ -143,7 +156,11 @@ pub async fn push_changes(
     cancel: &CancelToken,
 ) -> anyhow::Result<PushResult> {
     cancel.check()?;
-    let upload_concurrency = resolve_upload_concurrency(options.upload_concurrency)?;
+    // A width the caller asks for is checked, and kept; none leaves it to the controller.
+    let fixed_width = options
+        .upload_concurrency
+        .map(|width| resolve_upload_concurrency(Some(width)))
+        .transpose()?;
 
     let (plan, planned_cache) = match options.plan {
         Some(plan) => (plan, None),
@@ -179,6 +196,7 @@ pub async fn push_changes(
             failed: 0,
             plan,
             pushed: 0,
+            upload_widths: Vec::new(),
         });
     }
 
@@ -245,18 +263,9 @@ pub async fn push_changes(
         source_root: &plan.source_root,
         sync_run_id: &sync_run_id,
         total,
+        sent: AtomicU64::new(0),
     };
-    // The items' futures are made up front (they do nothing until polled), so the queue holds no
-    // closure over borrowed items, which would keep the run from being `Send`.
-    let work: Vec<_> = to_push
-        .iter()
-        .enumerate()
-        .map(|(index, item)| push_item(&context, &tally, index + 1, item))
-        .collect();
-    futures::stream::iter(work)
-        .buffer_unordered(upload_concurrency)
-        .for_each(|()| async {})
-        .await;
+    let upload_widths = run_queue(&context, &tally, &to_push, fixed_width).await;
     let (pushed, failed) = *tally.lock().unwrap_or_else(PoisonError::into_inner);
 
     // Decided once, after the queue: the server and the caller must agree on how the run ended.
@@ -360,7 +369,72 @@ pub async fn push_changes(
         failed,
         plan,
         pushed,
+        upload_widths,
     })
+}
+
+/// Runs the items, in plan order, at most `width` at once: the fixed width asked for, or the
+/// adaptive one, which each finished item informs. Returns the widths it ran at.
+async fn run_queue(
+    context: &ItemContext<'_>,
+    tally: &Mutex<(usize, usize)>,
+    items: &[SyncPlanItem],
+    fixed_width: Option<usize>,
+) -> Vec<(Duration, usize)> {
+    let mut adaptive = UploadWidth::new();
+    let width = |adaptive: &UploadWidth| fixed_width.unwrap_or_else(|| adaptive.width());
+    let started = Instant::now();
+    let mut counted = 0;
+    let mut queued = items.iter().enumerate();
+    let mut running = FuturesUnordered::new();
+    loop {
+        // A cancel starts nothing more; what runs aborts itself.
+        while running.len() < width(&adaptive) && !context.cancel.is_cancelled() {
+            let Some((index, item)) = queued.next() else {
+                break;
+            };
+            running.push(push_item(context, tally, index + 1, item));
+        }
+        let Some(outcome) = running.next().await else {
+            break;
+        };
+        let at = started.elapsed();
+        // Once every item has started, the queue cannot fill a wider width, so what it shows
+        // says nothing about the link.
+        if queued.len() == 0 {
+            continue;
+        }
+        match outcome {
+            // Throughput is the bytes the uploads sent, not the sizes of those that finished,
+            // so a large file finishing in a window does not read as a faster link.
+            ItemOutcome::Pushed => {
+                let sent = context.sent.load(Ordering::Relaxed);
+                adaptive.record(UploadSample::Completed {
+                    bytes: sent - counted,
+                    at,
+                });
+                counted = sent;
+            }
+            ItemOutcome::Failed { overload: true } => {
+                adaptive.record(UploadSample::Overloaded { at });
+            }
+            ItemOutcome::Failed { overload: false } | ItemOutcome::NotRun => {}
+        }
+    }
+    match fixed_width {
+        Some(width) => vec![(Duration::ZERO, width)],
+        None => adaptive.history().to_vec(),
+    }
+}
+
+/// How one item ended, for the upload width.
+enum ItemOutcome {
+    /// Uploaded and recorded.
+    Pushed,
+    /// Failed; `overload` when the failure says the server or the link is overloaded.
+    Failed { overload: bool },
+    /// Skipped or aborted by a cancel, or with nothing to send.
+    NotRun,
 }
 
 struct ItemContext<'a> {
@@ -371,6 +445,8 @@ struct ItemContext<'a> {
     source_root: &'a Path,
     sync_run_id: &'a str,
     total: usize,
+    /// The bytes every upload of the run has sent so far, for the upload width.
+    sent: AtomicU64,
 }
 
 /// One queue slot: an item from start to success or failure. A cancel before it starts skips
@@ -380,12 +456,12 @@ async fn push_item(
     tally: &Mutex<(usize, usize)>,
     current: usize,
     item: &SyncPlanItem,
-) {
+) -> ItemOutcome {
     let Some(local) = &item.local else {
-        return;
+        return ItemOutcome::NotRun;
     };
     if context.cancel.is_cancelled() {
-        return;
+        return ItemOutcome::NotRun;
     }
     let observer = context.observer;
     let action = action_name(item.action);
@@ -425,9 +501,10 @@ async fn push_item(
                     total: context.total,
                 },
             );
+            ItemOutcome::Pushed
         }
-        Err(_) if context.cancel.is_cancelled() => {}
-        Err(error) if is_cancelled(&error) => {}
+        Err(_) if context.cancel.is_cancelled() => ItemOutcome::NotRun,
+        Err(error) if is_cancelled(&error) => ItemOutcome::NotRun,
         Err(error) => {
             tally.lock().unwrap_or_else(PoisonError::into_inner).1 += 1;
             emit(
@@ -441,6 +518,9 @@ async fn push_item(
                     total: context.total,
                 },
             );
+            ItemOutcome::Failed {
+                overload: is_overload(&error),
+            }
         }
     }
 }
@@ -481,6 +561,10 @@ fn change_time_ms(metadata: &std::fs::Metadata) -> Option<f64> {
     Some(metadata.ctime() as f64 * 1e3 + metadata.ctime_nsec() as f64 / 1e6)
 }
 
+/// Windows' change time is not in std's metadata. Node reads NTFS's, but the plan's scan
+/// (`oriel-core-index`) records none there, and a fingerprint without one matches on its size and
+/// modified time alone, so a hash cache Electron Oriel wrote on Windows, change times and all,
+/// still matches rather than being hashed again.
 #[cfg(not(unix))]
 fn change_time_ms(_: &std::fs::Metadata) -> Option<f64> {
     None
@@ -642,7 +726,12 @@ async fn push_media_item(
 
     match &target.upload_url {
         Some(upload_url) => {
+            let reported = AtomicU64::new(0);
             let report = |sent: u64, of: u64| {
+                let before = reported.swap(sent, Ordering::Relaxed);
+                context
+                    .sent
+                    .fetch_add(sent.saturating_sub(before), Ordering::Relaxed);
                 stage(
                     "uploading",
                     &format!(

@@ -44,6 +44,42 @@ pub(crate) const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 /// Read size for uploads, as Node's `createReadStream`.
 const READ_CHUNK: usize = 64 * 1024;
 
+/// An answer whose status is not 2xx, worded as lockstep-core words it (`… failed with 503: …`),
+/// with the status kept so a push can tell an overloaded server from a refused request.
+#[derive(Debug)]
+pub(crate) struct HttpStatus {
+    pub(crate) status: u16,
+    message: String,
+}
+
+impl HttpStatus {
+    fn new(status: u16, message: String) -> Self {
+        Self { status, message }
+    }
+}
+
+impl std::fmt::Display for HttpStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for HttpStatus {}
+
+/// Whether a request's failure says the server or the link is overloaded: a 429 or a 5xx answer,
+/// a timeout, or a connection that could not be made or was dropped. A push backs off on these;
+/// a refused or malformed request says nothing about load.
+pub(crate) fn is_overload(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        if let Some(answer) = cause.downcast_ref::<HttpStatus>() {
+            return answer.status == 429 || answer.status >= 500;
+        }
+        cause.downcast_ref::<reqwest::Error>().is_some_and(|error| {
+            error.is_timeout() || error.is_connect() || error.is_request() || error.is_body()
+        })
+    })
+}
+
 /// The server a profile syncs to: its URL and its sync token.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ApiTarget {
@@ -103,7 +139,11 @@ impl PaneViewClient {
         let status = response.status();
         let text = until_cancelled(cancel, response.text()).await??;
         if !status.is_success() {
-            bail!("/api/sync/snapshot failed with {}: {text}", status.as_u16());
+            return Err(HttpStatus::new(
+                status.as_u16(),
+                format!("/api/sync/snapshot failed with {}: {text}", status.as_u16()),
+            )
+            .into());
         }
         let entries = match read_snapshot_entries(&text) {
             Some(entries) => entries,
@@ -141,7 +181,11 @@ impl PaneViewClient {
         let status = response.status();
         let text = until_cancelled(cancel, response.text()).await??;
         if !status.is_success() {
-            bail!("{route} failed with {}: {text}", status.as_u16());
+            return Err(HttpStatus::new(
+                status.as_u16(),
+                format!("{route} failed with {}: {text}", status.as_u16()),
+            )
+            .into());
         }
         serde_json::from_str(&text).with_context(|| format!("{route} answered with {text}"))
     }
@@ -365,7 +409,11 @@ impl PaneViewClient {
             let text = until_cancelled(cancel, response.text())
                 .await?
                 .unwrap_or_default();
-            bail!("Upload failed with {}: {text}", status.as_u16());
+            return Err(HttpStatus::new(
+                status.as_u16(),
+                format!("Upload failed with {}: {text}", status.as_u16()),
+            )
+            .into());
         }
         if let Some(read_error) = take_read_error() {
             return Err(read_error.into());
