@@ -18,6 +18,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
     prelude::FluentBuilder as _, px,
 };
+use oriel_ui::ControlSize as _;
 use serde::Deserialize;
 
 /// The app's version: the workspace's, which the bundle's `Info.plist` carries too.
@@ -167,6 +168,7 @@ pub fn show(licences: Option<LicenceIndex>, window: &mut Window, cx: &mut App) {
                     .when_some(folder, |footer, folder| {
                         footer.child(
                             Button::new("about-show-licences")
+                                .bar_size()
                                 .outline()
                                 .label("Show Licences")
                                 .on_click(move |_, _, cx| cx.open_with_system(&folder)),
@@ -175,8 +177,13 @@ pub fn show(licences: Option<LicenceIndex>, window: &mut Window, cx: &mut App) {
                     // The action fills what holds it, so it is held at a button's width.
                     .child(
                         div().w(px(88.)).child(
-                            DialogAction::new()
-                                .child(Button::new("about-ok").primary().w_full().label("OK")),
+                            DialogAction::new().child(
+                                Button::new("about-ok")
+                                    .primary()
+                                    .bar_size()
+                                    .w_full()
+                                    .label("OK"),
+                            ),
                         ),
                     ),
             )

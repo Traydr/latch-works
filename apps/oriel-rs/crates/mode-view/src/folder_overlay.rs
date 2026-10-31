@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Icon, Sizable as _,
+    ActiveTheme as _, Disableable as _, Icon,
     button::{Button, ButtonVariants as _},
     tooltip::Tooltip,
 };
@@ -20,6 +20,7 @@ use gpui_kit::{
 };
 use oriel_core_domain::FolderNode;
 use oriel_core_index::list_folder_children;
+use oriel_ui::ControlSize as _;
 
 use crate::gallery::display_name;
 
@@ -225,7 +226,7 @@ impl FolderOverlay {
             .when(showing_root, |this| {
                 this.child({
                     let button = Button::new(exclude_id(&folder.path))
-                        .small()
+                        .bar_size()
                         .w_full()
                         .label(if excluded { "Excluded" } else { "Included" })
                         .on_click(cx.listener(move |_, _, _, cx| {
@@ -307,6 +308,7 @@ impl Render for FolderOverlay {
                 .child("No subfolders")
                 .child(
                     Button::new("open-this-folder")
+                        .bar_size()
                         .outline()
                         .label("Open this folder")
                         .on_click(cx.listener(move |_, _, _, cx| {
@@ -397,6 +399,7 @@ impl Render for FolderOverlay {
                             )
                             .child(
                                 Button::new("folder-browser-back")
+                                    .bar_size()
                                     .ghost()
                                     .icon(Icon::new(IconName::ChevronLeft))
                                     .label("Back")
@@ -406,6 +409,7 @@ impl Render for FolderOverlay {
                             )
                             .child(
                                 Button::new("folder-browser-open")
+                                    .bar_size()
                                     .outline()
                                     .icon(Icon::new(IconName::FolderOpen))
                                     .label("Open")
@@ -416,6 +420,7 @@ impl Render for FolderOverlay {
                             )
                             .child(
                                 Button::new("folder-browser-close")
+                                    .bar_size()
                                     .ghost()
                                     .icon(Icon::new(IconName::Close))
                                     .tooltip("Close")

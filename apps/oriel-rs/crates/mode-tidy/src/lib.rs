@@ -61,14 +61,16 @@ use std::time::Instant;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Icon, WindowExt as _};
 use gpui_kit::{
     AnyElement, AnyView, AppContext as _, Context, Entity, EventEmitter, ExternalPaths,
     FocusHandle, Focusable, FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent,
     ParentElement as _, Render, Styled as _, Subscription, Window, div, px,
 };
 use oriel_core_paths::DataRoot;
-use oriel_ui::{HandOff, ModeId, ModeLayout, OfferedFolders, ShellState, TopBar, commands};
+use oriel_ui::{
+    ControlSize as _, HandOff, ModeId, ModeLayout, OfferedFolders, ShellState, TopBar, commands,
+};
 
 use crate::cleanup::CleanupPage;
 use crate::convert::ConvertPage;
@@ -390,8 +392,8 @@ impl TidyMode {
                     )
                     .child(
                         Button::new("choose-folder")
+                            .page_size()
                             .primary()
-                            .large()
                             .mt_6()
                             .label("Choose folder…")
                             .child(widgets::key_hint("⌘O"))

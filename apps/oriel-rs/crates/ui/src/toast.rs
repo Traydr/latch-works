@@ -9,8 +9,10 @@
 use std::rc::Rc;
 
 use gpui_kit::component::notification::{Notification, NotificationType};
-use gpui_kit::component::{Sizable as _, WindowExt as _, button::Button};
+use gpui_kit::component::{WindowExt as _, button::Button};
 use gpui_kit::{Anchor, App, SharedString, Window};
+
+use crate::controls::ControlSize as _;
 
 /// What a toast reports: done (a check), an error, or a note.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -99,8 +101,9 @@ impl Toast {
         let notification = match self.action {
             Some((label, run)) => notification.action(move |_, _, _| {
                 let run = run.clone();
+                // A page's secondary command in the house scale: Undo is pressed often.
                 Button::new("toast-action")
-                    .small()
+                    .bar_size()
                     .outline()
                     .label(label.clone())
                     .on_click(move |_, window, cx| {

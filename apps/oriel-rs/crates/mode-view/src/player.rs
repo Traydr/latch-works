@@ -86,9 +86,17 @@ const PANEL_ROW_RADIUS: f32 = PANEL_RADIUS - PANEL_INSET - 1.;
 const VOLUME_THUMB: f32 = 14.;
 /// The volume track's length.
 const VOLUME_TRACK: f32 = 112.;
-const VOLUME_PANEL_WIDTH: f32 = 48.;
-const SPEED_PANEL_WIDTH: f32 = 72.;
-const SPEED_BUTTON_WIDTH: f32 = 36.;
+const VOLUME_PANEL_WIDTH: f32 = 56.;
+const SPEED_PANEL_WIDTH: f32 = 80.;
+const SPEED_BUTTON_WIDTH: f32 = 44.;
+/// The capsule's height, its round buttons' and Play's, a step up from Electron Oriel's 48, 32
+/// and 40 px, the owner having found them too small to hit (the house scale, `oriel_ui::controls`).
+const CAPSULE_HEIGHT: f32 = 56.;
+const CAPSULE_BUTTON: f32 = 40.;
+const PLAY_BUTTON: f32 = 48.;
+/// A row of the speed panel: `oriel_ui::MENU_ROW_HEIGHT`, which this file cannot name, as the
+/// media crate's spike builds it without the house kit.
+const SPEED_ROW_HEIGHT: f32 = 32.;
 
 /// Marks that the player's keys are bound, so the first player binds them for the app.
 struct KeysBound;
@@ -617,12 +625,18 @@ impl CapsulePlayer {
             .items_center()
             .gap(px(2.))
             .child(
-                capsule_button("skip-back", IconName::RotateCcw, "Back 5 seconds", "1", 32.)
-                    .child(skip_count())
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.skip_back(&SkipBack, window, cx);
-                    }))
-                    .test_support(),
+                capsule_button(
+                    "skip-back",
+                    IconName::RotateCcw,
+                    "Back 5 seconds",
+                    "1",
+                    CAPSULE_BUTTON,
+                )
+                .child(skip_count())
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.skip_back(&SkipBack, window, cx);
+                }))
+                .test_support(),
             )
             .child(
                 capsule_button(
@@ -634,7 +648,7 @@ impl CapsulePlayer {
                     },
                     if playing { "Pause" } else { "Play" },
                     "Space",
-                    40.,
+                    PLAY_BUTTON,
                 )
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.toggle_playback(&TogglePlayback, window, cx);
@@ -647,7 +661,7 @@ impl CapsulePlayer {
                     IconName::RotateCw,
                     "Forward 5 seconds",
                     "3",
-                    32.,
+                    CAPSULE_BUTTON,
                 )
                 .child(skip_count())
                 .on_click(cx.listener(|this, _, window, cx| {
@@ -664,13 +678,13 @@ impl CapsulePlayer {
             .items_center()
             .gap_2()
             .px_1()
-            .text_size(px(12.))
+            .text_size(px(13.))
             .text_color(gpui_kit::white().opacity(0.8))
-            .child(div().w(px(36.)).flex_shrink_0().child(clock(position)))
+            .child(div().w(px(40.)).flex_shrink_0().child(clock(position)))
             .child(self.render_scrubber(played, duration, cx))
             .child(
                 div()
-                    .w(px(36.))
+                    .w(px(40.))
                     .flex_shrink_0()
                     .text_right()
                     .child(duration.map(clock).unwrap_or_else(|| "–:––".into())),
@@ -703,7 +717,7 @@ impl CapsulePlayer {
                     .gap_1()
                     .w_full()
                     .max_w(px(896.))
-                    .h(px(48.))
+                    .h(px(CAPSULE_HEIGHT))
                     .px_3()
                     .rounded_full()
                     .bg(rgba(CAPSULE))
@@ -822,7 +836,7 @@ impl CapsulePlayer {
     fn render_volume(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let open = self.panel == Some(CapsulePanel::Volume);
         let level = self.level();
-        let trigger = capsule_button("volume", volume_icon(level), "Volume", "", 32.)
+        let trigger = capsule_button("volume", volume_icon(level), "Volume", "", CAPSULE_BUTTON)
             .aria_expanded(open)
             .when(open, |this| this.text_color(rgba(ACTIVE)))
             .on_click(cx.listener(|this, _, _, cx| this.toggle_panel(CapsulePanel::Volume, cx)))
@@ -835,7 +849,7 @@ impl CapsulePlayer {
             .child(trigger)
             .when(open, |this| {
                 this.child(
-                    popup(32., VOLUME_PANEL_WIDTH, 32.)
+                    popup(CAPSULE_BUTTON, VOLUME_PANEL_WIDTH, CAPSULE_BUTTON)
                         .id("volume-panel")
                         .role(Role::Group)
                         .test_support()
@@ -910,7 +924,7 @@ impl CapsulePlayer {
                                 volume_icon(if self.muted { 0. } else { 1. }),
                                 if self.muted { "Unmute" } else { "Mute" },
                                 "M",
-                                32.,
+                                CAPSULE_BUTTON,
                             )
                             .when(self.muted, |this| this.text_color(rgba(ACTIVE)))
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -937,11 +951,11 @@ impl CapsulePlayer {
             .flex_shrink_0()
             .items_center()
             .justify_center()
-            .h(px(32.))
+            .h(px(CAPSULE_BUTTON))
             .min_w(px(SPEED_BUTTON_WIDTH))
             .px(px(6.))
             .rounded_full()
-            .text_size(px(11.))
+            .text_size(px(13.))
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(if speed == 1. && !open {
                 gpui_kit::white().opacity(0.9)
@@ -959,7 +973,7 @@ impl CapsulePlayer {
             .child(trigger)
             .when(open, |this| {
                 this.child(
-                    popup(SPEED_BUTTON_WIDTH, SPEED_PANEL_WIDTH, 32.)
+                    popup(SPEED_BUTTON_WIDTH, SPEED_PANEL_WIDTH, CAPSULE_BUTTON)
                         .id("speed-panel")
                         .role(Role::Menu)
                         .test_support()
@@ -976,10 +990,12 @@ impl CapsulePlayer {
                                 .test_support()
                                 .aria_label(format_speed(choice))
                                 .aria_selected(chosen)
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .h(px(SPEED_ROW_HEIGHT))
                                 .px_3()
-                                .py(px(5.))
                                 .rounded(px(PANEL_ROW_RADIUS))
-                                .text_center()
                                 .text_size(px(14.))
                                 .when(chosen, |this| {
                                     this.font_weight(FontWeight::SEMIBOLD)
@@ -1063,7 +1079,8 @@ fn capsule_button(
     key: &'static str,
     size_px: f32,
 ) -> gpui_kit::Stateful<gpui_kit::Div> {
-    let icon = Icon::new(icon).size(px(size_px / 2.));
+    // A little over half the button, so the glyph reads at a glance over the picture.
+    let icon = Icon::new(icon).size(px((size_px * 0.55).round()));
     let tooltip: SharedString = if key.is_empty() {
         label.into()
     } else {
@@ -1110,7 +1127,7 @@ fn skip_count() -> impl IntoElement {
         .items_center()
         .justify_center()
         .pt(px(1.))
-        .text_size(px(7.))
+        .text_size(px(9.))
         .font_weight(FontWeight::BOLD)
         .child(SharedString::new_static("5"))
 }

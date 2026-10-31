@@ -1,7 +1,7 @@
 //! View's top bar, the one Tidy and Sync have (`GalleryHeader.tsx`): the folder's name, once (the
 //! owner asked for it alone, rather than beside a "parent / folder" line that named it again);
 //! then the scan's status once it is done, what the folder holds, the selection's place, and the
-//! folder steps (Parent, Prev Folder, Next Folder) at the toolbar's normal size.
+//! folder steps (Parent, Prev Folder, Next Folder) at the bar's size in the house scale.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
@@ -12,7 +12,7 @@ use gpui_kit::{
     App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div, px,
 };
-use oriel_ui::TopBar;
+use oriel_ui::{ControlSize as _, TopBar};
 
 use crate::ViewMode;
 use crate::browser::Tile;
@@ -124,11 +124,12 @@ impl ViewMode {
             let parent = self.parent_folder(cx);
             let previous = self.sibling_folder(-1, cx);
             let next = self.sibling_folder(1, cx);
-            // Medium, GPUI Kit's normal size: a 32 px target with a 16 px icon, as the sidebar's
-            // toggle at the bar's other end. The small ones were too fine a target.
+            // The bar's size in the house scale: a 36 px target with a 16 px icon, as the
+            // sidebar's toggle at the bar's other end.
             bar = bar
                 .trailing(
                     Button::new("parent-folder")
+                        .bar_size()
                         .ghost()
                         .icon(Icon::new(IconName::ArrowUp))
                         .label("Parent")
@@ -138,6 +139,7 @@ impl ViewMode {
                 )
                 .trailing(
                     Button::new("previous-folder")
+                        .bar_size()
                         .ghost()
                         .icon(Icon::new(IconName::ChevronLeft))
                         .label("Prev Folder")
@@ -147,6 +149,7 @@ impl ViewMode {
                 )
                 .trailing(
                     Button::new("next-folder")
+                        .bar_size()
                         .ghost()
                         .label("Next Folder")
                         .icon(Icon::new(IconName::ChevronRight))

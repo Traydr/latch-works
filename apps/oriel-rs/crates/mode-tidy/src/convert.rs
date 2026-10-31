@@ -5,7 +5,7 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon};
 use gpui_kit::{
     AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement as _,
     IntoElement, KeyDownEvent, ParentElement as _, Render, SharedString,
@@ -16,7 +16,7 @@ use oriel_core_tidy::contract::{
     FileFilter, FileFlag, FileFormat, FileKind, FilePage, FileQuery, FileRow, FileSortColumn,
     RootId, Tidy,
 };
-use oriel_ui::TopBar;
+use oriel_ui::{ControlSize as _, TopBar};
 
 use crate::actions::PerformOptions;
 use crate::changes::PlanRequest;
@@ -324,8 +324,8 @@ impl ConvertPage {
                 this.child(
                     div().mt(px(-12.)).mb_6().child(
                         Button::new(SharedString::from(format!("convert-more-{}", group.key())))
+                            .row_size()
                             .text()
-                            .small()
                             .label(format!("and {} more", format::count(more)))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.state.update(cx, |state, cx| {
@@ -466,8 +466,8 @@ impl Render for ConvertPage {
         // Files duplicates hold back: a way to the review that frees them.
         let waiting_link = (files > 0 && waiting > 0).then(|| {
             Button::new("convert-waiting")
+                .bar_size()
                 .ghost()
-                .small()
                 .label(format!(
                     "{} wait for duplicate review",
                     format::count(waiting)
@@ -485,8 +485,8 @@ impl Render for ConvertPage {
             .map(|group| (group, group.totals(&tidy).0, enabled.contains(&group)))
             .collect();
         let options = Button::new("convert-options")
+            .bar_size()
             .outline()
-            .small()
             .label("Options")
             .dropdown_menu(move |menu, _, _| {
                 let mut menu = menu;
@@ -543,8 +543,8 @@ impl Render for ConvertPage {
             } else if left > 0 {
                 Some(
                     Button::new("convert-left-link")
+                        .row_size()
                         .text()
-                        .small()
                         .label(format!("{} left as they are", format::plural(left, "file")))
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.left_open = !this.left_open;

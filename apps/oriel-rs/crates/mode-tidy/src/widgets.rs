@@ -10,6 +10,7 @@ use gpui_kit::{
     ParentElement as _, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
     TestSupportExt as _, div, prelude::FluentBuilder as _, px, rems,
 };
+use oriel_ui::ControlSize as _;
 
 use crate::format;
 
@@ -85,6 +86,7 @@ pub fn error_state(
         Some(div().child(error).into_any_element()),
         vec![
             Button::new(SharedString::from(format!("{id}-try-again")))
+                .bar_size()
                 .outline()
                 .label("Try again")
                 .on_click(move |_, window, cx| on_retry(window, cx))
@@ -134,13 +136,17 @@ pub fn key_hint(keys: &'static str) -> Div {
     div().ml_1().text_xs().opacity(0.6).child(keys)
 }
 
-/// A primary action with its key, at the top bar's right.
+/// A primary action with its key, at the top bar's right, at the bar's size in the house scale.
 pub fn primary_action(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     keys: &'static str,
 ) -> Button {
-    Button::new(id).primary().label(label).child(key_hint(keys))
+    Button::new(id)
+        .primary()
+        .bar_size()
+        .label(label)
+        .child(key_hint(keys))
 }
 
 /// A page's main button while the change it started runs or waits in the queue: still in its

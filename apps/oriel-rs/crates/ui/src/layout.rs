@@ -456,9 +456,10 @@ impl RenderOnce for NavItem {
             .border_color(theme.transparent)
             .map(|this| {
                 if self.rail {
-                    this.w(px(RAIL_BUTTON)).h(px(40.)).justify_center()
+                    this.w(px(RAIL_BUTTON)).h(px(44.)).justify_center()
                 } else {
-                    this.w_full().h(px(32.)).px(px(8.))
+                    // Roomier than Electron Oriel's 32 px, as the owner asked of every control.
+                    this.w_full().h(px(36.)).px(px(8.))
                 }
             })
             .text_color(if current {

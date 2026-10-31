@@ -15,7 +15,7 @@ use oriel_core_tidy::contract::{
     AudioState, FileFilter, FileFlag, FileFormat, FileKind, FilePage, FileQuery, FileRow,
     FileSortColumn, RootId,
 };
-use oriel_ui::TopBar;
+use oriel_ui::{ControlSize as _, TopBar};
 
 use crate::actions::{PerformOptions, TidyStep};
 use crate::changes::{PlanRequest, Rename};
@@ -345,8 +345,8 @@ impl CleanupPage {
         let footer = (count > shown && shown > 0).then(|| {
             let content: AnyElement = match more {
                 Some(preset) => Button::new(SharedString::from(format!("{id}-more")))
+                    .row_size()
                     .text()
-                    .small()
                     .label("Show all in Library")
                     .on_click(cx.listener(move |this, _, _, cx| {
                         let preset = preset.clone();
@@ -390,8 +390,8 @@ impl CleanupPage {
                         .child(div().flex_1())
                         .child(widgets::while_changing(
                             Button::new(SharedString::from(format!("cleanup-{id}-run")))
+                                .bar_size()
                                 .outline()
-                                .small()
                                 .label(action)
                                 .on_click(
                                     cx.listener(move |this, _, window, cx| run(this, window, cx)),
@@ -549,8 +549,8 @@ impl Render for CleanupPage {
                         .child(Self::name_and_folder(&row.name, &row.dir, cx))
                         .child(widgets::while_changing(
                             Button::new(("cleanup-silent-one", id as u64))
+                                .row_size()
                                 .ghost()
-                                .small()
                                 .label("Remove sound")
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     let options = PerformOptions {

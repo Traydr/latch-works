@@ -16,7 +16,7 @@ use std::rc::Rc;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, WindowExt as _};
 use gpui_kit::{
     App, AppContext as _, Context, Entity, FocusHandle, Focusable, InteractiveElement as _,
     IntoElement, KeyDownEvent, ParentElement as _, Render, SharedString,
@@ -25,6 +25,7 @@ use gpui_kit::{
 };
 use oriel_core_domain::{NamedPath, compare_by_name, is_system_junk_directory};
 use oriel_core_paths::DataRoot;
+use oriel_ui::ControlSize as _;
 
 /// What a picker is for.
 pub struct PickOptions {
@@ -823,8 +824,8 @@ impl Render for FolderPicker {
                                     .gap_2()
                                     .child(
                                         Button::new("picker-up")
+                                            .bar_size()
                                             .outline()
-                                            .small()
                                             .icon(Icon::new(IconName::ArrowUp))
                                             .accessibility_label("Enclosing folder")
                                             .tooltip("Enclosing folder  ⌘↑")
@@ -833,7 +834,9 @@ impl Render for FolderPicker {
                                                 this.go_up(window, cx);
                                             })),
                                     )
-                                    .child(div().flex_1().child(Input::new(&self.input).small())),
+                                    .child(
+                                        div().flex_1().child(Input::new(&self.input).bar_size()),
+                                    ),
                             )
                             .when_some(note, |this, note| {
                                 this.child(
@@ -872,12 +875,14 @@ impl Render for FolderPicker {
                     )
                     .child(
                         Button::new("picker-cancel")
+                            .bar_size()
                             .outline()
                             .label("Cancel")
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
                         Button::new("picker-choose")
+                            .bar_size()
                             .primary()
                             .label(action)
                             .child(crate::widgets::key_hint("⌘↩"))

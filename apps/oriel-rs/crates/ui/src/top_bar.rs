@@ -12,6 +12,7 @@ use gpui_kit::{
     TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
 
+use crate::controls::ControlSize as _;
 use crate::drag::DragStrip;
 use crate::shell::ShellState;
 
@@ -80,10 +81,11 @@ impl RenderOnce for TopBar {
             .border_b_1()
             .border_color(cx.theme().border)
             .child(
-                // Medium, a 32 px target with a 16 px icon: the small one was too fine a target
-                // beside the title.
+                // The bar's size in the house scale: a 36 px target, the owner having found
+                // GPUI Kit's 32 px one too small beside the title.
                 Button::new("toggle-sidebar")
                     .ghost()
+                    .bar_size()
                     .icon(Icon::new(toggle_icon))
                     .accessibility_label(toggle_label)
                     .tooltip(toggle_tooltip)

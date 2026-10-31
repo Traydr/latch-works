@@ -19,7 +19,7 @@ use oriel_core_tidy::contract::{
     DuplicateScope, DuplicateSetPage, DuplicateSetRequest, FileFlag, FileFormat, FindingKind,
     RootId, SimilarityLevel, Tidy,
 };
-use oriel_ui::TopBar;
+use oriel_ui::{ControlSize as _, TopBar};
 
 use crate::actions::{PerformOptions, TidyStep};
 use crate::changes::{PlanKind, PlanRequest};
@@ -397,8 +397,8 @@ impl OverviewPage {
             )
         });
         let rescan = Button::new("overview-rescan")
+            .bar_size()
             .ghost()
-            .small()
             .map(|button| {
                 if scanning {
                     button.child(Spinner::new().small())
@@ -426,8 +426,8 @@ impl OverviewPage {
                 .gap_1()
                 .child(
                     Button::new("overview-open-in-view")
+                        .bar_size()
                         .ghost()
-                        .small()
                         .icon(Icon::new(IconName::Images))
                         .label("Open in View")
                         .tooltip("Open this folder in View")
@@ -439,8 +439,8 @@ impl OverviewPage {
                 )
                 .child(
                     Button::new("overview-sync-folder")
+                        .bar_size()
                         .ghost()
-                        .small()
                         .icon(Icon::new(IconName::FolderUp))
                         .label("Sync this folder")
                         .tooltip("Push this folder to Pane View with Sync")
@@ -609,7 +609,7 @@ impl OverviewPage {
         // Another page's change running, Tidy up queues behind it.
         let action: AnyElement = widgets::while_changing(
             widgets::primary_action("overview-tidy-up", "Tidy up", "⌘↩")
-                .large()
+                .page_size()
                 .on_click(cx.listener(|this, _, window, cx| this.tidy_up(window, cx))),
             state.change_status(TIDY_SOURCE),
         )
@@ -751,8 +751,8 @@ impl OverviewPage {
                         "overview-run-{}",
                         step.id.key()
                     )))
+                    .bar_size()
                     .ghost()
-                    .small()
                     .label(step.action)
                     .on_click(cx.listener(move |this, _, window, cx| {
                         cx.stop_propagation();
@@ -914,6 +914,7 @@ impl OverviewPage {
                 .when(unchecked, |this| {
                     this.child(
                         Button::new("overview-check-now")
+                            .bar_size()
                             .outline()
                             .label("Check now")
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -928,6 +929,7 @@ impl OverviewPage {
                 .when(similar.sets > 0, |this| {
                     this.child(
                         Button::new("overview-review-similar")
+                            .bar_size()
                             .outline()
                             .label("Review")
                             .tooltip("Review  D")
@@ -981,6 +983,7 @@ impl OverviewPage {
                 )
                 .child(
                     Button::new("overview-review-identical")
+                        .bar_size()
                         .outline()
                         .label("Review")
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -1069,7 +1072,7 @@ impl OverviewPage {
             .items_center()
             .gap_1()
             .px_1()
-            .text_xs()
+            .text_size(px(13.))
             .text_color(theme.muted_foreground)
             .child("Also found:");
         for (index, finding) in findings.into_iter().enumerate() {
@@ -1083,7 +1086,7 @@ impl OverviewPage {
                     finding.kind
                 )))
                 .text()
-                .xsmall()
+                .row_size()
                 .label(label)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     let preset = preset.clone();

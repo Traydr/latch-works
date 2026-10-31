@@ -9,7 +9,7 @@ use std::path::Path;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Icon, Sizable as _,
+    ActiveTheme as _, Disableable as _, Icon,
     button::{Button, ButtonVariants as _},
 };
 use gpui_kit::{
@@ -18,9 +18,9 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px,
 };
 use gpui_kit::{App, Entity};
-use oriel_ui::ModeId;
 use oriel_ui::layout::NavItem;
 use oriel_ui::locations::{LocationItem, LocationSwitcher, location_id, shared_locations};
+use oriel_ui::{ControlSize as _, ModeId};
 
 use crate::ViewMode;
 use crate::gallery::display_name;
@@ -47,9 +47,12 @@ impl ViewMode {
                 .w_full()
                 .child(self.location_switcher(true, cx))
                 .child(
+                    // The rail's items' frame, 48 by 44 px, with the bar's type and icon.
                     Button::new("sidebar-parent")
                         .ghost()
-                        .large()
+                        .bar_size()
+                        .w(px(48.))
+                        .h(px(44.))
                         .icon(Icon::new(IconName::ArrowUp))
                         .tooltip(match &parent {
                             Some(parent) => format!("Up to {}", display_name(parent)),

@@ -26,7 +26,9 @@ use oriel_core_index::SyncPlanAction;
 use oriel_core_sync::{RunAction, format_count, parse_iso_timestamp};
 use oriel_ui::locations::{LocationItem, LocationSwitcher, shared_locations};
 use oriel_ui::segmented::{Segmented, SegmentedItem};
-use oriel_ui::{ModeId, ModeLayout, OfferedFolders, SettingsGroup, SettingsRow, TopBar};
+use oriel_ui::{
+    ControlSize as _, ModeId, ModeLayout, OfferedFolders, SettingsGroup, SettingsRow, TopBar,
+};
 
 use crate::profiles::{Profile, TokenState};
 use crate::run::{self, ItemState, PruneAvailability, RunPhase};
@@ -369,8 +371,8 @@ impl SyncMode {
                             .child(
                                 div().mt_4().child(
                                     Button::new("sync-welcome-add")
+                                        .page_size()
                                         .primary()
-                                        .large()
                                         .label("Add a profile")
                                         .on_click(cx.listener(|this, _, window, cx| {
                                             this.start_create_profile(window, cx);
@@ -571,13 +573,17 @@ impl SyncMode {
                                     .flex_row()
                                     .justify_end()
                                     .gap_2()
-                                    .child(Button::new("profile-cancel").label("Cancel").on_click(
-                                        cx.listener(|this, _, window, cx| {
-                                            this.cancel_profile_form(window, cx);
-                                        }),
-                                    ))
+                                    .child(
+                                        Button::new("profile-cancel")
+                                            .bar_size()
+                                            .label("Cancel")
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.cancel_profile_form(window, cx);
+                                            })),
+                                    )
                                     .child(
                                         Button::new("profile-save")
+                                            .bar_size()
                                             .primary()
                                             .label(if editing.is_some() {
                                                 "Save changes"
@@ -734,8 +740,8 @@ impl SyncMode {
                     )
                     .child(
                         Button::new("doctor-dismiss")
+                            .row_size()
                             .ghost()
-                            .small()
                             .icon(IconName::Close)
                             .accessibility_label("Dismiss the connection check")
                             .on_click(cx.listener(|this, _, _, cx| this.dismiss_doctor_result(cx))),
@@ -809,8 +815,8 @@ impl SyncMode {
         let id = profile.id.clone();
         let running = self.run.running;
         Button::new("sync-profile-menu")
+            .bar_size()
             .ghost()
-            .small()
             .icon(IconName::Ellipsis)
             .accessibility_label("Profile actions")
             .dropdown_menu(move |menu, _, _| {
@@ -879,6 +885,7 @@ impl SyncMode {
             .gap_2()
             .child(
                 Button::new("sync-plan")
+                    .bar_size()
                     .icon(IconName::RotateCw)
                     .label("Re-plan")
                     .when(pushed && !show_run_state, |this| this.primary())
@@ -898,6 +905,7 @@ impl SyncMode {
                 };
                 this.child(
                     Button::new("sync-prune")
+                        .bar_size()
                         // Locked until the plan's push has run, as Electron Oriel draws it.
                         .when(!enabled, |this| this.icon(Icon::new(IconName::Lock)))
                         .label(format!(
@@ -917,6 +925,7 @@ impl SyncMode {
             .when(!pushed, |this| {
                 this.child(
                     Button::new("sync-push")
+                        .bar_size()
                         .primary()
                         .icon(IconName::ArrowUp)
                         .label(if push_count == 0 {
@@ -977,8 +986,8 @@ impl SyncMode {
             .child(
                 div().mt_2().child(
                     Button::new("sync-plan")
+                        .page_size()
                         .primary()
-                        .large()
                         .label(if planning { "Planning…" } else { "Plan" })
                         .loading(planning)
                         .disabled(self.run.running)
@@ -1053,7 +1062,7 @@ impl SyncMode {
                             "plan-count-{}",
                             plan_action_key(action)
                         )))
-                        .small()
+                        .bar_size()
                         .outline()
                         .selected(selected)
                         .accessibility_label(text.clone())
@@ -1131,7 +1140,7 @@ impl SyncMode {
                                         Input::new(&self.filter)
                                             .id("plan-filter")
                                             .aria_label("Filter plan paths")
-                                            .small(),
+                                            .bar_size(),
                                     ),
                             ),
                     ),
@@ -1175,8 +1184,8 @@ impl SyncMode {
                     .when(plan.skipped > 0, |this| {
                         this.child(
                             Button::new("plan-skipped")
+                                .row_size()
                                 .ghost()
-                                .xsmall()
                                 .label(format!(
                                     "{} skipped · {}",
                                     format_count(plan.skipped),
@@ -1551,6 +1560,7 @@ impl SyncMode {
             .child(div().flex().flex_col().gap_2().p_4().map(|this| {
                 this.child(
                     Button::new("run-done")
+                        .bar_size()
                         .primary()
                         .label("Done")
                         .on_click(cx.listener(|this, _, _, cx| this.dismiss_run_panel(cx))),
@@ -1565,6 +1575,7 @@ impl SyncMode {
                         };
                         this.child(
                             Button::new("run-prune")
+                                .bar_size()
                                 .danger()
                                 .label(format!("Prune {}…", format_count(count)))
                                 .tooltip(format!(
@@ -1582,6 +1593,7 @@ impl SyncMode {
                     |this| {
                         this.child(
                             Button::new("run-retry")
+                                .bar_size()
                                 .label(format!("Retry {} failed", format_count(progress.failed)))
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.push_now(window, cx);
@@ -1837,8 +1849,8 @@ impl SyncMode {
                     .child(
                         div().ml_auto().child(
                             Button::new("run-log-close")
+                                .row_size()
                                 .ghost()
-                                .small()
                                 .label("Close")
                                 .tooltip("⌘L")
                                 .on_click(cx.listener(|this, _, _, cx| this.toggle_run_log(cx))),
@@ -1910,6 +1922,7 @@ impl SyncMode {
                                     "settings-edit-{}",
                                     profile.id
                                 )))
+                                .bar_size()
                                 .label("Edit…")
                                 .accessibility_label(format!("Edit {}", profile.name))
                                 .disabled(running)
@@ -1933,6 +1946,7 @@ impl SyncMode {
                         )
                         .child(
                             Button::new("settings-add-profile")
+                                .bar_size()
                                 .icon(IconName::Plus)
                                 .label("Add profile")
                                 .disabled(running)

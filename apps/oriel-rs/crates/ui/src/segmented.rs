@@ -19,9 +19,13 @@ use crate::layout::KeepsFocus as _;
 
 type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
-/// The track's height, and its items' (two less on each side).
+/// The track's height, and its items' (two less on each side): the bar's frame in the house
+/// scale (`crate::controls`), and a page action's for a track that fills its container, as the
+/// mode switcher does, the control the shell is pressed at most.
 const TRACK_HEIGHT: f32 = 32.;
 const ITEM_HEIGHT: f32 = 28.;
+const FILLED_TRACK_HEIGHT: f32 = 36.;
+const FILLED_ITEM_HEIGHT: f32 = 32.;
 
 #[derive(IntoElement)]
 pub struct Segmented {
@@ -135,7 +139,11 @@ impl RenderOnce for Segmented {
             .flex()
             .flex_row()
             .items_center()
-            .h(px(TRACK_HEIGHT))
+            .h(px(if fill {
+                FILLED_TRACK_HEIGHT
+            } else {
+                TRACK_HEIGHT
+            }))
             .p(px(2.))
             .gap(px(2.))
             .rounded(theme.radius)
@@ -169,7 +177,11 @@ fn render_item(item: SegmentedItem, fill: bool, cx: &App) -> impl IntoElement {
         .relative()
         .flex_row()
         .gap(px(6.))
-        .h(px(ITEM_HEIGHT))
+        .h(px(if fill {
+            FILLED_ITEM_HEIGHT
+        } else {
+            ITEM_HEIGHT
+        }))
         .map(|this| if fill { this.flex_1() } else { this.px_3() })
         // The keyboard's focus line sits inside the item, as `.lw-seg-item`'s inset outline
         // does, so the border is always there and only its colour changes.
@@ -191,7 +203,7 @@ fn render_item(item: SegmentedItem, fill: bool, cx: &App) -> impl IntoElement {
                 gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(window, cx)
             })
         })
-        .when_some(item.icon, |this, icon| this.child(icon.size(px(14.))))
+        .when_some(item.icon, |this, icon| this.child(icon.size(px(16.))))
         .child(item.label)
         .children(item.trailing)
         .when_some(on_click, |this, on_click| {

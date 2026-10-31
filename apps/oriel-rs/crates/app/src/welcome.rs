@@ -22,7 +22,7 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, WindowExt as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, WindowExt as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FontWeight, Global,
     InteractiveElement as _, IntoElement, ParentElement as _, PathPromptOptions, Render, Role,
@@ -34,7 +34,7 @@ use oriel_migrate::{Area, ElectronData, Progress as ImportProgress, Report, Surv
 use oriel_mode_sync::{ProfileInput, SyncMode};
 use oriel_mode_tidy::TidyMode;
 use oriel_mode_view::ViewMode;
-use oriel_ui::{ModeId, ShellState};
+use oriel_ui::{ControlSize as _, ModeId, ShellState};
 
 /// `ORIEL_RS_WELCOME=1` shows the welcome under `ORIEL_RS_DATA_DIR`, which otherwise never shows
 /// it, as `ORIEL_WELCOME=1` does under Electron Oriel's `--user-data-dir`.
@@ -407,6 +407,7 @@ impl Welcome {
                     )
                     .child(
                         Button::new("welcome-choose-folder")
+                            .bar_size()
                             .outline()
                             .label(if chosen.is_some() {
                                 "Change…"
@@ -581,16 +582,20 @@ impl Render for Welcome {
                         .justify_end()
                         .gap_2()
                         .when(self.folder.is_none() && needs_folder, |this| {
-                            this.child(Button::new("welcome-skip").ghost().label("Skip").on_click(
-                                cx.listener(|_, _, _, cx| {
-                                    cx.emit(WelcomeEvent::Finished);
-                                }),
-                            ))
+                            this.child(
+                                Button::new("welcome-skip")
+                                    .ghost()
+                                    .bar_size()
+                                    .label("Skip")
+                                    .on_click(cx.listener(|_, _, _, cx| {
+                                        cx.emit(WelcomeEvent::Finished);
+                                    })),
+                            )
                         })
                         .child(
                             Button::new("welcome-start")
+                                .page_size()
                                 .primary()
-                                .large()
                                 .label(start_label)
                                 .disabled(self.busy)
                                 .on_click(
@@ -915,6 +920,7 @@ impl ImportFlow {
                     .when(self.purpose == ImportPurpose::Welcome, |this| {
                         this.child(
                             Button::new("import-start-fresh")
+                                .bar_size()
                                 .ghost()
                                 .label("Start Fresh")
                                 .on_click(
@@ -925,6 +931,7 @@ impl ImportFlow {
                     .when(self.purpose == ImportPurpose::Settings, |this| {
                         this.child(
                             Button::new("import-cancel")
+                                .bar_size()
                                 .ghost()
                                 .label("Cancel")
                                 .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
@@ -932,10 +939,12 @@ impl ImportFlow {
                     })
                     .child(match running {
                         Some(_) => Button::new("import-try-again")
+                            .bar_size()
                             .primary()
                             .label("Try Again")
                             .on_click(cx.listener(|this, _, _, cx| this.look(cx))),
                         None => Button::new("import-start")
+                            .bar_size()
                             .primary()
                             .label("Import")
                             .on_click(cx.listener(|this, _, _, cx| this.start(cx))),
@@ -1069,6 +1078,7 @@ impl ImportFlow {
             .child(
                 self.buttons(cx).child(
                     Button::new("import-restart")
+                        .bar_size()
                         .primary()
                         .label(if restarts { "Restart Now" } else { "Quit" })
                         .on_click(|_, _, cx| restart(cx)),
@@ -1107,6 +1117,7 @@ impl Render for ImportFlow {
                 .child(
                     self.buttons(cx).child(
                         Button::new("import-close")
+                            .bar_size()
                             .primary()
                             .label("Close")
                             .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
@@ -1152,12 +1163,14 @@ impl Render for ImportFlow {
                     self.buttons(cx)
                         .child(
                             Button::new("import-close")
+                                .bar_size()
                                 .ghost()
                                 .label("Close")
                                 .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
                         )
                         .child(
                             Button::new("import-try-again")
+                                .bar_size()
                                 .primary()
                                 .label("Try Again")
                                 .on_click(cx.listener(|this, _, _, cx| this.look(cx))),

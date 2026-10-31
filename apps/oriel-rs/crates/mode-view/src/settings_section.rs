@@ -3,9 +3,7 @@
 //! shell's (General). Each switch is named by its row's label, as Electron Oriel's are.
 
 use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
-use gpui_kit::component::{
-    ActiveTheme as _, Sizable as _, WindowExt as _, button::Button, switch::Switch,
-};
+use gpui_kit::component::{ActiveTheme as _, WindowExt as _, button::Button, switch::Switch};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, ElementId, Entity,
     InteractiveElement as _, IntoElement, ParentElement as _, Role, SharedString,
@@ -13,6 +11,7 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px,
 };
 use oriel_core_index::MediaIndexStats;
+use oriel_ui::ControlSize as _;
 
 use crate::ViewMode;
 use crate::gallery::display_name;
@@ -331,6 +330,7 @@ impl ViewMode {
                 "Thumbnail cache",
                 Some("Kept so folders open quickly; made again as they are needed.".into()),
                 Button::new("clear-thumbnail-cache")
+                    .bar_size()
                     .outline()
                     .label("Clear thumbnail cache")
                     .on_click(cx.listener(|this, _, window, cx| {
@@ -348,6 +348,7 @@ impl ViewMode {
                 "Media index",
                 Some(index_description),
                 Button::new("clear-media-index")
+                    .bar_size()
                     .outline()
                     .label("Clear media index")
                     .on_click(
@@ -625,8 +626,8 @@ impl ViewMode {
                     .gap_2()
                     .child(
                         Button::new("diagnostics-show")
+                            .bar_size()
                             .outline()
-                            .small()
                             .label(if shown { "Hide" } else { "Show" })
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.settings_panel.diagnostics_shown =
@@ -636,8 +637,8 @@ impl ViewMode {
                     )
                     .child(
                         Button::new("diagnostics-refresh")
+                            .bar_size()
                             .outline()
-                            .small()
                             .label("Refresh")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.refresh_index_stats(cx);
@@ -648,8 +649,8 @@ impl ViewMode {
                     )
                     .child(
                         Button::new("diagnostics-copy")
+                            .bar_size()
                             .outline()
-                            .small()
                             .label("Copy diagnostics")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let report = this.diagnostics_report(cx);

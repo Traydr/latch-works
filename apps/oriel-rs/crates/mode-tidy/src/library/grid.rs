@@ -13,6 +13,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, canvas, div,
     prelude::FluentBuilder as _, px, uniform_list,
 };
+use oriel_ui::checkbox_target;
 
 use super::{LibraryPage, PAGE};
 use crate::format;
@@ -231,8 +232,11 @@ impl LibraryPage {
                                 this.opacity(0.)
                                     .group_hover("library-tile", |style| style.opacity(1.))
                             })
+                            // A 28 px target on a backdrop, so the box reads over any picture.
                             .child(
-                                Checkbox::new(("library-tile-select", id as u64))
+                                checkbox_target(Checkbox::new(("library-tile-select", id as u64)))
+                                    .rounded(theme.radius)
+                                    .bg(theme.popover.opacity(0.8))
                                     .checked(selected)
                                     .accessibility_label(SharedString::from(format!(
                                         "Select {name}"
@@ -250,7 +254,7 @@ impl LibraryPage {
                     .text_xs()
                     .child(match renaming {
                         Some(input) => Input::new(&input)
-                            .xsmall()
+                            .small()
                             .aria_label(format!("New name for {name}"))
                             .into_any_element(),
                         None => div()

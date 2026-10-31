@@ -26,6 +26,7 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px,
 };
 
+use crate::controls::ControlSize as _;
 use crate::shell::ModeId;
 
 /// The panel's width, as Sync's run panel had it.
@@ -586,7 +587,7 @@ fn render_panel(activity: &Entity<Activity>, cx: &App) -> AnyElement {
                 .child(
                     Button::new("activity-panel-close")
                         .ghost()
-                        .xsmall()
+                        .row_size()
                         .icon(Icon::new(IconName::ChevronDown))
                         .accessibility_label("Hide activity")
                         .tooltip("Hide")
@@ -625,7 +626,7 @@ fn render_job(
         let (activity, key) = (activity.clone(), job.key.clone());
         Button::new(ElementId::Name(id("pause")))
             .ghost()
-            .xsmall()
+            .row_size()
             .icon(Icon::new(if paused {
                 IconName::Play
             } else {
@@ -649,7 +650,7 @@ fn render_job(
         let queued = job.state == JobState::Queued;
         Button::new(ElementId::Name(id("stop")))
             .ghost()
-            .xsmall()
+            .row_size()
             .icon(Icon::new(if queued {
                 IconName::Close
             } else {

@@ -15,7 +15,7 @@ use std::rc::Rc;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon};
 use gpui_kit::{
     AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement as _,
     IntoElement, KeyDownEvent, ObjectFit, ParentElement as _, Render, SharedString,
@@ -24,7 +24,7 @@ use gpui_kit::{
 };
 use oriel_core_domain::{MediaType, detect_media_type};
 use oriel_core_tidy::contract::RootId;
-use oriel_ui::{Toast, TopBar};
+use oriel_ui::{ControlSize as _, Toast, TopBar};
 
 use crate::changes::{
     HoldingId, HoldingItem, HoldingList, HoldingRequest, PlanId, PlanListRequest, PlanSummary,
@@ -549,8 +549,8 @@ impl HoldingPage {
                     .group_hover("held-tile", |style| style.visible())
                     .child(
                         Button::new(("restore-held", id as u64))
+                            .row_size()
                             .outline()
-                            .xsmall()
                             .label("Restore")
                             .disabled(self.busy)
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -738,8 +738,8 @@ impl HoldingPage {
                     }
                     Item::More => children.push(
                         Button::new("holding-more")
+                            .bar_size()
                             .outline()
-                            .small()
                             .label("Show more")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.wanted += PAGE;
@@ -835,8 +835,8 @@ impl Render for HoldingPage {
             .when(total > 0, |bar| {
                 bar.trailing(
                     Button::new("holding-empty")
+                        .bar_size()
                         .danger()
-                        .small()
                         .label("Empty to Trash")
                         .tooltip("Empty to Trash  ⇧⌘⌫")
                         .disabled(self.busy)
@@ -904,8 +904,8 @@ impl Render for HoldingPage {
                         .shadow_lg()
                         .child(
                             Button::new("holding-restore")
+                                .bar_size()
                                 .primary()
-                                .small()
                                 .label(format!("Restore {}", format::count(chosen.len() as i64)))
                                 .loading(self.busy)
                                 .tooltip("Restore  ⌘⌫")
@@ -916,8 +916,8 @@ impl Render for HoldingPage {
                         )
                         .child(
                             Button::new("holding-reveal")
+                                .bar_size()
                                 .outline()
-                                .small()
                                 .label("Show in Finder")
                                 .on_click(move |_, _, cx| {
                                     if let Some(path) = &reveal {
@@ -927,8 +927,8 @@ impl Render for HoldingPage {
                         )
                         .child(
                             Button::new("holding-clear")
+                                .bar_size()
                                 .ghost()
-                                .small()
                                 .icon(Icon::new(IconName::Close))
                                 .accessibility_label("Clear selection")
                                 .tooltip("Clear selection  Esc")

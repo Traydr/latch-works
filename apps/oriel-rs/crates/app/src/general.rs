@@ -9,7 +9,7 @@ use gpui_kit::component::{ActiveTheme as _, Icon, button::Button};
 use gpui_kit::{App, IntoElement, ParentElement as _, RenderOnce, Styled as _, Window, div};
 use oriel_ui::segmented::{Segmented, SegmentedItem};
 use oriel_ui::theme::ThemeChoice;
-use oriel_ui::{SettingsGroup, SettingsRow};
+use oriel_ui::{ControlSize as _, SettingsGroup, SettingsRow};
 
 #[derive(IntoElement)]
 pub struct GeneralSettings {
@@ -58,6 +58,7 @@ impl RenderOnce for GeneralSettings {
                             .description(folder.display().to_string())
                             .child(
                                 Button::new("reveal-data-folder")
+                                    .bar_size()
                                     .icon(Icon::new(IconName::FolderOpen))
                                     .label(if cfg!(target_os = "macos") {
                                         "Show in Finder"
@@ -75,6 +76,7 @@ impl RenderOnce for GeneralSettings {
                             )
                             .child(
                                 Button::new("import-electron-oriel")
+                                    .bar_size()
                                     .label("Import…")
                                     .on_click(move |_, window, cx| {
                                         if let Ok(data) =

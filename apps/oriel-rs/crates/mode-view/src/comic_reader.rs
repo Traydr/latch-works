@@ -25,6 +25,7 @@ use gpui_kit::{
     TestSupportExt as _, Window, actions, canvas, div, img, linear_color_stop, linear_gradient,
     prelude::FluentBuilder as _, px,
 };
+use oriel_ui::ControlSize as _;
 
 use crate::browser::Comic;
 use crate::viewer::{CHROME_IDLE, on_any_key};
@@ -409,6 +410,7 @@ impl Render for ComicReader {
                         )
                         .child(
                             Button::new("comic-scroll-top")
+                                .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::ArrowUp))
                                 .tooltip("Scroll to top")
@@ -419,6 +421,7 @@ impl Render for ComicReader {
                         )
                         .child(
                             Button::new("comic-reveal")
+                                .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::FolderOpen))
                                 .tooltip("Reveal in folder")
@@ -427,6 +430,7 @@ impl Render for ComicReader {
                         )
                         .child(
                             Button::new("comic-close")
+                                .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::Close))
                                 .tooltip("Close")

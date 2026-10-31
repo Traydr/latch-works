@@ -7,6 +7,7 @@
 pub mod activity;
 pub mod assets;
 pub mod commands;
+pub mod controls;
 pub mod drag;
 pub mod folders;
 pub mod layout;
@@ -21,6 +22,7 @@ pub mod top_bar;
 
 pub use activity::{Activity, ActivityIndicator, ActivityJob, JobCommand, JobControl, JobState};
 pub use assets::OrielAssets;
+pub use controls::{ControlSize, MENU_ROW_HEIGHT, MIN_TARGET, checkbox_target};
 pub use folders::{HandOff, KnownFolder, OfferedFolders};
 pub use layout::{KeepsFocus, ModeLayout};
 pub use locations::{LocationItem, LocationSwitcher};

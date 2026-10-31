@@ -32,7 +32,7 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px,
 };
 use oriel_core_domain::format_bytes;
-use oriel_ui::LocalStorage;
+use oriel_ui::{ControlSize as _, LocalStorage};
 
 use crate::CapsulePlayer;
 use crate::listing::{MediaEntry, MediaKind};
@@ -774,6 +774,7 @@ impl Render for Viewer {
                         )
                         .child(
                             Button::new("viewer-copy-path")
+                                .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::Copy))
                                 .tooltip("Copy path")
@@ -786,6 +787,7 @@ impl Render for Viewer {
                         )
                         .child(
                             Button::new("viewer-reveal")
+                                .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::FolderOpen))
                                 .tooltip("Reveal in folder")
@@ -794,6 +796,7 @@ impl Render for Viewer {
                         )
                         .child(
                             Button::new("viewer-show-in-tidy")
+                                .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::WandSparkles))
                                 .tooltip("Show in Tidy")
@@ -804,6 +807,7 @@ impl Render for Viewer {
                         )
                         .child(
                             Button::new("viewer-fullscreen")
+                                .bar_size()
                                 .ghost()
                                 .icon(Icon::new(if fullscreen {
                                     IconName::Minimize
@@ -824,6 +828,7 @@ impl Render for Viewer {
                         )
                         .child(
                             Button::new("viewer-close")
+                                .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::Close))
                                 .tooltip("Close")
@@ -867,9 +872,11 @@ fn step_button(
         .flex()
         .items_center()
         .child(
+            // GPUI Kit's large arrow in a 44 px target: the step the viewer is used for.
             Button::new(id)
                 .ghost()
                 .large()
+                .size(px(44.))
                 .icon(Icon::new(icon))
                 .tooltip(label)
                 .accessibility_label(label)

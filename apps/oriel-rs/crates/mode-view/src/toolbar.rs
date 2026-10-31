@@ -14,6 +14,7 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px,
 };
 use oriel_core_domain::GallerySortMode;
+use oriel_ui::{ControlSize as _, MENU_ROW_HEIGHT};
 
 use crate::ViewMode;
 
@@ -70,6 +71,7 @@ impl ViewMode {
             .relative()
             .child(
                 Button::new("folders")
+                    .bar_size()
                     .ghost()
                     .icon(Icon::new(IconName::Folders))
                     .label("Folders")
@@ -99,6 +101,7 @@ impl ViewMode {
             .relative()
             .child(
                 Button::new("sort")
+                    .bar_size()
                     .ghost()
                     .icon(Icon::new(IconName::ArrowUpDown))
                     .label(sort_label)
@@ -149,6 +152,7 @@ impl ViewMode {
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .child(
                         Button::new("open-folder")
+                            .bar_size()
                             .ghost()
                             .icon(Icon::new(IconName::FolderOpen))
                             .label("Open")
@@ -159,6 +163,7 @@ impl ViewMode {
                     .child(separator(cx))
                     .child(
                         Button::new("recursive")
+                            .bar_size()
                             .ghost()
                             .icon(Icon::new(IconName::ListTree))
                             .label("Recursive")
@@ -176,6 +181,7 @@ impl ViewMode {
                     )
                     .child(
                         Button::new("comic")
+                            .bar_size()
                             .ghost()
                             .icon(Icon::new(IconName::Image))
                             .label("Comic")
@@ -195,6 +201,7 @@ impl ViewMode {
                     .when(sort_mode == GallerySortMode::Random, |this| {
                         this.child(
                             Button::new("shuffle")
+                                .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::Shuffle))
                                 .label("Shuffle")
@@ -205,6 +212,7 @@ impl ViewMode {
                     .child(separator(cx))
                     .child(
                         Button::new("refresh")
+                            .bar_size()
                             .ghost()
                             .icon(Icon::new(IconName::RefreshCcw))
                             .label(if refreshing { "Refreshing" } else { "Refresh" })
@@ -229,7 +237,7 @@ impl ViewMode {
             .aria_label("Sort")
             .occlude()
             .absolute()
-            .bottom(px(44.))
+            .bottom(px(48.))
             .left_0()
             .min_w(px(176.))
             .p_1()
@@ -252,7 +260,7 @@ impl ViewMode {
                     .flex_row()
                     .items_center()
                     .justify_between()
-                    .h(px(30.))
+                    .h(MENU_ROW_HEIGHT)
                     .px_2()
                     .rounded(theme.radius)
                     .text_size(px(13.))

@@ -39,7 +39,7 @@ use oriel_core_tidy::contract::{
     AudioState, FileFacets, FileFilter, FileFlag, FileFormat, FileId, FileKind, FileQuery, FileRow,
     FileSortColumn, MAX_BULK_FILES, OptimizeCategory, RootId, SelectionSummary, VideoQuality,
 };
-use oriel_ui::{LocalStorage, Toast, TopBar};
+use oriel_ui::{ControlSize as _, LocalStorage, MENU_ROW_HEIGHT, Toast, TopBar, checkbox_target};
 
 use crate::actions::PerformOptions;
 use crate::changes::{PlanRequest, Rename};
@@ -165,7 +165,7 @@ impl Col {
     /// The column's width; the name's is whatever the others leave.
     fn width(self) -> f32 {
         match self {
-            Col::Select => 40.,
+            Col::Select => 44.,
             Col::Name => 0.,
             Col::Format => 110.,
             Col::Dimensions => 120.,
@@ -489,7 +489,7 @@ impl CatalogRows {
                     .child(match self.rename_field(row.id) {
                         // Return renames, Esc or clicking away keeps the name (`RenameField`).
                         Some(input) => Input::new(&input)
-                            .xsmall()
+                            .row_size()
                             .aria_label(format!("New name for {}", row.name))
                             .into_any_element(),
                         None => div()
@@ -566,7 +566,7 @@ impl TableDelegate for CatalogRows {
         let all = total > 0 && self.selected.len() >= total;
         let select_all = self.select_all.clone();
         let table = cx.entity().downgrade();
-        Checkbox::new("library-select-all")
+        checkbox_target(Checkbox::new("library-select-all"))
             .checked(all)
             .accessibility_label("Select every matching file")
             .tooltip("Select every matching file  ⌘A")
@@ -673,7 +673,7 @@ impl TableDelegate for CatalogRows {
                 let id = row.id;
                 let checked = self.selected.contains(&id);
                 let table = cx.entity().downgrade();
-                Checkbox::new(("library-select", id as u64))
+                checkbox_target(Checkbox::new(("library-select", id as u64)))
                     .checked(checked)
                     .accessibility_label(SharedString::from(format!("Select {}", row.name)))
                     .on_click(move |checked, _, cx| {
@@ -1678,9 +1678,11 @@ impl LibraryPage {
     fn render_mode_switch(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let item = |id: &'static str, icon: IconName, label: &'static str, mode: LibraryMode| {
+            // The bar's type and icon in 28 px, on a track as high as the bar's other controls.
             Button::new(id)
                 .ghost()
-                .xsmall()
+                .bar_size()
+                .size(px(28.))
                 .icon(Icon::new(icon))
                 .accessibility_label(label)
                 .tooltip(label)
@@ -1717,8 +1719,8 @@ impl LibraryPage {
     /// The bar's "⋯": the menu of what applies to the files at hand.
     fn more_button(&self, cx: &mut Context<Self>) -> Button {
         Button::new("library-more")
+            .bar_size()
             .ghost()
-            .small()
             .icon(Icon::new(IconName::Ellipsis))
             .accessibility_label("More actions")
             .tooltip("More actions")
@@ -1770,7 +1772,7 @@ impl LibraryPage {
                 .flex_row()
                 .items_center()
                 .gap_2()
-                .h(px(28.))
+                .h(MENU_ROW_HEIGHT)
                 .px_2()
                 .rounded(theme.radius)
                 .text_size(px(13.))
@@ -1985,8 +1987,8 @@ impl LibraryPage {
             }))
             .trigger(
                 Button::new("library-filter")
+                    .bar_size()
                     .outline()
-                    .small()
                     .icon(Icon::new(IconName::ListFilter))
                     .label(if active > 0 {
                         format!("Filter {}", format::count(active as i64))
@@ -2015,12 +2017,7 @@ impl LibraryPage {
                             .child("Folder"),
                     )
                     .when(many_folders, |this| {
-                        this.child(
-                            div()
-                                .px_1()
-                                .pb_1()
-                                .child(Input::new(&self.folder_search).small()),
-                        )
+                        this.child(div().px_1().pb_1().child(Input::new(&self.folder_search)))
                     })
                     .child(div().flex().flex_col().children(folders)),
             )
@@ -2100,17 +2097,19 @@ impl LibraryPage {
                         .flex_row()
                         .items_center()
                         .gap_1()
-                        .h(px(24.))
+                        .h(px(30.))
                         .pl_2()
-                        .pr_1()
+                        .pr(px(2.))
                         .rounded_full()
                         .bg(theme.muted)
                         .text_xs()
                         .child(div().max_w(px(280.)).truncate().child(label.clone()))
                         .child(
+                            // The smallest target in the house scale, inside the chip.
                             Button::new(SharedString::from(id))
                                 .ghost()
-                                .xsmall()
+                                .row_size()
+                                .rounded_full()
                                 .icon(Icon::new(IconName::Close))
                                 .accessibility_label(SharedString::from(format!("Remove {label}")))
                                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -2120,8 +2119,8 @@ impl LibraryPage {
                 }))
                 .child(
                     Button::new("chips-clear")
+                        .row_size()
                         .ghost()
-                        .xsmall()
                         .label("Clear")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.set_filters(Filters::default(), cx);
@@ -2174,8 +2173,8 @@ impl LibraryPage {
                         |this, summary| {
                             this.child(
                                 Button::new("selection-convert")
+                                    .bar_size()
                                     .primary()
-                                    .small()
                                     .label(format::convert_label(
                                         summary.convertible.files,
                                         summary.files,
@@ -2188,8 +2187,8 @@ impl LibraryPage {
                     )
                     .child(
                         Button::new("selection-hold")
+                            .bar_size()
                             .outline()
-                            .small()
                             .label("Move to holding")
                             .tooltip("Move to holding  ⌘⌫")
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -2198,8 +2197,8 @@ impl LibraryPage {
                     )
                     .child(
                         Button::new("selection-move")
+                            .bar_size()
                             .outline()
-                            .small()
                             .label("Move to…")
                             .tooltip("⇧⌘M")
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -2209,8 +2208,8 @@ impl LibraryPage {
                     .child(more)
                     .child(
                         Button::new("selection-clear")
+                            .bar_size()
                             .ghost()
-                            .small()
                             .icon(Icon::new(IconName::Close))
                             .accessibility_label("Clear selection")
                             .tooltip("Esc")
@@ -2324,6 +2323,7 @@ impl LibraryPage {
                 .when(convertible, |this| {
                     this.child(
                         Button::new("inspector-convert")
+                            .bar_size()
                             .map(|button| {
                                 if primary {
                                     button.primary()
@@ -2345,6 +2345,7 @@ impl LibraryPage {
                         .gap_2()
                         .child(
                             Button::new("inspector-hold")
+                                .bar_size()
                                 .outline()
                                 .flex_1()
                                 .label("Move to holding")
@@ -2355,6 +2356,7 @@ impl LibraryPage {
                         )
                         .child(
                             Button::new("inspector-move")
+                                .bar_size()
                                 .outline()
                                 .flex_1()
                                 .label("Move to…")
@@ -2365,6 +2367,7 @@ impl LibraryPage {
                         )
                         .child(
                             Button::new("inspector-reveal")
+                                .bar_size()
                                 .outline()
                                 .icon(Icon::new(IconName::FolderOpen))
                                 .accessibility_label("Show in Finder")
@@ -2381,6 +2384,7 @@ impl LibraryPage {
                         )
                         .child(
                             Button::new("inspector-open-in-view")
+                                .bar_size()
                                 .outline()
                                 .icon(Icon::new(IconName::Images))
                                 .accessibility_label("Open in View")
@@ -2555,14 +2559,14 @@ impl Render for LibraryPage {
             .trailing(
                 div()
                     .w(px(260.))
-                    .child(Input::new(&self.search).small().cleanable(true)),
+                    .child(Input::new(&self.search).bar_size().cleanable(true)),
             )
             .trailing(filter)
             .trailing(self.render_mode_switch(cx))
             .trailing(
                 Button::new("library-inspector-toggle")
+                    .bar_size()
                     .ghost()
-                    .small()
                     .icon(Icon::new(IconName::PanelRight))
                     .accessibility_label("Inspector")
                     .tooltip("Inspector  I")
@@ -2578,6 +2582,7 @@ impl Render for LibraryPage {
                 None,
                 vec![
                     Button::new("library-clear-filters")
+                        .bar_size()
                         .outline()
                         .label("Clear filters")
                         .on_click(cx.listener(|this, _, window, cx| {
@@ -2685,7 +2690,7 @@ mod tests {
             [Col::Select, Col::Name, Col::Format, Col::Size]
         );
         // The name takes what the others leave, and never less than it needs to read.
-        assert_eq!(columns_for(900.).1, 900. - 496. - 16.);
+        assert_eq!(columns_for(900.).1, 900. - 500. - 16.);
         assert_eq!(columns_for(300.).1, 200.);
     }
 }
