@@ -1,13 +1,15 @@
-//! A video playing in a version tile, the copy list or the loupe, through `oriel-media`'s player
-//! (libmpv, or AVPlayer where libmpv cannot load), with its sound: playing one is how the owner
-//! checks a soundtrack. One plays at a time; the page drops it when another starts, the set
-//! changes, the loupe flips or closes, or another page shows, and pauses it when Tidy leaves the
-//! screen.
+//! A video playing in the copy list or the loupe, through `oriel-media`'s player (libmpv, or
+//! AVPlayer where libmpv cannot load), with its sound: playing one is how the owner checks a
+//! soundtrack. One plays at a time; the page drops it when another starts, the set changes, the
+//! loupe flips or closes, or another page shows, and pauses it when Tidy leaves the screen.
 //!
 //! Over its picture sit Electron Oriel's `VideoControls`: play or pause, the time and the length,
-//! a scrubber and the sound, so versions can be watched and heard side by side to check their
-//! length and soundtrack. Clicks stay in the controls: the tile under them keeps a version on
-//! click, which these must not do.
+//! a scrubber and the sound. Clicks stay in the controls.
+//!
+//! A version tile's video is the same player opened as a silent preview ([`TileVideo::silent`]):
+//! it plays at once, looping, without sound and without controls, its frames no larger than the
+//! tile needs, over the tile's thumbnail, which shows until its first frame does. The tile's
+//! picture is its one control: a click plays or pauses it.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -32,6 +34,9 @@ pub struct TileVideo {
     scrubber: Entity<SliderState>,
     /// The video was playing when a drag along the scrubber paused it.
     resume_after_scrub: bool,
+    /// Whether it draws Electron Oriel's controls over its picture, on a black ground; a tile's
+    /// draws its picture alone.
+    controls: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -49,7 +54,27 @@ impl TileVideo {
             video,
             scrubber,
             resume_after_scrub: false,
+            controls: true,
             _subscriptions: subscriptions,
+        }
+    }
+
+    /// Opens `path` as a version tile's preview and plays it at once, looping and silent: no
+    /// soundtrack is decoded and no audio device opens, and frames are drawn no larger than
+    /// `max_side` pixels.
+    pub fn silent(path: PathBuf, max_side: u32, cx: &mut Context<Self>) -> Self {
+        let mut video = AnyPlayer::open_silent_preview(&path, max_side);
+        if let Ok(video) = &mut video {
+            video.set_looping(true);
+            video.play();
+        }
+        let scrubber = cx.new(|_| SliderState::new());
+        Self {
+            video,
+            scrubber,
+            resume_after_scrub: false,
+            controls: false,
+            _subscriptions: Vec::new(),
         }
     }
 
@@ -268,6 +293,19 @@ impl Render for TileVideo {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.video.is_ok() {
             pump_frames(self, Self::video_of, window, cx);
+        }
+        // A tile's: its frames over the thumbnail under it, which an error leaves in place.
+        if !self.controls {
+            return div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .when_some(
+                    self.video.as_ref().ok().and_then(AnyPlayer::picture),
+                    |this, picture| this.child(picture),
+                );
         }
         let radius = cx.theme().radius;
         let (picture, controls) = match &self.video {

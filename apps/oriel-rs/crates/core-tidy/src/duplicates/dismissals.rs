@@ -5,9 +5,9 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::{Connection, params};
 
-use crate::catalog::files::roots_of_files;
+use crate::catalog::files::{get_file_records, roots_of_files};
 use crate::catalog::now_ms;
-use crate::contract::FileId;
+use crate::contract::{DuplicateDismissal, FileId, RootId};
 
 /// A set is dismissed when all its files fall inside one dismissal: a set that gains a file
 /// comes back, one that loses files stays hidden. Dismissals a draft plan records count only once
@@ -87,4 +87,56 @@ pub fn remove_dismissal(connection: &Connection, dismissal_id: i64) -> anyhow::R
         [dismissal_id],
     )?;
     Ok(())
+}
+
+/// The dismissals the owner made by hand under a root, newest first, at most `limit`, each
+/// with its files still in the catalog: History lists them with the duplicate decisions, and
+/// their Undo is [`remove_dismissal`]. Those a plan recorded are the plan's, and go with its
+/// Undo; a dismissal whose files are all gone is left out. A dismissal of files under several
+/// roots (none recorded) is listed under each.
+pub fn list_dismissals(
+    connection: &Connection,
+    root_id: RootId,
+    limit: usize,
+) -> anyhow::Result<Vec<DuplicateDismissal>> {
+    let mut statement = connection.prepare_cached(
+        "SELECT d.id, d.created_at FROM duplicate_dismissals d
+        WHERE d.plan_id IS NULL
+          AND (d.root_id = ?1 OR (d.root_id IS NULL AND EXISTS (
+            SELECT 1 FROM duplicate_dismissal_files df JOIN files f ON f.id = df.file_id
+            WHERE df.dismissal_id = d.id AND f.root_id = ?1)))
+          AND EXISTS (SELECT 1 FROM duplicate_dismissal_files df WHERE df.dismissal_id = d.id)
+        ORDER BY d.created_at DESC, d.id DESC
+        LIMIT ?2",
+    )?;
+    let heads: Vec<(i64, i64)> = statement
+        .query_map(params![root_id, limit as i64], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut files_of = connection
+        .prepare_cached("SELECT file_id FROM duplicate_dismissal_files WHERE dismissal_id = ?1")?;
+    let mut dismissals = Vec::with_capacity(heads.len());
+    for (id, created_at) in heads {
+        let ids: Vec<FileId> = files_of
+            .query_map([id], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut files: Vec<_> = get_file_records(connection, &ids)?
+            .iter()
+            .map(|record| record.to_file_row())
+            .collect();
+        files.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
+        let first_hash = files.first().and_then(|file| file.sha256.as_deref());
+        let exact = first_hash.is_some()
+            && files
+                .iter()
+                .all(|file| file.sha256.as_deref() == first_hash);
+        dismissals.push(DuplicateDismissal {
+            id,
+            created_at,
+            exact,
+            files,
+        });
+    }
+    Ok(dismissals)
 }

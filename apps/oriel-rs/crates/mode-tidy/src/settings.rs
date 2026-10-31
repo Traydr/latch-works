@@ -8,8 +8,9 @@ use std::path::Path;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::radio::{Radio, RadioGroup};
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
+use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
     AnyElement, App, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
     Role, SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
@@ -19,7 +20,7 @@ use oriel_core_tidy::contract::{
     EncoderCapabilities, PreferredFolder, Settings, SimilarityLevel, VideoQuality,
 };
 use oriel_ui::segmented::{Segmented, SegmentedItem};
-use oriel_ui::{SettingsGroup, SettingsRow, Toast};
+use oriel_ui::{ControlSize as _, SettingsGroup, SettingsRow, Toast};
 
 use crate::state::TidyState;
 
@@ -29,6 +30,17 @@ const SIMILARITY_LEVELS: [(SimilarityLevel, &str); 3] = [
     (SimilarityLevel::Balanced, "Balanced"),
     (SimilarityLevel::Loose, "Loose"),
 ];
+
+/// What each similarity level lets in, in one line, for the Matching popover. The levels are
+/// fingerprint distances (`still_threshold`): a copy saved again lands under 4, resizing and
+/// recompression under 8, and heavier changes up to 12.
+fn similarity_description(level: SimilarityLevel) -> &'static str {
+    match level {
+        SimilarityLevel::Strict => "Only near-exact copies, like a picture saved again",
+        SimilarityLevel::Balanced => "Also copies that were resized or recompressed",
+        SimilarityLevel::Loose => "Also heavier compression and small edits",
+    }
+}
 
 /// The quality a video is re-encoded at, when it has to be.
 const VIDEO_QUALITIES: [(VideoQuality, &str); 3] = [
@@ -120,8 +132,116 @@ pub fn similarity_label(level: SimilarityLevel) -> &'static str {
         .map_or("Balanced", |(_, label)| label)
 }
 
+/// Duplicates' Matching popover: a title, the similarity level as three choices each with what
+/// it lets in, and Spot variants as a labelled switch with its description. The controls are
+/// named as [`matching_rows`] names them (`{id}-similarity` and `{id}-spot-variants`).
+pub fn matching_popover(
+    state: &Entity<TidyState>,
+    settings: &Settings,
+    id: &str,
+    cx: &App,
+) -> AnyElement {
+    let theme = cx.theme();
+    let (muted, border) = (theme.muted_foreground, theme.border);
+    let selected = SIMILARITY_LEVELS
+        .iter()
+        .position(|(level, _)| *level == settings.similarity);
+    let pick = {
+        let state = state.clone();
+        move |index: &usize, window: &mut Window, cx: &mut App| {
+            let Some((level, _)) = SIMILARITY_LEVELS.get(*index).copied() else {
+                return;
+            };
+            change_settings(&state, move |settings| settings.similarity = level)(window, cx);
+        }
+    };
+    let levels = RadioGroup::vertical(SharedString::from(format!("{id}-similarity")))
+        .selected_index(selected)
+        .on_click(pick)
+        .children(SIMILARITY_LEVELS.map(|(level, label)| {
+            Radio::new(SharedString::from(format!("{id}-similarity-{level}")))
+                .label(label)
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(muted)
+                        .child(similarity_description(level)),
+                )
+        }));
+    let toggle = change_settings(state, |settings| {
+        settings.spot_variants = !settings.spot_variants;
+    });
+    let spot = Switch::new(SharedString::from(format!("{id}-spot-variants")))
+        .checked(settings.spot_variants)
+        .accessibility_label("Spot variants")
+        .on_click(move |_, window, cx| toggle(window, cx));
+    let heading = |text: &'static str| {
+        div()
+            .text_base()
+            .font_weight(gpui_kit::FontWeight::MEDIUM)
+            .child(text)
+    };
+    div()
+        .w(gpui_kit::rems(24.))
+        .p_1()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_0p5()
+                .child(
+                    div()
+                        .text_lg()
+                        .font_weight(gpui_kit::FontWeight::SEMIBOLD)
+                        .child("Matching"),
+                )
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(muted)
+                        .child("What counts as a duplicate"),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(heading("Similar versions"))
+                .child(levels),
+        )
+        .child(div().h_px().bg(border))
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .items_start()
+                .gap_4()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .gap_0p5()
+                        .child(heading("Spot variants"))
+                        .child(div().text_sm().text_color(muted).child(
+                            "Keep pictures that differ in one area, like a face, an outfit or a \
+                             caption's language, and keep each picture's copy in the folder with \
+                             the rest of its set",
+                        )),
+                )
+                .child(div().flex_shrink_0().child(spot)),
+        )
+        .into_any_element()
+}
+
 /// The rows that decide what counts as a duplicate, Similar versions and Spot variants, with
-/// their descriptions. Settings › Tidy and Duplicates' Matching popover both draw them; `id`
+/// their descriptions, as Settings › Tidy draws them (Duplicates' Matching popover draws the
+/// same settings as [`matching_popover`]); `id`
 /// names their controls (`{id}-similarity`, its levels, and `{id}-spot-variants`).
 pub fn matching_rows(state: &Entity<TidyState>, settings: &Settings, id: &str) -> [SettingsRow; 2] {
     let similarity = Segmented::new(
@@ -384,8 +504,8 @@ impl SettingsSection {
                     )
                     .child(
                         Button::new("tidy-settings-add-preferred")
+                            .bar_size()
                             .outline()
-                            .small()
                             .label("Add folder…")
                             .on_click(move |_, window, cx| {
                                 this.update(cx, |section, cx| section.add_preferred(window, cx))
@@ -427,8 +547,8 @@ impl SettingsSection {
                     )
                     .child(
                         Button::new(("tidy-settings-unprefer", index))
+                            .row_size()
                             .ghost()
-                            .xsmall()
                             .icon(Icon::new(IconName::Close))
                             .accessibility_label(SharedString::from(format!(
                                 "Stop preferring {label}"

@@ -2,9 +2,16 @@
 //! Identical), the set on the stage (similar versions as the version grid with playing video
 //! tiles, identical copies as the copy list), the loupe, and the decision bar.
 //!
+//! A similar set's videos play in their tiles as soon as the set is on the stage, silent and
+//! looping, so versions are compared moving without a press on a small button; a click on a
+//! video's picture pauses or plays it, and a click on the rest of its tile keeps it, as a click
+//! anywhere on a still's tile does. Only tiles on screen play, and none under the loupe, on
+//! another page or with Tidy hidden. The loupe and the copy list play one video with its sound.
+//!
 //! Return keeps the suggestion and moves on; 1–9 keep only that version; ⇧1–9 keep it as well;
-//! N keeps every version and marks the set as not duplicates, which only its Undo (the toast's,
-//! or ⌘Z) brings back, as the owner left out Electron Oriel's list of such sets; S skips; ↑ ↓
+//! N keeps every version and marks the set as not duplicates, which its Undo (the toast's, ⌘Z,
+//! or History's, which lists such sets in place of Electron Oriel's list of them) brings back;
+//! S skips; ↑ ↓
 //! (J K) move through the queue and ← → (H L) through the versions; Space or C looks closer, Z
 //! shows actual size, M turns sound on or off, P prefers the version's folder, ⌘Y shows it in
 //! Quick Look and ⇧⌘R in Finder. Each decision says what it did in a toast with its own Undo.
@@ -37,7 +44,7 @@ use oriel_core_tidy::contract::{
     FileKind, FileRow, RootId, SimilarityLevel, is_close_call,
 };
 use oriel_ui::layout::NavItem;
-use oriel_ui::{Toast, TopBar};
+use oriel_ui::{ControlSize as _, Toast, TopBar, checkbox_target};
 
 use crate::actions::PerformOptions;
 use crate::changes::{PlanRequest, ResolveGroup};
@@ -80,6 +87,13 @@ const PICTURE_LEAST: f32 = 6.;
 const LOUPE_SURFACE: u32 = 0x09_09_0b;
 const LOUPE_TEXT: u32 = 0xf4_f4_f5;
 const LOUPE_LOSS: u32 = 0xfc_d3_4d;
+
+/// The longest side a version tile's video frames are drawn at: about a tile's at most.
+const TILE_VIDEO_SIDE: u32 = 1024;
+
+/// Opens the top bar's Matching popover when the page first draws, for a check in a real window,
+/// since this Mac allows no scripted clicks.
+const MATCHING_VARIABLE: &str = "ORIEL_RS_DUPLICATES_MATCHING";
 
 /// Lines above and below the screen whose pictures are decoded ahead of a scroll, but not drawn.
 const NEAR_LINES: usize = 1;
@@ -136,7 +150,12 @@ pub struct DuplicatesPage {
     freed_here: i64,
     armed_at: Instant,
     active_key: Option<String>,
+    /// The video the loupe or the copy list plays, with its sound.
     video: Option<(FileId, Entity<TileVideo>)>,
+    /// The version tiles' videos on screen, silent and looping, by file.
+    tile_videos: HashMap<FileId, Entity<TileVideo>>,
+    /// The tiles of the set on screen whose video the owner paused, which stay paused.
+    paused_tiles: HashSet<FileId>,
     /// The scroll of the version grid drawn last, for the pages spike.
     grid_scroll: Option<ScrollHandle>,
     seen: (
@@ -181,6 +200,8 @@ impl DuplicatesPage {
             armed_at: Instant::now(),
             active_key: None,
             video: None,
+            tile_videos: HashMap::new(),
+            paused_tiles: HashSet::new(),
             grid_scroll: None,
             seen: (None, 0, None, None),
             queue_scroll: UniformListScrollHandle::new(),
@@ -298,6 +319,7 @@ impl DuplicatesPage {
         // Another page on screen: Electron Oriel unmounts Duplicates, and its video with it.
         if !visible {
             self.video = None;
+            self.tile_videos.clear();
         }
         if visible
             && let Some(scope) = self
@@ -389,6 +411,8 @@ impl DuplicatesPage {
             self.keyboard_focus = false;
             self.zoomed = false;
             self.video = None;
+            self.tile_videos.clear();
+            self.paused_tiles.clear();
             self.armed_at = Instant::now() + ARM_DELAY;
             if self.active_key.is_none() {
                 self.looking = false;
@@ -571,7 +595,7 @@ impl DuplicatesPage {
     }
 
     /// N, Keep both or Keep all: keeps every version and marks the set as not duplicates, so it
-    /// leaves review. Its Undo, in the toast or on ⌘Z, brings it back; nothing else lists it.
+    /// leaves review. Its Undo, in the toast, on ⌘Z or in History, brings it back.
     fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(set) = self.active().cloned() else {
             return;
@@ -759,9 +783,78 @@ impl DuplicatesPage {
 
     /// Pauses the video playing, if any, as Electron Oriel pauses a hidden mode's media: Tidy
     /// left the screen. Coming back, it shows paused where it was.
+    /// The tiles' videos go, giving their engines back, and start again when Tidy is back.
     pub fn pause_video(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some((_, video)) = &self.video {
             video.update(cx, |video, cx| video.pause(window, cx));
+        }
+        self.tile_videos.clear();
+    }
+
+    /// The files whose tile video is playing.
+    pub fn playing_tiles(&self, cx: &App) -> Vec<FileId> {
+        let mut playing: Vec<FileId> = self
+            .tile_videos
+            .iter()
+            .filter(|(_, video)| video.read(cx).is_playing())
+            .map(|(id, _)| *id)
+            .collect();
+        playing.sort_unstable();
+        playing
+    }
+
+    /// The files whose tile holds a video player, playing or paused.
+    pub fn tile_players(&self) -> usize {
+        self.tile_videos.len()
+    }
+
+    /// A click on a video tile's picture: pauses its video, or plays it again.
+    fn toggle_tile(&mut self, file: FileId, window: &mut Window, cx: &mut Context<Self>) {
+        match self.tile_videos.get(&file) {
+            Some(video) => {
+                let playing = video.update(cx, |video, cx| {
+                    video.toggle(window, cx);
+                    video.is_playing()
+                });
+                if playing {
+                    self.paused_tiles.remove(&file);
+                } else {
+                    self.paused_tiles.insert(file);
+                }
+            }
+            // Paused, then put away with Tidy hidden: the next frame opens it, playing.
+            None => {
+                self.paused_tiles.remove(&file);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Whether Tidy is the mode on screen, with no Settings over it.
+    fn on_screen(&self, cx: &App) -> bool {
+        let shell = self.state.read(cx).shell.read(cx);
+        shell.mode() == oriel_ui::ModeId::Tidy && shell.settings().is_none()
+    }
+
+    /// Keeps a player for each video tile in `shown`, and none for any other: a tile opens its
+    /// own when it comes on screen, playing unless the owner paused it, and gives it back as it
+    /// leaves. So no more play than there are tiles on screen, each an engine from mpv's pool.
+    fn keep_tile_videos(&mut self, shown: &[&FileRow], cx: &mut Context<Self>) {
+        let wanted: HashSet<FileId> = shown
+            .iter()
+            .filter(|file| file.kind == FileKind::Video && file.probe_error.is_none())
+            .map(|file| file.id)
+            .collect();
+        self.tile_videos.retain(|id, _| wanted.contains(id));
+        for file in shown {
+            if wanted.contains(&file.id)
+                && !self.tile_videos.contains_key(&file.id)
+                && !self.paused_tiles.contains(&file.id)
+            {
+                let path = Path::new(&file.abs_path).to_path_buf();
+                let video = cx.new(|cx| TileVideo::silent(path, TILE_VIDEO_SIDE, cx));
+                self.tile_videos.insert(file.id, video);
+            }
         }
     }
 
@@ -820,7 +913,13 @@ impl DuplicatesPage {
         };
         self.active_index = index;
         self.follow_active(cx);
-        self.play(&file, window, cx);
+        // A similar set's tiles play by themselves; the copy list plays on asking.
+        if self
+            .active()
+            .is_some_and(|set| set.kind == DuplicateKind::Exact)
+        {
+            self.play(&file, window, cx);
+        }
         true
     }
 
@@ -846,6 +945,10 @@ impl DuplicatesPage {
         self.video
             .as_ref()
             .is_some_and(|(_, video)| video.read(cx).shows_picture())
+            || self
+                .tile_videos
+                .values()
+                .any(|video| video.read(cx).shows_picture())
     }
 
     fn toggle_sound(&mut self, cx: &mut Context<Self>) {
@@ -988,7 +1091,7 @@ impl DuplicatesPage {
     }
 
     /// "Matching: Balanced…": the settings that decide what counts as a duplicate, Settings ›
-    /// Tidy's own rows, in a popover from the top bar.
+    /// Tidy's own, in a popover from the top bar, a control of the standard size.
     fn render_matching(&self, cx: &App) -> AnyElement {
         let level = self
             .state
@@ -996,35 +1099,20 @@ impl DuplicatesPage {
             .settings()
             .map_or(SimilarityLevel::Balanced, |settings| settings.similarity);
         let state = self.state.clone();
+        let open_at_start =
+            std::env::var_os(MATCHING_VARIABLE).is_some_and(|value| !value.is_empty());
         Popover::new("duplicates-matching-popover")
             .anchor(Anchor::TopRight)
-            .trigger(
-                Button::new("duplicates-matching")
-                    .outline()
-                    .small()
-                    .label(format!(
-                        "Matching: {}…",
-                        crate::settings::similarity_label(level)
-                    )),
-            )
+            .default_open(open_at_start)
+            .trigger(Button::new("duplicates-matching").outline().label(format!(
+                "Matching: {}…",
+                crate::settings::similarity_label(level)
+            )))
             .content(move |_, _, cx| {
                 let Some(settings) = state.read(cx).settings().cloned() else {
                     return div().into_any_element();
                 };
-                let [similarity, spot] =
-                    crate::settings::matching_rows(&state, &settings, "duplicates");
-                div()
-                    .flex()
-                    .flex_col()
-                    .w(rems(26.))
-                    .child(similarity)
-                    .child(
-                        div()
-                            .border_t_1()
-                            .border_color(cx.theme().border)
-                            .child(spot),
-                    )
-                    .into_any_element()
+                crate::settings::matching_popover(&state, &settings, "duplicates", cx)
             })
             .into_any_element()
     }
@@ -1188,9 +1276,9 @@ impl DuplicatesPage {
     }
 
     /// The versions, a tile each: as many as fit fill the stage, and more scroll in lines of
-    /// four. Only the lines on screen are drawn, with the line of the video playing, and the
-    /// pictures of the lines just past the screen are decoded ahead; a line not drawn keeps its
-    /// place, so the grid scrolls as if every line were there.
+    /// four. Only the lines on screen are drawn, and their videos play; the pictures of the lines
+    /// just past the screen are decoded ahead; a line not drawn keeps its place, so the grid
+    /// scrolls as if every line were there.
     fn render_grid(
         &mut self,
         set: &DuplicateSet,
@@ -1241,16 +1329,21 @@ impl DuplicatesPage {
         });
         self.grid_scroll = scroll.clone();
         let (drawn, near) = match &scroll {
-            Some(scroll) => {
-                let playing = self.video.as_ref().and_then(|(id, _)| {
-                    rows.iter()
-                        .position(|row| row.file.id == *id)
-                        .map(|index| index / columns)
-                });
-                lines_to_draw(scroll, total_lines, playing, window)
-            }
+            Some(scroll) => lines_to_draw(scroll, total_lines, window),
             None => ((0..total_lines).collect(), Vec::new()),
         };
+        // The videos of the tiles drawn play, while the grid is what shows: not under the loupe,
+        // nor with Tidy hidden.
+        if self.looking || !self.on_screen(cx) {
+            self.tile_videos.clear();
+        } else {
+            let shown: Vec<&FileRow> = drawn
+                .iter()
+                .flat_map(|line| &rows[line * columns..((line + 1) * columns).min(count)])
+                .map(|row| &row.file)
+                .collect();
+            self.keep_tile_videos(&shown, cx);
+        }
         let gap = f32::from(window.rem_size());
         let mut lines = Vec::new();
         let mut next = 0;
@@ -1367,20 +1460,14 @@ impl DuplicatesPage {
         let lanes = facts_of(&file, keeper, layout.video);
         let copy_of = copy_of_number(set, index);
         let notes = tile_notes(set, row, index);
-        // Under the loupe, the loupe draws the video; the tile keeps its picture.
-        let playing = self
-            .video
-            .as_ref()
-            .filter(|(id, _)| *id == file.id && !self.looking)
-            .map(|(_, video)| video.clone());
+        // A video plays over its thumbnail, which shows until its first frame does.
         let video = file.kind == FileKind::Video && file.probe_error.is_none();
-        let is_playing = playing
+        let tile_video = self.tile_videos.get(&file.id).cloned();
+        let is_playing = tile_video
             .as_ref()
             .is_some_and(|video| video.read(cx).is_playing());
-        let picture: AnyElement = match &playing {
-            Some(video) => video.clone().into_any_element(),
-            None => rounded_picture(&self.thumbs, &file, 768, inner_radius, cx),
-        };
+        let picture = rounded_picture(&self.thumbs, &file, 768, inner_radius, cx);
+        let chip = cx.theme().background;
         let ring: Hsla = if is_kept {
             if suggested {
                 primary.opacity(0.45)
@@ -1392,11 +1479,19 @@ impl DuplicatesPage {
         } else {
             border
         };
-        let tooltip = format!(
-            "{}\nClick to keep only this one and go on  {number}",
-            file.rel_path
-        );
-        let play_file = file.clone();
+        let tooltip = if video {
+            format!(
+                "{}\nClick the picture to pause or play it, and below it to keep only this one \
+                 and go on  {number}",
+                file.rel_path
+            )
+        } else {
+            format!(
+                "{}\nClick to keep only this one and go on  {number}",
+                file.rel_path
+            )
+        };
+        let play_id = file.id;
         let menu = VersionMenu {
             page: cx.entity().downgrade(),
             state: self.state.clone(),
@@ -1461,14 +1556,28 @@ impl DuplicatesPage {
                 // The picture's place takes what the facts leave, but never less than its
                 // least, so the facts below never cover it: a short window scrolls the grid
                 // instead. The picture is fitted and rounded on its own, so the place shows no
-                // ground of its own around it.
+                // ground of its own around it. A video's plays over it, and a click on it pauses
+                // or plays that video rather than keeping the version.
                 div()
+                    .id(("version-picture", file.id as u64))
+                    .test_support()
+                    .group("version-picture")
                     .relative()
                     .flex_1()
                     .min_h(rems(PICTURE_LEAST))
                     .overflow_hidden()
+                    .when(video, |this| {
+                        this.on_click(cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            this.toggle_tile(play_id, window, cx);
+                        }))
+                    })
                     .child(picture)
+                    .children(tile_video)
+                    .when(video, |this| this.child(play_badge(is_playing)))
                     .child(
+                        // The checkbox, its number and the menu sit on chips of the standard
+                        // 32 px control frame, so they are easy to hit over a small tile.
                         div()
                             .absolute()
                             .top_2()
@@ -1478,22 +1587,45 @@ impl DuplicatesPage {
                             .items_center()
                             .gap_1p5()
                             .child(
-                                Checkbox::new(("keep-version", file.id as u64))
-                                    .checked(is_kept)
-                                    .accessibility_label(SharedString::from(format!(
-                                        "Keep version {number}"
-                                    )))
-                                    .tooltip(if !is_kept {
-                                        format!("Keep this one as well  ⇧{number}")
-                                    } else if several {
-                                        format!("Don't keep this one  ⇧{number}")
-                                    } else {
-                                        "Kept. Check another to keep more than one".into()
-                                    })
+                                // The whole chip checks the box, as Electron Oriel's label did.
+                                div()
+                                    .id(("keep-version-chip", file.id as u64))
+                                    .test_support()
+                                    .size_8()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(inner_radius)
+                                    .bg(chip)
+                                    .border_1()
+                                    .border_color(border)
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         cx.stop_propagation();
                                         this.toggle_keep(index, cx);
-                                    })),
+                                    }))
+                                    .child(
+                                        checkbox_target(Checkbox::new((
+                                            "keep-version",
+                                            file.id as u64,
+                                        )))
+                                        .checked(is_kept)
+                                        .accessibility_label(SharedString::from(format!(
+                                            "Keep version {number}"
+                                        )))
+                                        .tooltip(if !is_kept {
+                                            format!("Keep this one as well  ⇧{number}")
+                                        } else if several {
+                                            format!("Don't keep this one  ⇧{number}")
+                                        } else {
+                                            "Kept. Check another to keep more than one".into()
+                                        })
+                                        .on_click(
+                                            cx.listener(move |this, _, _, cx| {
+                                                cx.stop_propagation();
+                                                this.toggle_keep(index, cx);
+                                            }),
+                                        ),
+                                    ),
                             )
                             .child(number_badge(number, cx)),
                     )
@@ -1506,7 +1638,6 @@ impl DuplicatesPage {
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                             .child(
                                 Button::new(("version-menu", file.id as u64))
-                                    .xsmall()
                                     .icon(Icon::new(IconName::Ellipsis))
                                     .accessibility_label(SharedString::from(format!(
                                         "More for version {number}"
@@ -1516,26 +1647,7 @@ impl DuplicatesPage {
                                         move |popup, _, _| menu.build(popup),
                                     ),
                             ),
-                    )
-                    // Once it plays, the video's own controls take over from this button.
-                    .when(video && playing.is_none(), |this| {
-                        this.child(
-                            div().absolute().bottom_2().left_2().child(
-                                Button::new(("play-version", file.id as u64))
-                                    .xsmall()
-                                    .icon(Icon::new(if is_playing {
-                                        IconName::Pause
-                                    } else {
-                                        IconName::Play
-                                    }))
-                                    .accessibility_label(if is_playing { "Pause" } else { "Play" })
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        cx.stop_propagation();
-                                        this.play(&play_file, window, cx);
-                                    })),
-                            ),
-                        )
-                    }),
+                    ),
             )
             .child(
                 div()
@@ -1638,16 +1750,23 @@ impl DuplicatesPage {
         let (border, accent, muted) = (theme.border, theme.accent, theme.muted_foreground);
         let play = (shows && first.kind == FileKind::Video && self.video.is_none()).then(|| {
             let file = first.clone();
-            div().absolute().bottom_2().left_2().child(
-                Button::new("play-copy")
-                    .xsmall()
-                    .icon(Icon::new(IconName::Play))
-                    .accessibility_label("Play")
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        cx.stop_propagation();
-                        this.play(&file, window, cx);
-                    })),
-            )
+            // Large, in the middle of the picture, as the loupe's.
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    Button::new("play-copy")
+                        .page_size()
+                        .icon(Icon::new(IconName::Play))
+                        .label("Play")
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            this.play(&file, window, cx);
+                        })),
+                )
         });
         // A tall picture is held to a height (32 rem) by its width, so the list of places stays
         // in reach.
@@ -1825,7 +1944,7 @@ impl DuplicatesPage {
                             .child(
                                 Button::new(("version-menu", file.id as u64))
                                     .ghost()
-                                    .xsmall()
+                                    .row_size()
                                     .icon(Icon::new(IconName::Ellipsis))
                                     .accessibility_label(SharedString::from(format!(
                                         "More for the copy in {place}"
@@ -2084,14 +2203,13 @@ impl DuplicatesPage {
             .then(|| {
                 div()
                     .absolute()
-                    .bottom_8()
-                    .left_0()
-                    .right_0()
+                    .inset_0()
                     .flex()
+                    .items_center()
                     .justify_center()
                     .child(
                         Button::new("loupe-play")
-                            .small()
+                            .page_size()
                             .icon(Icon::new(IconName::Play))
                             .label("Play")
                             .tooltip("Play  Space")
@@ -2162,7 +2280,7 @@ impl DuplicatesPage {
                     .child(
                         Button::new("loupe-reveal")
                             .ghost()
-                            .xsmall()
+                            .row_size()
                             .icon(Icon::new(IconName::FolderOpen))
                             .accessibility_label("Show in Finder")
                             .tooltip("Show in Finder  ⇧⌘R")
@@ -2174,7 +2292,7 @@ impl DuplicatesPage {
                     .child(
                         Button::new("loupe-open-in-view")
                             .ghost()
-                            .xsmall()
+                            .row_size()
                             .icon(Icon::new(IconName::Images))
                             .accessibility_label("Open in View")
                             .tooltip("Open in View")
@@ -2188,7 +2306,7 @@ impl DuplicatesPage {
                     .child(
                         Button::new("loupe-close")
                             .ghost()
-                            .xsmall()
+                            .row_size()
                             .icon(Icon::new(IconName::Close))
                             .accessibility_label("Back to the grid")
                             .tooltip("Back to the grid  Esc")
@@ -2267,6 +2385,7 @@ impl DuplicatesPage {
                     Button::new("loupe-previous")
                         .ghost()
                         .large()
+                        .size(px(44.))
                         .size_10()
                         .icon(Icon::new(IconName::ChevronLeft))
                         .accessibility_label("Previous version")
@@ -2278,6 +2397,7 @@ impl DuplicatesPage {
                     Button::new("loupe-next")
                         .ghost()
                         .large()
+                        .size(px(44.))
                         .size_10()
                         .icon(Icon::new(IconName::ChevronRight))
                         .accessibility_label("Next version")
@@ -2289,8 +2409,7 @@ impl DuplicatesPage {
         bar = bar.child(
             Button::new("duplicates-skip")
                 .outline()
-                .large()
-                .h_10()
+                .page_size()
                 .label("Skip")
                 .tooltip("Skip for now  S")
                 .on_click(cx.listener(|this, _, _, cx| this.skip(cx))),
@@ -2299,8 +2418,7 @@ impl DuplicatesPage {
             bar = bar.child(
                 Button::new("duplicates-keep-every")
                     .outline()
-                    .large()
-                    .h_10()
+                    .page_size()
                     .label(keep_every_label(rows))
                     .tooltip(if set.kind == DuplicateKind::Exact {
                         "Keep every copy  N"
@@ -2313,8 +2431,7 @@ impl DuplicatesPage {
         let label = self.decision().unwrap_or_default();
         bar.child(
             widgets::primary_action("duplicates-decide", label, "↩")
-                .large()
-                .h_10()
+                .page_size()
                 .on_click(cx.listener(|this, _, window, cx| {
                     if this.looking {
                         let focus = this.focus_row();
@@ -2417,17 +2534,12 @@ impl DuplicatesPage {
     }
 }
 
-/// The lines of a scrolling version grid to draw, in order: those on screen and the line of
-/// the video playing; and the lines just past the screen, whose pictures are decoded ahead.
+/// The lines of a scrolling version grid to draw, in order: those on screen, whose videos play;
+/// and the lines just past the screen, whose pictures are decoded ahead.
 ///
 /// The screen is the window's height, which the grid never exceeds, so a frame after a resize
 /// draws enough even before the grid's own bounds have caught up.
-fn lines_to_draw(
-    scroll: &ScrollHandle,
-    total: usize,
-    playing: Option<usize>,
-    window: &Window,
-) -> (Vec<usize>, Vec<usize>) {
+fn lines_to_draw(scroll: &ScrollHandle, total: usize, window: &Window) -> (Vec<usize>, Vec<usize>) {
     // The space between lines and above the first, a rem each.
     let gap = f32::from(window.rem_size());
     let pitch = LINE + gap;
@@ -2443,14 +2555,9 @@ fn lines_to_draw(
     let top = (-f32::from(scroll.offset().y)).clamp(0., most);
     let first = (((top - gap) / pitch).floor().max(0.) as usize).min(total);
     let last = (((top + screen - gap) / pitch).ceil().max(0.) as usize).clamp(first, total);
-    let mut drawn: Vec<usize> = (first..last).collect();
-    if let Some(line) = playing.filter(|line| !(first..last).contains(line) && *line < total) {
-        let at = drawn.partition_point(|drawn| *drawn < line);
-        drawn.insert(at, line);
-    }
+    let drawn: Vec<usize> = (first..last).collect();
     let near = (first.saturating_sub(NEAR_LINES)..first)
         .chain(last..(last + NEAR_LINES).min(total))
-        .filter(|line| Some(*line) != playing)
         .collect();
     (drawn, near)
 }
@@ -2606,9 +2713,9 @@ fn rounded_picture(
 fn number_badge(number: usize, cx: &App) -> AnyElement {
     let theme = cx.theme();
     div()
-        .min_w_6()
-        .h_5()
-        .px_1p5()
+        .min_w_8()
+        .h_8()
+        .px_2()
         .flex()
         .items_center()
         .justify_center()
@@ -2617,9 +2724,44 @@ fn number_badge(number: usize, cx: &App) -> AnyElement {
         .border_1()
         .border_color(theme.border)
         .text_color(theme.foreground)
-        .text_xs()
+        .text_sm()
         .font_weight(FontWeight::MEDIUM)
         .child(number.to_string())
+        .into_any_element()
+}
+
+/// A video tile's play or pause sign, large in the middle of its picture, which is the control:
+/// "play" while it is paused, and "pause" under the pointer while it plays. White on a dark disc,
+/// as it sits on the video itself in either theme.
+fn play_badge(playing: bool) -> AnyElement {
+    div()
+        .absolute()
+        .inset_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .when(playing, |this| {
+            this.invisible()
+                .group_hover("version-picture", |style| style.visible())
+        })
+        .child(
+            div()
+                .size_12()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .bg(gpui_kit::black().opacity(0.6))
+                .text_color(gpui_kit::white())
+                .child(
+                    Icon::new(if playing {
+                        IconName::Pause
+                    } else {
+                        IconName::Play
+                    })
+                    .size_6(),
+                ),
+        )
         .into_any_element()
 }
 

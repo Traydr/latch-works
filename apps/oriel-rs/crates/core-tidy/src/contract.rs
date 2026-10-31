@@ -489,6 +489,21 @@ pub struct DuplicateSetPage {
     pub sets: Vec<DuplicateSet>,
 }
 
+/// A set the owner marked as not duplicates by hand ("Keep both", "Keep all"), as History lists
+/// it. Dismissals a plan recorded (Spot variants' kept versions) are the plan's, and not listed.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateDismissal {
+    pub id: i64,
+    /// When it was made, in milliseconds since the epoch, as the catalog records it.
+    pub created_at: i64,
+    /// Whether its files are byte-identical copies ("Kept every copy"), as far as their hashes
+    /// tell; else similar versions ("Marked as not duplicates").
+    pub exact: bool,
+    /// Its files still in the catalog, by path.
+    pub files: Vec<FileRow>,
+}
+
 /// What Convert would change, by category, and why other files are left alone.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OptimizeSummary {

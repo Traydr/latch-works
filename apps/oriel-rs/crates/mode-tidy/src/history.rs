@@ -4,6 +4,11 @@
 //! (`ResolveSets`); any other entry opens to list its first steps, and all of them on asking
 //! (`PlanSteps`). U undoes the entry in focus, all of its changes at once.
 //!
+//! Sets marked as not duplicates ("Keep both", "Keep all") are duplicate decisions too, though
+//! no plan records them: the catalog's dismissals are read beside the journal and listed among
+//! the plans by when they were made, and their Undo brings the set back to review. Electron
+//! Oriel lists them in Duplicates' "Not duplicates" instead, which the owner left out.
+//!
 //! The log is drawn a screen at a time ([`crate::windowed`]): a day's heading, each entry, and
 //! the button for earlier changes are items of one column, each entry drawing its part of its
 //! day's card.
@@ -21,8 +26,8 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription,
     TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
-use oriel_core_tidy::contract::RootId;
-use oriel_ui::TopBar;
+use oriel_core_tidy::contract::{DuplicateDismissal, RootId};
+use oriel_ui::{Toast, TopBar};
 
 use crate::actions::{PerformOptions, describe_plan};
 use crate::changes::{
@@ -39,6 +44,10 @@ use crate::windowed::{Piece, Windowed};
 
 const PAGE: usize = 200;
 
+/// Opens the newest entry once the log is read, for a check in a real window, since this Mac
+/// allows no scripted clicks.
+const OPEN_VARIABLE: &str = "ORIEL_RS_HISTORY_OPEN";
+
 /// Duplicate decisions made within this long of each other read as one session.
 const SESSION_GAP_MS: f64 = 10. * 60_000.;
 
@@ -51,11 +60,119 @@ const STEP_PAGE: usize = 500;
 /// Held files read to find what each set of a run of duplicate decisions kept.
 const HELD_LIMIT: i64 = 500;
 
-/// One row of the log: a plan, or a run of duplicate decisions made in one sitting.
+/// What the log lists: a plan from the journal, or a set marked as not duplicates.
+#[derive(Clone)]
+enum Decision {
+    Plan(PlanSummary),
+    Dismissal(DuplicateDismissal),
+}
+
+impl Decision {
+    fn at(&self) -> i64 {
+        match self {
+            Self::Plan(plan) => plan.created_at,
+            Self::Dismissal(dismissal) => dismissal.created_at,
+        }
+    }
+
+    /// A dismissal can always be taken back; a plan, while its changes stand.
+    fn undoable(&self) -> bool {
+        match self {
+            Self::Plan(plan) => can_undo(plan),
+            Self::Dismissal(_) => true,
+        }
+    }
+
+    fn about_duplicates(&self) -> bool {
+        match self {
+            Self::Plan(plan) => plan.kind == PlanKind::ResolveDuplicates,
+            Self::Dismissal(_) => true,
+        }
+    }
+}
+
+/// One row of the log: a plan, a set marked as not duplicates, or a run of duplicate decisions
+/// made in one sitting.
 struct Entry {
     key: String,
     /// Newest first.
-    plans: Vec<PlanSummary>,
+    decisions: Vec<Decision>,
+}
+
+impl Entry {
+    fn plans(&self) -> impl Iterator<Item = &PlanSummary> {
+        self.decisions.iter().filter_map(|decision| match decision {
+            Decision::Plan(plan) => Some(plan),
+            Decision::Dismissal(_) => None,
+        })
+    }
+
+    fn dismissals(&self) -> impl Iterator<Item = &DuplicateDismissal> {
+        self.decisions.iter().filter_map(|decision| match decision {
+            Decision::Dismissal(dismissal) => Some(dismissal),
+            Decision::Plan(_) => None,
+        })
+    }
+
+    /// A run of duplicate decisions, which opens to its sets.
+    fn is_run(&self) -> bool {
+        self.decisions.len() > 1
+    }
+
+    fn at(&self) -> i64 {
+        self.decisions.first().map_or(0, Decision::at)
+    }
+
+    /// The entry's only plan, for one that is a single change.
+    fn only_plan(&self) -> Option<&PlanSummary> {
+        match self.decisions.as_slice() {
+            [Decision::Plan(plan)] => Some(plan),
+            _ => None,
+        }
+    }
+
+    fn only_dismissal(&self) -> Option<&DuplicateDismissal> {
+        match self.decisions.as_slice() {
+            [Decision::Dismissal(dismissal)] => Some(dismissal),
+            _ => None,
+        }
+    }
+}
+
+/// The key a dismissal's entry, row and Undo go by; a plan's is its id.
+fn dismissal_key(dismissal: &DuplicateDismissal) -> String {
+    format!("dismissal-{}", dismissal.id)
+}
+
+/// What a dismissal says it did, as Duplicates' toast said it (`DuplicatesView`).
+fn dismissal_title(dismissal: &DuplicateDismissal) -> &'static str {
+    if dismissal.exact {
+        "Kept every copy"
+    } else {
+        "Marked as not duplicates"
+    }
+}
+
+fn dismissal_detail(dismissal: &DuplicateDismissal) -> String {
+    let count = dismissal.files.len() as i64;
+    if dismissal.exact {
+        format!("{} kept", format::plural_as(count, "copy", "copies"))
+    } else {
+        format!("{} kept", format::plural(count, "version"))
+    }
+}
+
+/// What a run's row for one set shows: its ids, its Undo's state, its picture and its words.
+struct SetLine {
+    id: (&'static str, u64),
+    name_id: (&'static str, u64),
+    undo_id: String,
+    busy: bool,
+    undone: bool,
+    picture: Option<String>,
+    name: String,
+    full: Option<String>,
+    detail: String,
 }
 
 /// One item of the log's column.
@@ -94,11 +211,17 @@ struct Log {
 }
 
 impl Log {
-    fn of(plans: &[PlanSummary]) -> Self {
-        let entries: Vec<Rc<Entry>> = group_plans(plans).into_iter().map(Rc::new).collect();
+    fn of(plans: &[PlanSummary], dismissals: &[DuplicateDismissal], wanted: usize) -> Self {
+        let entries: Vec<Rc<Entry>> = group_decisions(plans, dismissals, wanted)
+            .into_iter()
+            .map(Rc::new)
+            .collect();
+        // ⌘Z takes back the newest change of the session, else the journal's newest plan, so
+        // only an entry with a plan can promise it: after a restart a dismissal is not in reach.
         let newest_undoable = entries
             .iter()
-            .find(|entry| entry.plans.iter().any(can_undo))
+            .find(|entry| entry.decisions.iter().any(Decision::undoable))
+            .filter(|entry| entry.plans().any(can_undo))
             .map(|entry| entry.key.clone());
         // A day's entries in a card under its heading. Days are told apart by their date, as
         // their headings are ("Today", "Yesterday", the date).
@@ -116,7 +239,7 @@ impl Log {
             }
         };
         for entry in &entries {
-            let at = entry.plans.first().map_or(0, |plan| plan.created_at);
+            let at = entry.at();
             let date = format::date(at);
             if day.as_ref() != Some(&date) {
                 flush(&mut items, &mut card);
@@ -137,61 +260,105 @@ impl Log {
     }
 }
 
-fn group_plans(plans: &[PlanSummary]) -> Vec<Entry> {
+/// The journal's plans and the dismissals, newest first, as the log's entries: duplicate
+/// decisions made within [`SESSION_GAP_MS`] of each other join one run. Each list is read at
+/// most `wanted` long; while one has earlier entries to read, what the other holds from before
+/// its oldest waits for them, so the log never skips a stretch of time.
+fn group_decisions(
+    plans: &[PlanSummary],
+    dismissals: &[DuplicateDismissal],
+    wanted: usize,
+) -> Vec<Entry> {
+    let oldest_plan = plans
+        .last()
+        .filter(|_| plans.len() >= wanted)
+        .map(|plan| plan.created_at);
+    let oldest_dismissal = dismissals
+        .last()
+        .filter(|_| dismissals.len() >= wanted)
+        .map(|dismissal| dismissal.created_at);
+    let since = oldest_plan.max(oldest_dismissal).unwrap_or(i64::MIN);
+    let mut decisions: Vec<Decision> = plans
+        .iter()
+        .cloned()
+        .map(Decision::Plan)
+        .chain(dismissals.iter().cloned().map(Decision::Dismissal))
+        .filter(|decision| decision.at() >= since)
+        .collect();
+    // Stable, so a plan and a dismissal of the same moment keep the journal's first.
+    decisions.sort_by_key(|decision| std::cmp::Reverse(decision.at()));
     let mut entries: Vec<Entry> = Vec::new();
-    for plan in plans {
+    for decision in decisions {
         if let Some(previous) = entries.last_mut()
-            && let Some(last) = previous.plans.last()
-            && plan.kind == PlanKind::ResolveDuplicates
-            && last.kind == PlanKind::ResolveDuplicates
-            && ((last.created_at - plan.created_at) as f64) < SESSION_GAP_MS
-            && can_undo(last) == can_undo(plan)
+            && let Some(last) = previous.decisions.last()
+            && decision.about_duplicates()
+            && last.about_duplicates()
+            && ((last.at() - decision.at()) as f64) < SESSION_GAP_MS
+            && last.undoable() == decision.undoable()
         {
-            previous.plans.push(plan.clone());
+            previous.decisions.push(decision);
             continue;
         }
+        let key = match &decision {
+            Decision::Plan(plan) => plan.id.to_string(),
+            Decision::Dismissal(dismissal) => dismissal_key(dismissal),
+        };
         entries.push(Entry {
-            key: plan.id.to_string(),
-            plans: vec![plan.clone()],
+            key,
+            decisions: vec![decision],
         });
     }
     entries
 }
 
 fn entry_title(entry: &Entry) -> String {
-    match entry.plans.as_slice() {
-        [] => String::new(),
-        [only] => only.title.clone(),
-        plans => format!(
-            "Resolved {}",
-            format::plural(plans.iter().map(|plan| plan.count).sum(), "duplicate set")
-        ),
+    if let Some(only) = entry.only_plan() {
+        return only.title.clone();
     }
+    if let Some(only) = entry.only_dismissal() {
+        return dismissal_title(only).to_string();
+    }
+    let sets =
+        entry.plans().map(|plan| plan.count).sum::<i64>() + entry.dismissals().count() as i64;
+    format!("Resolved {}", format::plural(sets, "duplicate set"))
 }
 
 fn entry_detail(entry: &Entry) -> String {
-    if let [only] = entry.plans.as_slice() {
+    if let Some(only) = entry.only_plan() {
         return describe_plan(only);
     }
-    if entry
-        .plans
-        .iter()
-        .all(|plan| plan.status == PlanStatus::Undone)
-    {
+    if let Some(only) = entry.only_dismissal() {
+        return dismissal_detail(only);
+    }
+    // An undone dismissal leaves the catalog, so only plans can be undone and still listed.
+    if entry.decisions.iter().all(
+        |decision| matches!(decision, Decision::Plan(plan) if plan.status == PlanStatus::Undone),
+    ) {
         return "undone".into();
     }
-    let (files, bytes) = entry.plans.iter().fold((0, 0), |(files, bytes), plan| {
+    let (files, bytes) = entry.plans().fold((0, 0), |(files, bytes), plan| {
         (files + plan.held.files, bytes + plan.held.bytes)
     });
-    if files > 0 {
-        format!(
-            "{} to holding · {}",
-            format::plural(files, "file"),
-            format::bytes(bytes as f64)
-        )
-    } else {
-        String::new()
-    }
+    let dismissed = entry.dismissals().count() as i64;
+    [
+        (files > 0).then(|| {
+            format!(
+                "{} to holding · {}",
+                format::plural(files, "file"),
+                format::bytes(bytes as f64)
+            )
+        }),
+        (dismissed > 0).then(|| {
+            format!(
+                "{} marked as not duplicates",
+                format::plural(dismissed, "set")
+            )
+        }),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ")
 }
 
 /// What a step did, in its row's first column (`ACTION_LABELS`).
@@ -255,7 +422,8 @@ pub struct HistoryPage {
     state: Entity<TidyState>,
     thumbs: Entity<Thumbs>,
     focus: FocusHandle,
-    plans: Loaded<Vec<PlanSummary>>,
+    /// The journal's plans and the dismissals, newest first, both read at most [`Self::wanted`].
+    plans: Loaded<(Vec<PlanSummary>, Vec<DuplicateDismissal>)>,
     /// The answer as the log shows it.
     log: Option<Rc<Log>>,
     wanted: usize,
@@ -321,8 +489,13 @@ impl HistoryPage {
             limit: self.wanted as i64,
         };
         let plans = state.changes.list_plans(&engine, request);
-        self.plans
-            .load_then(plans, |this| &mut this.plans, Self::loaded, cx);
+        let dismissals = engine.list_dismissals(root_id, self.wanted);
+        self.plans.load_then(
+            async move { Ok((plans.await?, dismissals.await?)) },
+            |this| &mut this.plans,
+            Self::loaded,
+            cx,
+        );
         self.steps.clear();
         self.held.clear();
         // What was being undone has been: the catalog changed, which is why this reads again.
@@ -331,7 +504,18 @@ impl HistoryPage {
     }
 
     fn loaded(&mut self, cx: &mut Context<Self>) {
-        self.log = self.plans.data().map(|plans| Rc::new(Log::of(plans)));
+        let wanted = self.wanted;
+        self.log = self
+            .plans
+            .data()
+            .map(|(plans, dismissals)| Rc::new(Log::of(plans, dismissals, wanted)));
+        // A check in a real window opens the newest entry, as no click can.
+        if self.expanded.is_empty()
+            && std::env::var_os(OPEN_VARIABLE).is_some_and(|value| !value.is_empty())
+            && let Some(first) = self.log.as_ref().and_then(|log| log.entries.first())
+        {
+            self.expanded.insert(first.key.clone());
+        }
         // The entries open before the answer came read their steps again, as they now are.
         let open: Vec<Rc<Entry>> = self
             .log
@@ -357,7 +541,7 @@ impl HistoryPage {
         let (Some(engine), Some(root_id)) = (state.engine().cloned(), state.root_id()) else {
             return;
         };
-        let sets = entry.plans.len() > 1;
+        let sets = entry.is_run();
         if sets {
             let held = changes.list_holding(
                 &engine,
@@ -383,7 +567,7 @@ impl HistoryPage {
             })
             .detach();
         }
-        for plan in &entry.plans {
+        for plan in entry.plans() {
             let id = plan.id;
             let limit = if sets {
                 1
@@ -412,7 +596,7 @@ impl HistoryPage {
 
     /// "Show all": every step of the plan, a page at a time.
     fn show_more_steps(&mut self, entry: &Entry, cx: &mut Context<Self>) {
-        if let Some(plan) = entry.plans.first() {
+        if let Some(plan) = entry.only_plan() {
             let showing = self.showing.get(&plan.id).copied().unwrap_or(0);
             self.showing
                 .insert(plan.id, showing.max(PREVIEW_STEPS) + STEP_PAGE);
@@ -433,15 +617,18 @@ impl HistoryPage {
     /// with one toast for them all (`undoEntry`).
     fn undo(&mut self, entry: &Entry, window: &mut Window, cx: &mut Context<Self>) {
         let undoable: Vec<PlanSummary> = entry
-            .plans
-            .iter()
+            .plans()
             .filter(|plan| can_undo(plan))
             .cloned()
             .collect();
-        if undoable.is_empty() || !self.undoing.insert(entry.key.clone()) {
+        let dismissals: Vec<i64> = entry.dismissals().map(|dismissal| dismissal.id).collect();
+        if (undoable.is_empty() && dismissals.is_empty()) || !self.undoing.insert(entry.key.clone())
+        {
             return;
         }
+        self.restore(dismissals, undoable.is_empty(), window, cx);
         match undoable.as_slice() {
+            [] => {}
             [only] => {
                 let only = only.clone();
                 self.state.update(cx, |state, cx| {
@@ -469,6 +656,72 @@ impl HistoryPage {
             state.undo_plan(plan, PerformOptions::default(), window, cx);
         });
         cx.notify();
+    }
+
+    /// Undoes one set marked as not duplicates, which brings it back to review.
+    fn undo_dismissal(
+        &mut self,
+        dismissal: &DuplicateDismissal,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.undoing.insert(dismissal_key(dismissal)) {
+            return;
+        }
+        self.restore(vec![dismissal.id], true, window, cx);
+        cx.notify();
+    }
+
+    /// Takes back dismissals, as Duplicates' own Undo does (`restoreDuplicateSet`): their sets
+    /// are open again, and Duplicates lists them once it reads the catalog, which `changed`
+    /// asks for. Nothing on screen says where the set went, so a toast does, when `announce`.
+    fn restore(
+        &mut self,
+        ids: Vec<i64>,
+        announce: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(engine) = self.state.read(cx).engine().cloned() else {
+            return;
+        };
+        if ids.is_empty() {
+            return;
+        }
+        let count = ids.len() as i64;
+        let restored: Vec<_> = ids
+            .into_iter()
+            .map(|id| engine.restore_duplicate_set(id))
+            .collect();
+        cx.spawn_in(window, async move |this, cx| {
+            let mut failed = None;
+            for restored in restored {
+                if let Err(error) = restored.await {
+                    failed = Some(error);
+                }
+            }
+            this.update_in(cx, |this, window, cx| {
+                this.state.update(cx, |state, cx| state.changed(cx));
+                let toast = match failed {
+                    Some(error) => Some(
+                        Toast::error("Couldn't bring the set back to review")
+                            .detail(format!("{error:#}")),
+                    ),
+                    None => announce.then(|| {
+                        Toast::done(if count > 1 {
+                            format!("{} back in Duplicates", format::plural(count, "set"))
+                        } else {
+                            "Back in Duplicates".to_string()
+                        })
+                    }),
+                };
+                if let Some(toast) = toast {
+                    widgets::show_toast(window, toast, cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -514,13 +767,16 @@ impl HistoryPage {
         cx.stop_propagation();
     }
 
-    /// What an open entry lists under it: its sets, for a run of duplicate decisions, or its
-    /// steps.
+    /// What an open entry lists under it: its sets, for a run of duplicate decisions; the files
+    /// kept, for a set marked as not duplicates; or its steps.
     fn render_steps(&self, entry: &Rc<Entry>, cx: &mut Context<Self>) -> AnyElement {
-        if entry.plans.len() > 1 {
+        if entry.is_run() {
             return self.render_sets(entry, cx);
         }
-        let Some(plan) = entry.plans.first() else {
+        if let Some(dismissal) = entry.only_dismissal() {
+            return self.render_kept_files(dismissal, cx);
+        }
+        let Some(plan) = entry.only_plan() else {
             return div().into_any_element();
         };
         let Some(page) = self.steps.get(&plan.id) else {
@@ -642,6 +898,54 @@ impl HistoryPage {
             .into_any_element()
     }
 
+    /// The files a set marked as not duplicates kept, a step's row each.
+    fn render_kept_files(
+        &self,
+        dismissal: &DuplicateDismissal,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let theme = cx.theme();
+        let (border, muted) = (theme.border, theme.muted_foreground);
+        let rows = dismissal.files.iter().map(|file| {
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_3()
+                .h(px(36.))
+                .pl(px(60.))
+                .pr_4()
+                .border_t_1()
+                .border_color(border)
+                .text_size(px(13.))
+                .child(
+                    div()
+                        .w(px(96.))
+                        .flex_shrink_0()
+                        .text_xs()
+                        .text_color(muted)
+                        .child("Kept"),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis_start()
+                        .child(file.rel_path.clone()),
+                )
+        });
+        div()
+            .flex()
+            .flex_col()
+            .border_t_1()
+            .border_color(border)
+            .bg(theme.muted.opacity(0.3))
+            .children(rows)
+            .into_any_element()
+    }
+
     /// The sets of a run of duplicate decisions, one row each with its own Undo. Each set is its
     /// own plan; what stayed comes from the hold reason of the copies it put in holding
     /// (`ResolveSets`).
@@ -653,9 +957,15 @@ impl HistoryPage {
             .root()
             .map_or_else(|| "the top folder".to_string(), |root| root.name.clone());
         let rows: Vec<AnyElement> = entry
-            .plans
+            .decisions
             .iter()
-            .map(|plan| {
+            .map(|decision| {
+                let plan = match decision {
+                    Decision::Plan(plan) => plan,
+                    Decision::Dismissal(dismissal) => {
+                        return self.render_dismissal_set(dismissal, cx);
+                    }
+                };
                 let held = self.held.get(&plan.id);
                 let keeper = held.and_then(|held| keeper_of(&held.reason));
                 let removed = self
@@ -695,7 +1005,27 @@ impl HistoryPage {
                 .into_iter()
                 .flatten()
                 .collect();
-                self.render_set(plan, picture, name, full, detail.join(" · "), cx)
+                let undo = can_undo(plan).then(|| {
+                    let plan = plan.clone();
+                    move |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
+                        this.undo_set(plan.clone(), window, cx);
+                    }
+                });
+                self.render_set(
+                    SetLine {
+                        id: ("history-set", plan.id as u64),
+                        name_id: ("history-set-name", plan.id as u64),
+                        undo_id: format!("history-undo-set-{}", plan.id),
+                        busy: self.undoing.contains(&plan.id.to_string()),
+                        undone: plan.status == PlanStatus::Undone,
+                        picture,
+                        name,
+                        full,
+                        detail: detail.join(" · "),
+                    },
+                    undo,
+                    cx,
+                )
             })
             .collect();
         let theme = cx.theme();
@@ -709,15 +1039,90 @@ impl HistoryPage {
             .into_any_element()
     }
 
-    fn render_set(
+    /// A set marked as not duplicates as its entry shows it: its first file's picture, in the
+    /// 32 px tile a change's icon takes.
+    fn render_dismissal_picture(
         &self,
-        plan: &PlanSummary,
-        picture: Option<String>,
-        name: String,
-        full: Option<String>,
-        detail: String,
+        dismissal: &DuplicateDismissal,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let thumb = dismissal.files.first().map_or(Thumb::Unavailable, |file| {
+            self.thumbs
+                .update(cx, |thumbs, cx| thumbs.get(file, 96, cx))
+        });
+        let theme = cx.theme();
+        div()
+            .flex_shrink_0()
+            .size_8()
+            .rounded(theme.radius_lg)
+            .overflow_hidden()
+            .bg(theme.muted)
+            .child(set_picture(thumb, cx))
+            .into_any_element()
+    }
+
+    /// A set marked as not duplicates, in a run: its picture, what it did, its files, its Undo.
+    fn render_dismissal_set(
+        &self,
+        dismissal: &DuplicateDismissal,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let first = dismissal.files.first();
+        let undo = {
+            let dismissal = dismissal.clone();
+            move |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
+                this.undo_dismissal(&dismissal, window, cx);
+            }
+        };
+        let detail = [
+            first.map(|file| file.name.clone()),
+            Some(dismissal_detail(dismissal)),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" · ");
+        self.render_set(
+            SetLine {
+                id: ("history-dismissal", dismissal.id as u64),
+                name_id: ("history-dismissal-name", dismissal.id as u64),
+                undo_id: format!("history-undo-{}", dismissal_key(dismissal)),
+                busy: self.undoing.contains(&dismissal_key(dismissal)),
+                undone: false,
+                picture: first.map(|file| file.abs_path.clone()),
+                name: dismissal_title(dismissal).to_string(),
+                full: Some(
+                    dismissal
+                        .files
+                        .iter()
+                        .map(|file| file.rel_path.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                ),
+                detail,
+            },
+            Some(undo),
+            cx,
+        )
+    }
+
+    fn render_set(
+        &self,
+        line: SetLine,
+        undo: Option<impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let SetLine {
+            id,
+            name_id,
+            undo_id,
+            busy,
+            undone,
+            picture,
+            name,
+            full,
+            detail,
+        } = line;
         let video = picture.as_deref().is_some_and(|path| {
             oriel_core_domain::detect_media_type(file_name(path))
                 == oriel_core_domain::MediaType::Video
@@ -727,27 +1132,10 @@ impl HistoryPage {
                 thumbs.path(std::path::Path::new(path), video, 96, cx)
             })
         });
+        let picture = set_picture(thumb, cx);
         let theme = cx.theme();
-        let undone = plan.status == PlanStatus::Undone;
-        let picture: AnyElement = match thumb {
-            Thumb::Ready(image) => gpui_kit::img(image)
-                .size_full()
-                .object_fit(gpui_kit::ObjectFit::Cover)
-                .into_any_element(),
-            Thumb::Pending => div().size_full().into_any_element(),
-            Thumb::Unavailable => div()
-                .size_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_color(theme.muted_foreground)
-                .child(Icon::new(IconName::File).size(px(14.)))
-                .into_any_element(),
-        };
-        let busy = self.undoing.contains(&plan.id.to_string());
-        let undo = can_undo(plan).then(|| {
-            let plan = plan.clone();
-            Button::new(SharedString::from(format!("history-undo-set-{}", plan.id)))
+        let undo = undo.map(|undo| {
+            Button::new(SharedString::from(undo_id))
                 .outline()
                 .small()
                 .label("Undo")
@@ -755,11 +1143,11 @@ impl HistoryPage {
                 .disabled(busy)
                 .on_click(cx.listener(move |this, _, window, cx| {
                     cx.stop_propagation();
-                    this.undo_set(plan.clone(), window, cx);
+                    undo(this, window, cx);
                 }))
         });
         div()
-            .id(("history-set", plan.id as u64))
+            .id(id)
             .test_support()
             .aria_label(SharedString::from(name.clone()))
             .group("history-set")
@@ -789,7 +1177,7 @@ impl HistoryPage {
                     .min_w_0()
                     .child(
                         div()
-                            .id(("history-set-name", plan.id as u64))
+                            .id(name_id)
                             .truncate()
                             .text_size(px(13.))
                             .when(undone, |this| this.text_color(theme.muted_foreground))
@@ -923,12 +1311,14 @@ impl HistoryPage {
     /// The steps listed under an open entry, once read.
     /// The rows listed under an open entry once read: its sets, or its steps and "Show all".
     fn step_count(&self, entry: &Entry) -> usize {
-        if entry.plans.len() > 1 {
-            return entry.plans.len();
+        if entry.is_run() {
+            return entry.decisions.len();
+        }
+        if let Some(dismissal) = entry.only_dismissal() {
+            return dismissal.files.len();
         }
         entry
-            .plans
-            .first()
+            .only_plan()
             .and_then(|plan| self.steps.get(&plan.id))
             .map_or(0, |page| {
                 page.steps.len() + usize::from(page.total > page.steps.len() as i64)
@@ -955,16 +1345,23 @@ impl HistoryPage {
         );
         let open = self.expanded.contains(&entry.key);
         let focused = self.focused.as_ref() == Some(&entry.key);
-        let first = entry.plans.first().cloned();
-        let undoable_count = entry.plans.iter().filter(|plan| can_undo(plan)).count();
+        let first = entry.decisions.first().cloned();
+        let undoable_count = entry
+            .decisions
+            .iter()
+            .filter(|decision| decision.undoable())
+            .count();
         let undoable = undoable_count > 0;
         let undoing = self.undoing.contains(&entry.key);
-        let status = first.as_ref().and_then(|plan| status_label(plan.status));
+        let status = match &first {
+            Some(Decision::Plan(plan)) => status_label(plan.status),
+            _ => None,
+        };
         let title = entry_title(entry);
         let detail = entry_detail(entry);
         // When, as "5 min ago" with the full date and time in a tooltip (`formatRelative`).
-        let when = first.as_ref().map(|plan| {
-            let at = plan.created_at;
+        let when = first.as_ref().map(|decision| {
+            let at = decision.at();
             div()
                 .id(SharedString::from(format!(
                     "history-time-{key}",
@@ -979,7 +1376,15 @@ impl HistoryPage {
                         .build(window, cx)
                 })
         });
-        let icon = first.as_ref().map(|plan| plan_icon(plan.kind, cx));
+        // A set marked as not duplicates shows its picture; anything else, what kind it is.
+        let icon = match (&first, entry.only_dismissal()) {
+            (_, Some(dismissal)) => Some(self.render_dismissal_picture(dismissal, cx)),
+            (Some(Decision::Plan(plan)), None) => Some(plan_icon(plan.kind, cx).into_any_element()),
+            (Some(Decision::Dismissal(_)), None) => {
+                Some(plan_icon(PlanKind::ResolveDuplicates, cx).into_any_element())
+            }
+            (None, None) => None,
+        };
         let steps = open.then(|| self.render_steps(entry, cx));
         let key = entry.key.clone();
         let newest = log.newest_undoable.as_ref() == Some(&key);
@@ -1092,6 +1497,25 @@ impl HistoryPage {
     }
 }
 
+/// A set's picture, cropped to fill its tile, or a file's icon where there is none.
+fn set_picture(thumb: Thumb, cx: &App) -> AnyElement {
+    match thumb {
+        Thumb::Ready(image) => gpui_kit::img(image)
+            .size_full()
+            .object_fit(gpui_kit::ObjectFit::Cover)
+            .into_any_element(),
+        Thumb::Pending => div().size_full().into_any_element(),
+        Thumb::Unavailable => div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_color(cx.theme().muted_foreground)
+            .child(Icon::new(IconName::File).size(px(14.)))
+            .into_any_element(),
+    }
+}
+
 /// The 32 px tile that says what kind of change a row is (`PlanIcon`).
 fn plan_icon(kind: PlanKind, cx: &App) -> impl IntoElement + use<> {
     let icon = match kind {
@@ -1151,17 +1575,19 @@ impl Render for HistoryPage {
             )
             .into_any_element(),
             (None, None) => div().flex_1().into_any_element(),
-            (Some(plans), _) if plans.is_empty() => widgets::empty_state(
-                "history-empty",
-                Some(IconName::RotateCcw),
-                "No changes yet",
-                Some("Every change you make shows up here with an Undo.".into_any_element()),
-                Vec::new(),
-                cx,
-            )
-            .into_any_element(),
-            (Some(plans), _) => {
-                let has_more = plans.len() == self.wanted;
+            (Some((plans, dismissals)), _) if plans.is_empty() && dismissals.is_empty() => {
+                widgets::empty_state(
+                    "history-empty",
+                    Some(IconName::RotateCcw),
+                    "No changes yet",
+                    Some("Every change you make shows up here with an Undo.".into_any_element()),
+                    Vec::new(),
+                    cx,
+                )
+                .into_any_element()
+            }
+            (Some((plans, dismissals)), _) => {
+                let has_more = plans.len() == self.wanted || dismissals.len() == self.wanted;
                 self.render_log(has_more, window, cx)
             }
         };

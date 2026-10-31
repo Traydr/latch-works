@@ -48,14 +48,14 @@ use crate::catalog::roots::{
 use crate::catalog::tidy::catalog_tidy;
 use crate::catalog::{CATALOG_FILE_NAME, Catalog, now_ms};
 use crate::contract::{
-    CleanupCounts, DuplicateKind, DuplicateScope, DuplicateSetPage, DuplicateSetRequest,
-    DuplicateTotalsByKind, FileFacets, FileFilter, FileId, FileIdList, FilePage, FileQuery,
-    FileRow, OptimizeSummary, Root, RootId, SelectionSummary, Settings, ShrinkSummary,
-    SimilarityLevel, Tidy,
+    CleanupCounts, DuplicateDismissal, DuplicateKind, DuplicateScope, DuplicateSetPage,
+    DuplicateSetRequest, DuplicateTotalsByKind, FileFacets, FileFilter, FileId, FileIdList,
+    FilePage, FileQuery, FileRow, OptimizeSummary, Root, RootId, SelectionSummary, Settings,
+    ShrinkSummary, SimilarityLevel, Tidy,
 };
 use crate::duplicates::{
     ComputedSet, Dismissals, PageRequest, add_dismissal, build_duplicate_sets,
-    compute_similar_clusters, duplicate_totals, fingerprint_coverage, open_sets,
+    compute_similar_clusters, duplicate_totals, fingerprint_coverage, list_dismissals, open_sets,
     page_duplicate_sets, remove_dismissal,
 };
 use crate::optimize::candidates::skip_counts;
@@ -537,6 +537,15 @@ impl TidyEngine {
             inner.changed();
             Ok(())
         })
+    }
+
+    /// The sets marked as not duplicates by hand under a root, newest first, for History.
+    pub fn list_dismissals(
+        &self,
+        root_id: RootId,
+        limit: usize,
+    ) -> impl Future<Output = anyhow::Result<Vec<DuplicateDismissal>>> + Send + 'static {
+        self.query(move |_, connection| list_dismissals(connection, root_id, limit))
     }
 
     /// What Convert would change under a root.
