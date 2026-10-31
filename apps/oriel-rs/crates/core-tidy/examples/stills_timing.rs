@@ -25,6 +25,7 @@ use oriel_core_tidy::media::still::encode_still_to_avif;
 use oriel_core_tidy::similarity::{Vips, fingerprint_still};
 use sha2::{Digest as _, Sha256};
 
+#[cfg(unix)]
 fn cpu_seconds() -> f64 {
     // SAFETY: getrusage fills the struct it is given.
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
@@ -33,6 +34,7 @@ fn cpu_seconds() -> f64 {
     seconds(usage.ru_utime) + seconds(usage.ru_stime)
 }
 
+#[cfg(target_os = "macos")]
 fn footprint() -> u64 {
     // SAFETY: proc_pid_rusage fills a rusage_info_v4 for this process.
     let mut info: libc::rusage_info_v4 = unsafe { std::mem::zeroed() };
@@ -48,6 +50,17 @@ fn footprint() -> u64 {
     } else {
         0
     }
+}
+
+/// Off macOS the timer reads nothing yet; the Windows agent ports it.
+#[cfg(not(unix))]
+fn cpu_seconds() -> f64 {
+    0.0
+}
+
+#[cfg(not(target_os = "macos"))]
+fn footprint() -> u64 {
+    0
 }
 
 fn stills_under(folder: &Path, avif: bool, found: &mut Vec<PathBuf>) {

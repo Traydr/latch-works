@@ -8,7 +8,22 @@
 //! None of it writes inside the archive it measures.
 
 pub mod hash;
+#[cfg(unix)]
 pub mod page_cache;
+/// Off Unix nothing is evicted or counted yet: a run there reads what the system's cache holds.
+#[cfg(not(unix))]
+pub mod page_cache {
+    use std::io;
+    use std::path::Path;
+
+    pub fn evict(_path: &Path) -> io::Result<()> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+
+    pub fn resident_pages(_path: &Path) -> io::Result<(usize, usize)> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+}
 pub mod walk;
 
 /// The median of a few measurements; the mean of the middle two for an even count.

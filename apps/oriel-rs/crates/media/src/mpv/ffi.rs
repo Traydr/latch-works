@@ -50,8 +50,11 @@ pub(super) const END_FILE_REASON_ERROR: c_int = 4;
 // `mpv_render_param_type`.
 pub(super) const RENDER_PARAM_INVALID: c_int = 0;
 pub(super) const RENDER_PARAM_API_TYPE: c_int = 1;
+#[cfg(target_os = "macos")]
 pub(super) const RENDER_PARAM_OPENGL_INIT_PARAMS: c_int = 2;
+#[cfg(target_os = "macos")]
 pub(super) const RENDER_PARAM_OPENGL_FBO: c_int = 3;
+#[cfg(target_os = "macos")]
 pub(super) const RENDER_PARAM_FLIP_Y: c_int = 4;
 pub(super) const RENDER_PARAM_NEXT_FRAME_INFO: c_int = 11;
 pub(super) const RENDER_PARAM_BLOCK_FOR_TARGET_TIME: c_int = 12;
@@ -61,7 +64,8 @@ pub(super) const RENDER_PARAM_SW_FORMAT: c_int = 18;
 pub(super) const RENDER_PARAM_SW_STRIDE: c_int = 19;
 pub(super) const RENDER_PARAM_SW_POINTER: c_int = 20;
 
-/// `MPV_RENDER_API_TYPE_OPENGL`.
+/// `MPV_RENDER_API_TYPE_OPENGL`, which only the macOS path draws through.
+#[cfg(target_os = "macos")]
 pub(super) const RENDER_API_TYPE_OPENGL: &CStr = c"opengl";
 /// `MPV_RENDER_API_TYPE_SW`.
 pub(super) const RENDER_API_TYPE_SW: &CStr = c"sw";
@@ -132,6 +136,7 @@ impl RenderParam {
 }
 
 /// `mpv_opengl_init_params`.
+#[cfg(target_os = "macos")]
 #[repr(C)]
 pub(super) struct OpenGlInitParams {
     pub(super) get_proc_address:
@@ -140,6 +145,7 @@ pub(super) struct OpenGlInitParams {
 }
 
 /// `mpv_opengl_fbo`.
+#[cfg(target_os = "macos")]
 #[repr(C)]
 pub(super) struct OpenGlFbo {
     pub(super) fbo: c_int,
@@ -225,7 +231,13 @@ const IINA_LIBMPV: &str = "/Applications/IINA.app/Contents/Frameworks/libmpv.2.d
 /// Names a libmpv to load when the app does not run from a bundle.
 pub(super) const LIBMPV_VARIABLE: &str = "ORIEL_RS_LIBMPV";
 /// The file name of client API 2's libmpv, preferred when a folder holds more than one.
+#[cfg(not(windows))]
 const LIBMPV_FILE: &str = "libmpv.2.dylib";
+/// shinchiro's `mpv-dev-x86_64` builds name it so; Setup.exe installs it beside the app.
+#[cfg(windows)]
+const LIBMPV_FILE: &str = "libmpv-2.dll";
+/// The extension a libmpv carries here.
+const LIBRARY_EXTENSION: &str = if cfg!(windows) { ".dll" } else { ".dylib" };
 
 static LIBMPV: OnceLock<Result<Libmpv, String>> = OnceLock::new();
 
@@ -290,12 +302,13 @@ fn bundle_contents(executable: &Path) -> Option<&Path> {
     (macos.file_name()? == "MacOS" && contents.file_name()? == "Contents").then_some(contents)
 }
 
-/// The `libmpv*.dylib` in `folder`, `libmpv.2.dylib` first if there are several.
+/// The `libmpv*.dylib` (`libmpv*.dll` on Windows) in `folder`, [`LIBMPV_FILE`] first if there
+/// are several.
 fn libmpv_in(folder: &Path) -> Option<PathBuf> {
     let mut names: Vec<String> = std::fs::read_dir(folder)
         .ok()?
         .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
-        .filter(|name| name.starts_with("libmpv") && name.ends_with(".dylib"))
+        .filter(|name| name.starts_with("libmpv") && name.ends_with(LIBRARY_EXTENSION))
         .collect();
     names.sort_by(|a, b| (a != LIBMPV_FILE, a).cmp(&(b != LIBMPV_FILE, b)));
     names
@@ -315,6 +328,16 @@ fn libmpv_in(folder: &Path) -> Option<PathBuf> {
 /// Once a candidate is chosen, failing to load it is an error rather than a fall through, so a
 /// broken set shows instead of something else playing in its place.
 fn choose(places: &Places) -> Result<(PathBuf, LibmpvSource), String> {
+    // On Windows the installed app's DLLs sit beside its executable.
+    #[cfg(windows)]
+    if let Some(found) = places
+        .executable
+        .as_deref()
+        .and_then(Path::parent)
+        .and_then(libmpv_in)
+    {
+        return Ok((found, LibmpvSource::Bundle));
+    }
     let contents = places.executable.as_deref().and_then(bundle_contents);
     if let Some(found) = contents.and_then(|contents| libmpv_in(&contents.join("Frameworks"))) {
         return Ok((found, LibmpvSource::Bundle));

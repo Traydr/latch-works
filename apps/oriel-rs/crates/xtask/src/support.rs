@@ -209,7 +209,7 @@ fn fetch_first(pin: &Download<'_>, partial: &Path) -> Result<()> {
     for url in pin.urls {
         for _attempt in 0..2 {
             log(format!("    downloading {url}"));
-            let mut command = Command::new("/usr/bin/curl");
+            let mut command = Command::new(system_tool("curl"));
             command
                 .args(["--fail", "--location", "--silent", "--show-error"])
                 .args(["--proto", "=https", "--proto-redir", "=https"])
@@ -238,6 +238,19 @@ fn fetch_first(pin: &Download<'_>, partial: &Path) -> Result<()> {
     bail!("could not download:\n  {}", failures.join("\n  "))
 }
 
+/// One of the system's own tools both systems carry, by absolute path: `/usr/bin/<name>` on
+/// macOS, `System32\<name>.exe` on Windows, where curl and bsdtar ship since Windows 10 1803.
+pub fn system_tool(name: &str) -> PathBuf {
+    if cfg!(windows) {
+        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
+        PathBuf::from(root)
+            .join("System32")
+            .join(format!("{name}.exe"))
+    } else {
+        Path::new("/usr/bin").join(name)
+    }
+}
+
 /// Unpacks an archive into an empty folder of its own, dropping `strip` leading folders.
 /// bsdtar refuses `..` and absolute paths.
 pub fn unpack(archive: &Path, folder: &Path, strip: u32, log_file: PathBuf) -> Result<()> {
@@ -251,7 +264,7 @@ pub fn unpack(archive: &Path, folder: &Path, strip: u32, log_file: PathBuf) -> R
     );
     run(&Step {
         label,
-        program: "/usr/bin/tar".into(),
+        program: system_tool("tar").into(),
         args: vec![
             "-xf".into(),
             archive.into(),

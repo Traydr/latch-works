@@ -30,6 +30,12 @@ oriel-tools.workspace = true
 # The libmpv spike's footprint reading (`proc_pid_rusage`).
 libc = "0.2"
 
+# Off macOS, stills decode through the libvips Tidy loads (`still/vips.rs`), and frames in
+# memory through `image`.
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+oriel-core-tidy.workspace = true
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # still/ adds its macOS dependencies below this line.
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFBase", "CFDictionary", "CFNumber", "CFString", "CFURL"] }

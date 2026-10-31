@@ -7,13 +7,17 @@ mod check;
 mod dock;
 mod general;
 pub mod menus;
+pub mod move_to_applications;
 pub mod open_paths;
 pub mod quit;
 pub mod shell;
+pub mod single_instance;
 mod spike;
 mod terminate;
 pub mod welcome;
 pub mod window_state;
+#[cfg(windows)]
+mod windows_frame;
 
 pub use general::theme_button_id;
 
@@ -48,10 +52,18 @@ pub fn run() {
     let data = DataRoot::from_environment().expect("Oriel RS needs a data folder");
     data.create_folders()
         .expect("Oriel RS could not create its data folder");
+    // On Windows a second launch hands its paths to the running instance and exits here.
+    let executable = std::env::current_exe().unwrap_or_default();
+    let launch_path = open_paths::from_args(std::env::args_os().skip(1), &executable);
+    let instance = match single_instance::claim(&data, launch_path.as_slice()) {
+        single_instance::Claim::First(instance) => instance,
+        single_instance::Claim::Handed => return,
+    };
 
     // macOS hands over paths (a drop on the Dock icon, Open With, a second launch) before the
     // window exists as well as after, so they wait in a channel for it.
     let (opened, mut to_open) = futures::channel::mpsc::unbounded::<Vec<PathBuf>>();
+    instance.listen(opened.clone());
     let app = gpui_kit::application().with_assets(oriel_ui::OrielAssets);
     app.on_open_urls(move |urls| {
         let paths = open_paths::from_urls(&urls);
@@ -74,7 +86,14 @@ pub fn run() {
         oriel_ui::theme::init(cx);
         actions::init(cx);
         menus::prepare();
+        #[cfg(target_os = "macos")]
+        let moving = data.clone();
         let shell = open_main_window(data, cx);
+        // Started from the disk image or Downloads, the app offers to move to Applications.
+        #[cfg(target_os = "macos")]
+        if let Some(main) = cx.try_global::<MainWindow>() {
+            move_to_applications::offer(&moving, main.handle.into(), cx);
+        }
 
         // The system's own quits (the Dock icon's Quit, logging out) wait for work as ⌘Q does.
         let (quit_requests, mut quit_requested) = futures::channel::mpsc::unbounded::<()>();
@@ -86,8 +105,7 @@ pub fn run() {
         })
         .detach();
 
-        let executable = std::env::current_exe().unwrap_or_default();
-        if let Some(path) = open_paths::from_args(std::env::args_os().skip(1), &executable) {
+        if let Some(path) = launch_path {
             with_main_window(cx, move |shell, window, cx| {
                 shell.open_in_view(&path, window, cx)
             });
@@ -95,6 +113,10 @@ pub fn run() {
         cx.spawn(async move |cx| {
             while let Some(paths) = to_open.next().await {
                 cx.update(|cx| {
+                    // A second launch with nothing to open asks for the window.
+                    if paths.is_empty() {
+                        with_main_window(cx, |shell, window, cx| shell.show_window(window, cx));
+                    }
                     for path in paths {
                         with_main_window(cx, |shell, window, cx| {
                             shell.open_in_view(&path, window, cx);
@@ -166,7 +188,7 @@ fn stored_mode(cx: &App) -> oriel_ui::ModeId {
 
 fn open_main_window(data: DataRoot, cx: &mut App) -> Entity<Shell> {
     let options = main_window_options(&data, cx);
-    let (handle, shell) = gpui_kit::open_window(options, cx, |window, cx| {
+    let build = |window: &mut gpui_kit::Window, cx: &mut App| {
         let shell = cx.new(|cx| Shell::new(data, window, cx));
         let opened = shell.clone();
         window.defer(cx, move |window, cx| {
@@ -175,8 +197,22 @@ fn open_main_window(data: DataRoot, cx: &mut App) -> Entity<Shell> {
             }
         });
         shell
-    })
-    .expect("Oriel RS could not open its window");
+    };
+    #[cfg(not(windows))]
+    let (handle, shell) =
+        gpui_kit::open_window(options, cx, build).expect("Oriel RS could not open its window");
+    // On Windows the shell sits under the window's own title bar and menus.
+    #[cfg(windows)]
+    let (handle, shell) = {
+        let mut built = None;
+        let (handle, _) = gpui_kit::open_window(options, cx, |window, cx| {
+            let shell = build(window, cx);
+            built = Some(shell.clone());
+            cx.new(|cx| windows_frame::WindowsFrame::new(shell, cx))
+        })
+        .expect("Oriel RS could not open its window");
+        (handle, built.expect("the window built its shell"))
+    };
     if let Some(handle) = handle.downcast::<gpui_kit::base::Root>() {
         cx.set_global(MainWindow {
             handle,

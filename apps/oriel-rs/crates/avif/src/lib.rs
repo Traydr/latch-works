@@ -19,7 +19,8 @@
 //! needs no C toolchain and the app carries one copy of it. [`Libavif::get`] looks in this order,
 //! first found wins:
 //!
-//! 1. `Contents/Frameworks/libavif.16.dylib` of the app bundle this runs from;
+//! 1. `Contents/Frameworks/libavif.16.dylib` of the app bundle this runs from (on Windows, one of
+//!    [`LIBAVIF_WINDOWS_FILES`] beside the executable);
 //! 2. the file `ORIEL_RS_LIBAVIF` names;
 //! 3. the vendored set, `apps/oriel-rs/.vendor/libavif/current` (`cargo run -p xtask -- vendor`).
 
@@ -40,6 +41,10 @@ pub const LIBAVIF_VARIABLE: &str = "ORIEL_RS_LIBAVIF";
 
 /// libavif 1.x's file name, the one the vendored set and the bundle carry.
 pub const LIBAVIF_FILE: &str = "libavif.16.dylib";
+
+/// libavif 1.x's names on Windows, beside the installed app: CMake's MSVC build makes
+/// `avif.dll`, MinGW's (MSYS2's package) `libavif-16.dll`.
+pub const LIBAVIF_WINDOWS_FILES: [&str; 2] = ["avif.dll", "libavif-16.dll"];
 
 /// What went wrong, in words for a log or a journal entry.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -148,6 +153,15 @@ fn bundle_contents(executable: &Path) -> Option<&Path> {
 /// The libavif to load, first match wins: the bundle's, the override, the vendored set. Once one
 /// is chosen, failing to load it is an error rather than a fall through, so a broken copy shows.
 fn choose(places: &Places) -> std::result::Result<(PathBuf, LibavifSource), String> {
+    #[cfg(windows)]
+    if let Some(folder) = places.executable.as_deref().and_then(Path::parent)
+        && let Some(found) = LIBAVIF_WINDOWS_FILES
+            .iter()
+            .map(|name| folder.join(name))
+            .find(|path| path.is_file())
+    {
+        return Ok((found, LibavifSource::Bundle));
+    }
     if let Some(contents) = places.executable.as_deref().and_then(bundle_contents) {
         let bundled = contents.join("Frameworks").join(LIBAVIF_FILE);
         if bundled.is_file() {

@@ -55,6 +55,17 @@ impl MediaTools {
             return Self::in_folder(&folder, platform, ToolSource::Override)
                 .ok_or(LocateError::OverrideIncomplete { folder });
         }
+        // On Windows the installed app keeps them in `media-tools` beside its executable.
+        #[cfg(windows)]
+        if let Some(folder) = places
+            .executable
+            .as_deref()
+            .and_then(Path::parent)
+            .map(|folder| folder.join("media-tools"))
+            && let Some(tools) = Self::in_folder(&folder, platform, ToolSource::Bundle)
+        {
+            return Ok(tools);
+        }
         if let Some(resources) = places.executable.as_deref().and_then(bundle_resources) {
             let folder = resources.join("media-tools");
             return Self::in_folder(&folder, platform, ToolSource::Bundle)

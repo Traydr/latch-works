@@ -104,6 +104,13 @@ fn standard_edit() -> Vec<MenuItem> {
 
 /// The menu bar while `mode` is on screen.
 pub fn menus(mode: ModeId) -> Vec<Menu> {
+    menus_for(mode, cfg!(target_os = "macos"))
+}
+
+/// The menu bar on macOS (`mac`), or in the window elsewhere, as Electron Oriel's template
+/// differs: off macOS there is no app menu, so File ends with Settings and Exit, the Window menu
+/// has Minimize and Close, and Help carries About.
+fn menus_for(mode: ModeId, mac: bool) -> Vec<Menu> {
     let ModeMenu {
         file,
         edit,
@@ -115,7 +122,15 @@ pub fn menus(mode: ModeId) -> Vec<Menu> {
     if !file_items.is_empty() {
         file_items.push(MenuItem::separator());
     }
-    file_items.push(MenuItem::action("Close Window", CloseWindow));
+    if mac {
+        file_items.push(MenuItem::action("Close Window", CloseWindow));
+    } else {
+        file_items.extend([
+            MenuItem::action("Settings…", OpenSettings),
+            MenuItem::separator(),
+            MenuItem::action("Exit", Quit),
+        ]);
+    }
 
     let mut view_items: Vec<MenuItem> = ModeId::ALL
         .into_iter()
@@ -131,25 +146,41 @@ pub fn menus(mode: ModeId) -> Vec<Menu> {
         MenuItem::action("Toggle Full Screen", ToggleFullScreen),
     ]);
 
-    let mut bar = vec![
-        Menu {
-            name: crate::APP_NAME.into(),
-            items: vec![
-                MenuItem::action("About Oriel RS", About),
-                MenuItem::separator(),
-                // One Settings page for every mode, opened at the section of the mode on screen.
-                MenuItem::action("Settings…", OpenSettings),
-                MenuItem::separator(),
-                MenuItem::os_submenu("Services", SystemMenuType::Services),
-                MenuItem::separator(),
-                MenuItem::action("Hide Oriel RS", Hide),
-                MenuItem::action("Hide Others", HideOthers),
-                MenuItem::action("Show All", ShowAll),
-                MenuItem::separator(),
-                MenuItem::action("Quit Oriel RS", Quit),
-            ],
-            disabled: false,
-        },
+    let app_menu = Menu {
+        name: crate::APP_NAME.into(),
+        items: vec![
+            MenuItem::action("About Oriel RS", About),
+            MenuItem::separator(),
+            // One Settings page for every mode, opened at the section of the mode on screen.
+            MenuItem::action("Settings…", OpenSettings),
+            MenuItem::separator(),
+            MenuItem::os_submenu("Services", SystemMenuType::Services),
+            MenuItem::separator(),
+            MenuItem::action("Hide Oriel RS", Hide),
+            MenuItem::action("Hide Others", HideOthers),
+            MenuItem::action("Show All", ShowAll),
+            MenuItem::separator(),
+            MenuItem::action("Quit Oriel RS", Quit),
+        ],
+        disabled: false,
+    };
+    let window_items = if mac {
+        // Electron's `windowMenu` role on macOS.
+        vec![
+            MenuItem::action("Minimize", Minimize),
+            MenuItem::action("Zoom", Zoom),
+            MenuItem::separator(),
+            MenuItem::action("Bring All to Front", BringAllToFront),
+        ]
+    } else {
+        // And elsewhere.
+        vec![
+            MenuItem::action("Minimize", Minimize),
+            MenuItem::action("Close", CloseWindow),
+        ]
+    };
+    let mut bar = mac.then_some(app_menu).into_iter().collect::<Vec<_>>();
+    bar.extend([
         Menu {
             name: "File".into(),
             items: file_items,
@@ -167,16 +198,17 @@ pub fn menus(mode: ModeId) -> Vec<Menu> {
         },
         Menu {
             name: "Window".into(),
-            // Electron's `windowMenu` role on macOS.
-            items: vec![
-                MenuItem::action("Minimize", Minimize),
-                MenuItem::action("Zoom", Zoom),
-                MenuItem::separator(),
-                MenuItem::action("Bring All to Front", BringAllToFront),
-            ],
+            items: window_items,
             disabled: false,
         },
-    ];
+    ]);
+    let mut help = help;
+    if !mac {
+        if !help.is_empty() {
+            help.push(MenuItem::separator());
+        }
+        help.push(MenuItem::action("About Oriel RS", About));
+    }
     if !help.is_empty() {
         bar.push(Menu {
             name: "Help".into(),
@@ -191,6 +223,8 @@ pub fn menus(mode: ModeId) -> Vec<Menu> {
 /// the keymap as it is built.
 pub fn set(mode: ModeId, cx: &mut App) {
     cx.set_menus(menus(mode));
+    #[cfg(windows)]
+    crate::windows_frame::reload_menus(cx);
 }
 
 /// AppKit adds an Enter Full Screen item of its own to a menu named View, which would sit beside

@@ -1,11 +1,11 @@
 //! Walking a root, from glazier-core's `scan/walk.ts`.
 
 use std::fs;
-use std::os::unix::fs::MetadataExt as _;
 use std::path::Path;
 
 use oriel_core_domain::{is_system_junk_directory, is_system_junk_file};
 use oriel_runtime::Cancelled;
+use oriel_runtime::fs_meta::{MetadataExt as _, dev_ino};
 
 /// A regular file the walk found, with what tells later scans it changed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -139,13 +139,15 @@ pub fn walk_root(
 
         for slice in file_names.chunks(STAT_SLICE) {
             for name in slice {
-                let stat = fs::symlink_metadata(abs_dir.join(name))
+                let path = abs_dir.join(name);
+                let stat = fs::symlink_metadata(&path)
                     .ok()
                     .filter(fs::Metadata::is_file);
                 let Some(stat) = stat else {
                     summary.skipped_entries += 1;
                     continue;
                 };
+                let (dev, ino) = dev_ino(&path, &stat);
                 batch.push(WalkedFile {
                     rel_path: join(&rel_dir, name),
                     dir: rel_dir.clone(),
@@ -153,8 +155,8 @@ pub fn walk_root(
                     size: stat.size() as i64,
                     mtime_ms: whole_ms(stat.mtime(), stat.mtime_nsec()),
                     ctime_ms: whole_ms(stat.ctime(), stat.ctime_nsec()),
-                    dev: stat.dev().to_string(),
-                    ino: stat.ino().to_string(),
+                    dev: dev.to_string(),
+                    ino: ino.to_string(),
                     junk: is_system_junk_file(name),
                     name: name.clone(),
                 });
@@ -218,8 +220,17 @@ mod tests {
         }
         fs::write(root.join("a/.DS_Store"), b"view").unwrap();
         fs::write(root.join(".Trashes/gone.png"), b"bytes").unwrap();
-        std::os::unix::fs::symlink(root.join("a"), root.join("a-link")).unwrap();
-        std::os::unix::fs::symlink(root.join("c.txt"), root.join("c-link.txt")).unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.join("a"), root.join("a-link")).unwrap();
+            std::os::unix::fs::symlink(root.join("c.txt"), root.join("c-link.txt")).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(root.join("a"), root.join("a-link")).unwrap();
+            std::os::windows::fs::symlink_file(root.join("c.txt"), root.join("c-link.txt"))
+                .unwrap();
+        }
 
         let mut files = Vec::new();
         let summary = walk_root(

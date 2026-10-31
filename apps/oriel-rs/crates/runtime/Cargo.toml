@@ -20,6 +20,10 @@ tokio = { workspace = true, features = ["rt", "net", "time"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
 
+# A file's volume serial number and index (`fs_meta`), at the version already in the lock.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
 reqwest.workspace = true

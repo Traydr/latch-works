@@ -5,10 +5,14 @@
 
 use std::fs::File;
 use std::io::Read as _;
-use std::os::unix::fs::{FileExt as _, MetadataExt as _};
+#[cfg(unix)]
+use std::os::unix::fs::FileExt as _;
+#[cfg(windows)]
+use std::os::windows::fs::FileExt as _;
 use std::path::Path;
 
 use oriel_runtime::Cancelled;
+use oriel_runtime::fs_meta::MetadataExt as _;
 use sha2::{Digest as _, Sha256};
 
 use crate::catalog::files::SqlParams;
@@ -141,7 +145,12 @@ fn hex(bytes: &[u8]) -> String {
 fn read_at(file: &File, buffer: &mut [u8], offset: u64) -> std::io::Result<()> {
     let mut filled = 0;
     while filled < buffer.len() {
-        match file.read_at(&mut buffer[filled..], offset + filled as u64)? {
+        #[cfg(unix)]
+        let read = file.read_at(&mut buffer[filled..], offset + filled as u64)?;
+        // Windows' positional read also moves the cursor, which nothing here reads.
+        #[cfg(windows)]
+        let read = file.seek_read(&mut buffer[filled..], offset + filled as u64)?;
+        match read {
             0 => break,
             count => filled += count,
         }

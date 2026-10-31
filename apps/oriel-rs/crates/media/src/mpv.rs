@@ -98,6 +98,8 @@ impl MpvRender {
     pub fn from_env() -> Self {
         match std::env::var(RENDER_VARIABLE).as_deref() {
             Ok("sw") => Self::Software,
+            // Off macOS only the software renderer draws: GPUI's `surface()` is macOS only.
+            _ if cfg!(not(target_os = "macos")) => Self::Software,
             _ => Self::OpenGl,
         }
     }
@@ -107,7 +109,11 @@ impl MpvRender {
             // VideoToolbox decodes into IOSurfaces mpv maps into GL: no copy.
             Self::OpenGl => [("hwdec", "videotoolbox")],
             // The software renderer reads frames in memory, so decoded frames are copied back.
+            #[cfg(target_os = "macos")]
             Self::Software => [("hwdec", "videotoolbox-copy")],
+            // Direct3D 11's decoder, copied back the same way.
+            #[cfg(not(target_os = "macos"))]
+            Self::Software => [("hwdec", "d3d11va-copy")],
         }
     }
 }

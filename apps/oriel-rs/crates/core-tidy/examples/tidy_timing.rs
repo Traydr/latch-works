@@ -44,10 +44,12 @@ struct Cpu {
     children: f64,
 }
 
+#[cfg(unix)]
 fn seconds(time: libc::timeval) -> f64 {
     time.tv_sec as f64 + f64::from(time.tv_usec) / 1e6
 }
 
+#[cfg(unix)]
 fn cpu_now() -> Cpu {
     let usage = |who| {
         // SAFETY: getrusage fills the struct it is given.
@@ -62,6 +64,7 @@ fn cpu_now() -> Cpu {
 }
 
 /// Resident and footprint bytes, as Activity Monitor and `footprint` count them.
+#[cfg(target_os = "macos")]
 fn memory_now() -> (u64, u64) {
     // SAFETY: proc_pid_rusage fills a rusage_info_v4 for this process.
     let mut info: libc::rusage_info_v4 = unsafe { std::mem::zeroed() };
@@ -76,6 +79,17 @@ fn memory_now() -> (u64, u64) {
         return (0, 0);
     }
     (info.ri_resident_size, info.ri_phys_footprint)
+}
+
+/// Off macOS the timer reads nothing yet; the Windows agent ports it.
+#[cfg(not(unix))]
+fn cpu_now() -> Cpu {
+    Cpu::default()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn memory_now() -> (u64, u64) {
+    (0, 0)
 }
 
 fn megabytes(bytes: u64) -> f64 {
@@ -249,10 +263,23 @@ struct Probe {
     unit_ms: Mutex<Vec<f64>>,
 }
 
+#[cfg(target_os = "macos")]
 fn set_qos(class: libc::qos_class_t) {
     // SAFETY: changes only the calling thread's quality of service.
     unsafe { libc::pthread_set_qos_class_self_np(class, 0) };
 }
+
+/// The probe's two classes, which only macOS has; elsewhere both threads run at the default.
+#[cfg(target_os = "macos")]
+const INTERACTIVE: libc::qos_class_t = libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE;
+#[cfg(target_os = "macos")]
+const DEFAULT: libc::qos_class_t = libc::qos_class_t::QOS_CLASS_DEFAULT;
+#[cfg(not(target_os = "macos"))]
+const INTERACTIVE: () = ();
+#[cfg(not(target_os = "macos"))]
+const DEFAULT: () = ();
+#[cfg(not(target_os = "macos"))]
+fn set_qos((): ()) {}
 
 /// A fifth of a millisecond of arithmetic on this Mac, the same every time.
 fn work_unit() -> u64 {
@@ -280,7 +307,7 @@ fn percentile(values: &mut [f64], share: f64) -> f64 {
 impl Probe {
     fn start<'scope>(&'scope self, scope: &'scope std::thread::Scope<'scope, '_>) {
         scope.spawn(move || {
-            set_qos(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE);
+            set_qos(INTERACTIVE);
             let frame = Duration::from_micros(8_333);
             while !self.stop.load(Ordering::Acquire) {
                 let started = Instant::now();
@@ -293,7 +320,7 @@ impl Probe {
             }
         });
         scope.spawn(move || {
-            set_qos(libc::qos_class_t::QOS_CLASS_DEFAULT);
+            set_qos(DEFAULT);
             while !self.stop.load(Ordering::Acquire) {
                 let unit = time_unit();
                 self.unit_ms.lock().unwrap().push(unit);
@@ -462,15 +489,21 @@ fn make_changes(engine: &TidyEngine, root_id: i64, timed: &Timed) {
 
 fn print_memory(when: &str) {
     let (resident, footprint) = memory_now();
-    // SAFETY: getrusage fills the struct it is given.
-    let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
-    unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
+    #[cfg(unix)]
+    let peak = {
+        // SAFETY: getrusage fills the struct it is given.
+        let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+        unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
+        usage.ru_maxrss as u64
+    };
+    #[cfg(not(unix))]
+    let peak = 0;
     println!(
         "\nmemory {when}: {:.0} MB resident, {:.0} MB footprint, {:.0} MB peak resident",
         megabytes(resident),
         megabytes(footprint),
         // macOS reports ru_maxrss in bytes.
-        megabytes(usage.ru_maxrss as u64)
+        megabytes(peak)
     );
 }
 

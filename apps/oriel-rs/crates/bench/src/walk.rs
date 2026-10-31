@@ -4,6 +4,7 @@
 
 use std::fs::{self, DirEntry};
 use std::io;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -79,6 +80,7 @@ pub fn extension_of(name: &str) -> String {
 }
 
 /// Whole milliseconds of a timestamp, as `wholeMs` takes them from nanoseconds.
+#[cfg(unix)]
 fn whole_ms(seconds: i64, nanoseconds: i64) -> i64 {
     seconds * 1000 + nanoseconds / 1_000_000
 }
@@ -87,6 +89,22 @@ fn whole_ms(seconds: i64, nanoseconds: i64) -> i64 {
 fn stat_file(root_rel_dir: &str, abs_dir: &Path, name: String) -> Option<WalkedFile> {
     let abs_path = abs_dir.join(&name);
     let metadata = fs::symlink_metadata(&abs_path).ok()?;
+    #[cfg(unix)]
+    let (times, identity) = (
+        (
+            whole_ms(metadata.mtime(), metadata.mtime_nsec()),
+            whole_ms(metadata.ctime(), metadata.ctime_nsec()),
+        ),
+        (metadata.dev(), metadata.ino()),
+    );
+    // The bench reads the last write time for both, and no identity: the app's walk
+    // (`oriel_runtime::fs_meta`) reads the volume and file index.
+    #[cfg(windows)]
+    let (times, identity) = {
+        use std::os::windows::fs::MetadataExt as _;
+        let ms = (metadata.last_write_time() as i64 - 116_444_736_000_000_000) / 10_000;
+        ((ms, ms), (0, 0))
+    };
 
     if !metadata.file_type().is_file() {
         return None;
@@ -101,10 +119,10 @@ fn stat_file(root_rel_dir: &str, abs_dir: &Path, name: String) -> Option<WalkedF
         abs_path,
         ext: extension_of(&name),
         size: metadata.len(),
-        mtime_ms: whole_ms(metadata.mtime(), metadata.mtime_nsec()),
-        ctime_ms: whole_ms(metadata.ctime(), metadata.ctime_nsec()),
-        dev: metadata.dev(),
-        ino: metadata.ino(),
+        mtime_ms: times.0,
+        ctime_ms: times.1,
+        dev: identity.0,
+        ino: identity.1,
         junk: is_system_junk_file(&name),
     })
 }

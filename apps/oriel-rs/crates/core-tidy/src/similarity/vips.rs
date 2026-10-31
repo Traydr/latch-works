@@ -1228,6 +1228,16 @@ pub fn locate_libvips() -> std::result::Result<(PathBuf, LibvipsSource), String>
 }
 
 fn choose_libvips(places: &LibvipsPlaces) -> std::result::Result<(PathBuf, LibvipsSource), String> {
+    // On Windows the installed app's DLLs sit beside its executable.
+    #[cfg(windows)]
+    if let Some(found) = places
+        .executable
+        .as_deref()
+        .and_then(Path::parent)
+        .and_then(libvips_in)
+    {
+        return Ok((found, LibvipsSource::Bundle));
+    }
     let contents = places.executable.as_deref().and_then(|executable| {
         let macos = executable.parent()?;
         let contents = macos.parent()?;
@@ -1265,7 +1275,11 @@ fn libvips_in(folder: &Path) -> Option<PathBuf> {
     let mut names: Vec<String> = std::fs::read_dir(folder)
         .ok()?
         .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
-        .filter(|name| name.starts_with("libvips-cpp.") && name.ends_with(".dylib"))
+        .filter(|name| {
+            (name.starts_with("libvips-cpp.") && name.ends_with(".dylib"))
+                // sharp's Windows package, `@img/sharp-libvips-win32-x64`, has the C API's DLL.
+                || (cfg!(windows) && name == "libvips-42.dll")
+        })
         .collect();
     names.sort();
     names

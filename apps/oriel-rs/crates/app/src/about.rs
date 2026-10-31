@@ -49,8 +49,14 @@ impl LicenceIndex {
     /// `Contents/Resources/licenses`), or `None` for a development build.
     pub fn of_running_app() -> Option<Self> {
         let executable = std::env::current_exe().ok()?;
-        let contents = executable.parent()?.parent()?;
-        Self::read(&contents.join("Resources").join("licenses"))
+        // Windows' installed app keeps them in `licenses` beside its executable.
+        #[cfg(windows)]
+        return Self::read(&executable.parent()?.join("licenses"));
+        #[cfg(not(windows))]
+        {
+            let contents = executable.parent()?.parent()?;
+            Self::read(&contents.join("Resources").join("licenses"))
+        }
     }
 
     /// The notices in `folder`, if its `index.json` reads.

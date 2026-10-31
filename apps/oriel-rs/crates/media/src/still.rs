@@ -9,6 +9,8 @@
 
 #[cfg(target_os = "macos")]
 mod imageio;
+#[cfg(not(target_os = "macos"))]
+mod vips;
 mod webp;
 
 use std::path::Path;
@@ -91,7 +93,7 @@ pub fn stand_in(image: &RenderImage) -> Arc<RenderImage> {
 
 /// Decodes the still at `path` with its EXIF orientation applied and its longer side at most
 /// `max_pixel_size` pixels; a smaller still keeps its own size. Reads AVIF, HEIC, JPEG, PNG, WebP,
-/// GIF (the first frame) and BMP: whatever ImageIO reads on this Mac.
+/// GIF (the first frame) and BMP: whatever ImageIO reads on this Mac, or libvips elsewhere.
 pub fn decode(path: &Path, max_pixel_size: u32) -> Result<Still> {
     #[cfg(target_os = "macos")]
     {
@@ -99,11 +101,7 @@ pub fn decode(path: &Path, max_pixel_size: u32) -> Result<Still> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = max_pixel_size;
-        anyhow::bail!(
-            "{} cannot be decoded: stills decode through ImageIO, which is macOS only",
-            path.display()
-        )
+        vips::decode(path, max_pixel_size)
     }
 }
 
@@ -122,8 +120,7 @@ pub fn decode_bytes(bytes: &[u8], max_pixel_size: u32) -> Result<Still> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (bytes, max_pixel_size);
-        anyhow::bail!("stills decode through ImageIO, which is macOS only")
+        vips::decode_bytes(bytes, max_pixel_size)
     }
 }
 

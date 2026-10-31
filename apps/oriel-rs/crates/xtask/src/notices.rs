@@ -181,7 +181,7 @@ fn media_tools_text(pin: &oriel_tools::MediaToolsPin, build: &ToolBuild, licence
 /// One file out of a tarball, as text.
 fn read_member(archive: &Path, member: &str) -> Result<String> {
     capture(
-        "/usr/bin/tar",
+        support::system_tool("tar"),
         &["-xOf".as_ref(), archive.as_os_str(), member.as_ref()],
     )
     .with_context(|| format!("reading {member} from {}", archive.display()))
@@ -223,6 +223,71 @@ pub fn media_tools(
         folder.join("NOTICE.txt"),
         media_tools_text(pin, &build, licence),
     )?;
+    Ok(Notice {
+        folder: "media-tools".into(),
+        name: "ffmpeg and ffprobe".into(),
+        version: pin.version.into(),
+        licence: licence.into(),
+    })
+}
+
+/// `licenses/media-tools/` for Windows: Gyan Doshi's `full_build`, which Electron Oriel ships
+/// too. Its configuration is `--enable-gpl --enable-version3`, as its README says, so it is
+/// GPL-3.0-or-later; the licence's text comes from the FFmpeg source release as for macOS. The
+/// tools are not run here, since this may be a Mac staging the Windows package.
+pub fn media_tools_windows(pin: &oriel_tools::MediaToolsPin, licenses: &Path) -> Result<Notice> {
+    let ffmpeg = source_by_name("ffmpeg");
+    let downloads = libmpv::BuildOptions::default().work.join("downloads");
+    let archive = support::download(
+        &downloads,
+        &Download {
+            urls: ffmpeg.archive.urls,
+            sha256: ffmpeg.archive.sha256,
+            file: ffmpeg.archive.file,
+            headers: &[],
+        },
+    )?;
+    let root = format!("ffmpeg-{}", ffmpeg.version);
+    let folder = licenses.join("media-tools");
+    fs::create_dir_all(&folder)?;
+    for file in ["COPYING.GPLv3", "LICENSE.md"] {
+        fs::write(
+            folder.join(file),
+            read_member(&archive, &format!("{root}/{file}"))?,
+        )?;
+    }
+    let licence = "GPL-3.0-or-later";
+    let mut text = vec![
+        format!("ffmpeg.exe and ffprobe.exe {}, in media-tools", pin.version),
+        String::new(),
+        "Oriel RS runs these two programs as separate processes, to read and convert media. \
+         They are not linked into Oriel RS."
+            .to_owned(),
+        String::new(),
+        format!("Licence: {licence}. COPYING.GPLv3 here is the licence's text, and LICENSE.md"),
+        "is FFmpeg's own account of its licensing.".to_owned(),
+        String::new(),
+        "Where they come from: Gyan Doshi's full builds for Windows, which ffmpeg.org's".to_owned(),
+        "download page links to, fetched and checked by SHA-256 before use:".to_owned(),
+    ];
+    for archive in pin.archives {
+        text.push(format!("  {}", archive.url));
+        text.push(format!("    SHA-256 {}", archive.sha256));
+    }
+    text.extend([
+        String::new(),
+        "Corresponding source: the archive's README.txt lists every library and its source;"
+            .to_owned(),
+        format!(
+            "  FFmpeg {}: {}",
+            ffmpeg.version,
+            ffmpeg.archive.urls.first().copied().unwrap_or_default()
+        ),
+        format!("    SHA-256 {}", ffmpeg.archive.sha256),
+        "  The build scripts: https://github.com/GyanD/codexffmpeg".to_owned(),
+        String::new(),
+    ]);
+    fs::write(folder.join("NOTICE.txt"), text.join("\n"))?;
     Ok(Notice {
         folder: "media-tools".into(),
         name: "ffmpeg and ffprobe".into(),
@@ -405,6 +470,11 @@ fn licence_files(krate: &ShippedCrate) -> Result<Vec<PathBuf>> {
 /// `licenses/rust-crates/`: each crate's licence files in a folder of its own, and `README.txt`
 /// listing every crate with its licence.
 pub fn rust_crates(workspace: &Path, licenses: &Path) -> Result<Notice> {
+    rust_crates_for(workspace, licenses, TARGET)
+}
+
+/// [`rust_crates`] for the app built for `target`, such as Windows' `x86_64-pc-windows-msvc`.
+pub fn rust_crates_for(workspace: &Path, licenses: &Path, target: &str) -> Result<Notice> {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let manifest = workspace.join("Cargo.toml");
     let text = capture(
@@ -414,7 +484,7 @@ pub fn rust_crates(workspace: &Path, licenses: &Path) -> Result<Notice> {
             "--format-version".as_ref(),
             "1".as_ref(),
             "--filter-platform".as_ref(),
-            TARGET.as_ref(),
+            target.as_ref(),
             "--manifest-path".as_ref(),
             manifest.as_os_str(),
         ],

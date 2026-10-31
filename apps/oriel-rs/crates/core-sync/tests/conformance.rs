@@ -561,7 +561,7 @@ fn make_tree(root: &Path, tree: &[TreeEntry]) {
                     .set_modified(modified)
                     .unwrap();
             }
-            "symlink" => std::os::unix::fs::symlink(&outside, &path).unwrap(),
+            "symlink" => symlink(&outside, &path),
             other => panic!("unknown kind {other}"),
         }
     }
@@ -680,5 +680,21 @@ fn checks_as_lockstep_cores_doctor_does() {
             "{}",
             case.name
         );
+    }
+}
+
+/// A symlink, as the scan meets one. On Windows it needs developer mode or an elevated prompt.
+#[cfg(unix)]
+fn symlink(target: &Path, link: &Path) {
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+
+#[cfg(windows)]
+fn symlink(target: &Path, link: &Path) {
+    let resolved = link.parent().unwrap().join(target);
+    if resolved.is_dir() {
+        std::os::windows::fs::symlink_dir(target, link).unwrap();
+    } else {
+        std::os::windows::fs::symlink_file(target, link).unwrap();
     }
 }

@@ -12,6 +12,9 @@
 //!   from pinned sources into `apps/oriel-rs/.libmpv/<id>/`;
 //! - `bundle`: makes `target/release/bundle/Oriel RS.app`, with the libraries above, the pinned
 //!   ffmpeg and ffprobe, the licence notices for all of them, and an ad hoc signature;
+//! - `dmg`: makes the bundle, then a compressed disk image of it beside a link to Applications;
+//! - `package [windows]`: this system's installer, the DMG or Velopack's Setup.exe, or with
+//!   `windows --stage-only` the folder Setup.exe installs, staged on any system;
 //! - `measure <rows…> [--app <path>]… [--rounds N] [--out <dir>] [--fixture <dir>]`: takes Phase
 //!   9's scorecard rows for one app, or several interleaved for an A/B (`measure/mod.rs`).
 //!
@@ -20,9 +23,15 @@
 //! install_name_tool, codesign) by absolute path, as the scripts did.
 
 mod bundle;
+// hdiutil's disk image, for macOS only.
+#[cfg(target_os = "macos")]
+mod dmg;
 mod libmpv;
+// The scorecard's rows read the app through macOS's process APIs (`proc_pid_rusage`).
+#[cfg(target_os = "macos")]
 mod measure;
 mod notices;
+mod package;
 mod support;
 mod vendor;
 
@@ -35,6 +44,9 @@ commands:
   libmpv [--jobs N] [--work <dir>] [--out <dir>] [--keep-work]
                                build the LGPL libmpv from pinned sources into .libmpv/
   bundle                       make target/release/bundle/Oriel RS.app
+  dmg                          make the bundle, then Oriel-RS-<version>-arm64.dmg beside it
+  package [windows [--stage-only] [--exe <oriel-rs.exe>]]
+                               this system's installer: the DMG, or Setup.exe through vpk
   measure <rows…> [--app <path>]… [--rounds N] [--out <dir>] [--fixture <dir>]
                                take the scorecard's rows (`measure --help` lists them)";
 
@@ -48,7 +60,15 @@ fn main() -> ExitCode {
         "vendor" => vendor::command(rest),
         "libmpv" => libmpv::command(rest),
         "bundle" => bundle::command(rest),
+        "package" => package::command(rest),
+        #[cfg(target_os = "macos")]
+        "dmg" => dmg::command(rest),
+        #[cfg(not(target_os = "macos"))]
+        "dmg" => Err(anyhow::anyhow!("dmg runs on macOS only")),
+        #[cfg(target_os = "macos")]
         "measure" => measure::command(rest),
+        #[cfg(not(target_os = "macos"))]
+        "measure" => Err(anyhow::anyhow!("measure runs on macOS only")),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
             Ok(())

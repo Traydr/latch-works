@@ -126,7 +126,7 @@ fn build_tree(root: &Path, vectors: &ScanVectors) {
             TreeEntry::Symlink { path, target } => {
                 let link = root.join(path);
                 fs::create_dir_all(link.parent().unwrap()).unwrap();
-                std::os::unix::fs::symlink(target, link).unwrap();
+                symlink(Path::new(target), &link);
             }
         }
     }
@@ -477,4 +477,20 @@ fn makes_and_reads_views_index_as_electron_oriel_does() {
     drop(connection);
 
     fs::remove_dir_all(&folder).unwrap();
+}
+
+/// A symlink, as the scan meets one. On Windows it needs developer mode or an elevated prompt.
+#[cfg(unix)]
+fn symlink(target: &Path, link: &Path) {
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+
+#[cfg(windows)]
+fn symlink(target: &Path, link: &Path) {
+    let resolved = link.parent().unwrap().join(target);
+    if resolved.is_dir() {
+        std::os::windows::fs::symlink_dir(target, link).unwrap();
+    } else {
+        std::os::windows::fs::symlink_file(target, link).unwrap();
+    }
 }

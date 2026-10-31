@@ -303,6 +303,54 @@ cargo run -p xtask -- measure scroll idle \
 - **Electron Oriel.** `--electron` runs `e2e/scripts/frame-performance.ts` once a round, after
   Oriel RS in odd rounds and before it in even ones, and folds its numbers into the same lines
   (`FRAME_PERF_FIXTURE_ROOT`, a fresh `FRAME_PERF_WORK_DIR` under the out folder). It needs the
+### The DMG
+
+`cargo run -p xtask -- dmg` (or `package`, which on macOS does the same) makes the bundle as above,
+then `Oriel-RS-<version>-arm64.dmg` beside it: the app and a link to `/Applications`, compressed
+with `hdiutil` (ULFO, as Electron Oriel's), with no background art, verified with `hdiutil
+verify`. It prints the image's path: `target/release/bundle/` (under `$CARGO_TARGET_DIR` when that
+is set). The 0.0.1 image is 101 MB, for the 206 MB app.
+
+Try an image without installing it:
+
+```sh
+hdiutil attach -nobrowse -mountpoint /tmp/oriel-rs-dmg <image>
+ditto "/tmp/oriel-rs-dmg/Oriel RS.app" "/tmp/oriel-rs-try/Oriel RS.app"
+ORIEL_RS_DATA_DIR=/tmp/oriel-rs-try/data "/tmp/oriel-rs-try/Oriel RS.app/Contents/MacOS/oriel-rs"
+hdiutil detach /tmp/oriel-rs-dmg
+```
+
+**Installing.** Open the image and drag Oriel RS onto Applications. Started from anywhere else (the
+mounted image, Downloads), the app offers to move itself, as Electron Oriel does: "Move to
+Applications", "Not Now" (asks again next launch) or "Don't Ask Again" (remembered in
+`shell/move-to-applications-declined`). Moving copies the bundle into `/Applications`
+(`~/Applications` when that is not writable; Electron Oriel asks for an administrator instead),
+replacing an older copy only when you say so and never one that is running, moves the old copy to
+the Trash unless it is on a read-only volume (the image, or App Translocation's mount), and starts
+again from Applications. Development builds, binaries outside a bundle and runs with
+`ORIEL_RS_DATA_DIR` set are not offered the move. A check sets `ORIEL_RS_MOVE_OFFER=1` to be
+offered it anyway, and `ORIEL_RS_APPLICATIONS_DIR=<folder>` (read only in such a run) to move into
+a scratch folder instead of Applications; the relaunch passes every `ORIEL_RS_*` variable on.
+
+**An unsigned copy someone else downloads.** The bundle is signed ad hoc, which runs on the Mac
+that built it. A copy that arrives through a browser or AirDrop carries the quarantine attribute,
+and Gatekeeper refuses an app with no Developer ID: macOS says it "cannot be opened" or "is
+damaged". Either Control-click (right-click) the app in Finder, choose Open, then Open again in the
+dialog (on macOS 15 and later: try to open it once, then System Settings > Privacy & Security >
+Open Anyway), or clear the attribute once from Terminal:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Oriel RS.app"
+```
+
+The owner builds it themselves on their own Mac, which needs neither (decision 19).
+
+### Windows
+
+`cargo run -p xtask -- package windows` makes a Velopack Setup.exe on Windows;
+`package windows --stage-only [--exe <oriel-rs.exe>]` lays out the folder it installs on any
+system. [The Windows runbook](oriel-rs-windows.md) has the rest.
+
   e2e package's prerequisites (`docs/runbooks/e2e.md`) and takes about 12 minutes a round.
 
 The spikes' variables, for a run by hand, are documented at the top of each spike:

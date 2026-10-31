@@ -40,8 +40,8 @@ fn archive(root: &Path) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, file).unwrap();
     }
-    std::os::unix::fs::symlink(root.join("top.jpg"), root.join("link.jpg")).unwrap();
-    std::os::unix::fs::symlink(root.join("comics"), root.join("linked")).unwrap();
+    symlink(&root.join("top.jpg"), &root.join("link.jpg"));
+    symlink(&root.join("comics"), &root.join("linked"));
 }
 
 fn filters(show_images: bool, show_videos: bool) -> CatalogFilters {
@@ -301,4 +301,20 @@ fn lists_in_the_order_a_breadth_first_readdir_walk_finds() {
     assert_eq!(ids.len(), 480);
     assert_eq!(ids, walk_like_readdir(&root, &filters(true, true)));
     fs::remove_dir_all(&root).unwrap();
+}
+
+/// A symlink, as the scan meets one. On Windows it needs developer mode or an elevated prompt.
+#[cfg(unix)]
+fn symlink(target: &Path, link: &Path) {
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+
+#[cfg(windows)]
+fn symlink(target: &Path, link: &Path) {
+    let resolved = link.parent().unwrap().join(target);
+    if resolved.is_dir() {
+        std::os::windows::fs::symlink_dir(target, link).unwrap();
+    } else {
+        std::os::windows::fs::symlink_file(target, link).unwrap();
+    }
 }

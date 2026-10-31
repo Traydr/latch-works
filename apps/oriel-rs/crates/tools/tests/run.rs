@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use oriel_runtime::CancelToken;
-use oriel_tools::{
-    FETCH_COMMAND, LocateError, MAX_STDERR_BYTES, MAX_STDOUT_BYTES, MediaTools, ToolError, ToolRun,
-};
+use oriel_tools::{FETCH_COMMAND, LocateError, MediaTools, ToolError, ToolRun};
+#[cfg(unix)]
+use oriel_tools::{MAX_STDERR_BYTES, MAX_STDOUT_BYTES};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 

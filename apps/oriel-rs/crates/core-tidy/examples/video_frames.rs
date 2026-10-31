@@ -24,12 +24,19 @@ use oriel_core_tidy::similarity::{
 };
 
 /// CPU seconds of the waited-for children: ffmpeg and ffprobe.
+#[cfg(unix)]
 fn children_cpu() -> f64 {
     // SAFETY: getrusage fills the struct it is given.
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
     unsafe { libc::getrusage(libc::RUSAGE_CHILDREN, &mut usage) };
     let seconds = |time: libc::timeval| time.tv_sec as f64 + f64::from(time.tv_usec) / 1e6;
     seconds(usage.ru_utime) + seconds(usage.ru_stime)
+}
+
+/// Off macOS the timer reads nothing yet; the Windows agent ports it.
+#[cfg(not(unix))]
+fn children_cpu() -> f64 {
+    0.0
 }
 
 fn videos_under(folder: &Path, found: &mut Vec<PathBuf>) {

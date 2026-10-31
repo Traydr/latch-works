@@ -6,9 +6,11 @@
 //! - [`PauseToken`]: the cooperative pause beside it, which the work waits on between steps;
 //! - [`TokioRuntime`]: a tokio runtime on its own thread, for the HTTP clients that need one;
 //! - [`Database`]: one SQLite connection per catalog, on its own thread, called from async code;
-//! - [`release_free_memory`]: heavy work hands its memory back to the system when it is done.
+//! - [`release_free_memory`]: heavy work hands its memory back to the system when it is done;
+//! - [`fs_meta`]: a file's size, times and identity as Node's `fs.stat` gives them, on Windows too.
 
 mod cancel;
+pub mod fs_meta;
 mod job;
 mod memory;
 mod pause;

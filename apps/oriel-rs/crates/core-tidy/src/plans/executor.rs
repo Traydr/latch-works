@@ -16,7 +16,6 @@
 
 use std::fs;
 use std::io;
-use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -26,6 +25,7 @@ use anyhow::{Context as _, anyhow, bail};
 use oriel_avif::Libavif;
 use oriel_core_format::{AudioTrackPlan, VideoTrackPlan};
 use oriel_runtime::Cancelled;
+use oriel_runtime::fs_meta::{MetadataExt as _, dev_ino};
 use rusqlite::{OptionalExtension as _, params};
 
 use super::encode_budget::EncodeBudget;
@@ -270,11 +270,8 @@ fn relocate_row(deps: &ExecutorDeps<'_>, step: &StepRecord, target: &Path) -> an
     let name = base_name(&rel_path).to_owned();
     let ext = extension_of(&name);
     let dir = dir_of(&rel_path).to_owned();
-    let (ctime, dev, ino) = (
-        whole_ctime(&moved),
-        moved.dev().to_string(),
-        moved.ino().to_string(),
-    );
+    let (dev, ino) = dev_ino(target, &moved);
+    let (ctime, dev, ino) = (whole_ctime(&moved), dev.to_string(), ino.to_string());
     deps.catalog.blocking(move |connection| {
         let format: Option<String> = connection
             .query_row(
@@ -339,6 +336,7 @@ fn replace_row(
         return Ok(());
     };
     let written = fs::metadata(target)?;
+    let (dev, ino) = dev_ino(target, &written);
     let name = base_name(&rel_path).to_owned();
     let row = (
         dir_of(&rel_path).to_owned(),
@@ -346,8 +344,8 @@ fn replace_row(
         written.size() as i64,
         whole_mtime(&written),
         whole_ctime(&written),
-        written.dev().to_string(),
-        written.ino().to_string(),
+        dev.to_string(),
+        ino.to_string(),
     );
     let (root_id, from) = (step.root_id, step.from_rel.clone());
     deps.catalog.blocking(move |connection| {

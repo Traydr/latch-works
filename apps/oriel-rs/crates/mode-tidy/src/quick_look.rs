@@ -20,7 +20,9 @@ thread_local! {
 /// Shows `path` in Quick Look over `window`, or opens it where Quick Look cannot show it.
 pub fn quick_look(path: &Path, window: &Window, cx: &mut App) {
     LAST.with(|last| *last.borrow_mut() = Some(path.to_path_buf()));
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use raw_window_handle::HasWindowHandle;
+    #[cfg(target_os = "macos")]
+    use raw_window_handle::RawWindowHandle;
     let Ok(handle) = HasWindowHandle::window_handle(window) else {
         return;
     };

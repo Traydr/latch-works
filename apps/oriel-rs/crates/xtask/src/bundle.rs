@@ -35,7 +35,7 @@ use crate::notices::{self, Notice};
 use crate::support::{self, capture, compare_versions, is_system, log, read_macho, run_here};
 use crate::vendor::{self, pins};
 
-const APP_NAME: &str = "Oriel RS";
+pub(crate) const APP_NAME: &str = "Oriel RS";
 
 const BUNDLE_ID: &str = "dev.traydr.latchworks.oriel-rs";
 
@@ -59,7 +59,7 @@ struct PackedSet {
 }
 
 /// The workspace's version, which every crate inherits, from `[workspace.package]`.
-fn crate_version(workspace: &Path) -> Result<String> {
+pub(crate) fn crate_version(workspace: &Path) -> Result<String> {
     let manifest = fs::read_to_string(workspace.join("Cargo.toml"))?;
     let section = manifest
         .split_once("[workspace.package]")
@@ -77,7 +77,7 @@ fn crate_version(workspace: &Path) -> Result<String> {
 const PROFILE: &str = "dist";
 
 /// Cargo's target folder, honouring `CARGO_TARGET_DIR` as Cargo does.
-fn target_folder(workspace: &Path) -> PathBuf {
+pub(crate) fn target_folder(workspace: &Path) -> PathBuf {
     std::env::var_os("CARGO_TARGET_DIR")
         .filter(|value| !value.is_empty())
         .map_or_else(|| workspace.join("target"), |folder| workspace.join(folder))
@@ -135,7 +135,7 @@ fn info_plist(version: &str, minimum_macos: &str) -> String {
     .join("\n")
 }
 
-fn size_of(target: &Path) -> Result<String> {
+pub(crate) fn size_of(target: &Path) -> Result<String> {
     let output = capture("/usr/bin/du", &["-sh".as_ref(), target.as_os_str()])?;
     Ok(output.split('\t').next().unwrap_or_default().to_owned())
 }
@@ -249,6 +249,13 @@ pub fn command(args: &[String]) -> Result<()> {
     if let Some(extra) = args.first() {
         bail!("bundle takes no options, not {extra}");
     }
+    let app = make()?;
+    log(format!("\nOpen it with: open \"{}\"", app.display()));
+    Ok(())
+}
+
+/// Makes the bundle and returns where it is.
+pub fn make() -> Result<PathBuf> {
     if !support::is_mac_arm64() {
         bail!("Oriel RS is bundled on macOS arm64 only");
     }
@@ -449,6 +456,5 @@ pub fn command(args: &[String]) -> Result<()> {
         "  {:>6}  ffmpeg and ffprobe",
         size_of(&app.join("Contents/Resources/media-tools"))?
     ));
-    log(format!("\nOpen it with: open \"{}\"", app.display()));
-    Ok(())
+    Ok(app)
 }

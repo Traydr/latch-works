@@ -1215,17 +1215,7 @@ impl Usage {
 /// The process's footprint, as Activity Monitor's Memory column and `footprint` give it, and its
 /// thread count.
 fn at_rest() -> String {
-    let mut usage = std::mem::MaybeUninit::<libc::rusage_info_v4>::zeroed();
-    // SAFETY: `usage` is a `rusage_info_v4`, the flavour asked for.
-    let status = unsafe {
-        libc::proc_pid_rusage(
-            libc::getpid(),
-            libc::RUSAGE_INFO_V4,
-            usage.as_mut_ptr().cast(),
-        )
-    };
-    // SAFETY: zeroed is a valid `rusage_info_v4`, and the call filled it on success.
-    let footprint = (status == 0).then(|| unsafe { usage.assume_init() }.ri_phys_footprint);
+    let footprint = phys_footprint();
     let threads = Command::new("ps")
         .args(["-M", "-p", &std::process::id().to_string()])
         .output()
@@ -1240,6 +1230,28 @@ fn at_rest() -> String {
         "footprint {:.1} MB, {threads} threads",
         footprint.unwrap_or(0) as f64 / 1e6
     )
+}
+
+#[cfg(target_os = "macos")]
+fn phys_footprint() -> Option<u64> {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage_info_v4>::zeroed();
+    // SAFETY: `usage` is a `rusage_info_v4`, the flavour asked for.
+    let status = unsafe {
+        libc::proc_pid_rusage(
+            libc::getpid(),
+            libc::RUSAGE_INFO_V4,
+            usage.as_mut_ptr().cast(),
+        )
+    };
+    // SAFETY: zeroed is a valid `rusage_info_v4`, and the call filled it on success.
+    (status == 0).then(|| unsafe { usage.assume_init() }.ri_phys_footprint)
+}
+
+/// Off macOS the spike reads no footprint yet; the Windows agent measures with Task Manager or
+/// `GetProcessMemoryInfo`.
+#[cfg(not(target_os = "macos"))]
+fn phys_footprint() -> Option<u64> {
+    None
 }
 
 /// `ps`'s `[[dd-]hh:]mm:ss.cc`.
