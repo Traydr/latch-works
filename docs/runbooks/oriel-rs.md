@@ -318,10 +318,39 @@ symbol table, so read a crash report against the unstripped build of the same UU
 ### The DMG
 
 `cargo run -p xtask -- dmg` (or `package`, which on macOS does the same) makes the bundle as above,
-then `Oriel-RS-<version>-arm64.dmg` beside it: the app and a link to `/Applications`, compressed
-with `hdiutil` (ULFO, as Electron Oriel's), with no background art, verified with `hdiutil
-verify`. It prints the image's path: `target/release/bundle/` (under `$CARGO_TARGET_DIR` when that
-is set). The 0.0.1 image is 101 MB, for the 206 MB app.
+then `Oriel-RS-<version>-arm64.dmg` beside it, verified with `hdiutil verify`. It prints the
+image's path: `target/release/bundle/` (under `$CARGO_TARGET_DIR` when that is set). `dmg --app
+<Oriel RS.app>` packs a bundle already made from this checkout instead of making it again.
+
+The image is laid out as Electron Oriel's, whose Forge config gives appdmg the layout:
+
+| | Oriel RS | Electron Oriel |
+| --- | --- | --- |
+| Volume | "Oriel RS", with the app's icon (`.VolumeIcon.icns` and the root's custom-icon flag) | "Oriel", the same icon |
+| Window | 660 × 400, no toolbar, icons 128 px | the same |
+| Icons | the app at (180, 180), the link to `/Applications` at (480, 180) | the same |
+| Background | `apps/oriel-rs/crates/xtask/installer/dmg-background.svg`, Electron Oriel's art reading "Drag Oriel RS onto Applications to install it." | `apps/oriel/installer/dmg-background.svg` |
+| Format | HFS+, compressed to ULFO (LZFSE, macOS 10.11 and later) | the same |
+
+xtask does what appdmg does, in Rust and without AppleScript or Finder: it creates a blank HFS+
+image with `hdiutil`, mounts it in the target folder, copies the app in with `ditto`, links
+`/Applications`, joins the 1x and 2x pictures into one HiDPI TIFF in the hidden `.background`
+folder with `tiffutil -cathidpicheck`, and copies the icon. It sets the Finder flags in
+`com.apple.FinderInfo` itself (custom icon on the root, invisible on `.background` and
+`.VolumeIcon.icns`), since `SetFile` comes only with Xcode. Then it writes the `.DS_Store`
+(`crates/xtask/src/dmg/`): a `Bud1` buddy-allocated store with one B-tree leaf holding each
+icon's `Iloc`, and the folder's `bwsp` (window bounds, no toolbar or sidebar), `icvp` (icon view,
+128 px, background type 2) and `vSrn`, the two as binary property lists. `icvp` carries an alias
+record pointing at the TIFF, as `macos-alias` writes it (its test checks it against the alias in
+Electron Oriel's 0.1.4 DMG, byte for byte): the volume's name and mount point
+(`/Volumes/Oriel RS`), the folder's and file's catalog IDs, and the path from the volume's root.
+Finder resolves it by the volume's name and that path wherever the image is mounted. Last it
+unmounts the image and converts it to ULFO.
+
+The art is rendered from its SVG at 660 × 400 and 1320 × 800 with resvg 0.45 and the system's
+fonts (Electron Oriel's came from sharp, the same picture); render both again after changing
+the SVG. Finder hides the bottom line of the art behind the path and status bars when those are
+on in Finder's settings, as it does for Electron Oriel's image.
 
 Try an image without installing it:
 

@@ -13,7 +13,8 @@
 //!   from pinned sources into `apps/oriel-rs/.libmpv/<id>/`;
 //! - `bundle`: makes `target/release/bundle/Oriel RS.app`, with the libraries above, the pinned
 //!   ffmpeg and ffprobe, the licence notices for all of them, and an ad hoc signature;
-//! - `dmg`: makes the bundle, then a compressed disk image of it beside a link to Applications;
+//! - `dmg [--app <Oriel RS.app>]`: makes the bundle (or takes one), then a compressed disk image
+//!   laid out as Electron Oriel's: its background, icons and window, written without Finder;
 //! - `package [windows]`: this system's installer, the DMG or Velopack's Setup.exe, or with
 //!   `windows --stage-only` the folder Setup.exe installs, staged on any system;
 //! - `measure <rows…> [--app <path>]… [--rounds N] [--out <dir>] [--fixture <dir>]`: takes Phase
@@ -49,7 +50,8 @@ commands:
   libmpv [--jobs N] [--work <dir>] [--out <dir>] [--keep-work]
                                build the LGPL libmpv from pinned sources into .libmpv/
   bundle                       make target/release/bundle/Oriel RS.app
-  dmg                          make the bundle, then Oriel-RS-<version>-arm64.dmg beside it
+  dmg [--app <Oriel RS.app>]   make the bundle (or take one), then Oriel-RS-<version>-arm64.dmg
+                               beside it
   package [windows [--stage-only] [--exe <oriel-rs.exe>]]
                                this system's installer: the DMG, or Setup.exe through vpk
   measure <rows…> [--app <path>]… [--rounds N] [--out <dir>] [--fixture <dir>]

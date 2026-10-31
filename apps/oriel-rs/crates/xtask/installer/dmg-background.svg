@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="400" viewBox="0 0 660 400">
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#f8f2e5"/>
+<stop offset="1" stop-color="#ece2cd"/>
+</linearGradient>
+<radialGradient id="glow" cx="0.5" cy="0.42" r="0.6">
+<stop offset="0" stop-color="#f4cb70" stop-opacity="0.22"/>
+<stop offset="1" stop-color="#f4cb70" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<rect width="660" height="400" fill="url(#sky)"/>
+<rect width="660" height="400" fill="url(#glow)"/>
+<!-- The bay window's cap and sill, faint, framing the two icons. -->
+<path fill="none" stroke="#e99b89" stroke-opacity="0.45" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" d="M60 96L170 70H490L600 96"/>
+<path fill="none" stroke="#e99b89" stroke-opacity="0.45" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" d="M60 290L170 316H490L600 290"/>
+<!-- The way to go: from the app to Applications. -->
+<path fill="none" stroke="#e99b89" stroke-width="6" stroke-linecap="round" stroke-dasharray="14 12" d="M270 180H378"/>
+<path fill="none" stroke="#e99b89" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" d="M372 164L392 180L372 196"/>
+<!-- Mid-tone plates under Finder's labels, which are white in Dark Mode and black in Light. -->
+<rect x="112" y="250" width="136" height="26" rx="13" fill="#8a9099"/>
+<rect x="412" y="250" width="136" height="26" rx="13" fill="#8a9099"/>
+<text x="330" y="352" text-anchor="middle" fill="#2d323a" fill-opacity="0.72" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13">Drag Oriel RS onto Applications to install it.</text>
+</svg>

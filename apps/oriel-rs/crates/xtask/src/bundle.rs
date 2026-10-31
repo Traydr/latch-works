@@ -41,7 +41,7 @@ const BUNDLE_ID: &str = "dev.traydr.latchworks.oriel-rs";
 
 const EXECUTABLE: &str = "oriel-rs";
 
-const ICON_FILE: &str = "oriel-rs.icns";
+pub(crate) const ICON_FILE: &str = "oriel-rs.icns";
 
 /// Names the signing identity, as for Electron Oriel; without it the bundle is signed ad hoc.
 const SIGN_IDENTITY_VARIABLE: &str = "ORIEL_MACOS_SIGN_IDENTITY";
