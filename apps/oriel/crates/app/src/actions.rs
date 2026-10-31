@@ -2,6 +2,7 @@
 //! context, so a hidden mode, which is not drawn, cannot receive them.
 
 use gpui_kit::{App, KeyBinding, actions};
+use oriel_ui::cmd_or_ctrl;
 
 use crate::quit::QuitGuard;
 
@@ -43,20 +44,26 @@ pub const SETTINGS_CONTEXT: &str = "Settings";
 /// Binds the shell's keys and the modes' menu keys, and the app-wide actions. Call before the
 /// menus are set: they read their shortcuts from the keymap.
 pub fn init(cx: &mut App) {
+    // ⌘ is Ctrl off macOS (`oriel_ui::keys`), as Electron Oriel's `CmdOrCtrl` was.
     cx.bind_keys([
-        KeyBinding::new("cmd-1", ShowView, None),
-        KeyBinding::new("cmd-2", ShowTidy, None),
-        KeyBinding::new("cmd-3", ShowSync, None),
-        KeyBinding::new("cmd-\\", ToggleRail, None),
-        KeyBinding::new("cmd-,", OpenSettings, None),
+        KeyBinding::new(cmd_or_ctrl!("1"), ShowView, None),
+        KeyBinding::new(cmd_or_ctrl!("2"), ShowTidy, None),
+        KeyBinding::new(cmd_or_ctrl!("3"), ShowSync, None),
+        KeyBinding::new(cmd_or_ctrl!("\\"), ToggleRail, None),
+        KeyBinding::new(cmd_or_ctrl!(","), OpenSettings, None),
         KeyBinding::new("escape", CloseSettings, Some(SETTINGS_CONTEXT)),
+        KeyBinding::new(cmd_or_ctrl!("m"), Minimize, None),
+        KeyBinding::new(cmd_or_ctrl!("w"), CloseWindow, None),
+        KeyBinding::new(cmd_or_ctrl!("q"), Quit, None),
+    ]);
+    #[cfg(target_os = "macos")]
+    cx.bind_keys([
         KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
         KeyBinding::new("cmd-h", Hide, None),
         KeyBinding::new("alt-cmd-h", HideOthers, None),
-        KeyBinding::new("cmd-m", Minimize, None),
-        KeyBinding::new("cmd-w", CloseWindow, None),
-        KeyBinding::new("cmd-q", Quit, None),
     ]);
+    #[cfg(not(target_os = "macos"))]
+    cx.bind_keys([KeyBinding::new("f11", ToggleFullScreen, None)]);
     oriel_ui::commands::bind_keys(cx);
 
     cx.on_action(|_: &Quit, cx| QuitGuard::request_global(cx));

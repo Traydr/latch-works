@@ -315,7 +315,9 @@ impl CleanupPage {
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if event.keystroke.modifiers.platform && event.keystroke.key == "enter" {
+        if oriel_ui::keys::command_held(&event.keystroke.modifiers)
+            && event.keystroke.key == "enter"
+        {
             self.clean_up(window, cx);
             cx.stop_propagation();
         }

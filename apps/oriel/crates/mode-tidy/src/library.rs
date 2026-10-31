@@ -63,9 +63,8 @@ const MODE_KEY: &str = "glazier.library.mode";
 /// Room the selection bar covers at the bottom of the files, so the last ones scroll clear of it.
 const BAR_INSET: f32 = 80.;
 
-/// ⌘, or Ctrl elsewhere, as Electron Oriel's `isCommandKey` reads either.
 fn is_command(modifiers: &Modifiers) -> bool {
-    modifiers.platform || modifiers.control
+    oriel_ui::keys::command_held(modifiers)
 }
 
 /// The Library shown as a list or as a grid of tiles.

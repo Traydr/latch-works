@@ -10,6 +10,7 @@ pub mod commands;
 pub mod controls;
 pub mod drag;
 pub mod folders;
+pub mod keys;
 pub mod layout;
 pub mod locations;
 pub mod segmented;
