@@ -1,0 +1,69 @@
+[package]
+name = "oriel"
+description = "Oriel: View, Tidy and Sync in one native window, on GPUI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "oriel"
+path = "src/main.rs"
+
+[dependencies]
+gpui-kit.workspace = true
+gpui-fps = { workspace = true, optional = true }
+anyhow.workspace = true
+futures.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# File URLs the system hands the app (Open With, a drop on the Dock icon) into paths.
+url = "2"
+oriel-core-paths.workspace = true
+# `toISOString`'s format, for the welcome's note that it was seen.
+oriel-core-sync.workspace = true
+oriel-ui.workspace = true
+oriel-mode-view.workspace = true
+oriel-mode-tidy.workspace = true
+oriel-mode-sync.workspace = true
+# `paths::canonicalize`, Node's `realpath` without Windows' verbatim prefix, for the shell's
+# known folders.
+oriel-runtime.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The shell spike's CPU and memory readings (`proc_pid_rusage`), as View's spike reads them.
+libc = "0.2"
+# The Dock icon's progress bar (`NSDockTile`) and the View menu's full-screen item, on the objc2
+# 0.6 line GPUI's macOS crates use.
+objc2 = "0.6"
+# NSFileManager moves the old copy to the Trash after the move to Applications.
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSError", "NSFileManager", "NSGeometry", "NSString", "NSURL", "NSUserDefaults", "objc2-core-foundation"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSBezierPath", "NSColor", "NSControl", "NSDockTile", "NSGraphics", "NSImage", "NSImageView", "NSResponder", "NSView", "objc2-core-foundation"] }
+
+[target.'cfg(windows)'.dependencies]
+# The single-instance lock and its pipe, the taskbar button's progress, and the answer to the
+# session's end (`terminate`), at the version GPUI's Windows crates use.
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_IO", "Win32_System_Pipes", "Win32_System_Shutdown", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+# Setup.exe's install and uninstall hooks only, never its updater (decision 19). Pinned to the vpk
+# that packs the app, as Electron Oriel pins its `velopack` package to its vpk.
+velopack = "=1.3.39-g8d2844f"
+
+# The Windows executable's icon and version information (`build.rs`), compiled with rc.exe for MSVC
+# or llvm-rc and windres for MinGW, at the version GPUI's own manifest uses. A build script cannot
+# take a dependency for its target alone, so a macOS build compiles it too, and does nothing.
+[build-dependencies]
+embed-resource = "3"
+
+[features]
+# Frame time, CPU, GPU and memory overlay for Phase 0's measurements.
+fps = ["dep:gpui-fps"]
+gpui-fast = ["gpui-kit/gpui-fast"]
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }
+# The View test writes small stills for the gallery to list.
+oriel-media.workspace = true

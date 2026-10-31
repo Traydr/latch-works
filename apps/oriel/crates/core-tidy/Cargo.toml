@@ -1,0 +1,54 @@
+[package]
+name = "oriel-core-tidy"
+description = "Tidy's engine, ported from glazier-core: the catalog, the scan, the analysis passes, duplicate sets and similar groups, and the plans, executor and holding that change the archive."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+futures.workspace = true
+# Jobs are GPUI entities, so starting one takes the app.
+gpui-kit.workspace = true
+# The keeper rules' name order, as glazier-core's `Intl.Collator` gives it.
+icu_collator.workspace = true
+# glazier-core walks JavaScript Maps in insertion order; the ports keep that order.
+indexmap = "2"
+# libvips is LGPL, so it is loaded at run time from the dylib the app ships, never linked in.
+libloading = "0.8"
+# Local time for holding's batch names, as JavaScript's Date reads it.
+libc = "0.2"
+log.workspace = true
+oriel-core-domain.workspace = true
+oriel-core-format.workspace = true
+oriel-core-paths.workspace = true
+# Convert's stills to AVIF, through the vendored libavif.
+oriel-avif.workspace = true
+oriel-runtime.workspace = true
+oriel-tools.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+# Emptying holding moves its batches to the Trash through NSFileManager, as Electron's
+# `shell.trashItem` does.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSError", "NSFileManager", "NSString", "NSURL"] }
+
+# Emptying holding moves its batches to the Recycle Bin through the shell's `IFileOperation`, as
+# Electron's `shell.trashItem` does, and holding's batch names read Windows' own local time, at
+# the versions already in the lock (GPUI's Windows backend builds `windows` with these features).
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
+windows-core = "0.62"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Time"] }
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }
+# The archive the engine's tests scan, made at test time.
+oriel-test-archive.workspace = true
+
+[lints]
+workspace = true

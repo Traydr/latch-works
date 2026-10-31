@@ -1,0 +1,26 @@
+[package]
+name = "oriel-bench"
+description = "Plan 063's Phase 0 measurements: archive walk, SHA-256 and AVIF encode throughput."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "scan-bench"
+path = "src/bin/scan_bench.rs"
+
+[[bin]]
+name = "avif-bench"
+path = "src/bin/avif_bench.rs"
+
+[dependencies]
+anyhow.workspace = true
+libc = "0.2"
+oriel-avif.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.11"
+
+[lints]
+workspace = true

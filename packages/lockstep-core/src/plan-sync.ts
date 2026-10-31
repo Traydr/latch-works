@@ -144,7 +144,11 @@ export async function planSync(
   return result;
 }
 
-function selectPlanningHashPaths(
+/**
+ * The files a plan hashes: every unhashed one for `all`; for `remote-aware`, only those whose
+ * paired remote entry has a hash and the same size, where the hash alone can tell them apart.
+ */
+export function selectPlanningHashPaths(
   hashMode: "all" | "remote-aware",
   localItems: Awaited<ReturnType<typeof scanArchive>>["items"],
   remoteEntries: Awaited<ReturnType<typeof fetchRemoteSnapshot>>,

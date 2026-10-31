@@ -5,7 +5,7 @@ import { z } from "zod";
 const ENTRY_ERROR = "Remote snapshot entries must include path and size.";
 
 /** A non-string `sha256` is dropped rather than rejected, matching the pre-schema reader. */
-const RemoteEntrySchema = z.object({
+export const RemoteEntrySchema = z.object({
   path: z.string(),
   sha256: z.string().optional().catch(undefined),
   size: z.number(),
@@ -13,7 +13,8 @@ const RemoteEntrySchema = z.object({
 
 const RemoteEntryListSchema = z.array(RemoteEntrySchema);
 
-const RemoteSnapshotResponseSchema = z.object({ entries: RemoteEntryListSchema });
+/** What `GET /api/sync/snapshot` answers, as far as this client reads it. */
+export const RemoteSnapshotResponseSchema = z.object({ entries: RemoteEntryListSchema });
 
 /** undici rejects with a bare "fetch failed" and keeps the useful reason (ECONNREFUSED…) in `cause`. */
 const NetworkErrorReasonSchema = z

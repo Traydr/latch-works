@@ -1,0 +1,16 @@
+[package]
+name = "oriel-core-format"
+description = "media-format's policies in Rust: which file becomes what in the archive, with which settings."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
+[lints]
+workspace = true

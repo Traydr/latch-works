@@ -1,0 +1,222 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PaneViewSyncApi",
+  "description": "Pane View's sync API as @latch-works/lockstep-core's zod schemas describe it. Written by packages/lockstep-core/src/api-schema.test.ts; do not edit by hand.",
+  "definitions": {
+    "CompleteObjectRequest": {
+      "type": "object",
+      "properties": {
+        "contentType": {
+          "type": "string"
+        },
+        "extension": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "logicalPath": {
+          "type": "string"
+        },
+        "mediaType": {
+          "type": "string",
+          "enum": ["image", "gif", "video", "pdf", "unknown"]
+        },
+        "mtimeMs": {
+          "type": "number"
+        },
+        "objectKey": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "size": {
+          "type": "number"
+        },
+        "syncRunId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "contentType",
+        "extension",
+        "filename",
+        "logicalPath",
+        "mediaType",
+        "mtimeMs",
+        "objectKey",
+        "sha256",
+        "size",
+        "syncRunId"
+      ]
+    },
+    "CompleteSyncRunRequest": {
+      "type": "object",
+      "properties": {
+        "counts": {
+          "$ref": "#/definitions/SyncRunOutcomeCounts"
+        },
+        "error": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["cancelled", "completed", "failed"]
+        }
+      },
+      "required": ["counts", "status"]
+    },
+    "CreateSyncRunRequest": {
+      "type": "object",
+      "properties": {
+        "counts": {
+          "$ref": "#/definitions/LockstepPlanCounts"
+        },
+        "sourceRoot": {
+          "type": "string"
+        }
+      },
+      "required": ["counts", "sourceRoot"]
+    },
+    "DeleteObjectRequest": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "const": "delete"
+        },
+        "logicalPath": {
+          "type": "string"
+        },
+        "syncRunId": {
+          "type": "string"
+        }
+      },
+      "required": ["action", "logicalPath", "syncRunId"]
+    },
+    "LockstepPlanCounts": {
+      "type": "object",
+      "properties": {
+        "delete": {
+          "type": "number"
+        },
+        "keep": {
+          "type": "number"
+        },
+        "update": {
+          "type": "number"
+        },
+        "upload": {
+          "type": "number"
+        }
+      },
+      "required": ["delete", "keep", "update", "upload"]
+    },
+    "RemoteEntry": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "size": {
+          "type": "number"
+        }
+      },
+      "required": ["path", "size"]
+    },
+    "RemoteSnapshotResponse": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RemoteEntry"
+          }
+        }
+      },
+      "required": ["entries"]
+    },
+    "SyncRun": {
+      "type": "object",
+      "properties": {
+        "syncRunId": {
+          "type": "string"
+        }
+      },
+      "required": ["syncRunId"]
+    },
+    "SyncRunOutcomeCounts": {
+      "type": "object",
+      "properties": {
+        "delete": {
+          "type": "number"
+        },
+        "keep": {
+          "type": "number"
+        },
+        "update": {
+          "type": "number"
+        },
+        "upload": {
+          "type": "number"
+        },
+        "capped": {
+          "type": "number"
+        },
+        "failed": {
+          "type": "number"
+        },
+        "planned": {
+          "type": "number"
+        },
+        "pushed": {
+          "type": "number"
+        }
+      },
+      "required": ["delete", "keep", "update", "upload", "capped", "failed", "planned", "pushed"]
+    },
+    "UploadTarget": {
+      "type": "object",
+      "properties": {
+        "headers": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "objectKey": {
+          "type": "string"
+        },
+        "uploadUrl": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["objectKey", "uploadUrl"]
+    },
+    "UploadUrlRequest": {
+      "type": "object",
+      "properties": {
+        "contentType": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "size": {
+          "type": "number"
+        }
+      },
+      "required": ["contentType", "filename", "sha256", "size"]
+    }
+  }
+}

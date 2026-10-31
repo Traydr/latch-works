@@ -1,0 +1,19 @@
+[package]
+name = "oriel-test-archive"
+description = "The archive Tidy's tests scan, drawn and encoded at test time so the repository holds no media."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Draws the stills and writes them as PNG and JPEG; re-exported, so tests that resize or save a
+# picture use the same version.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# The AVIF misnamed `.jpg`, through the libavif the app converts with.
+oriel-avif.workspace = true
+# The pinned ffmpeg makes the clips, never one on PATH.
+oriel-tools.workspace = true
+
+[lints]
+workspace = true

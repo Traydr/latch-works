@@ -3,7 +3,12 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { pipeline, Readable, Transform } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
-import { getBaseName, getExtension, type MediaItem } from "@latch-works/media-domain";
+import {
+  getBaseName,
+  getExtension,
+  type MediaItem,
+  MediaTypeSchema,
+} from "@latch-works/media-domain";
 import { hashFileContents } from "@latch-works/media-index";
 import { z } from "zod";
 import { formatBytes, formatPushError, toError } from "./format.js";
@@ -12,49 +17,73 @@ import type { LockstepObserver, LockstepPlanCounts } from "./types.js";
 
 type PushStage = "deleting" | "hashing" | "registering" | "uploading";
 
-interface CreateSyncRunRequest {
-  counts: LockstepPlanCounts;
-  sourceRoot: string;
-}
+/*
+ * The bodies this client posts and the answers it reads, as zod schemas: the request types below
+ * are inferred from them, and Oriel generates its Rust client's types from the same schemas
+ * (`api-schema.test.ts` writes them to apps/oriel/conformance/lockstep-core/api-schema.json).
+ */
 
-interface SyncRunOutcomeCounts extends LockstepPlanCounts {
-  capped: number;
-  failed: number;
-  planned: number;
-  pushed: number;
-}
+/** A plan's counts, which a sync run records. */
+export const LockstepPlanCountsSchema = z.object({
+  delete: z.number(),
+  keep: z.number(),
+  update: z.number(),
+  upload: z.number(),
+});
 
-interface CompleteSyncRunRequest {
-  counts: SyncRunOutcomeCounts;
-  error: string | undefined;
-  status: "cancelled" | "completed" | "failed";
-}
+export const CreateSyncRunRequestSchema = z.object({
+  counts: LockstepPlanCountsSchema,
+  sourceRoot: z.string(),
+});
 
-interface UploadUrlRequest {
-  contentType: string;
-  filename: string;
-  sha256: string;
-  size: number;
-}
+type CreateSyncRunRequest = z.infer<typeof CreateSyncRunRequestSchema>;
 
-interface CompleteObjectRequest {
-  contentType: string;
-  extension: string;
-  filename: string;
-  logicalPath: string;
-  mediaType: MediaItem["mediaType"];
-  mtimeMs: number;
-  objectKey: string;
-  sha256: string;
-  size: number;
-  syncRunId: string;
-}
+export const SyncRunOutcomeCountsSchema = LockstepPlanCountsSchema.extend({
+  capped: z.number(),
+  failed: z.number(),
+  planned: z.number(),
+  pushed: z.number(),
+});
 
-interface DeleteObjectRequest {
-  action: "delete";
-  logicalPath: string;
-  syncRunId: string;
-}
+export const CompleteSyncRunRequestSchema = z.object({
+  counts: SyncRunOutcomeCountsSchema,
+  error: z.string().optional(),
+  status: z.enum(["cancelled", "completed", "failed"]),
+});
+
+type CompleteSyncRunRequest = z.infer<typeof CompleteSyncRunRequestSchema>;
+
+export const UploadUrlRequestSchema = z.object({
+  contentType: z.string(),
+  filename: z.string(),
+  sha256: z.string(),
+  size: z.number(),
+});
+
+type UploadUrlRequest = z.infer<typeof UploadUrlRequestSchema>;
+
+export const CompleteObjectRequestSchema = z.object({
+  contentType: z.string(),
+  extension: z.string(),
+  filename: z.string(),
+  logicalPath: z.string(),
+  mediaType: MediaTypeSchema,
+  mtimeMs: z.number(),
+  objectKey: z.string(),
+  sha256: z.string(),
+  size: z.number(),
+  syncRunId: z.string(),
+});
+
+type CompleteObjectRequest = z.infer<typeof CompleteObjectRequestSchema>;
+
+export const DeleteObjectRequestSchema = z.object({
+  action: z.literal("delete"),
+  logicalPath: z.string(),
+  syncRunId: z.string(),
+});
+
+type DeleteObjectRequest = z.infer<typeof DeleteObjectRequestSchema>;
 
 /** Every body this client posts to the Pane View sync API. */
 export type SyncRequestBody =
@@ -66,7 +95,7 @@ export type SyncRequestBody =
 
 export const SyncRunSchema = z.object({ syncRunId: z.string() });
 
-const UploadTargetSchema = z.object({
+export const UploadTargetSchema = z.object({
   headers: z.record(z.string(), z.string()).optional(),
   objectKey: z.string(),
   uploadUrl: z.string().nullable(),
@@ -591,7 +620,8 @@ export async function uploadFile({
   }
 }
 
-function contentTypeForExtension(extension: string): string {
+/** The content type an upload declares for a registration extension; Pane View signs it. */
+export function contentTypeForExtension(extension: string): string {
   switch (extension) {
     case "jpg":
     case "jpeg":

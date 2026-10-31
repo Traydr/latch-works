@@ -1,0 +1,28 @@
+[package]
+name = "oriel-core-index"
+description = "media-index in Rust: the archive scan and the sync plan, and View's media index and catalog scan."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+futures.workspace = true
+icu_collator.workspace = true
+log.workspace = true
+oriel-core-domain.workspace = true
+oriel-runtime.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+sha2.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# `getattrlistbulk`, which reads a folder's sizes and times without a `stat` per file.
+libc = "0.2"
+
+[dev-dependencies]
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
+[lints]
+workspace = true

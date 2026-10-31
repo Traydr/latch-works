@@ -8,7 +8,7 @@
     "node": "24.x"
   },
   "scripts": {
-    "build:all": "pnpm -r run build && pnpm -r run package",
+    "build:all": "pnpm -r run build",
     "format": "biome format --write .",
     "lint:biome": "biome check .",
     "lint:oxlint": "oxlint",
@@ -19,12 +19,8 @@
     "typecheck": "tsc -p scripts/tsconfig.json && pnpm -r typecheck",
     "knip": "knip",
     "check:all": "pnpm run build:all && pnpm run format && pnpm run lint:all && pnpm run typecheck && pnpm run knip",
-    "e2e:frame": "pnpm --filter @latch-works/e2e e2e:frame",
-    "e2e:lockstep": "pnpm --filter @latch-works/e2e e2e:lockstep",
-    "e2e:glazier": "pnpm --filter @latch-works/e2e e2e:glazier",
-    "e2e:oriel": "pnpm --filter @latch-works/e2e e2e:oriel",
     "icons": "node scripts/generate-icons.ts",
-    "make:oriel": "pnpm --filter @latch-works/oriel make"
+    "oriel:check": "pnpm --filter @latch-works/oriel check"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

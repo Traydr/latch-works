@@ -30,7 +30,8 @@ function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
-function resolveUploadConcurrency(value: number | undefined): number {
+/** The bounded upload queue's width (plan 036): 3 by default, an integer from 1 to 8. */
+export function resolveUploadConcurrency(value: number | undefined): number {
   if (value === undefined) {
     return DEFAULT_UPLOAD_CONCURRENCY;
   }

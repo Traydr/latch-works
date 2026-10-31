@@ -1,0 +1,879 @@
+{
+  "about": "Made by packages/media-index/src/conformance.test.ts from scan.ts; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-index test. Non-ASCII characters are escaped.",
+  "treeEpochSeconds": 1767268800,
+  "tree": [
+    { "kind": "file", "path": "root-image.png", "content": "root-image.png", "minutes": 1 },
+    { "kind": "file", "path": "b.jpg", "content": "b.jpg", "minutes": 2 },
+    { "kind": "file", "path": "img10.jpg", "content": "img10.jpg", "minutes": 3 },
+    { "kind": "file", "path": "img2.jpg", "content": "img2.jpg", "minutes": 4 },
+    { "kind": "file", "path": "Img1.jpg", "content": "Img1.jpg", "minutes": 5 },
+    { "kind": "file", "path": "Zeta.mp4", "content": "Zeta.mp4", "minutes": 6 },
+    { "kind": "file", "path": "zebra.jpg", "content": "zebra.jpg", "minutes": 7 },
+    { "kind": "file", "path": "\u00e9clair.webp", "content": "\u00e9clair.webp", "minutes": 8 },
+    { "kind": "file", "path": "eclair.png", "content": "eclair.png", "minutes": 9 },
+    {
+      "kind": "file",
+      "path": "\u00dcn\u00efcode.jpg",
+      "content": "\u00dcn\u00efcode.jpg",
+      "minutes": 10
+    },
+    { "kind": "file", "path": "photo.JPEG", "content": "photo.JPEG", "minutes": 11 },
+    { "kind": "file", "path": "movie.M4V", "content": "movie.M4V", "minutes": 12 },
+    { "kind": "file", "path": "anim.GIF", "content": "anim.GIF", "minutes": 13 },
+    { "kind": "file", "path": "scan.pdf", "content": "scan.pdf", "minutes": 14 },
+    { "kind": "file", "path": "still.avif", "content": "still.avif", "minutes": 15 },
+    { "kind": "file", "path": "raw.bmp", "content": "raw.bmp", "minutes": 16 },
+    { "kind": "file", "path": "clip.webm", "content": "clip.webm", "minutes": 17 },
+    { "kind": "file", "path": "clip.mov", "content": "clip.mov", "minutes": 18 },
+    { "kind": "file", "path": "photo.heic", "content": "photo.heic", "minutes": 19 },
+    { "kind": "file", "path": ".hidden.jpg", "content": ".hidden.jpg", "minutes": 20 },
+    { "kind": "file", "path": "..cover.jpg", "content": "..cover.jpg", "minutes": 21 },
+    { "kind": "file", "path": "100%_done.png", "content": "100%_done.png", "minutes": 22 },
+    { "kind": "file", "path": "space name.jpg", "content": "space name.jpg", "minutes": 23 },
+    { "kind": "file", "path": "comma,name.jpg", "content": "comma,name.jpg", "minutes": 24 },
+    { "kind": "file", "path": "._b.jpg", "content": "._b.jpg", "minutes": 25 },
+    { "kind": "file", "path": ".DS_Store", "content": ".DS_Store", "minutes": 26 },
+    { "kind": "file", "path": "Thumbs.db", "content": "Thumbs.db", "minutes": 27 },
+    { "kind": "file", "path": "desktop.ini", "content": "desktop.ini", "minutes": 28 },
+    { "kind": "file", "path": "ehthumbs.db", "content": "ehthumbs.db", "minutes": 29 },
+    { "kind": "file", "path": "notes.txt", "content": "notes.txt", "minutes": 30 },
+    { "kind": "file", "path": "README", "content": "README", "minutes": 31 },
+    { "kind": "file", "path": "archive.zip", "content": "archive.zip", "minutes": 32 },
+    { "kind": "file", "path": "trailing.", "content": "trailing.", "minutes": 33 },
+    {
+      "kind": "file",
+      "path": "series/01/page-1.jpg",
+      "content": "a much longer page, so sizes differ",
+      "minutes": 34
+    },
+    {
+      "kind": "file",
+      "path": "series/01/page-10.jpg",
+      "content": "series/01/page-10.jpg",
+      "minutes": 35
+    },
+    {
+      "kind": "file",
+      "path": "series/01/page-2.jpg",
+      "content": "series/01/page-2.jpg",
+      "minutes": 36
+    },
+    {
+      "kind": "file",
+      "path": "series/02/cover.avif",
+      "content": "series/02/cover.avif",
+      "minutes": 37
+    },
+    {
+      "kind": "file",
+      "path": "series/02/.DS_Store",
+      "content": "series/02/.DS_Store",
+      "minutes": 38
+    },
+    {
+      "kind": "file",
+      "path": "deep/a/b/c/clip.mkv",
+      "content": "deep/a/b/c/clip.mkv",
+      "minutes": 39
+    },
+    { "kind": "file", "path": "dir.mp4/inner.png", "content": "dir.mp4/inner.png", "minutes": 40 },
+    {
+      "kind": "file",
+      "path": ".latch-works/view/thumb.webp",
+      "content": ".latch-works/view/thumb.webp",
+      "minutes": 41
+    },
+    { "kind": "file", "path": "__MACOSX/._x.jpg", "content": "__MACOSX/._x.jpg", "minutes": 42 },
+    {
+      "kind": "file",
+      "path": ".glazier-holding/held.png",
+      "content": ".glazier-holding/held.png",
+      "minutes": 43
+    },
+    {
+      "kind": "file",
+      "path": "$RECYCLE.BIN/r.jpg",
+      "content": "$RECYCLE.BIN/r.jpg",
+      "minutes": 44
+    },
+    { "kind": "file", "path": ".Trashes/t.jpg", "content": ".Trashes/t.jpg", "minutes": 45 },
+    {
+      "kind": "file",
+      "path": "System Volume Information/s.jpg",
+      "content": "System Volume Information/s.jpg",
+      "minutes": 46
+    },
+    {
+      "kind": "file",
+      "path": ".Spotlight-V100/x.png",
+      "content": ".Spotlight-V100/x.png",
+      "minutes": 47
+    },
+    { "kind": "directory", "path": "empty" },
+    { "kind": "symlink", "path": "link.jpg", "target": "b.jpg" },
+    { "kind": "symlink", "path": "linked-series", "target": "series" },
+    { "kind": "symlink", "path": "dangling.png", "target": "missing.png" }
+  ],
+  "scan": {
+    "items": [
+      {
+        "id": "..cover.jpg",
+        "path": "..cover.jpg",
+        "parentPath": "",
+        "name": "..cover.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 11,
+        "mtimeMs": 1767270060750
+      },
+      {
+        "id": ".hidden.jpg",
+        "path": ".hidden.jpg",
+        "parentPath": "",
+        "name": ".hidden.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 11,
+        "mtimeMs": 1767270000750
+      },
+      {
+        "id": "100%_done.png",
+        "path": "100%_done.png",
+        "parentPath": "",
+        "name": "100%_done.png",
+        "extension": "png",
+        "mediaType": "image",
+        "size": 13,
+        "mtimeMs": 1767270120750
+      },
+      {
+        "id": "anim.GIF",
+        "path": "anim.GIF",
+        "parentPath": "",
+        "name": "anim.GIF",
+        "extension": "gif",
+        "mediaType": "gif",
+        "size": 8,
+        "mtimeMs": 1767269580750
+      },
+      {
+        "id": "b.jpg",
+        "path": "b.jpg",
+        "parentPath": "",
+        "name": "b.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 5,
+        "mtimeMs": 1767268920750
+      },
+      {
+        "id": "clip.mov",
+        "path": "clip.mov",
+        "parentPath": "",
+        "name": "clip.mov",
+        "extension": "mov",
+        "mediaType": "video",
+        "size": 8,
+        "mtimeMs": 1767269880750
+      },
+      {
+        "id": "clip.webm",
+        "path": "clip.webm",
+        "parentPath": "",
+        "name": "clip.webm",
+        "extension": "webm",
+        "mediaType": "video",
+        "size": 9,
+        "mtimeMs": 1767269820750
+      },
+      {
+        "id": "comma,name.jpg",
+        "path": "comma,name.jpg",
+        "parentPath": "",
+        "name": "comma,name.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 14,
+        "mtimeMs": 1767270240750
+      },
+      {
+        "id": "deep/a/b/c/clip.mkv",
+        "path": "deep/a/b/c/clip.mkv",
+        "parentPath": "deep/a/b/c",
+        "name": "clip.mkv",
+        "extension": "mkv",
+        "mediaType": "video",
+        "size": 19,
+        "mtimeMs": 1767271140750
+      },
+      {
+        "id": "dir.mp4/inner.png",
+        "path": "dir.mp4/inner.png",
+        "parentPath": "dir.mp4",
+        "name": "inner.png",
+        "extension": "png",
+        "mediaType": "image",
+        "size": 17,
+        "mtimeMs": 1767271200750
+      },
+      {
+        "id": "eclair.png",
+        "path": "eclair.png",
+        "parentPath": "",
+        "name": "eclair.png",
+        "extension": "png",
+        "mediaType": "image",
+        "size": 10,
+        "mtimeMs": 1767269340750
+      },
+      {
+        "id": "\u00e9clair.webp",
+        "path": "\u00e9clair.webp",
+        "parentPath": "",
+        "name": "\u00e9clair.webp",
+        "extension": "webp",
+        "mediaType": "image",
+        "size": 12,
+        "mtimeMs": 1767269280750
+      },
+      {
+        "id": "Img1.jpg",
+        "path": "Img1.jpg",
+        "parentPath": "",
+        "name": "Img1.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 8,
+        "mtimeMs": 1767269100750
+      },
+      {
+        "id": "img10.jpg",
+        "path": "img10.jpg",
+        "parentPath": "",
+        "name": "img10.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 9,
+        "mtimeMs": 1767268980750
+      },
+      {
+        "id": "img2.jpg",
+        "path": "img2.jpg",
+        "parentPath": "",
+        "name": "img2.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 8,
+        "mtimeMs": 1767269040750
+      },
+      {
+        "id": "movie.M4V",
+        "path": "movie.M4V",
+        "parentPath": "",
+        "name": "movie.M4V",
+        "extension": "m4v",
+        "mediaType": "video",
+        "size": 9,
+        "mtimeMs": 1767269520750
+      },
+      {
+        "id": "photo.JPEG",
+        "path": "photo.JPEG",
+        "parentPath": "",
+        "name": "photo.JPEG",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 10,
+        "mtimeMs": 1767269460750
+      },
+      {
+        "id": "raw.bmp",
+        "path": "raw.bmp",
+        "parentPath": "",
+        "name": "raw.bmp",
+        "extension": "bmp",
+        "mediaType": "image",
+        "size": 7,
+        "mtimeMs": 1767269760750
+      },
+      {
+        "id": "root-image.png",
+        "path": "root-image.png",
+        "parentPath": "",
+        "name": "root-image.png",
+        "extension": "png",
+        "mediaType": "image",
+        "size": 14,
+        "mtimeMs": 1767268860750
+      },
+      {
+        "id": "scan.pdf",
+        "path": "scan.pdf",
+        "parentPath": "",
+        "name": "scan.pdf",
+        "extension": "pdf",
+        "mediaType": "pdf",
+        "size": 8,
+        "mtimeMs": 1767269640750
+      },
+      {
+        "id": "series/01/page-1.jpg",
+        "path": "series/01/page-1.jpg",
+        "parentPath": "series/01",
+        "name": "page-1.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 35,
+        "mtimeMs": 1767270840750
+      },
+      {
+        "id": "series/01/page-10.jpg",
+        "path": "series/01/page-10.jpg",
+        "parentPath": "series/01",
+        "name": "page-10.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 21,
+        "mtimeMs": 1767270900750
+      },
+      {
+        "id": "series/01/page-2.jpg",
+        "path": "series/01/page-2.jpg",
+        "parentPath": "series/01",
+        "name": "page-2.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 20,
+        "mtimeMs": 1767270960750
+      },
+      {
+        "id": "series/02/cover.avif",
+        "path": "series/02/cover.avif",
+        "parentPath": "series/02",
+        "name": "cover.avif",
+        "extension": "avif",
+        "mediaType": "image",
+        "size": 20,
+        "mtimeMs": 1767271020750
+      },
+      {
+        "id": "space name.jpg",
+        "path": "space name.jpg",
+        "parentPath": "",
+        "name": "space name.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 14,
+        "mtimeMs": 1767270180750
+      },
+      {
+        "id": "still.avif",
+        "path": "still.avif",
+        "parentPath": "",
+        "name": "still.avif",
+        "extension": "avif",
+        "mediaType": "image",
+        "size": 10,
+        "mtimeMs": 1767269700750
+      },
+      {
+        "id": "\u00dcn\u00efcode.jpg",
+        "path": "\u00dcn\u00efcode.jpg",
+        "parentPath": "",
+        "name": "\u00dcn\u00efcode.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 13,
+        "mtimeMs": 1767269400750
+      },
+      {
+        "id": "zebra.jpg",
+        "path": "zebra.jpg",
+        "parentPath": "",
+        "name": "zebra.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 9,
+        "mtimeMs": 1767269220750
+      },
+      {
+        "id": "Zeta.mp4",
+        "path": "Zeta.mp4",
+        "parentPath": "",
+        "name": "Zeta.mp4",
+        "extension": "mp4",
+        "mediaType": "video",
+        "size": 8,
+        "mtimeMs": 1767269160750
+      }
+    ],
+    "skipped": 14,
+    "skippedEntries": [
+      { "path": "._b.jpg", "reason": "system-file" },
+      { "path": ".DS_Store", "reason": "system-file" },
+      { "path": "archive.zip", "reason": "unsupported-extension" },
+      { "path": "dangling.png", "reason": "not-a-regular-file" },
+      { "path": "desktop.ini", "reason": "system-file" },
+      { "path": "ehthumbs.db", "reason": "system-file" },
+      { "path": "link.jpg", "reason": "not-a-regular-file" },
+      { "path": "linked-series", "reason": "not-a-regular-file" },
+      { "path": "notes.txt", "reason": "unsupported-extension" },
+      { "path": "photo.heic", "reason": "unsupported-extension" },
+      { "path": "README", "reason": "unsupported-extension" },
+      { "path": "series/02/.DS_Store", "reason": "system-file" },
+      { "path": "Thumbs.db", "reason": "system-file" },
+      { "path": "trailing.", "reason": "unsupported-extension" }
+    ],
+    "fingerprints": [
+      { "path": "..cover.jpg", "mtimeMs": 1767270060750, "size": 11 },
+      { "path": ".hidden.jpg", "mtimeMs": 1767270000750, "size": 11 },
+      { "path": "100%_done.png", "mtimeMs": 1767270120750, "size": 13 },
+      { "path": "Img1.jpg", "mtimeMs": 1767269100750, "size": 8 },
+      { "path": "Zeta.mp4", "mtimeMs": 1767269160750, "size": 8 },
+      { "path": "anim.GIF", "mtimeMs": 1767269580750, "size": 8 },
+      { "path": "b.jpg", "mtimeMs": 1767268920750, "size": 5 },
+      { "path": "clip.mov", "mtimeMs": 1767269880750, "size": 8 },
+      { "path": "clip.webm", "mtimeMs": 1767269820750, "size": 9 },
+      { "path": "comma,name.jpg", "mtimeMs": 1767270240750, "size": 14 },
+      { "path": "deep/a/b/c/clip.mkv", "mtimeMs": 1767271140750, "size": 19 },
+      { "path": "dir.mp4/inner.png", "mtimeMs": 1767271200750, "size": 17 },
+      { "path": "eclair.png", "mtimeMs": 1767269340750, "size": 10 },
+      { "path": "img10.jpg", "mtimeMs": 1767268980750, "size": 9 },
+      { "path": "img2.jpg", "mtimeMs": 1767269040750, "size": 8 },
+      { "path": "movie.M4V", "mtimeMs": 1767269520750, "size": 9 },
+      { "path": "photo.JPEG", "mtimeMs": 1767269460750, "size": 10 },
+      { "path": "raw.bmp", "mtimeMs": 1767269760750, "size": 7 },
+      { "path": "root-image.png", "mtimeMs": 1767268860750, "size": 14 },
+      { "path": "scan.pdf", "mtimeMs": 1767269640750, "size": 8 },
+      { "path": "series/01/page-1.jpg", "mtimeMs": 1767270840750, "size": 35 },
+      { "path": "series/01/page-10.jpg", "mtimeMs": 1767270900750, "size": 21 },
+      { "path": "series/01/page-2.jpg", "mtimeMs": 1767270960750, "size": 20 },
+      { "path": "series/02/cover.avif", "mtimeMs": 1767271020750, "size": 20 },
+      { "path": "space name.jpg", "mtimeMs": 1767270180750, "size": 14 },
+      { "path": "still.avif", "mtimeMs": 1767269700750, "size": 10 },
+      { "path": "zebra.jpg", "mtimeMs": 1767269220750, "size": 9 },
+      { "path": "\u00dcn\u00efcode.jpg", "mtimeMs": 1767269400750, "size": 13 },
+      { "path": "\u00e9clair.webp", "mtimeMs": 1767269280750, "size": 12 }
+    ]
+  },
+  "hashed": {
+    "items": [
+      {
+        "id": "dad5d5b23663d1c30709ab3352fa7ddc9044fa05a150429b7f86d57f1dbd5e68",
+        "path": "..cover.jpg",
+        "parentPath": "",
+        "name": "..cover.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 11,
+        "mtimeMs": 1767270060750,
+        "sha256": "dad5d5b23663d1c30709ab3352fa7ddc9044fa05a150429b7f86d57f1dbd5e68"
+      },
+      {
+        "id": "86b7b107d083b9bcc53029e9432862b6b37e27d8285de376c4d7a8e27c0af2d2",
+        "path": ".hidden.jpg",
+        "parentPath": "",
+        "name": ".hidden.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 11,
+        "mtimeMs": 1767270000750,
+        "sha256": "86b7b107d083b9bcc53029e9432862b6b37e27d8285de376c4d7a8e27c0af2d2"
+      },
+      {
+        "id": "5acd9d3efdf2e196ca9c6d709d27e22a0749399a4bc2249a28343aafb266d1fe",
+        "path": "100%_done.png",
+        "parentPath": "",
+        "name": "100%_done.png",
+        "extension": "png",
+        "mediaType": "image",
+        "size": 13,
+        "mtimeMs": 1767270120750,
+        "sha256": "5acd9d3efdf2e196ca9c6d709d27e22a0749399a4bc2249a28343aafb266d1fe"
+      },
+      {
+        "id": "a3c6c81e2df3926aee9548df9cf606ae9e0a811f2ea4f4accdb6f09c62e94b3b",
+        "path": "anim.GIF",
+        "parentPath": "",
+        "name": "anim.GIF",
+        "extension": "gif",
+        "mediaType": "gif",
+        "size": 8,
+        "mtimeMs": 1767269580750,
+        "sha256": "a3c6c81e2df3926aee9548df9cf606ae9e0a811f2ea4f4accdb6f09c62e94b3b"
+      },
+      {
+        "id": "7a11ab94584454526cb0479a2e3b96aa5e1c9659290fd7d4cb5dbd28dce7d318",
+        "path": "b.jpg",
+        "parentPath": "",
+        "name": "b.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 5,
+        "mtimeMs": 1767268920750,
+        "sha256": "7a11ab94584454526cb0479a2e3b96aa5e1c9659290fd7d4cb5dbd28dce7d318"
+      },
+      {
+        "id": "ab1f0eb952e34408e56cc08de38e060cb8dc752c72d2d0ae8781c89a0a67099b",
+        "path": "clip.mov",
+        "parentPath": "",
+        "name": "clip.mov",
+        "extension": "mov",
+        "mediaType": "video",
+        "size": 8,
+        "mtimeMs": 1767269880750,
+        "sha256": "ab1f0eb952e34408e56cc08de38e060cb8dc752c72d2d0ae8781c89a0a67099b"
+      },
+      {
+        "id": "ac2d783879d268dd7c4ca80b5942bc6f852f865dccc1e94180cc55bd11a438ea",
+        "path": "clip.webm",
+        "parentPath": "",
+        "name": "clip.webm",
+        "extension": "webm",
+        "mediaType": "video",
+        "size": 9,
+        "mtimeMs": 1767269820750,
+        "sha256": "ac2d783879d268dd7c4ca80b5942bc6f852f865dccc1e94180cc55bd11a438ea"
+      },
+      {
+        "id": "5b02d8b86969a373f213e11a665fe33412d24584838c740d3299355247865015",
+        "path": "comma,name.jpg",
+        "parentPath": "",
+        "name": "comma,name.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 14,
+        "mtimeMs": 1767270240750,
+        "sha256": "5b02d8b86969a373f213e11a665fe33412d24584838c740d3299355247865015"
+      },
+      {
+        "id": "947ada63ae2c41c0a4dfde8cb32f090fac22cd61cb09cf5ba331b94a4e046685",
+        "path": "deep/a/b/c/clip.mkv",
+        "parentPath": "deep/a/b/c",
+        "name": "clip.mkv",
+        "extension": "mkv",
+        "mediaType": "video",
+        "size": 19,
+        "mtimeMs": 1767271140750,
+        "sha256": "947ada63ae2c41c0a4dfde8cb32f090fac22cd61cb09cf5ba331b94a4e046685"
+      },
+      {
+        "id": "9e34f4e45bd32e9efa9cdd3f04bad6a4ea99bc25507a8c77b5604ea80e4da4a7",
+        "path": "dir.mp4/inner.png",
+        "parentPath": "dir.mp4",
+        "name": "inner.png",
+        "extension": "png",
+        "mediaType": "image",
+        "size": 17,
+        "mtimeMs": 1767271200750,
+        "sha256": "9e34f4e45bd32e9efa9cdd3f04bad6a4ea99bc25507a8c77b5604ea80e4da4a7"
+      },
+      {
+        "id": "8e4e58d8e85eccb240ce4ed076b7c1b846f9da01670dec3f482e8fa9980d4d9a",
+        "path": "eclair.png",
+        "parentPath": "",
+        "name": "eclair.png",
+        "extension": "png",
+        "mediaType": "image",
+        "size": 10,
+        "mtimeMs": 1767269340750,
+        "sha256": "8e4e58d8e85eccb240ce4ed076b7c1b846f9da01670dec3f482e8fa9980d4d9a"
+      },
+      {
+        "id": "583f47f67caaa0aa68c17e25d7a4ce3e6ce357b08fe806d79cc3fa8d22c2a7aa",
+        "path": "\u00e9clair.webp",
+        "parentPath": "",
+        "name": "\u00e9clair.webp",
+        "extension": "webp",
+        "mediaType": "image",
+        "size": 12,
+        "mtimeMs": 1767269280750,
+        "sha256": "583f47f67caaa0aa68c17e25d7a4ce3e6ce357b08fe806d79cc3fa8d22c2a7aa"
+      },
+      {
+        "id": "38fb91a5491d107fdb917f6ed22d5cc6a762bda12ebe38494f876f72a1bff712",
+        "path": "Img1.jpg",
+        "parentPath": "",
+        "name": "Img1.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 8,
+        "mtimeMs": 1767269100750,
+        "sha256": "38fb91a5491d107fdb917f6ed22d5cc6a762bda12ebe38494f876f72a1bff712"
+      },
+      {
+        "id": "6f703f70228086d0fefea70b06dcbff68be62799de2ae6503ef78b9ad3446fb1",
+        "path": "img10.jpg",
+        "parentPath": "",
+        "name": "img10.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 9,
+        "mtimeMs": 1767268980750,
+        "sha256": "6f703f70228086d0fefea70b06dcbff68be62799de2ae6503ef78b9ad3446fb1"
+      },
+      {
+        "id": "354ebf2ad203cb1f7bc667a9bae59939a2625acd1c83ad5695a9dae8cdec0648",
+        "path": "img2.jpg",
+        "parentPath": "",
+        "name": "img2.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 8,
+        "mtimeMs": 1767269040750,
+        "sha256": "354ebf2ad203cb1f7bc667a9bae59939a2625acd1c83ad5695a9dae8cdec0648"
+      },
+      {
+        "id": "6a2dc835ab6c4f0606ea232ebae293706426ae3e92c549de2fa71a139b4cb73e",
+        "path": "movie.M4V",
+        "parentPath": "",
+        "name": "movie.M4V",
+        "extension": "m4v",
+        "mediaType": "video",
+        "size": 9,
+        "mtimeMs": 1767269520750,
+        "sha256": "6a2dc835ab6c4f0606ea232ebae293706426ae3e92c549de2fa71a139b4cb73e"
+      },
+      {
+        "id": "7f146776caeb768333fb4e4737330d88a5fa8a9899df2fb5fb622706ea35283d",
+        "path": "photo.JPEG",
+        "parentPath": "",
+        "name": "photo.JPEG",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 10,
+        "mtimeMs": 1767269460750,
+        "sha256": "7f146776caeb768333fb4e4737330d88a5fa8a9899df2fb5fb622706ea35283d"
+      },
+      {
+        "id": "d60e45ac1d1016b2d0bc6b4c41aca59365ebbc09e36e8aa228888a0f1fe075fc",
+        "path": "raw.bmp",
+        "parentPath": "",
+        "name": "raw.bmp",
+        "extension": "bmp",
+        "mediaType": "image",
+        "size": 7,
+        "mtimeMs": 1767269760750,
+        "sha256": "d60e45ac1d1016b2d0bc6b4c41aca59365ebbc09e36e8aa228888a0f1fe075fc"
+      },
+      {
+        "id": "5b3a4545dd9cbf07cb842da8d5493981f8e69467366d98548eda87fb4de69ebf",
+        "path": "root-image.png",
+        "parentPath": "",
+        "name": "root-image.png",
+        "extension": "png",
+        "mediaType": "image",
+        "size": 14,
+        "mtimeMs": 1767268860750,
+        "sha256": "5b3a4545dd9cbf07cb842da8d5493981f8e69467366d98548eda87fb4de69ebf"
+      },
+      {
+        "id": "900db3ec3bae665c4655646b584de4b76db637cb94a959a2ebb7a5fa5534aae6",
+        "path": "scan.pdf",
+        "parentPath": "",
+        "name": "scan.pdf",
+        "extension": "pdf",
+        "mediaType": "pdf",
+        "size": 8,
+        "mtimeMs": 1767269640750,
+        "sha256": "900db3ec3bae665c4655646b584de4b76db637cb94a959a2ebb7a5fa5534aae6"
+      },
+      {
+        "id": "3c50d72f34b74063ac07ba8794c9906deea4a471ed7e288f61dca3d1ab48d36d",
+        "path": "series/01/page-1.jpg",
+        "parentPath": "series/01",
+        "name": "page-1.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 35,
+        "mtimeMs": 1767270840750,
+        "sha256": "3c50d72f34b74063ac07ba8794c9906deea4a471ed7e288f61dca3d1ab48d36d"
+      },
+      {
+        "id": "49b584747d46326481ccfe3282f701fdd3b1afe8c24c18cb6ee1b35fc96003a9",
+        "path": "series/01/page-10.jpg",
+        "parentPath": "series/01",
+        "name": "page-10.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 21,
+        "mtimeMs": 1767270900750,
+        "sha256": "49b584747d46326481ccfe3282f701fdd3b1afe8c24c18cb6ee1b35fc96003a9"
+      },
+      {
+        "id": "04dcce475115f4d74b225cea1271a384aaf2459546d43b9409a8315c28de3839",
+        "path": "series/01/page-2.jpg",
+        "parentPath": "series/01",
+        "name": "page-2.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 20,
+        "mtimeMs": 1767270960750,
+        "sha256": "04dcce475115f4d74b225cea1271a384aaf2459546d43b9409a8315c28de3839"
+      },
+      {
+        "id": "ad0303c41bbd1aeb8b2ca94ebb8c6dc7f5535d94a7c977e382b41b6a9575fb3f",
+        "path": "series/02/cover.avif",
+        "parentPath": "series/02",
+        "name": "cover.avif",
+        "extension": "avif",
+        "mediaType": "image",
+        "size": 20,
+        "mtimeMs": 1767271020750,
+        "sha256": "ad0303c41bbd1aeb8b2ca94ebb8c6dc7f5535d94a7c977e382b41b6a9575fb3f"
+      },
+      {
+        "id": "70723a8e4aae1f0316eff7a8abc1cbc339bd5f0a893a56d1016fb9ffbcb0627d",
+        "path": "space name.jpg",
+        "parentPath": "",
+        "name": "space name.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 14,
+        "mtimeMs": 1767270180750,
+        "sha256": "70723a8e4aae1f0316eff7a8abc1cbc339bd5f0a893a56d1016fb9ffbcb0627d"
+      },
+      {
+        "id": "fe84ec70541d9b4b1ed14ce5062a138b06a096a807ec491639c4f8de13b72452",
+        "path": "still.avif",
+        "parentPath": "",
+        "name": "still.avif",
+        "extension": "avif",
+        "mediaType": "image",
+        "size": 10,
+        "mtimeMs": 1767269700750,
+        "sha256": "fe84ec70541d9b4b1ed14ce5062a138b06a096a807ec491639c4f8de13b72452"
+      },
+      {
+        "id": "9e4932a1287681f9ee69011176f5fcfc13bb970b9efffb594a5f0683516eee79",
+        "path": "\u00dcn\u00efcode.jpg",
+        "parentPath": "",
+        "name": "\u00dcn\u00efcode.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 13,
+        "mtimeMs": 1767269400750,
+        "sha256": "9e4932a1287681f9ee69011176f5fcfc13bb970b9efffb594a5f0683516eee79"
+      },
+      {
+        "id": "a078316ea9fdbf5976cb550c7bf848553cef9ba5b63d6c6b48161f89d95fb330",
+        "path": "zebra.jpg",
+        "parentPath": "",
+        "name": "zebra.jpg",
+        "extension": "jpg",
+        "mediaType": "image",
+        "size": 9,
+        "mtimeMs": 1767269220750,
+        "sha256": "a078316ea9fdbf5976cb550c7bf848553cef9ba5b63d6c6b48161f89d95fb330"
+      },
+      {
+        "id": "c8c1d7c017f47e6f591bffac744fcfe37892fc781026d4cd53c2fbe5fb99a5bc",
+        "path": "Zeta.mp4",
+        "parentPath": "",
+        "name": "Zeta.mp4",
+        "extension": "mp4",
+        "mediaType": "video",
+        "size": 8,
+        "mtimeMs": 1767269160750,
+        "sha256": "c8c1d7c017f47e6f591bffac744fcfe37892fc781026d4cd53c2fbe5fb99a5bc"
+      }
+    ],
+    "skipped": 14,
+    "skippedEntries": [
+      { "path": "._b.jpg", "reason": "system-file" },
+      { "path": ".DS_Store", "reason": "system-file" },
+      { "path": "archive.zip", "reason": "unsupported-extension" },
+      { "path": "dangling.png", "reason": "not-a-regular-file" },
+      { "path": "desktop.ini", "reason": "system-file" },
+      { "path": "ehthumbs.db", "reason": "system-file" },
+      { "path": "link.jpg", "reason": "not-a-regular-file" },
+      { "path": "linked-series", "reason": "not-a-regular-file" },
+      { "path": "notes.txt", "reason": "unsupported-extension" },
+      { "path": "photo.heic", "reason": "unsupported-extension" },
+      { "path": "README", "reason": "unsupported-extension" },
+      { "path": "series/02/.DS_Store", "reason": "system-file" },
+      { "path": "Thumbs.db", "reason": "system-file" },
+      { "path": "trailing.", "reason": "unsupported-extension" }
+    ],
+    "fingerprints": [
+      { "path": "..cover.jpg", "mtimeMs": 1767270060750, "size": 11 },
+      { "path": ".hidden.jpg", "mtimeMs": 1767270000750, "size": 11 },
+      { "path": "100%_done.png", "mtimeMs": 1767270120750, "size": 13 },
+      { "path": "Img1.jpg", "mtimeMs": 1767269100750, "size": 8 },
+      { "path": "Zeta.mp4", "mtimeMs": 1767269160750, "size": 8 },
+      { "path": "anim.GIF", "mtimeMs": 1767269580750, "size": 8 },
+      { "path": "b.jpg", "mtimeMs": 1767268920750, "size": 5 },
+      { "path": "clip.mov", "mtimeMs": 1767269880750, "size": 8 },
+      { "path": "clip.webm", "mtimeMs": 1767269820750, "size": 9 },
+      { "path": "comma,name.jpg", "mtimeMs": 1767270240750, "size": 14 },
+      { "path": "deep/a/b/c/clip.mkv", "mtimeMs": 1767271140750, "size": 19 },
+      { "path": "dir.mp4/inner.png", "mtimeMs": 1767271200750, "size": 17 },
+      { "path": "eclair.png", "mtimeMs": 1767269340750, "size": 10 },
+      { "path": "img10.jpg", "mtimeMs": 1767268980750, "size": 9 },
+      { "path": "img2.jpg", "mtimeMs": 1767269040750, "size": 8 },
+      { "path": "movie.M4V", "mtimeMs": 1767269520750, "size": 9 },
+      { "path": "photo.JPEG", "mtimeMs": 1767269460750, "size": 10 },
+      { "path": "raw.bmp", "mtimeMs": 1767269760750, "size": 7 },
+      { "path": "root-image.png", "mtimeMs": 1767268860750, "size": 14 },
+      { "path": "scan.pdf", "mtimeMs": 1767269640750, "size": 8 },
+      { "path": "series/01/page-1.jpg", "mtimeMs": 1767270840750, "size": 35 },
+      { "path": "series/01/page-10.jpg", "mtimeMs": 1767270900750, "size": 21 },
+      { "path": "series/01/page-2.jpg", "mtimeMs": 1767270960750, "size": 20 },
+      { "path": "series/02/cover.avif", "mtimeMs": 1767271020750, "size": 20 },
+      { "path": "space name.jpg", "mtimeMs": 1767270180750, "size": 14 },
+      { "path": "still.avif", "mtimeMs": 1767269700750, "size": 10 },
+      { "path": "zebra.jpg", "mtimeMs": 1767269220750, "size": 9 },
+      { "path": "\u00dcn\u00efcode.jpg", "mtimeMs": 1767269400750, "size": 13 },
+      { "path": "\u00e9clair.webp", "mtimeMs": 1767269280750, "size": 12 }
+    ]
+  },
+  "fingerprintsMatch": [
+    {
+      "left": { "mtimeMs": 1000.9, "size": 1 },
+      "right": { "mtimeMs": 1000.1, "size": 1 },
+      "match": true
+    },
+    {
+      "left": { "mtimeMs": 1000, "size": 1 },
+      "right": { "mtimeMs": 1001, "size": 1 },
+      "match": false
+    },
+    {
+      "left": { "mtimeMs": 1000, "size": 1 },
+      "right": { "mtimeMs": 1000, "size": 2 },
+      "match": false
+    },
+    {
+      "left": { "ctimeMs": 5.5, "mtimeMs": 1000, "size": 1 },
+      "right": { "ctimeMs": 5.1, "mtimeMs": 1000, "size": 1 },
+      "match": true
+    },
+    {
+      "left": { "ctimeMs": 5, "mtimeMs": 1000, "size": 1 },
+      "right": { "ctimeMs": 6, "mtimeMs": 1000, "size": 1 },
+      "match": false
+    },
+    {
+      "left": { "ctimeMs": 5, "mtimeMs": 1000, "size": 1 },
+      "right": { "mtimeMs": 1000, "size": 1 },
+      "match": true
+    },
+    {
+      "left": { "mtimeMs": -1500.5, "size": 0 },
+      "right": { "mtimeMs": -1500.2, "size": 0 },
+      "match": true
+    }
+  ],
+  "escapesRoot": [
+    { "relative": "", "escapes": false },
+    { "relative": "a.jpg", "escapes": false },
+    { "relative": "..", "escapes": true },
+    { "relative": "../a.jpg", "escapes": true },
+    { "relative": "../../a", "escapes": true },
+    { "relative": "..cover.jpg", "escapes": false },
+    { "relative": "...", "escapes": false },
+    { "relative": "a/../b", "escapes": false },
+    { "relative": "/abs/a.jpg", "escapes": true },
+    { "relative": "../", "escapes": true }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "activeProfileId": "b6903ef1-b49a-4ed5-bccc-4f9865a1442d",
+  "profiles": [
+    {
+      "apiUrl": "http://127.0.0.1:3100",
+      "id": "b6903ef1-b49a-4ed5-bccc-4f9865a1442d",
+      "name": "Conformance archive",
+      "sourceRoot": "/Volumes/Archive",
+      "encryptedToken": "wmOCcoJTWhKLSsuDGxuYun9UX/OYLJ6j8Xd8c+XUvdHddzsVaxF9iy/Ht87lanqzG54I8zxG/lVSEVEkStzWtUCOng=="
+    }
+  ]
+}

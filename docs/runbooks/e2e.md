@@ -1,8 +1,9 @@
 # End-to-end suite
 
-The `e2e/` workspace drives the built apps with Playwright. It is the final check before a PR is
-marked ready and is **not** part of `pnpm test`; it takes minutes, needs the local stack, and is
-run per app.
+The `e2e/` workspace drives the built Pane View with Playwright. It is the final check before a
+PR is marked ready and is **not** part of `pnpm test`; it takes minutes and needs the local stack.
+Oriel's end-to-end cases are GPUI headless tests in its own workspace instead (see
+[Oriel](#oriel) below).
 
 ## Prerequisites
 
@@ -18,14 +19,11 @@ the compose defaults apply.
 ## Run
 
 ```bash
-pnpm --filter @latch-works/e2e fixture   # render e2e/.fixtures/archive from the manifest (once)
+pnpm --filter @latch-works/e2e fixture   # render e2e/.fixtures/ from the manifest (once)
 pnpm e2e:pane                            # Pane View, seeded through the Lockstep CLI
-pnpm e2e:frame                           # Oriel's View mode, through Playwright's Electron driver
-pnpm e2e:lockstep                        # Oriel's Sync mode, pushing into the Pane View server
-pnpm e2e:glazier                         # Oriel's Tidy mode, over an archive it builds (no server)
-pnpm e2e:oriel                           # Oriel's shell: the modes and the menu (no server)
-pnpm e2e                                 # every project
 ```
+
+`pnpm e2e` runs the same suite: Pane View is its only project.
 
 `pnpm e2e:pane` starts Pane View itself: it drops and recreates the e2e database, runs the
 migrations, builds `apps/pane-view` and serves the build on port 3100. The setup project then
@@ -61,73 +59,19 @@ expected order and count from it.
 The bucket gets a CORS rule for the app origin during setup: images load cross-origin without
 one, but the PDF viewer `fetch`es the signed original, which rustfs refuses without a rule.
 
-## What the Frame View project covers
+## Oriel
 
-The specs drive View, Frame View as one of Oriel's modes. The `oriel-setup` project runs
-`electron-forge package` for Oriel (the only supported way to get a production `.vite/build`;
-skip with `E2E_SKIP_BUILD=1`). Each test launches the build with Playwright's `_electron` driver
-on a fresh userData directory and replaces
-`dialog.showOpenDialog` from the main process, so "Open" lands on a fixture folder without a
-native picker. `ELECTRON_RUN_AS_NODE` is stripped from the child environment; with it set, the
-Electron binary starts as plain Node and Playwright reports "Process failed to launch".
+Oriel has no Playwright project. The cases the Electron app's specs covered (the shell, View's
+gallery, Tidy's workbench, Spot variants, Shrink and Tidy up, and Sync) are GPUI headless tests in
+`apps/oriel` (`crates/app/tests`, `crates/mode-view/tests/gallery.rs`,
+`crates/mode-tidy/tests`, `crates/mode-sync/tests`), and run with `cargo test --workspace` (see
+the [Oriel runbook](oriel.md)).
 
-`gallery.spec.ts` covers: open + child listing + recursive, root-child excludes through the
-Folders overlay, the image/video filters, the four ordered sort modes against the shared oracle,
-Random + Shuffle, thumbnail rendering, viewer stepping (keys and buttons), comic mode + reader, and
-the remembered folder across a relaunch. Frame View indexes images and videos only, so the
-fixture PDF is excluded from its expectations.
-
-## What the Lockstep project covers
-
-`tests/lockstep/sync.spec.ts` drives Sync, the Lockstep desktop app as one of Oriel's modes. The
-`oriel-setup` project packages Oriel; the spec launches it on a fresh userData directory, opens
-Sync, creates a profile against the e2e Pane View server with the `lockstep-source` fixture (two
-images that are not in the seeded archive), runs Plan (two uploads), Push (two pushed, zero
-failed, both paths in `/api/sync/snapshot`), Plan again (nothing to upload; every seeded path is a
-delete from this source), then Prune: one planned delete's file is copied back into the source
-first, so Prune deletes every other planned path, skips that one, and leaves the Prune stage
-disabled until the next Plan. It also checks `lockstep-settings.json` (in `lockstep/` inside the
-run's userData) never holds the token in the clear. Sync encrypts tokens with a key file in that
-folder on every platform, so no Keychain prompt blocks the run.
-Prune empties the seeded archive in the e2e database, which is recreated
-the next time the e2e server starts. The project depends on
-`pane-view`, so `pnpm e2e:lockstep` runs the Pane View suite first; `--no-deps` skips that while
-iterating (the server is still started or reused).
-
-## What the Oriel project covers
-
-`tests/oriel/build.setup.ts` packages Oriel (skip with `E2E_SKIP_BUILD=1`). `shell.spec.ts`
-switches modes from the switcher and from the View menu (whose check mark follows the mode), and
-relaunches on the same userData to check Oriel reopens in the mode it showed last, and opens a
-folder in View, switches to Tidy and back, and checks the gallery is still there.
-`migration.spec.ts` builds the folders the old apps leave (a Glazier and a Frame View `Local
-Storage` from a real run, and Frame View's settings with a saved window) and checks the first
-start brings the preferences, the theme and the window size over. Under `--user-data-dir` Oriel
-never asks to quit or remove the old apps, so the spec runs beside installed copies. The project
-needs no compose stack.
-
-## What the Glazier project covers
-
-The specs drive Tidy, Glazier as one of Oriel's modes; the `oriel-setup` project packages Oriel
-(skip with `E2E_SKIP_BUILD=1`). The spec builds a throwaway archive in a temp folder with sharp and `ffmpeg` (it changes files, so it never uses the
-shared fixture): stills including a resized twin and an AVIF misnamed `.jpg`, an animated GIF,
-H.264/AAC in MOV, VP9/Opus in WebM, MP4s with sound, with a silent track and with no audio, an
-exact copy, a `._` file a Mac leaves on other disks, and an empty folder. Tidy opens a hidden transcoder window as well as
-Oriel's main one, so `e2e/src/oriel.ts` finds the main window by its page instead of taking the
-first. Folders are added through Glazier's own picker: `chooseFolder` types the path into its field
-and presses Choose, so no native dialog is stubbed. `workbench.spec.ts` covers, in order: adding and scanning the root and its findings;
-**Find similar** grouping the resized JPEG with its original; sound measurement (one with no
-track, one silent, four with sound); resolving the exact duplicate into holding and undoing it from
-the decision's toast; and converting every category (stills to AVIF, the GIF and both videos to MP4, the
-misnamed AVIF renamed), checking codecs with ffprobe and that each original's modification time
-survived. `variants.spec.ts` builds its own pictures (a page in three versions in one folder,
-another folder's copies of two of them, and two outfits of another picture), turns Spot variants
-on, and checks that each version stays once from the folder holding all three, the copies go to
-holding, and the outfits wait under Variants until marked as not duplicates.
-
-The project needs no compose stack: when only `glazier` (and its setup) is selected, the config
-does not start the Pane View server. It needs `ffmpeg` and `ffprobe` on `PATH`, and a machine
-whose WebCodecs can encode H.264 (any Mac).
+Two of its tests use this suite's stack and are ignored by default: `oriel-mode-sync`'s and
+`oriel-core-sync`'s `stack` tests push into the e2e Pane View that `scripts/start-pane-view.ts`
+serves on port 3100. The Sync one also needs the fixture command's second archive,
+`e2e/.fixtures/lockstep-source` (two images that are not in the seeded one). Each test's module
+comment says how to run it.
 
 ## Gather Box: manual smoke checklist
 

@@ -3,7 +3,9 @@ import { access } from "node:fs/promises";
 import path from "node:path";
 import {
   CreateBucketCommand,
+  DeleteObjectsCommand,
   HeadBucketCommand,
+  ListObjectsV2Command,
   PutBucketCorsCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -20,7 +22,7 @@ import {
 
 /**
  * Playwright's webServer command for the Pane View project. Recreates the e2e
- * database from the checked-in migrations, ensures the e2e bucket exists,
+ * database from the checked-in migrations, ensures the e2e bucket exists and empties it,
  * builds Pane View (skip with E2E_SKIP_BUILD=1 when iterating on tests) and
  * serves the built output on the e2e port.
  */
@@ -65,6 +67,8 @@ async function ensureBucket(environment: E2eEnvironment): Promise<void> {
     await client.send(new CreateBucketCommand({ Bucket: E2E_BUCKET }));
   }
 
+  await emptyBucket(client);
+
   // The PDF viewer fetches signed originals from the browser; like a production
   // bucket, the e2e bucket must allow the app origin.
   await client.send(
@@ -82,6 +86,33 @@ async function ensureBucket(environment: E2eEnvironment): Promise<void> {
       },
     }),
   );
+}
+
+/**
+ * Deletes every object in the e2e bucket. The database is recreated on every run, so what the last
+ * run pushed is orphaned; left alone, the bucket grows with every push until it reaches its quota
+ * (docs/localhost/README.md, "Storage cap").
+ */
+async function emptyBucket(client: S3Client): Promise<void> {
+  let token: string | undefined;
+
+  do {
+    const page = await client.send(
+      new ListObjectsV2Command({ Bucket: E2E_BUCKET, ContinuationToken: token }),
+    );
+
+    const objects = (page.Contents ?? []).flatMap((object) =>
+      object.Key ? [{ Key: object.Key }] : [],
+    );
+
+    if (objects.length > 0) {
+      await client.send(
+        new DeleteObjectsCommand({ Bucket: E2E_BUCKET, Delete: { Objects: objects, Quiet: true } }),
+      );
+    }
+
+    token = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (token);
 }
 
 async function assertStackReachable(environment: E2eEnvironment): Promise<void> {

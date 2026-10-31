@@ -1,0 +1,1116 @@
+{
+  "about": "Made by packages/media-domain/src/conformance.test.ts from comics.ts; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test. Non-ASCII characters are escaped.",
+  "generatedWith": { "node": "24.18.0", "icu": "78.3", "unicode": "17.0" },
+  "cases": [
+    {
+      "about": "pages sort in natural order, then by path, and the first is the cover",
+      "items": [
+        {
+          "id": "p10",
+          "name": "10.jpg",
+          "path": "comics/vol-1/10.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "p2",
+          "name": "2.jpg",
+          "path": "comics/vol-1/2.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "p01",
+          "name": "01.jpg",
+          "path": "comics/vol-1/01.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "p1",
+          "name": "1.jpg",
+          "path": "comics/vol-1/1.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "p1-capital",
+          "name": "1.JPG",
+          "path": "comics/vol-1/1.JPG",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "p1-copy",
+          "name": "1.jpg",
+          "path": "comics/vol-1/1.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "p1a",
+          "name": "1a.jpg",
+          "path": "comics/vol-1/1a.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        }
+      ],
+      "rootPath": "comics",
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        {
+          "id": "comics/vol-1",
+          "folderPath": "comics/vol-1",
+          "name": "vol 1",
+          "coverId": "p01",
+          "pageIds": ["p01", "p1", "p1-capital", "p1-copy", "p1a", "p2", "p10"]
+        }
+      ],
+      "orders": [
+        { "mode": "name-asc", "seed": 0, "ids": ["comics/vol-1"] },
+        { "mode": "name-desc", "seed": 0, "ids": ["comics/vol-1"] },
+        { "mode": "date-newest", "seed": 0, "ids": ["comics/vol-1"] },
+        { "mode": "date-oldest", "seed": 0, "ids": ["comics/vol-1"] },
+        { "mode": "random", "seed": 0, "ids": ["comics/vol-1"] },
+        { "mode": "random", "seed": 42, "ids": ["comics/vol-1"] },
+        { "mode": "random", "seed": 4294967295, "ids": ["comics/vol-1"] },
+        { "mode": "random", "seed": -1, "ids": ["comics/vol-1"] }
+      ]
+    },
+    {
+      "about": "only images and GIFs are pages",
+      "items": [
+        {
+          "id": "video",
+          "name": "0.mp4",
+          "path": "comics/a/0.mp4",
+          "mtimeMs": 0,
+          "mediaType": "video"
+        },
+        {
+          "id": "pdf",
+          "name": "0.pdf",
+          "path": "comics/a/0.pdf",
+          "mtimeMs": 0,
+          "mediaType": "pdf"
+        },
+        {
+          "id": "unknown",
+          "name": "0.txt",
+          "path": "comics/a/0.txt",
+          "mtimeMs": 0,
+          "mediaType": "unknown"
+        },
+        {
+          "id": "gif",
+          "name": "2.gif",
+          "path": "comics/a/2.gif",
+          "mtimeMs": 0,
+          "mediaType": "gif"
+        },
+        {
+          "id": "image",
+          "name": "3.jpg",
+          "path": "comics/a/3.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "only-video",
+          "name": "0.mp4",
+          "path": "comics/b/0.mp4",
+          "mtimeMs": 0,
+          "mediaType": "video"
+        }
+      ],
+      "rootPath": "comics",
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        {
+          "id": "comics/a",
+          "folderPath": "comics/a",
+          "name": "a",
+          "coverId": "gif",
+          "pageIds": ["gif", "image"]
+        }
+      ],
+      "orders": [
+        { "mode": "name-asc", "seed": 0, "ids": ["comics/a"] },
+        { "mode": "name-desc", "seed": 0, "ids": ["comics/a"] },
+        { "mode": "date-newest", "seed": 0, "ids": ["comics/a"] },
+        { "mode": "date-oldest", "seed": 0, "ids": ["comics/a"] },
+        { "mode": "random", "seed": 0, "ids": ["comics/a"] },
+        { "mode": "random", "seed": 42, "ids": ["comics/a"] },
+        { "mode": "random", "seed": 4294967295, "ids": ["comics/a"] },
+        { "mode": "random", "seed": -1, "ids": ["comics/a"] }
+      ]
+    },
+    {
+      "about": "files in the root, or in no folder, are not comics",
+      "items": [
+        {
+          "id": "root",
+          "name": "root.jpg",
+          "path": "comics/root.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        { "id": "top", "name": "top.jpg", "path": "top.jpg", "mtimeMs": 0, "mediaType": "image" },
+        {
+          "id": "slash",
+          "name": "top.jpg",
+          "path": "/top.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "backslash",
+          "name": "top.jpg",
+          "path": "\\top.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "kept",
+          "name": "1.jpg",
+          "path": "comics/kept/1.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        }
+      ],
+      "rootPath": "comics",
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        {
+          "id": "comics/kept",
+          "folderPath": "comics/kept",
+          "name": "kept",
+          "coverId": "kept",
+          "pageIds": ["kept"]
+        }
+      ],
+      "orders": [
+        { "mode": "name-asc", "seed": 0, "ids": ["comics/kept"] },
+        { "mode": "name-desc", "seed": 0, "ids": ["comics/kept"] },
+        { "mode": "date-newest", "seed": 0, "ids": ["comics/kept"] },
+        { "mode": "date-oldest", "seed": 0, "ids": ["comics/kept"] },
+        { "mode": "random", "seed": 0, "ids": ["comics/kept"] },
+        { "mode": "random", "seed": 42, "ids": ["comics/kept"] },
+        { "mode": "random", "seed": 4294967295, "ids": ["comics/kept"] },
+        { "mode": "random", "seed": -1, "ids": ["comics/kept"] }
+      ]
+    },
+    {
+      "about": "the root matches across case, NFC, separators and a trailing slash",
+      "items": [
+        {
+          "id": "nfd",
+          "name": "1.jpg",
+          "path": "comics/cafe\u0301/1.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "windows",
+          "name": "2.jpg",
+          "path": "comics\\cafe\u0301\\2.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "leading",
+          "name": "3.jpg",
+          "path": "/Comics/Caf\u00e9/3.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "child",
+          "name": "4.jpg",
+          "path": "comics/caf\u00e9/sub/4.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        }
+      ],
+      "rootPath": "Comics/Caf\u00e9/",
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        {
+          "id": "comics/caf\u00e9/sub",
+          "folderPath": "comics/caf\u00e9/sub",
+          "name": "sub",
+          "coverId": "child",
+          "pageIds": ["child"]
+        }
+      ],
+      "orders": [
+        { "mode": "name-asc", "seed": 0, "ids": ["comics/caf\u00e9/sub"] },
+        { "mode": "name-desc", "seed": 0, "ids": ["comics/caf\u00e9/sub"] },
+        { "mode": "date-newest", "seed": 0, "ids": ["comics/caf\u00e9/sub"] },
+        { "mode": "date-oldest", "seed": 0, "ids": ["comics/caf\u00e9/sub"] },
+        { "mode": "random", "seed": 0, "ids": ["comics/caf\u00e9/sub"] },
+        { "mode": "random", "seed": 42, "ids": ["comics/caf\u00e9/sub"] },
+        { "mode": "random", "seed": 4294967295, "ids": ["comics/caf\u00e9/sub"] },
+        { "mode": "random", "seed": -1, "ids": ["comics/caf\u00e9/sub"] }
+      ]
+    },
+    {
+      "about": "no root excludes nothing",
+      "items": [
+        { "id": "a", "name": "1.jpg", "path": "a/1.jpg", "mtimeMs": 0, "mediaType": "image" },
+        { "id": "b", "name": "2.jpg", "path": "b/c/2.jpg", "mtimeMs": 0, "mediaType": "image" }
+      ],
+      "rootPath": null,
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        { "id": "a", "folderPath": "a", "name": "a", "coverId": "a", "pageIds": ["a"] },
+        { "id": "b/c", "folderPath": "b/c", "name": "c", "coverId": "b", "pageIds": ["b"] }
+      ],
+      "orders": [
+        { "mode": "name-asc", "seed": 0, "ids": ["a", "b/c"] },
+        { "mode": "name-desc", "seed": 0, "ids": ["b/c", "a"] },
+        { "mode": "date-newest", "seed": 0, "ids": ["a", "b/c"] },
+        { "mode": "date-oldest", "seed": 0, "ids": ["a", "b/c"] },
+        { "mode": "random", "seed": 0, "ids": ["a", "b/c"] },
+        { "mode": "random", "seed": 42, "ids": ["b/c", "a"] },
+        { "mode": "random", "seed": 4294967295, "ids": ["a", "b/c"] },
+        { "mode": "random", "seed": -1, "ids": ["a", "b/c"] }
+      ]
+    },
+    {
+      "about": "an empty root excludes nothing",
+      "items": [
+        { "id": "a", "name": "1.jpg", "path": "a/1.jpg", "mtimeMs": 0, "mediaType": "image" },
+        { "id": "b", "name": "2.jpg", "path": "b/c/2.jpg", "mtimeMs": 0, "mediaType": "image" }
+      ],
+      "rootPath": "",
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        { "id": "a", "folderPath": "a", "name": "a", "coverId": "a", "pageIds": ["a"] },
+        { "id": "b/c", "folderPath": "b/c", "name": "c", "coverId": "b", "pageIds": ["b"] }
+      ],
+      "orders": [
+        { "mode": "name-asc", "seed": 0, "ids": ["a", "b/c"] },
+        { "mode": "name-desc", "seed": 0, "ids": ["b/c", "a"] },
+        { "mode": "date-newest", "seed": 0, "ids": ["a", "b/c"] },
+        { "mode": "date-oldest", "seed": 0, "ids": ["a", "b/c"] },
+        { "mode": "random", "seed": 0, "ids": ["a", "b/c"] },
+        { "mode": "random", "seed": 42, "ids": ["b/c", "a"] },
+        { "mode": "random", "seed": 4294967295, "ids": ["a", "b/c"] },
+        { "mode": "random", "seed": -1, "ids": ["a", "b/c"] }
+      ]
+    },
+    {
+      "about": "a root of slashes excludes nothing",
+      "items": [
+        { "id": "a", "name": "1.jpg", "path": "a/1.jpg", "mtimeMs": 0, "mediaType": "image" },
+        { "id": "b", "name": "2.jpg", "path": "b/2.jpg", "mtimeMs": 0, "mediaType": "image" }
+      ],
+      "rootPath": "//",
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        { "id": "a", "folderPath": "a", "name": "a", "coverId": "a", "pageIds": ["a"] },
+        { "id": "b", "folderPath": "b", "name": "b", "coverId": "b", "pageIds": ["b"] }
+      ],
+      "orders": [
+        { "mode": "name-asc", "seed": 0, "ids": ["a", "b"] },
+        { "mode": "name-desc", "seed": 0, "ids": ["b", "a"] },
+        { "mode": "date-newest", "seed": 0, "ids": ["a", "b"] },
+        { "mode": "date-oldest", "seed": 0, "ids": ["a", "b"] },
+        { "mode": "random", "seed": 0, "ids": ["a", "b"] },
+        { "mode": "random", "seed": 42, "ids": ["a", "b"] },
+        { "mode": "random", "seed": 4294967295, "ids": ["a", "b"] },
+        { "mode": "random", "seed": -1, "ids": ["b", "a"] }
+      ]
+    },
+    {
+      "about": "folders are keyed as written once separators fold, so case twins are two",
+      "items": [
+        {
+          "id": "upper",
+          "name": "1.jpg",
+          "path": "Series/A/1.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "lower",
+          "name": "2.jpg",
+          "path": "series/a/2.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "windows",
+          "name": "3.jpg",
+          "path": "series\\a\\3.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "trailing",
+          "name": "4.jpg",
+          "path": "series/a/4.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        }
+      ],
+      "rootPath": "comics",
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        {
+          "id": "Series/A",
+          "folderPath": "Series/A",
+          "name": "A",
+          "coverId": "upper",
+          "pageIds": ["upper"]
+        },
+        {
+          "id": "series/a",
+          "folderPath": "series/a",
+          "name": "a",
+          "coverId": "lower",
+          "pageIds": ["lower", "windows", "trailing"]
+        }
+      ],
+      "orders": [
+        { "mode": "name-asc", "seed": 0, "ids": ["Series/A", "series/a"] },
+        { "mode": "name-desc", "seed": 0, "ids": ["series/a", "Series/A"] },
+        { "mode": "date-newest", "seed": 0, "ids": ["Series/A", "series/a"] },
+        { "mode": "date-oldest", "seed": 0, "ids": ["Series/A", "series/a"] },
+        { "mode": "random", "seed": 0, "ids": ["series/a", "Series/A"] },
+        { "mode": "random", "seed": 42, "ids": ["Series/A", "series/a"] },
+        { "mode": "random", "seed": 4294967295, "ids": ["series/a", "Series/A"] },
+        { "mode": "random", "seed": -1, "ids": ["Series/A", "series/a"] }
+      ]
+    },
+    {
+      "about": "display names turn underscores and hyphens into spaces",
+      "items": [
+        {
+          "id": "title",
+          "name": "1.jpg",
+          "path": "comics/my_comic-title/1.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "dunder",
+          "name": "1.jpg",
+          "path": "comics/__x__/1.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "spaced",
+          "name": "1.jpg",
+          "path": "comics/a - b/1.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "dashes",
+          "name": "1.jpg",
+          "path": "comics/--/1.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        }
+      ],
+      "rootPath": "comics",
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        {
+          "id": "comics/--",
+          "folderPath": "comics/--",
+          "name": "  ",
+          "coverId": "dashes",
+          "pageIds": ["dashes"]
+        },
+        {
+          "id": "comics/__x__",
+          "folderPath": "comics/__x__",
+          "name": "  x  ",
+          "coverId": "dunder",
+          "pageIds": ["dunder"]
+        },
+        {
+          "id": "comics/a - b",
+          "folderPath": "comics/a - b",
+          "name": "a   b",
+          "coverId": "spaced",
+          "pageIds": ["spaced"]
+        },
+        {
+          "id": "comics/my_comic-title",
+          "folderPath": "comics/my_comic-title",
+          "name": "my comic title",
+          "coverId": "title",
+          "pageIds": ["title"]
+        }
+      ],
+      "orders": [
+        {
+          "mode": "name-asc",
+          "seed": 0,
+          "ids": ["comics/__x__", "comics/--", "comics/a - b", "comics/my_comic-title"]
+        },
+        {
+          "mode": "name-desc",
+          "seed": 0,
+          "ids": ["comics/my_comic-title", "comics/a - b", "comics/--", "comics/__x__"]
+        },
+        {
+          "mode": "date-newest",
+          "seed": 0,
+          "ids": ["comics/__x__", "comics/--", "comics/a - b", "comics/my_comic-title"]
+        },
+        {
+          "mode": "date-oldest",
+          "seed": 0,
+          "ids": ["comics/__x__", "comics/--", "comics/a - b", "comics/my_comic-title"]
+        },
+        {
+          "mode": "random",
+          "seed": 0,
+          "ids": ["comics/__x__", "comics/a - b", "comics/my_comic-title", "comics/--"]
+        },
+        {
+          "mode": "random",
+          "seed": 42,
+          "ids": ["comics/--", "comics/__x__", "comics/my_comic-title", "comics/a - b"]
+        },
+        {
+          "mode": "random",
+          "seed": 4294967295,
+          "ids": ["comics/--", "comics/a - b", "comics/__x__", "comics/my_comic-title"]
+        },
+        {
+          "mode": "random",
+          "seed": -1,
+          "ids": ["comics/a - b", "comics/my_comic-title", "comics/__x__", "comics/--"]
+        }
+      ]
+    },
+    {
+      "about": "comics sort by name in natural order, then by path",
+      "items": [
+        {
+          "id": "z",
+          "name": "1.jpg",
+          "path": "z/Vol 10/1.jpg",
+          "mtimeMs": 5,
+          "mediaType": "image"
+        },
+        { "id": "a", "name": "1.jpg", "path": "a/Vol 2/1.jpg", "mtimeMs": 4, "mediaType": "image" },
+        { "id": "b", "name": "1.jpg", "path": "b/vol 2/1.jpg", "mtimeMs": 4, "mediaType": "image" },
+        { "id": "top", "name": "1.jpg", "path": "Vol 1/1.jpg", "mtimeMs": 3, "mediaType": "image" },
+        {
+          "id": "c",
+          "name": "1.jpg",
+          "path": "c/Vol 02/1.jpg",
+          "mtimeMs": 2,
+          "mediaType": "image"
+        },
+        { "id": "d", "name": "1.jpg", "path": "d/vol_2/1.jpg", "mtimeMs": 1, "mediaType": "image" }
+      ],
+      "rootPath": null,
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        {
+          "id": "Vol 1",
+          "folderPath": "Vol 1",
+          "name": "Vol 1",
+          "coverId": "top",
+          "pageIds": ["top"]
+        },
+        {
+          "id": "a/Vol 2",
+          "folderPath": "a/Vol 2",
+          "name": "Vol 2",
+          "coverId": "a",
+          "pageIds": ["a"]
+        },
+        {
+          "id": "b/vol 2",
+          "folderPath": "b/vol 2",
+          "name": "vol 2",
+          "coverId": "b",
+          "pageIds": ["b"]
+        },
+        {
+          "id": "c/Vol 02",
+          "folderPath": "c/Vol 02",
+          "name": "Vol 02",
+          "coverId": "c",
+          "pageIds": ["c"]
+        },
+        {
+          "id": "d/vol_2",
+          "folderPath": "d/vol_2",
+          "name": "vol 2",
+          "coverId": "d",
+          "pageIds": ["d"]
+        },
+        {
+          "id": "z/Vol 10",
+          "folderPath": "z/Vol 10",
+          "name": "Vol 10",
+          "coverId": "z",
+          "pageIds": ["z"]
+        }
+      ],
+      "orders": [
+        {
+          "mode": "name-asc",
+          "seed": 0,
+          "ids": ["a/Vol 2", "b/vol 2", "c/Vol 02", "d/vol_2", "Vol 1", "z/Vol 10"]
+        },
+        {
+          "mode": "name-desc",
+          "seed": 0,
+          "ids": ["z/Vol 10", "Vol 1", "d/vol_2", "c/Vol 02", "b/vol 2", "a/Vol 2"]
+        },
+        {
+          "mode": "date-newest",
+          "seed": 0,
+          "ids": ["z/Vol 10", "a/Vol 2", "b/vol 2", "Vol 1", "c/Vol 02", "d/vol_2"]
+        },
+        {
+          "mode": "date-oldest",
+          "seed": 0,
+          "ids": ["d/vol_2", "c/Vol 02", "Vol 1", "a/Vol 2", "b/vol 2", "z/Vol 10"]
+        },
+        {
+          "mode": "random",
+          "seed": 0,
+          "ids": ["Vol 1", "z/Vol 10", "a/Vol 2", "d/vol_2", "c/Vol 02", "b/vol 2"]
+        },
+        {
+          "mode": "random",
+          "seed": 42,
+          "ids": ["z/Vol 10", "c/Vol 02", "Vol 1", "a/Vol 2", "b/vol 2", "d/vol_2"]
+        },
+        {
+          "mode": "random",
+          "seed": 4294967295,
+          "ids": ["Vol 1", "a/Vol 2", "z/Vol 10", "d/vol_2", "c/Vol 02", "b/vol 2"]
+        },
+        {
+          "mode": "random",
+          "seed": -1,
+          "ids": ["c/Vol 02", "Vol 1", "z/Vol 10", "d/vol_2", "b/vol 2", "a/Vol 2"]
+        }
+      ]
+    },
+    {
+      "about": "leaf folders only skips folders that hold folders, matching parent paths as written",
+      "items": [
+        {
+          "id": "series-cover",
+          "name": "cover.jpg",
+          "path": "comics/series/cover.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "chapter",
+          "name": "001.jpg",
+          "path": "comics/series/ch-1/001.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "other",
+          "name": "x.jpg",
+          "path": "comics/other/x.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "third",
+          "name": "y.jpg",
+          "path": "comics/third/y.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "leaf",
+          "name": "z.jpg",
+          "path": "comics/leaf/z.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        }
+      ],
+      "rootPath": "comics",
+      "leafFoldersOnly": true,
+      "folders": [
+        { "parentPath": "" },
+        { "parentPath": "comics" },
+        { "parentPath": "comics/series" },
+        { "parentPath": "comics\\other" },
+        { "parentPath": "/comics/third" }
+      ],
+      "comics": [
+        {
+          "id": "comics/series/ch-1",
+          "folderPath": "comics/series/ch-1",
+          "name": "ch 1",
+          "coverId": "chapter",
+          "pageIds": ["chapter"]
+        },
+        {
+          "id": "comics/leaf",
+          "folderPath": "comics/leaf",
+          "name": "leaf",
+          "coverId": "leaf",
+          "pageIds": ["leaf"]
+        },
+        {
+          "id": "comics/other",
+          "folderPath": "comics/other",
+          "name": "other",
+          "coverId": "other",
+          "pageIds": ["other"]
+        },
+        {
+          "id": "comics/third",
+          "folderPath": "comics/third",
+          "name": "third",
+          "coverId": "third",
+          "pageIds": ["third"]
+        }
+      ],
+      "orders": [
+        {
+          "mode": "name-asc",
+          "seed": 0,
+          "ids": ["comics/series/ch-1", "comics/other", "comics/third", "comics/leaf"]
+        },
+        {
+          "mode": "name-desc",
+          "seed": 0,
+          "ids": ["comics/leaf", "comics/third", "comics/other", "comics/series/ch-1"]
+        },
+        {
+          "mode": "date-newest",
+          "seed": 0,
+          "ids": ["comics/series/ch-1", "comics/other", "comics/third", "comics/leaf"]
+        },
+        {
+          "mode": "date-oldest",
+          "seed": 0,
+          "ids": ["comics/series/ch-1", "comics/other", "comics/third", "comics/leaf"]
+        },
+        {
+          "mode": "random",
+          "seed": 0,
+          "ids": ["comics/leaf", "comics/series/ch-1", "comics/third", "comics/other"]
+        },
+        {
+          "mode": "random",
+          "seed": 42,
+          "ids": ["comics/leaf", "comics/series/ch-1", "comics/other", "comics/third"]
+        },
+        {
+          "mode": "random",
+          "seed": 4294967295,
+          "ids": ["comics/series/ch-1", "comics/third", "comics/leaf", "comics/other"]
+        },
+        {
+          "mode": "random",
+          "seed": -1,
+          "ids": ["comics/other", "comics/series/ch-1", "comics/third", "comics/leaf"]
+        }
+      ]
+    },
+    {
+      "about": "leaf folders only without a folder list skips nothing",
+      "items": [
+        {
+          "id": "cover",
+          "name": "cover.jpg",
+          "path": "comics/series/cover.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "chapter",
+          "name": "1.jpg",
+          "path": "comics/series/ch-1/1.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        }
+      ],
+      "rootPath": "comics",
+      "leafFoldersOnly": true,
+      "folders": null,
+      "comics": [
+        {
+          "id": "comics/series/ch-1",
+          "folderPath": "comics/series/ch-1",
+          "name": "ch 1",
+          "coverId": "chapter",
+          "pageIds": ["chapter"]
+        },
+        {
+          "id": "comics/series",
+          "folderPath": "comics/series",
+          "name": "series",
+          "coverId": "cover",
+          "pageIds": ["cover"]
+        }
+      ],
+      "orders": [
+        { "mode": "name-asc", "seed": 0, "ids": ["comics/series/ch-1", "comics/series"] },
+        { "mode": "name-desc", "seed": 0, "ids": ["comics/series", "comics/series/ch-1"] },
+        { "mode": "date-newest", "seed": 0, "ids": ["comics/series/ch-1", "comics/series"] },
+        { "mode": "date-oldest", "seed": 0, "ids": ["comics/series/ch-1", "comics/series"] },
+        { "mode": "random", "seed": 0, "ids": ["comics/series", "comics/series/ch-1"] },
+        { "mode": "random", "seed": 42, "ids": ["comics/series/ch-1", "comics/series"] },
+        { "mode": "random", "seed": 4294967295, "ids": ["comics/series/ch-1", "comics/series"] },
+        { "mode": "random", "seed": -1, "ids": ["comics/series", "comics/series/ch-1"] }
+      ]
+    },
+    {
+      "about": "a folder list without leaf folders only skips nothing",
+      "items": [
+        {
+          "id": "cover",
+          "name": "cover.jpg",
+          "path": "comics/series/cover.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        },
+        {
+          "id": "chapter",
+          "name": "1.jpg",
+          "path": "comics/series/ch-1/1.jpg",
+          "mtimeMs": 0,
+          "mediaType": "image"
+        }
+      ],
+      "rootPath": "comics",
+      "leafFoldersOnly": false,
+      "folders": [{ "parentPath": "comics/series" }],
+      "comics": [
+        {
+          "id": "comics/series/ch-1",
+          "folderPath": "comics/series/ch-1",
+          "name": "ch 1",
+          "coverId": "chapter",
+          "pageIds": ["chapter"]
+        },
+        {
+          "id": "comics/series",
+          "folderPath": "comics/series",
+          "name": "series",
+          "coverId": "cover",
+          "pageIds": ["cover"]
+        }
+      ],
+      "orders": [
+        { "mode": "name-asc", "seed": 0, "ids": ["comics/series/ch-1", "comics/series"] },
+        { "mode": "name-desc", "seed": 0, "ids": ["comics/series", "comics/series/ch-1"] },
+        { "mode": "date-newest", "seed": 0, "ids": ["comics/series/ch-1", "comics/series"] },
+        { "mode": "date-oldest", "seed": 0, "ids": ["comics/series/ch-1", "comics/series"] },
+        { "mode": "random", "seed": 0, "ids": ["comics/series", "comics/series/ch-1"] },
+        { "mode": "random", "seed": 42, "ids": ["comics/series/ch-1", "comics/series"] },
+        { "mode": "random", "seed": 4294967295, "ids": ["comics/series/ch-1", "comics/series"] },
+        { "mode": "random", "seed": -1, "ids": ["comics/series", "comics/series/ch-1"] }
+      ]
+    },
+    {
+      "about": "covers that share an id all map to the last comic with that id",
+      "items": [
+        { "id": "shared", "name": "1.jpg", "path": "x/1.jpg", "mtimeMs": 1, "mediaType": "image" },
+        { "id": "shared", "name": "1.jpg", "path": "y/1.jpg", "mtimeMs": 2, "mediaType": "image" },
+        { "id": "own", "name": "1.jpg", "path": "z/1.jpg", "mtimeMs": 3, "mediaType": "image" }
+      ],
+      "rootPath": null,
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        { "id": "x", "folderPath": "x", "name": "x", "coverId": "shared", "pageIds": ["shared"] },
+        { "id": "y", "folderPath": "y", "name": "y", "coverId": "shared", "pageIds": ["shared"] },
+        { "id": "z", "folderPath": "z", "name": "z", "coverId": "own", "pageIds": ["own"] }
+      ],
+      "orders": [
+        { "mode": "name-asc", "seed": 0, "ids": ["y", "y", "z"] },
+        { "mode": "name-desc", "seed": 0, "ids": ["z", "y", "y"] },
+        { "mode": "date-newest", "seed": 0, "ids": ["z", "y", "y"] },
+        { "mode": "date-oldest", "seed": 0, "ids": ["y", "y", "z"] },
+        { "mode": "random", "seed": 0, "ids": ["y", "z", "y"] },
+        { "mode": "random", "seed": 42, "ids": ["z", "y", "y"] },
+        { "mode": "random", "seed": 4294967295, "ids": ["z", "y", "y"] },
+        { "mode": "random", "seed": -1, "ids": ["y", "y", "z"] }
+      ]
+    },
+    {
+      "about": "Unicode, Windows and long folder names",
+      "items": [
+        {
+          "id": "kanji",
+          "name": "001.jpg",
+          "path": "\u5199\u771f/\u7b2c1\u5dfb/001.jpg",
+          "mtimeMs": 10,
+          "mediaType": "image"
+        },
+        {
+          "id": "windows",
+          "name": "001.jpg",
+          "path": "C:\\Comics\\Vol 1\\001.jpg",
+          "mtimeMs": 20,
+          "mediaType": "image"
+        },
+        {
+          "id": "emoji",
+          "name": "1.jpg",
+          "path": "\ud83d\udcda/\ud83d\udcd6/1.jpg",
+          "mtimeMs": 30,
+          "mediaType": "image"
+        },
+        {
+          "id": "long",
+          "name": "1.jpg",
+          "path": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/1.jpg",
+          "mtimeMs": 40,
+          "mediaType": "image"
+        },
+        {
+          "id": "nfc",
+          "name": "1.jpg",
+          "path": "caf\u00e9/1.jpg",
+          "mtimeMs": 50,
+          "mediaType": "image"
+        },
+        {
+          "id": "nfd",
+          "name": "1.jpg",
+          "path": "cafe\u0301/1.jpg",
+          "mtimeMs": 50,
+          "mediaType": "image"
+        }
+      ],
+      "rootPath": null,
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        {
+          "id": "\ud83d\udcda/\ud83d\udcd6",
+          "folderPath": "\ud83d\udcda/\ud83d\udcd6",
+          "name": "\ud83d\udcd6",
+          "coverId": "emoji",
+          "pageIds": ["emoji"]
+        },
+        {
+          "id": "caf\u00e9",
+          "folderPath": "caf\u00e9",
+          "name": "caf\u00e9",
+          "coverId": "nfc",
+          "pageIds": ["nfc"]
+        },
+        {
+          "id": "cafe\u0301",
+          "folderPath": "cafe\u0301",
+          "name": "cafe\u0301",
+          "coverId": "nfd",
+          "pageIds": ["nfd"]
+        },
+        {
+          "id": "C:/Comics/Vol 1",
+          "folderPath": "C:/Comics/Vol 1",
+          "name": "Vol 1",
+          "coverId": "windows",
+          "pageIds": ["windows"]
+        },
+        {
+          "id": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "folderPath": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "coverId": "long",
+          "pageIds": ["long"]
+        },
+        {
+          "id": "\u5199\u771f/\u7b2c1\u5dfb",
+          "folderPath": "\u5199\u771f/\u7b2c1\u5dfb",
+          "name": "\u7b2c1\u5dfb",
+          "coverId": "kanji",
+          "pageIds": ["kanji"]
+        }
+      ],
+      "orders": [
+        {
+          "mode": "name-asc",
+          "seed": 0,
+          "ids": [
+            "\ud83d\udcda/\ud83d\udcd6",
+            "C:/Comics/Vol 1",
+            "caf\u00e9",
+            "cafe\u0301",
+            "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "\u5199\u771f/\u7b2c1\u5dfb"
+          ]
+        },
+        {
+          "mode": "name-desc",
+          "seed": 0,
+          "ids": [
+            "\u5199\u771f/\u7b2c1\u5dfb",
+            "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "caf\u00e9",
+            "cafe\u0301",
+            "C:/Comics/Vol 1",
+            "\ud83d\udcda/\ud83d\udcd6"
+          ]
+        },
+        {
+          "mode": "date-newest",
+          "seed": 0,
+          "ids": [
+            "caf\u00e9",
+            "cafe\u0301",
+            "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "\ud83d\udcda/\ud83d\udcd6",
+            "C:/Comics/Vol 1",
+            "\u5199\u771f/\u7b2c1\u5dfb"
+          ]
+        },
+        {
+          "mode": "date-oldest",
+          "seed": 0,
+          "ids": [
+            "\u5199\u771f/\u7b2c1\u5dfb",
+            "C:/Comics/Vol 1",
+            "\ud83d\udcda/\ud83d\udcd6",
+            "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "caf\u00e9",
+            "cafe\u0301"
+          ]
+        },
+        {
+          "mode": "random",
+          "seed": 0,
+          "ids": [
+            "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "\ud83d\udcda/\ud83d\udcd6",
+            "caf\u00e9",
+            "\u5199\u771f/\u7b2c1\u5dfb",
+            "C:/Comics/Vol 1",
+            "cafe\u0301"
+          ]
+        },
+        {
+          "mode": "random",
+          "seed": 42,
+          "ids": [
+            "\ud83d\udcda/\ud83d\udcd6",
+            "caf\u00e9",
+            "cafe\u0301",
+            "\u5199\u771f/\u7b2c1\u5dfb",
+            "C:/Comics/Vol 1",
+            "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          ]
+        },
+        {
+          "mode": "random",
+          "seed": 4294967295,
+          "ids": [
+            "caf\u00e9",
+            "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "\u5199\u771f/\u7b2c1\u5dfb",
+            "C:/Comics/Vol 1",
+            "cafe\u0301",
+            "\ud83d\udcda/\ud83d\udcd6"
+          ]
+        },
+        {
+          "mode": "random",
+          "seed": -1,
+          "ids": [
+            "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "\ud83d\udcda/\ud83d\udcd6",
+            "C:/Comics/Vol 1",
+            "\u5199\u771f/\u7b2c1\u5dfb",
+            "cafe\u0301",
+            "caf\u00e9"
+          ]
+        }
+      ]
+    },
+    {
+      "about": "dates order the covers, and names break ties",
+      "items": [
+        {
+          "id": "old",
+          "name": "1.jpg",
+          "path": "b/1.jpg",
+          "mtimeMs": 1600000000000,
+          "mediaType": "image"
+        },
+        {
+          "id": "new",
+          "name": "1.jpg",
+          "path": "a/1.jpg",
+          "mtimeMs": 1700000000000.5,
+          "mediaType": "image"
+        },
+        {
+          "id": "same-1",
+          "name": "1.jpg",
+          "path": "d/1.jpg",
+          "mtimeMs": 1650000000000,
+          "mediaType": "image"
+        },
+        {
+          "id": "same-2",
+          "name": "1.jpg",
+          "path": "c/1.jpg",
+          "mtimeMs": 1650000000000,
+          "mediaType": "image"
+        },
+        {
+          "id": "late-page",
+          "name": "2.jpg",
+          "path": "c/2.jpg",
+          "mtimeMs": 1800000000000,
+          "mediaType": "image"
+        }
+      ],
+      "rootPath": null,
+      "leafFoldersOnly": false,
+      "folders": null,
+      "comics": [
+        { "id": "a", "folderPath": "a", "name": "a", "coverId": "new", "pageIds": ["new"] },
+        { "id": "b", "folderPath": "b", "name": "b", "coverId": "old", "pageIds": ["old"] },
+        {
+          "id": "c",
+          "folderPath": "c",
+          "name": "c",
+          "coverId": "same-2",
+          "pageIds": ["same-2", "late-page"]
+        },
+        { "id": "d", "folderPath": "d", "name": "d", "coverId": "same-1", "pageIds": ["same-1"] }
+      ],
+      "orders": [
+        { "mode": "name-asc", "seed": 0, "ids": ["a", "b", "c", "d"] },
+        { "mode": "name-desc", "seed": 0, "ids": ["d", "c", "b", "a"] },
+        { "mode": "date-newest", "seed": 0, "ids": ["a", "c", "d", "b"] },
+        { "mode": "date-oldest", "seed": 0, "ids": ["b", "c", "d", "a"] },
+        { "mode": "random", "seed": 0, "ids": ["c", "a", "d", "b"] },
+        { "mode": "random", "seed": 42, "ids": ["a", "c", "b", "d"] },
+        { "mode": "random", "seed": 4294967295, "ids": ["b", "c", "a", "d"] },
+        { "mode": "random", "seed": -1, "ids": ["a", "c", "d", "b"] }
+      ]
+    }
+  ]
+}

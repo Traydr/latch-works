@@ -1,0 +1,36 @@
+[package]
+name = "oriel-mode-sync"
+description = "Sync: profiles, secret storage, the plan tree, the run panel, the run log."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gpui-kit.workspace = true
+anyhow.workspace = true
+futures.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+oriel-core-domain.workspace = true
+oriel-core-index.workspace = true
+oriel-core-paths.workspace = true
+oriel-core-sync.workspace = true
+oriel-runtime.workspace = true
+oriel-ui.workspace = true
+# Tokens are sealed as Electron Oriel's FileSecretStorage seals them: AES-256-GCM under a random
+# key in a 0600 file, stored as base64.
+aes-gcm = "0.10"
+base64 = "0.22"
+getrandom = "0.3"
+# Profile and plan ids, as `randomUUID()` makes them.
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }
+oriel-core-sync = { workspace = true, features = ["test-support"] }
+tempfile = "3"
+
+[lints]
+workspace = true

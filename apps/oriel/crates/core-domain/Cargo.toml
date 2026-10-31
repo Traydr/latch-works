@@ -1,0 +1,18 @@
+[package]
+name = "oriel-core-domain"
+description = "media-domain in Rust: natural order and sort orders, media kinds, archive paths, comics, the gallery's entries and system files."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+icu_collator.workspace = true
+icu_normalizer.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
+[lints]
+workspace = true

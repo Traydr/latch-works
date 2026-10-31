@@ -1,3 +1,0 @@
-Oriel is installed. Open it from the Start menu or the desktop shortcut.
-
-Your archive stays where it is: Oriel keeps its catalogs and settings in the .latch-works folder in your home folder.

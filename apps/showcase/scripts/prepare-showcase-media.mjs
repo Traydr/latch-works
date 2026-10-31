@@ -11,7 +11,8 @@ const showcaseRoot = join(scriptDir, "..");
 
 const photosDir = join(showcaseArchiveDir, "sfw/photos");
 
-const require = createRequire(join(showcaseRoot, "../oriel/package.json"));
+// sharp is the repository root's dev dependency, not the showcase's.
+const require = createRequire(join(showcaseRoot, "../../package.json"));
 
 const sharp = require("sharp");
 

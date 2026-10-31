@@ -7,10 +7,8 @@
       "!**/node_modules",
       "!**/.pnpm-store",
       "!**/dist",
-      "!**/out",
       "!**/.vite",
       "!**/.output",
-      "!**/.packaged-runtime",
       "!e2e/.auth",
       "!e2e/.fixtures",
       "!e2e/playwright-report",
@@ -23,7 +21,11 @@
       "!apps/pane-view/src/components/dither-kit",
       "!apps/pane-view/dither-kit.json",
       "!apps/gather-box",
-      "!tools/oxlint/anti-slop"
+      "!tools/oxlint/anti-slop",
+      "!apps/oriel/target",
+      "!apps/oriel/.libmpv",
+      "!apps/oriel/.vendor",
+      "!apps/oriel/crates"
     ]
   },
   "formatter": {
@@ -68,20 +70,6 @@
           "correctness": {
             "noUnusedImports": "off",
             "noUnusedVariables": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": ["apps/oriel/src/modes/view/**"],
-      "linter": {
-        "rules": {
-          "a11y": {
-            "noSvgWithoutTitle": "off",
-            "useMediaCaption": "off"
-          },
-          "correctness": {
-            "useExhaustiveDependencies": "off"
           }
         }
       }
