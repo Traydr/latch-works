@@ -284,6 +284,9 @@ pub struct ThumbnailService {
     /// job and its trip to a worker and back for each. `None` until the listing is in and while
     /// a prune runs; the jobs then look on disk themselves, as they always do before making one.
     on_disk: Option<HashSet<Box<str>>>,
+    /// Which listing of the folder is current. A clear starts a new one, so a listing or prune
+    /// begun before it, which would name the files it deleted, is dropped when it comes in.
+    listing: u64,
 }
 
 impl ThumbnailService {
@@ -312,6 +315,7 @@ impl ThumbnailService {
             disk_files: 0,
             pruning: false,
             on_disk: None,
+            listing: 0,
         };
         let tools = service.tools.status();
         service.event(format!(
@@ -327,6 +331,9 @@ impl ThumbnailService {
                 })
                 .await;
             this.update(cx, |this, _| {
+                if this.listing != 0 {
+                    return;
+                }
                 let (count, names) = left;
                 this.disk_files = count;
                 // A file made meanwhile is missing from the listing; its job found or made it.
@@ -421,9 +428,8 @@ impl ThumbnailService {
     /// Deletes every thumbnail on disk (Settings › Storage).
     pub fn clear_cache(&mut self, cx: &mut Context<Self>) {
         self.reset(cx);
-        if let Some(on_disk) = &mut self.on_disk {
-            on_disk.clear();
-        }
+        self.listing += 1;
+        self.on_disk = Some(HashSet::new());
         let folder = self.folder.clone();
         cx.spawn(async move |this, cx| {
             cx.background_spawn(async move { clear(&folder) }).await;
@@ -662,13 +668,17 @@ impl ThumbnailService {
         // says what is left.
         self.on_disk = None;
         let folder = self.folder.clone();
+        let listing = self.listing;
         cx.spawn(async move |this, cx| {
             let left = cx
                 .background_spawn(async move { prune_listing(&folder) })
                 .await;
             this.update(cx, |this, _| {
-                let (count, names) = left;
                 this.pruning = false;
+                if this.listing != listing {
+                    return;
+                }
+                let (count, names) = left;
                 this.disk_files = count;
                 this.event(format!("Disk cache pruned to {count} files"));
                 this.on_disk = Some(names);

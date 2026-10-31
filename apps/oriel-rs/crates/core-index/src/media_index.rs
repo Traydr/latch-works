@@ -264,7 +264,8 @@ impl MediaIndex {
 /// reading the disk instead of waiting on each. They run in the order queued, each batch in its
 /// own transaction, as when the scan waited on each. Once a batch fails, the batches queued after
 /// it are skipped and the scan ends cancelled, as a scan that stops writing at its first failure
-/// leaves the index.
+/// leaves the index. A cancel skips them too, so a scan started next waits on no more than the
+/// batch being written, as when the scan waited on each.
 pub struct ScanWrites {
     database: Database,
     root_path: Arc<str>,
@@ -275,6 +276,8 @@ pub struct ScanWrites {
 #[derive(Default)]
 struct Failure {
     failed: bool,
+    /// The scan was cancelled: what is still queued is not written.
+    stopped: bool,
     /// The first failure's message, until the scan takes it to report.
     unreported: Option<String>,
 }
@@ -302,7 +305,11 @@ impl ScanWrites {
         // The call is queued now; its result arrives through `failure`, so the future is not
         // kept.
         drop(self.database.call(move |connection| {
-            if lock(&failure).failed {
+            let skipped = {
+                let failure = lock(&failure);
+                failure.failed || failure.stopped
+            };
+            if skipped {
                 return Ok(());
             }
             if let Err(error) = write_batch(connection, &root_path, scan_id, &items) {
@@ -347,9 +354,10 @@ impl ScanWrites {
         })
     }
 
-    /// Queues the scan's cancel: what it recorded stays. The future resolves once all of it has
-    /// run.
+    /// Queues the scan's cancel: what it recorded stays, and the batches still queued are not
+    /// written. The future resolves once all of it has run.
     pub fn cancel(&self) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        lock(&self.failure).stopped = true;
         let scan_id = self.scan_id;
         Box::pin(self.database.call(move |connection| {
             cancel(connection, scan_id)?;
