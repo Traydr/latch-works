@@ -1,5 +1,7 @@
 name: Check
 
+# A basic typecheck of the TypeScript workspace. Builds, formatting, lints, Knip and the tests run
+# on the owner's machine (`pnpm check:all`, `pnpm test`), not here.
 on:
   pull_request:
   push:
@@ -7,8 +9,11 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  check:
+  typecheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -25,38 +30,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prod=false
 
-      - name: Run Build
-        run: pnpm run build:all
-        env:
-          LOCKSTEP_API_URL: ""
-          LOCKSTEP_API_TOKEN: ""
-      
-      - name: Run Format
-        run: pnpm format
-        env:
-          LOCKSTEP_API_URL: ""
-          LOCKSTEP_API_TOKEN: ""
-
-      - name: Run Lint Biome
-        run: pnpm run lint:biome
-        env:
-          LOCKSTEP_API_URL: ""
-          LOCKSTEP_API_TOKEN: ""
-
-      - name: Run Lint Oxlint
-        run: pnpm run lint:oxlint
-        env:
-          LOCKSTEP_API_URL: ""
-          LOCKSTEP_API_TOKEN: ""
-
       - name: Run Typecheck
         run: pnpm run typecheck
-        env:
-          LOCKSTEP_API_URL: ""
-          LOCKSTEP_API_TOKEN: ""
-
-      - name: Run Knip
-        run: pnpm run knip
         env:
           LOCKSTEP_API_URL: ""
           LOCKSTEP_API_TOKEN: ""

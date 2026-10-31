@@ -1,20 +1,11 @@
 name: Oriel RS
 
 # Plan 063's experiment: formats, lints and tests the Rust workspace, and checks that the
-# TypeScript packages still produce the conformance vectors the Rust tests read. On demand, and
-# on pull requests that touch the workspace or a package it ports.
+# TypeScript packages still produce the conformance vectors the Rust tests read. Off by default:
+# it runs only when started by hand (Actions › Oriel RS › Run workflow), as the owner runs
+# `pnpm oriel-rs:check` locally.
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - apps/oriel-rs/**
-      - packages/media-domain/**
-      - packages/media-format/**
-      - packages/glazier-core/**
-      - packages/media-index/**
-      - packages/lockstep-core/**
-      - apps/oriel/src/modes/sync/main/**
-      - .github/workflows/oriel-rs.yml
 
 permissions:
   contents: read
