@@ -21,14 +21,12 @@
 
 ## Status
 
-- **Status**: IN PROGRESS. Phases 0 to 7 and the scorecard (Phase 9) are done on macOS
-  (2026-10-30, branch `agent/063-0-spike`); two optimization rounds and a parity round followed
-  (2026-10-31). The reports start at
-  [docs/research/oriel-rs/README.md](../research/oriel-rs/README.md). 99 of Electron Oriel's 104
-  features are done, and 32 of its 33 e2e cases pass as GPUI tests
-  ([parity](../research/oriel-rs/parity.md)). The app installs from a DMG and imports Electron
-  Oriel's data, and Tidy works outside the sandbox. Phase 8, Windows, builds but has not run
-  ([its runbook](../runbooks/oriel-rs-windows.md)). Next: optimization again (decision 16).
+- **Status**: DONE (2026-10-31). Oriel RS replaced Electron Oriel: it is now **Oriel 1.0.0**, in
+  `apps/oriel`, with Electron Oriel's bundle id and `~/.latch-works/oriel` (decisions 25 to 27).
+  Electron Oriel and what only it used are removed from the repository. Windows builds but has not
+  run; [plan 064](064-oriel-windows.md) hands it to an agent on the owner's Windows machine. The
+  reports are in [docs/research/oriel-rs/](../research/oriel-rs/README.md), and the app's runbook
+  is [docs/runbooks/oriel.md](../runbooks/oriel.md).
 - **Priority**: P3 (an experiment the owner asked for)
 - **Effort**: XL several times over. About 24.8k lines of UI, 15k lines of core packages and the
   main-side services are rewritten in Rust. Phase 0, the gate, is L.
@@ -120,6 +118,16 @@ On the optimization rounds' report (2026-10-31):
     the 3.3 GB peak during a full analysis stays; a libvips with dav1d waits.
 24. **No FFmpeg build of our own** for exact seeks, unless a build or runtime flag is enough.
     The warmed-up video player stays in memory.
+
+On the owner's install (2026-10-31):
+
+25. **Oriel RS becomes Oriel 1.0.0** and takes Electron Oriel's namespace: the name, bundle id
+    `dev.traydr.latchworks.oriel`, `~/.latch-works/oriel`, `apps/oriel` and `ORIEL_*` variables.
+26. **Electron Oriel is removed**, with its e2e suites, its build workflow and the packages only it
+    used (`app-data`, `glazier-core`). Nobody else has it installed, so the import of its data goes
+    too; the owner's own data was moved by hand.
+27. **Windows gets a one-step PowerShell install script** and a handoff plan for an agent on the
+    owner's Windows machine.
 
 ## Which GPUI (D1, settled: A)
 

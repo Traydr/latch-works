@@ -1,5 +1,9 @@
 # Oriel RS: where the experiment stands
 
+> **Outcome (2026-10-31):** Oriel RS replaced Electron Oriel and is now Oriel 1.0.0, in
+> `apps/oriel` ([runbook](../../runbooks/oriel.md)). These pages keep the experiment's record under
+> its old name; paths in them may point at what was `apps/oriel-rs` or at the removed Electron app.
+
 Oriel RS is Oriel ported to Rust on GPUI with GPUI Kit, as an experiment beside Electron Oriel
 ([plan 063](../../plans/063-oriel-rs.md)). On macOS the port is done: the shell, View, Tidy, Sync,
 the links between the modes and Settings, in a double-clickable `Oriel RS.app`
