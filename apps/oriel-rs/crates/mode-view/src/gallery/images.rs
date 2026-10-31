@@ -11,7 +11,7 @@
 //! cache is the only one that drops it from the atlas). The WebP files are decoded through
 //! libwebp into the same pixels GPUI's own decoder makes (`oriel_media::still::decode_webp`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -49,6 +49,9 @@ pub struct TileImages {
     capacity: usize,
     clock: u64,
     items: HashMap<Arc<Path>, Held>,
+    /// The thumbnails decoded ahead of the scroll and not drawn yet. They keep their pixels
+    /// until painted, so the ones the scroll no longer heads for are let go at once.
+    ahead: HashSet<Arc<Path>>,
 }
 
 impl TileImages {
@@ -57,6 +60,7 @@ impl TileImages {
             capacity: capacity.max(MIN_CAPACITY),
             clock: 0,
             items: HashMap::new(),
+            ahead: HashSet::new(),
         });
         // Release the GPU textures when the cache itself goes.
         cx.observe_release(&images, |images, cx| {
@@ -86,6 +90,7 @@ impl TileImages {
         cx: &mut Context<Self>,
     ) -> Option<TilePicture> {
         self.clock += 1;
+        self.ahead.remove(path);
         if let Some(held) = self.items.get_mut(path) {
             held.used = self.clock;
             return match &held.state {
@@ -93,6 +98,37 @@ impl TileImages {
                 State::Loading(_) | State::Failed => None,
             };
         }
+        self.decode(path, window, cx);
+        None
+    }
+
+    /// Decodes the thumbnails at `paths` ahead of their tiles being drawn, and drops those decoded
+    /// ahead before that are neither among `paths` nor drawn since, so no more than the rows
+    /// ahead of the scroll hold pixels the atlas does not have yet.
+    pub fn prefetch(&mut self, paths: &[Arc<Path>], window: &mut Window, cx: &mut Context<Self>) {
+        let wanted: HashSet<&Arc<Path>> = paths.iter().collect();
+        let gone: Vec<Arc<Path>> = self
+            .ahead
+            .iter()
+            .filter(|path| !wanted.contains(path))
+            .cloned()
+            .collect();
+        for path in gone {
+            self.ahead.remove(&path);
+            // Never painted, so the atlas has nothing of it; a decode under way is cancelled.
+            self.items.remove(&path);
+        }
+        for path in paths {
+            if !self.items.contains_key(path) {
+                self.clock += 1;
+                self.decode(path, window, cx);
+                self.ahead.insert(path.clone());
+            }
+        }
+    }
+
+    /// Starts decoding the thumbnail at `path`, making room for it first.
+    fn decode(&mut self, path: &Arc<Path>, window: &mut Window, cx: &mut Context<Self>) {
         self.make_room(window, cx);
         let task = cx.spawn({
             let path = path.clone();
@@ -139,7 +175,6 @@ impl TileImages {
                 used: self.clock,
             },
         );
-        None
     }
 
     /// The tile was painted from `image`, so the atlas has its pixels: from now on the cache
@@ -177,6 +212,7 @@ impl TileImages {
             {
                 cx.drop_image(picture.image, Some(window));
             }
+            self.ahead.remove(&oldest);
         }
     }
 }

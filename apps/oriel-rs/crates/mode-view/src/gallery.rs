@@ -28,10 +28,11 @@ use gpui_kit::component::{ActiveTheme as _, Icon, tooltip::Tooltip};
 use gpui_kit::{
     App, AppContext as _, Bounds, ClickEvent, Context, DispatchPhase, ElementId, Entity,
     EventEmitter, FocusHandle, Focusable, Hitbox, HitboxBehavior, Hsla, InteractiveElement as _,
-    IntoElement, KeyBinding, MouseMoveEvent, ParentElement as _, PathBuilder, Pixels, Render, Role,
-    ScrollStrategy, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
-    TestSupportExt as _, UniformListScrollHandle, WeakEntity, Window, actions, canvas, div,
-    linear_color_stop, linear_gradient, point, prelude::FluentBuilder as _, px, size, uniform_list,
+    IntoElement, KeyBinding, MouseMoveEvent, ParentElement as _, PathBuilder, Pixels, Point,
+    Render, Role, ScrollStrategy, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Subscription, Task, TestSupportExt as _, UniformListDecoration, UniformListScrollHandle,
+    WeakEntity, Window, actions, canvas, div, linear_color_stop, linear_gradient, point,
+    prelude::FluentBuilder as _, px, size, uniform_list,
 };
 use oriel_core_domain::format_bytes;
 use oriel_ui::layout::{RAIL_WIDTH, SIDEBAR_WIDTH};
@@ -42,7 +43,7 @@ use crate::listing::MediaEntry;
 use crate::media_tools::{VideoProbe, ViewMediaTools};
 use crate::thumbnails::{THUMBNAIL_SIZE, Thumbnail, ThumbnailService};
 use images::{TileImages, TilePicture, tile_picture};
-use metrics::{GridMetrics, OVERSCAN_ROWS, TileAspect};
+use metrics::{BOTTOM_ROOM, GridMetrics, OVERSCAN_ROWS, PREFETCH_ROWS, TileAspect};
 pub use preview::{HOVER_DELAY, PreviewSettings, TilePreview};
 
 /// How many videos ffprobe reads at once for their captions (`MAX_PROBE_CONCURRENCY`).
@@ -57,6 +58,11 @@ pub const GALLERY_ID: &str = "gallery";
 
 /// The id of the hover caption, which one tile at most shows.
 pub const CAPTION_ID: &str = "tile-caption";
+
+/// A check variable: `ORIEL_RS_VIEW_SCROLL=<px>` scrolls the grid that many pixels down (or to
+/// its end) once its folder lists, to see a scrolled grid in a real window without scripted
+/// input.
+pub const SCROLL_VARIABLE: &str = "ORIEL_RS_VIEW_SCROLL";
 
 const KEY_CONTEXT: &str = "Gallery";
 
@@ -169,6 +175,9 @@ pub struct Gallery {
     selected: Option<SharedString>,
     /// The rows the list last drew, and whether a thumbnail request for them is due.
     drawn_rows: Range<usize>,
+    /// Whether the grid last scrolled down (or has not scrolled), which says which rows past the
+    /// drawn ones have their thumbnails decoded ahead.
+    scrolling_down: bool,
     wanted: Option<(Range<usize>, usize)>,
     request_due: bool,
     columns: usize,
@@ -186,6 +195,8 @@ pub struct Gallery {
     settling: bool,
     /// The media tile under the pointer, by position, whose hover caption shows.
     captioned: Option<usize>,
+    /// The scroll [`SCROLL_VARIABLE`] asks for, until the grid has scrolled there.
+    check_scroll: Option<f32>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -251,6 +262,7 @@ impl Gallery {
             focus: cx.focus_handle(),
             selected: None,
             drawn_rows: 0..0,
+            scrolling_down: true,
             wanted: None,
             request_due: false,
             columns: 1,
@@ -262,6 +274,9 @@ impl Gallery {
             activity: 0,
             settling: false,
             captioned: None,
+            check_scroll: std::env::var(SCROLL_VARIABLE)
+                .ok()
+                .and_then(|value| value.parse().ok()),
             _subscriptions: subscriptions,
         }
     }
@@ -636,6 +651,24 @@ impl Gallery {
             .map(|run| run.frames.as_slice())
     }
 
+    /// Scrolls to where [`SCROLL_VARIABLE`] asks, once the list has a layout to scroll in.
+    fn apply_check_scroll(&mut self, window: &mut Window) {
+        let Some(offset) = self.check_scroll else {
+            return;
+        };
+        let handle = self.scroll.0.borrow().base_handle.clone();
+        let max = f32::from(handle.max_offset().y);
+        if max > 0. {
+            handle.set_offset(point(px(0.), px(-offset.clamp(0., max))));
+            self.check_scroll = None;
+        } else if self.listing == Listing::Listed && !self.drawn_rows.is_empty() {
+            // The whole folder fits in the window: there is nowhere to scroll.
+            self.check_scroll = None;
+        } else {
+            window.request_animation_frame();
+        }
+    }
+
     fn advance_autoscroll(&mut self, window: &mut Window) {
         let Some(run) = self.autoscroll.as_mut().filter(|run| !run.finished) else {
             return;
@@ -764,14 +797,22 @@ impl Gallery {
         self.drawn_rows = rows;
         if !self.request_due {
             self.request_due = true;
-            cx.defer_in(window, |this, _, cx| this.request_thumbnails(cx));
+            cx.defer_in(window, |this, window, cx| {
+                this.request_thumbnails(window, cx)
+            });
         }
     }
 
-    fn request_thumbnails(&mut self, cx: &mut Context<Self>) {
+    fn request_thumbnails(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.request_due = false;
         let rows = self.drawn_rows.clone();
         let columns = self.columns.max(1);
+        if let Some((last, _)) = &self.wanted
+            && (rows.start, rows.end) != (last.start, last.end)
+        {
+            self.scrolling_down = rows.start > last.start || rows.end > last.end;
+        }
+        self.decode_ahead(&rows, window, cx);
         // A tile scrolled out of the drawn rows has no hover to lose, so its preview stops here.
         if let Some(hover) = &self.hover
             && !(rows.start * columns..rows.end * columns).contains(&hover.position)
@@ -821,6 +862,34 @@ impl Gallery {
         self.want_probes(&nearby_media, cx);
     }
 
+    /// Decodes the thumbnails of the [`PREFETCH_ROWS`] rows past the drawn ones in the
+    /// direction the grid scrolls, so a row has its pictures when it comes into view. Their
+    /// thumbnails were asked for with the overscan; this runs again when they are made.
+    fn decode_ahead(&mut self, rows: &Range<usize>, window: &mut Window, cx: &mut Context<Self>) {
+        let columns = self.columns.max(1);
+        let row_count = self.tiles.len().div_ceil(columns);
+        let ahead = if self.scrolling_down {
+            rows.end.min(row_count)..(rows.end + PREFETCH_ROWS).min(row_count)
+        } else {
+            rows.start.saturating_sub(PREFETCH_ROWS)..rows.start
+        };
+        let items = (ahead.start * columns).min(self.tiles.len())
+            ..(ahead.end * columns).min(self.tiles.len());
+        let thumbnails = self.thumbnails.read(cx);
+        let paths: Vec<Arc<Path>> = self.tiles[items]
+            .iter()
+            .filter_map(
+                |tile| match thumbnails.thumbnail(tile.thumbnail_source()?) {
+                    Thumbnail::Ready(path) => Some(path),
+                    _ => None,
+                },
+            )
+            .collect();
+        self.images
+            .update(cx, |images, cx| images.prefetch(&paths, window, cx));
+    }
+
+    /// The rows the list draws, all those whose top is above its padded bottom.
     fn render_rows(
         &mut self,
         rows: Range<usize>,
@@ -829,6 +898,39 @@ impl Gallery {
         cx: &mut Context<Self>,
     ) -> Vec<gpui_kit::AnyElement> {
         self.note_drawn(rows.clone(), window, cx);
+        let (elements, complete) = self.draw_rows(rows, metrics, window, cx);
+        self.drawn_complete = complete;
+        elements
+    }
+
+    /// The rows under the list's padded bottom that [`EdgeRows`] draws, which come right after
+    /// the ones the list drew this frame.
+    fn render_edge_rows(
+        &mut self,
+        rows: Range<usize>,
+        metrics: GridMetrics,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<gpui_kit::AnyElement> {
+        let drawn = if self.drawn_rows.end == rows.start {
+            self.drawn_rows.start..rows.end
+        } else {
+            rows.clone()
+        };
+        self.note_drawn(drawn, window, cx);
+        let (elements, complete) = self.draw_rows(rows, metrics, window, cx);
+        self.drawn_complete &= complete;
+        elements
+    }
+
+    /// Each row's element, and whether every tile in them has its thumbnail drawn.
+    fn draw_rows(
+        &mut self,
+        rows: Range<usize>,
+        metrics: GridMetrics,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (Vec<gpui_kit::AnyElement>, bool) {
         self.note_activity(cx);
         let mut complete = true;
         let mut elements = Vec::with_capacity(rows.len());
@@ -864,8 +966,7 @@ impl Gallery {
                     .into_any_element(),
             );
         }
-        self.drawn_complete = complete;
-        elements
+        (elements, complete)
     }
 
     /// One tile, and whether its thumbnail is drawn this frame (or it has none to draw).
@@ -1021,6 +1122,62 @@ impl Gallery {
     /// for good, which held 11 GB once 20,000 tiles had scrolled by.
     fn picture(&self, path: Arc<Path>, picture: TilePicture, radius: Pixels) -> impl IntoElement {
         tile_picture(&self.images, path, picture, radius)
+    }
+}
+
+/// The rows GPUI's `uniform_list` leaves out at the bottom edge. It counts the rows in view down
+/// to its padded bottom, though its mask shows its whole height, so a row whose top is in the
+/// bottom padding (the room for the floating toolbar, [`BOTTOM_ROOM`]) was not drawn: the
+/// background showed there until the row had scrolled up out of the padding. This draws those
+/// rows as a decoration of the list, where the list would put them. At the top the list counts
+/// its padding, so a row partly in view there is drawn already.
+struct EdgeRows {
+    gallery: WeakEntity<Gallery>,
+    metrics: GridMetrics,
+}
+
+impl UniformListDecoration for EdgeRows {
+    fn compute(
+        &self,
+        visible_range: Range<usize>,
+        bounds: Bounds<Pixels>,
+        scroll_offset: Point<Pixels>,
+        item_height: Pixels,
+        item_count: usize,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> gpui_kit::AnyElement {
+        let rows = self.metrics.rows_under(
+            visible_range.end,
+            f32::from(-scroll_offset.y),
+            f32::from(bounds.size.height),
+            item_count,
+        );
+        let layer = div().relative().size_full();
+        if rows.is_empty() {
+            return layer.into_any_element();
+        }
+        let metrics = self.metrics;
+        let elements = self
+            .gallery
+            .update(cx, |gallery, cx| {
+                gallery.render_edge_rows(rows.clone(), metrics, window, cx)
+            })
+            .unwrap_or_default();
+        // The layer's origin is the list's first row, so each row goes where the list would
+        // put it.
+        layer
+            .children(rows.zip(elements).map(|(row, element)| {
+                div()
+                    .absolute()
+                    .left_0()
+                    .w_full()
+                    .top(item_height * row as f32)
+                    .h(item_height)
+                    .flex()
+                    .child(element)
+            }))
+            .into_any_element()
     }
 }
 
@@ -1324,6 +1481,7 @@ impl Render for Gallery {
                 .into_any_element();
         }
 
+        self.apply_check_scroll(window);
         self.advance_autoscroll(window);
         let metrics = self.metrics(window, cx);
         self.columns = metrics.columns();
@@ -1337,10 +1495,14 @@ impl Render for Gallery {
                 }),
             )
             .track_scroll(&self.scroll)
+            .with_decoration(EdgeRows {
+                gallery: cx.entity().downgrade(),
+                metrics,
+            })
             .size_full()
             .pt(px(metrics::TOP_INSET))
             // Room under the last row for the floating toolbar (`pb-28`).
-            .pb(px(112.))
+            .pb(px(BOTTOM_ROOM))
             .px(px(metrics::HORIZONTAL_INSET)),
         )
         .into_any_element()

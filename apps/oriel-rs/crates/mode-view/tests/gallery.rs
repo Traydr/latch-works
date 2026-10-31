@@ -1793,3 +1793,75 @@ fn scrolled_thumbnails_stay_out_of_the_apps_asset_cache(cx: &mut TestAppContext)
         }
     });
 }
+
+/// A row partly in view at either edge is drawn with its thumbnail, at the bottom too, where the
+/// grid's rows scroll under the floating toolbar: GPUI's list counts its rows down to its padded
+/// bottom only, and a row whose top was in that room showed as background until it scrolled up.
+#[gpui_kit::test]
+fn a_row_half_in_view_at_either_edge_is_drawn_with_its_thumbnails(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("edge-rows");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("bulk"));
+    let gallery = cx.update(|cx| session.view.read(cx).gallery().clone());
+    let area = cx
+        .update_window(session.handle, |_, window, _| {
+            window.find("gallery").bounds()
+        })
+        .unwrap();
+
+    // Four 256 × 144 tiles to a row, 154 px apart, under the grid's 16 px top inset. Row 8 is
+    // scrolled to show its top half at the gallery's bottom edge.
+    let (stride, inset, row) = (154., 16., 8);
+    let height = f32::from(area.size.height);
+    let scroll_top = inset + row as f32 * stride - (height - 77.);
+    assert!(
+        scroll_top > 0.,
+        "the gallery is taller than the test assumes"
+    );
+    cx.update(|cx| {
+        let handle = gallery
+            .read(cx)
+            .scroll_handle()
+            .0
+            .borrow()
+            .base_handle
+            .clone();
+        handle.set_offset(point(px(0.), px(-scroll_top)));
+    });
+    settle(cx, &session);
+
+    let order = tile_paths(cx, &session);
+    let top_row = ((scroll_top - inset) / stride).floor() as usize;
+    assert!(
+        inset + top_row as f32 * stride < scroll_top,
+        "the top row is only partly in view"
+    );
+    cx.update(|cx| {
+        let gallery = gallery.read(cx);
+        assert_eq!(gallery.drawn_rows(), top_row..row + 1);
+        assert!(gallery.is_drawn_complete(), "a drawn tile has no picture");
+        let thumbnails = gallery.thumbnails().read(cx);
+        for media in &gallery.media()[row * 4..row * 4 + 4] {
+            assert!(
+                matches!(thumbnails.thumbnail(media), Thumbnail::Ready(_)),
+                "{} has no thumbnail",
+                media.path().display()
+            );
+        }
+    });
+    cx.update_window(session.handle, |_, window, _| {
+        for (edge, row) in [("top", top_row), ("bottom", row)] {
+            for path in &order[row * 4..row * 4 + 4] {
+                let tile = window.try_find(tile_id(path));
+                let tile = tile.unwrap_or_else(|| panic!("the {edge} row's {path:?} is not drawn"));
+                let top = f32::from(tile.bounds().origin.y - area.origin.y);
+                let expected = inset + row as f32 * stride - scroll_top;
+                assert!(
+                    (top - expected).abs() < 0.5,
+                    "the {edge} row is at {top}, not {expected}"
+                );
+            }
+        }
+    })
+    .unwrap();
+}

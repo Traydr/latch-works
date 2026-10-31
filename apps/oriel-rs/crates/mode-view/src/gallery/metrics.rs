@@ -14,6 +14,11 @@ pub const OVERSCAN_ROWS: usize = 4;
 pub const HORIZONTAL_INSET: f32 = 12.;
 /// The gallery's top inset (`pt-4`).
 pub const TOP_INSET: f32 = 16.;
+/// The room under the last row for the floating toolbar (`pb-28`), which rows scroll through.
+pub const BOTTOM_ROOM: f32 = 112.;
+/// Rows past the drawn ones, in the direction of the scroll, whose thumbnails are decoded
+/// before they come into view.
+pub const PREFETCH_ROWS: usize = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TileAspect {
@@ -100,6 +105,21 @@ impl GridMetrics {
         let first = (scroll_top / stride).floor().max(0.) as usize;
         let last = ((scroll_top + height) / stride).ceil().max(0.) as usize;
         first.saturating_sub(overscan)..(last + overscan + 1).min(row_count)
+    }
+
+    /// The rows from `first` on that show in the [`BOTTOM_ROOM`] under a list `height` tall
+    /// less its padding, scrolled `scroll_top` into the grid: each one whose top is above the
+    /// room's bottom edge, partly in view though it is.
+    pub fn rows_under(
+        &self,
+        first: usize,
+        scroll_top: f32,
+        height: f32,
+        row_count: usize,
+    ) -> Range<usize> {
+        let bottom = scroll_top + height + BOTTOM_ROOM;
+        let end = ((bottom / self.row_stride()).ceil().max(0.) as usize).min(row_count);
+        first..end.max(first)
     }
 }
 
