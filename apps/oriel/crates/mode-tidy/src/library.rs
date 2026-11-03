@@ -1584,9 +1584,11 @@ impl LibraryPage {
         }
         let selected = self.selected(cx);
         let command = is_command(&modifiers);
+        // Ctrl is not the command key on macOS, but it still is not the plain key.
+        let command_or_ctrl = modifiers.platform || modifiers.control;
         let grid = self.mode == LibraryMode::Grid;
         match keys.key.as_str() {
-            "/" if !command => self.search.focus_handle(cx).focus(window, cx),
+            "/" if !command_or_ctrl => self.search.focus_handle(cx).focus(window, cx),
             "i" if !modifiers.modified() => self.toggle_inspector(cx),
             "backspace" if command && !selected.is_empty() => self.hold(selected, window, cx),
             "m" if command && modifiers.shift && !selected.is_empty() => {
@@ -1597,7 +1599,7 @@ impl LibraryPage {
                     cx.reveal_path(Path::new(&row.abs_path));
                 }
             }
-            _ if command || modifiers.alt => return,
+            _ if command_or_ctrl || modifiers.alt => return,
             // The table moves its own cursor while it has the keys; ⇧ and the grid come here.
             "down" | "up" => {
                 let step = if grid { self.grid_columns.max(1) } else { 1 } as isize;
