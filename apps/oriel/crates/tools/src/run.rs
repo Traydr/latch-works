@@ -121,7 +121,7 @@ impl ToolRun {
             }
             Ok(collect(&received, deadline, &running))
         });
-        let status = running.finish().map_err(ToolError::Io)?;
+        let (status, killed) = running.finish().map_err(ToolError::Io)?;
         let collected = collected.map_err(ToolError::Io)?;
 
         if collected.cancelled || self.is_cancelled() {
@@ -132,7 +132,7 @@ impl ToolRun {
             stdout: collected.stdout,
             stderr: collected.stderr,
             timed_out: collected.timed_out,
-            killed: collected.killed,
+            killed,
         })
     }
 }
@@ -149,15 +149,15 @@ pub struct ToolOutput {
     pub stderr: String,
     /// Whether the run was killed for lasting longer than its timeout.
     pub timed_out: bool,
-    /// Whether the run killed the tool, for its timeout or its stdout bound.
+    /// Whether the tool was killed, for its timeout, its stdout bound or [`kill_running_tools`].
     killed: bool,
 }
 
 impl ToolOutput {
     /// The exit code, `None` when the tool was killed. A process Windows terminates still
-    /// has an exit code (1, from `TerminateProcess`), so a kill this run made is checked too.
+    /// has an exit code (1, from `TerminateProcess`), so the kill is checked there too.
     pub fn code(&self) -> Option<i32> {
-        if self.killed {
+        if cfg!(windows) && self.killed {
             return None;
         }
         self.status.code()
@@ -211,13 +211,13 @@ impl std::error::Error for ToolError {
 /// child process outlives its parent, and a long ffmpeg would keep running. Each run then
 /// finishes with no exit code.
 pub fn kill_running_tools() {
-    for child in lock(&RUNNING).values() {
-        let _ = lock(child).kill();
+    for tool in lock(&RUNNING).values() {
+        lock(tool).kill();
     }
 }
 
 /// Every tool still running, so [`kill_running_tools`] can reach it.
-static RUNNING: Mutex<BTreeMap<u64, Arc<Mutex<Child>>>> = Mutex::new(BTreeMap::new());
+static RUNNING: Mutex<BTreeMap<u64, Arc<Mutex<Tool>>>> = Mutex::new(BTreeMap::new());
 
 static NEXT_RUN: AtomicU64 = AtomicU64::new(0);
 
@@ -230,26 +230,43 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// `Child`, which knows when it has been reaped.
 struct Running {
     id: u64,
-    child: Arc<Mutex<Child>>,
+    tool: Arc<Mutex<Tool>>,
+}
+
+/// A tool's process, and whether anything has killed it.
+struct Tool {
+    child: Child,
+    killed: bool,
+}
+
+impl Tool {
+    fn kill(&mut self) {
+        self.killed = true;
+        let _ = self.child.kill();
+    }
 }
 
 impl Running {
     fn register(child: Child) -> Self {
         let id = NEXT_RUN.fetch_add(1, Ordering::Relaxed);
-        let child = Arc::new(Mutex::new(child));
-        lock(&RUNNING).insert(id, child.clone());
-        Self { id, child }
+        let tool = Arc::new(Mutex::new(Tool {
+            child,
+            killed: false,
+        }));
+        lock(&RUNNING).insert(id, tool.clone());
+        Self { id, tool }
     }
 
     fn kill(&self) {
-        let _ = lock(&self.child).kill();
+        lock(&self.tool).kill();
     }
 
-    /// Leaves the registry and reaps the tool. Called once both pipes have ended, when the tool
-    /// has exited or is exiting.
-    fn finish(&self) -> io::Result<ExitStatus> {
+    /// Leaves the registry and reaps the tool, giving how it exited and whether it was killed.
+    /// Called once both pipes have ended, when the tool has exited or is exiting.
+    fn finish(&self) -> io::Result<(ExitStatus, bool)> {
         lock(&RUNNING).remove(&self.id);
-        lock(&self.child).wait()
+        let mut tool = lock(&self.tool);
+        Ok((tool.child.wait()?, tool.killed))
     }
 }
 
@@ -257,9 +274,9 @@ impl Drop for Running {
     /// Leaves no tool running and no zombie behind if the run unwinds.
     fn drop(&mut self) {
         lock(&RUNNING).remove(&self.id);
-        let mut child = lock(&self.child);
-        let _ = child.kill();
-        let _ = child.wait();
+        let mut tool = lock(&self.tool);
+        tool.kill();
+        let _ = tool.child.wait();
     }
 }
 
@@ -275,7 +292,6 @@ struct Collected {
     stderr: String,
     timed_out: bool,
     cancelled: bool,
-    killed: bool,
 }
 
 /// Waits for both pipes to end, killing the tool at the deadline, past the stdout bound, or on
@@ -325,7 +341,6 @@ fn collect(
         stderr: stderr.unwrap_or_default(),
         timed_out,
         cancelled,
-        killed,
     }
 }
 
