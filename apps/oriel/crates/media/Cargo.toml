@@ -32,7 +32,7 @@ libc = "0.2"
 
 # The libmpv spike's CPU time and memory on Windows, which has no `ps`.
 [target.'cfg(windows)'.dev-dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
 
 # Off macOS, stills decode through the libvips Tidy loads (`still/vips.rs`), and frames in
 # memory through `image`.

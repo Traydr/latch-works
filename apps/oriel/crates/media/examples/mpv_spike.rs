@@ -1232,7 +1232,21 @@ impl Usage {
 /// thread count.
 fn at_rest() -> String {
     let footprint = phys_footprint();
-    let threads = Command::new("ps")
+    let threads = thread_count();
+    format!(
+        "footprint {:.1} MB, {threads} threads",
+        footprint.unwrap_or(0) as f64 / 1e6
+    )
+}
+
+#[cfg(windows)]
+fn thread_count() -> usize {
+    windows_usage::thread_count()
+}
+
+#[cfg(not(windows))]
+fn thread_count() -> usize {
+    Command::new("ps")
         .args(["-M", "-p", &std::process::id().to_string()])
         .output()
         .map(|output| {
@@ -1241,11 +1255,7 @@ fn at_rest() -> String {
                 .count()
                 .saturating_sub(1)
         })
-        .unwrap_or(0);
-    format!(
-        "footprint {:.1} MB, {threads} threads",
-        footprint.unwrap_or(0) as f64 / 1e6
-    )
+        .unwrap_or(0)
 }
 
 #[cfg(target_os = "macos")]
@@ -1279,7 +1289,10 @@ fn phys_footprint() -> Option<u64> {
 mod windows_usage {
     use std::time::Duration;
 
-    use windows_sys::Win32::Foundation::FILETIME;
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+    };
     use windows_sys::Win32::System::ProcessStatus::{
         K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
     };
@@ -1326,6 +1339,30 @@ mod windows_usage {
 
     pub fn private_bytes() -> u64 {
         counters().PrivateUsage as u64
+    }
+
+    /// This process's threads, counted in a snapshot of every thread on the machine.
+    pub fn thread_count() -> usize {
+        let own = std::process::id();
+        // SAFETY: the snapshot takes no pointers, and its handle is closed below.
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+        if snapshot == INVALID_HANDLE_VALUE {
+            return 0;
+        }
+        // SAFETY: plain data, filled in by the calls; `dwSize` names the struct it is.
+        let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
+        entry.dwSize = size_of::<THREADENTRY32>() as u32;
+        let mut count = 0;
+        // SAFETY: the snapshot is open and `entry` is as large as `dwSize` says.
+        let mut more = unsafe { Thread32First(snapshot, &mut entry) } != 0;
+        while more {
+            count += usize::from(entry.th32OwnerProcessID == own);
+            // SAFETY: as for `Thread32First`.
+            more = unsafe { Thread32Next(snapshot, &mut entry) } != 0;
+        }
+        // SAFETY: the snapshot is open, and nothing uses it after this.
+        unsafe { CloseHandle(snapshot) };
+        count
     }
 }
 
