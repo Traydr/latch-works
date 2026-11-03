@@ -251,8 +251,7 @@ display, Windows 11 Pro build 26300, PowerShell 7.6.9, Visual Studio Community 2
 - **Works**, after one fix: Electron Oriel's `Update.exe uninstall` removes `current\`, then
   schedules `ping -n 4 & rmdir /s /q %LOCALAPPDATA%\Oriel`. The script waited for `current\`
   only, so Setup.exe installed and the delayed `rmdir` then deleted `oriel.exe` and `Update.exe`
-  ("Setup.exe finished but … oriel.exe is missing"). It now waits for the whole folder
-  (`459a293b`).
+  ("Setup.exe finished but … oriel.exe is missing"). It now waits for the whole folder.
 - The second run installed and started Oriel on the welcome; the third skipped every
   prerequisite and the install ("is this build already"); `-Clean` removed a stand-in target
   folder and printed its size. After an uninstall, a later run installed fresh on a machine
@@ -271,36 +270,42 @@ display, Windows 11 Pro build 26300, PowerShell 7.6.9, Visual Studio Community 2
 ### Phase 1: the MSVC build
 
 - `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings` pass.
-- `cargo test --workspace` (with `ORIEL_LIBVIPS` and `ORIEL_LIBMPV` set to the staged DLLs):
-  **362 passed, 13 failed, 3 ignored**. The first run had 54 failures. Most were tests
-  that assumed macOS, fixed in `b29826ab`: `std::fs::canonicalize`'s `\\?\` paths compared with
-  the app's Node-style ones, `/Users`, `/private/tmp` and `/Volumes` paths, Settings and About
-  looked for in the app menu, fixture paths joined with `/`, the libmpv OpenGL renderer, and
-  the Menlo font check.
-- The 13 left are Windows findings, not bugs:
-  - 8 need symlinks, so Developer Mode, which is off (`catalog.rs` ×4, `scans_the_tree_as_the_typescript_does`,
-    `scans_as_lockstep_core_does`, the Tidy walk, `a_root_outside_the_sandbox_is_refused`);
-  - 4 compare with vectors made on macOS (`applies_lockstep_cores_rules`,
+- `cargo test --workspace` (with `ORIEL_LIBVIPS` and `ORIEL_LIBMPV` set to the staged DLLs) on
+  2026-11-03, with Developer Mode on: **371 passed, 5 failed, 3 ignored**. The first run had 54
+  failures. Most were tests that assumed macOS, now fixed: `std::fs::canonicalize`'s `\?\` paths
+  compared with the app's Node-style ones, `/Users`, `/private/tmp` and `/Volumes` paths, Settings
+  and About looked for in the app menu, fixture paths joined with `/`, the libmpv OpenGL renderer,
+  and the Menlo font check.
+- The 5 left compare with vectors made on macOS, and none is a bug in the app:
+  - 4 hold POSIX paths (`applies_lockstep_cores_rules`,
     `keeps_hash_caches_as_lockstep_core_does`, `checks_as_lockstep_cores_doctor_does`,
-    `compares_fingerprints_and_escapes_as_the_typescript_does`): POSIX paths, which Rust resolves
+    `compares_fingerprints_and_escapes_as_the_typescript_does`), which Rust resolves
     as Node does on Windows (`C:\archive\root`, `..\`); the TypeScript suites fail the same
     tests here;
-  - `a_primed_engine_comes_as_new` failed once under the full suite's load (a late frame counted)
-    and passed six of six alone.
+  - `scans_the_tree_as_the_typescript_does` expects a file named `trailing.`, and Windows drops a
+    name's trailing dot when it makes the file.
+- With Developer Mode off, as on 2026-11-01, 7 more fail because they make symlinks (`catalog.rs`
+  ×4, `scans_as_lockstep_core_does`, the Tidy walk, `a_root_outside_the_sandbox_is_refused`).
+- Two tests failed once under the full suite's load and passed six of six alone:
+  `a_primed_engine_comes_as_new` (a late frame counted) and
+  `a_scan_runs_as_a_job_that_names_its_phases` (the test did not see the short walk phase).
 - **Found by the tests and fixed:** `ToolOutput::code()` gave `Some(1)` for a tool killed at its
-  timeout, since `TerminateProcess` leaves exit code 1 (`b4f98bf1`).
+  timeout, since `TerminateProcess` leaves exit code 1. It now gives `None` on Windows for any
+  kill, `kill_running_tools` too, and `tests/shutdown.rs` runs here as well.
 - The conformance vectors, with Node 24.18.0 (the vectors' ICU 78.3; this machine's default Node
-  24 is 24.14.1, ICU 78.2): media-domain 33 and media-format 25 pass; media-index fails its one
+  24 is 24.14.1, ICU 78.2): media-domain 33 and media-format 25 pass; media-index, with Developer Mode off then, fails its one
   symlink test; lockstep-core fails the 4 POSIX-path tests above.
 - The GPUI e2e ports (`links`, `shell`, `welcome`, gallery, the Tidy pages) all pass on Windows.
-- Mixing `cargo clippy -p <crate>` and `cargo test -p <crate>` left `.rmeta`-only artefacts that
-  failed a later build ("required to be available in rlib format"); `--workspace` for both avoids it.
+- A build with cargo's default job count can run out of memory here (a 34 GB commit limit):
+  `rustc` crashes and the crates after it fail with "required to be available in rlib format".
+  `cargo test --workspace -j 4` builds. The same message came earlier after mixing `cargo clippy -p`
+  and `cargo test -p`, and memory may have been the cause then too.
 
 ### Phase 2: the video gate: passed
 
 `mpv_spike single`, 10 s steady at 60 fps, libmpv `v0.41.0-1227-ge471496c5` with
 `hwdec=d3d11va-copy` chosen every time. The spike could not run here at first: it read CPU with
-`ps`; it now reads Windows' own counters (`8adacf66`). CPU is the app's process, 100% = one
+`ps`; it now reads Windows' own counters. CPU is the app's process, 100% = one
 thread; GPU is the RTX 3060's engines over 8 s.
 
 | Clip | Pictures shown / expected | Drops | First picture | CPU | GPU decode / 3D |
@@ -333,10 +338,14 @@ played the H.264 clip at 78% CPU, its overlay counting 60 frames a second.
 ### Phase 4: Tidy on Windows
 
 - [x] **Files held open:** works after a fix. A JPEG held with no sharing failed Convert as
-      libvips' "is not a known file format", nothing moved and no temp file left. Steps that read
-      a file now open it first, so the message is "Another program has … open" (`b9dce99f`). The
-      in-use path itself was not rerun in the installed app after the fix. A video playing in
-      Duplicates, a file open in View and a Defender scan were not tried.
+      libvips' "is not a known file format", nothing moved and no temp file left. On Windows,
+      Convert's steps now open the file first, so the message is "Another program has … open".
+      A temporary test on a held JPEG gave that message. Only a sharing violation reads that way:
+      a file with its read permission denied gives error 5 rather than 32, and fails with the
+      system's message. That denied case was checked at the open, not through a whole step,
+      because changing a file's permissions makes the step skip it as changed since the scan.
+      The in-use path was not rerun in the installed app. A video playing in Duplicates, a file
+      open in View and a Defender scan were not tried.
 - [ ] **Replacing in place:** not run (Shrink is not among `ORIEL_TIDY_RUN`'s changes).
 - [ ] **Drives:** not run: it needs a run without `ORIEL_DATA_DIR`, so in the owner's data
       folder, and a whole-drive root needs a VHDX mounted with administrator rights.
@@ -355,7 +364,9 @@ played the H.264 clip at 78% CPU, its overlay counting 60 frames a second.
       `mtimeMs`. The second scan was not run.
 - **Fixed:** Tidy's dates were UTC off macOS ("until Phase 8 brings a time zone"): a batch named
   `2026-11-01_000318` showed as "Today 10:03 PM" on this UTC+2 machine. `format::local` now uses
-  core-tidy's Windows local time (`3eccbc4b`).
+  core-tidy's `local_time` on every system. Dates before 1970 show as they are, as a temporary
+  test showed for 1969 and 1904. On Windows, dates before 1601 or too far ahead for a `FILETIME`
+  show as 1970.
 - **Found, not fixed:** libvips' error buffer is one per process, and `take_error` takes all of
   it, so a failure carries warnings other files left behind. The held-open file's probe error
   ended with four "bad seek" lines about another root's `.avif.glazier-tmp`. Not specific to
@@ -372,7 +383,10 @@ played the H.264 clip at 78% CPU, its overlay counting 60 frames a second.
       **Fixed:** every shortcut was bound to the Windows key, since GPUI reads `cmd-` as Win
       off macOS. The menus read "Win+O", "Win+,", "Win+Q", and Win+1 to 3 and Win+M are
       Windows' own. They are Ctrl now, F5 for View's Refresh and F11 for full screen, as in
-      Electron Oriel (`50de5459`), checked in the installed app.
+      Electron Oriel, checked in the installed app. Key and click handlers read Ctrl off macOS
+      and ⌘ alone on macOS, the owner's choice. Electron Oriel's `isCommandKey` read either on
+      every system, and Library and Duplicates did so on macOS until this plan: Ctrl+⌫ no longer
+      holds a file there.
 - [ ] **Taskbar progress:** not checked.
 - [ ] **Logoff while working:** not run: signing out ends the agent's session.
 
@@ -406,10 +420,9 @@ played the H.264 clip at 78% CPU, its overlay counting 60 frames a second.
 4. **The checks left:** the drives check (which runs in the owner's data folder), the drive with
    no Recycle Bin, logging off during a push, taskbar progress, replacing in place, and the
    elevated install paths on a clean machine.
-5. **Smaller:** Tidy's tooltips, menus and shortcut sheet still say ⌘, ⌥ and "Show in Finder",
-   and About says `~/.latch-works/oriel`; a missing libavif's reason is developer-worded and not
-   shown; release builds look for libavif in the clone's `.vendor` by compile-time path; Developer
-   Mode for the symlink tests, and whether the conformance vectors should be made path-neutral;
+5. **Smaller:** tooltips and menus in Tidy, Sync, View and the shell, and Tidy's shortcut sheet,
+   still say ⌘ and ⌥, Tidy still says "Show in Finder", and About says `~/.latch-works/oriel`; a missing libavif's reason is developer-worded and not
+   shown; release builds look for libavif in the clone's `.vendor` by compile-time path; whether the conformance vectors should be made path-neutral;
    the fixture script's manifest check compares `\` with `/` on Windows (it makes every file,
    then exits 1); the libvips error buffer above.
 

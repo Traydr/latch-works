@@ -197,12 +197,12 @@ the detail and the numbers:
 
 - [x] `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`; the
       conformance vectors, Tidy's change and Undo round trip and the GPUI tests that port the e2e cases.
-      Symlink tests need developer mode. (8 symlink and 4 macOS-vector tests fail; see plan 064.)
+      Symlink tests need developer mode. (5 macOS-vector tests fail with it on, and 7 symlink tests more with it off; see plan 064.)
 - [x] **The video gate (plan 063, Phase 8): 60 fps at 1080p.** Passed, 4K60 too. STOP and report if it fails.
       `cargo run --release -p oriel-media --example mpv_spike -- sweep` with
       `ORIEL_LIBMPV=<libmpv-2.dll>`, then the viewer on the fixture's 1080p and 4K videos.
-- [x] Stills and AVIF in View and Tidy (HEIC does not decode: libvips has no HEVC decoder); similar pictures group as on macOS (libvips 8.18).
-- [x] **Convert to AVIF**: the staged `libavif\` loads (Settings or the log names
+- [x] Stills and AVIF in View and Tidy (HEIC does not decode: libvips has no HEVC decoder); similar pictures group as on macOS (libvips 8.18; the fingerprint tests pass, grouping itself was not compared).
+- [x] **Convert to AVIF** (without `libavif\` the steps fail and History shows "Failed"; the reason is only in the catalog): the staged `libavif\` loads (Settings or the log names
       `libavif-16.dll`), a still converts, and the file opens in Photos. Then without
       `libavif\`: Convert says no libavif was found.
 - [x] **ctime** (the second scan not run): `fs.statSync(f).ctimeMs` in Node equals the catalog's `ctime_ms` after a scan
@@ -220,7 +220,7 @@ the detail and the numbers:
       `D:\.latch-works\oriel\holding`, without `ORIEL_DATA_DIR`), and a whole drive as the
       root (holding by copy); Undo both. Empty Holding refuses the `D:` batches today ("not one
       of Tidy's holding folders": `empty_holding` admits only `<data>\holding`), on macOS too.
-- [x] **Long paths**: past 260 characters through the scan, fingerprints (libvips refused them in
+- [x] **Long paths** (Convert run; Shrink not): past 260 characters through the scan, fingerprints (libvips refused them in
       Electron Oriel until paths were given as `\\?\`), thumbnails, ffprobe and Shrink.
 - [x] **Names**: Japanese and other non-ASCII names through ffmpeg's arguments and libvips.
 - [x] **Explorer's files**: `desktop.ini` (hidden, system, read-only folder) and `Thumbs.db`.
@@ -230,8 +230,8 @@ the detail and the numbers:
 - [x] **Setup.exe** (and an upgrade to a local 1.0.1): installs silently (`--silent`) to `%LocalAppData%\Oriel\current`, starts,
       shows About's licences, uninstalls cleanly, and leaves the data folder.
 - [ ] The title bar: double-click to maximize, snap layouts on the maximize button and the menus
-      by mouse work; **the menus by Alt do not** (GPUI Kit's menu bar has no Alt); the taskbar
-      progress during a push not checked.
+      by mouse work; **the menus by Alt do not** (GPUI Kit's menu bar has no Alt); dragging and the
+      taskbar progress during a push not checked.
 
 ## Known risks
 
