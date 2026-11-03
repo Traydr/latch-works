@@ -186,8 +186,8 @@ passes, `cargo build -p oriel --target x86_64-pc-windows-gnullvm` links, and
   the patch lands.
 - **Macintosh wording**: Tidy's menus and shortcut sheet say "Show in Finder" and ⌘ on Windows
   too (mode-tidy's, not this runbook's).
-- **The measuring tools** (`xtask measure`, the spikes' footprints, `core-tidy`'s timers) read
-  macOS's process counters; on Windows they print zeros or refuse.
+- **The measuring tools** (`xtask measure`, the other spikes' footprints, `core-tidy`'s timers) read
+  macOS's process counters; on Windows they print zeros or refuse. `mpv_spike` reads Windows' own.
 
 ## To check on Windows
 
@@ -198,7 +198,7 @@ the detail and the numbers:
 - [x] `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`; the
       conformance vectors, Tidy's change and Undo round trip and the GPUI tests that port the e2e cases.
       Symlink tests need developer mode. (5 macOS-vector tests fail with it on, and 7 symlink tests more with it off; see plan 064.)
-- [x] **The video gate (plan 063, Phase 8): 60 fps at 1080p.** Passed, 4K60 too. STOP and report if it fails.
+- [x] **The video gate (plan 063, Phase 8): 60 fps at 1080p.** Passed, 4K60 too (`mpv_spike single` and tiles, not `sweep`; the viewer on one 1080p H.264 clip). STOP and report if it fails.
       `cargo run --release -p oriel-media --example mpv_spike -- sweep` with
       `ORIEL_LIBMPV=<libmpv-2.dll>`, then the viewer on the fixture's 1080p and 4K videos.
 - [x] Stills and AVIF in View and Tidy (HEIC does not decode: libvips has no HEVC decoder); similar pictures group as on macOS (libvips 8.18; the fingerprint tests pass, grouping itself was not compared).
@@ -207,11 +207,11 @@ the detail and the numbers:
       `libavif\`: Convert says no libavif was found.
 - [x] **ctime** (the second scan not run): `fs.statSync(f).ctimeMs` in Node equals the catalog's `ctime_ms` after a scan
       (whole milliseconds); `attrib +r` alone moves it; a second scan hashes nothing again.
-- [x] **Recycle Bin** (a drive with it off not tried): Empty Holding puts each batch in the Recycle Bin, restorable; a batch on a
+- [x] **Recycle Bin** (restoring and a drive with it off not tried): Empty Holding puts each batch in the Recycle Bin, restorable; a batch on a
       drive with the Recycle Bin off fails with a message and stays in holding.
 - [ ] **Logging off during a push**: Windows' screen names Oriel with the reason; the app
       quits when the push ends and the sign-out goes on; "Sign out anyway" quits at once.
-- [x] **The exe**: Explorer shows Oriel's icon and, in Properties › Details, "Oriel" and the
+- [x] **The exe** (the taskbar and the window's own icon not recorded): Explorer shows Oriel's icon and, in Properties › Details, "Oriel" and the
       version; the taskbar and the window show the icon.
 - [x] **Files held open** (a held JPEG; the Duplicates, View and Defender cases not tried): a video playing in Duplicates, a file View has open, one Defender is
       scanning: the step fails with a readable message and nothing is half moved.

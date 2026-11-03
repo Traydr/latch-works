@@ -141,8 +141,8 @@ impl ToolRun {
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct ToolOutput {
-    /// How the tool exited. One killed for its timeout, its stdout bound or
-    /// [`kill_running_tools`] has no exit code.
+    /// How the tool exited. Windows gives a killed tool an exit code here, so read the code from
+    /// [`ToolOutput::code`].
     pub status: ExitStatus,
     pub stdout: Vec<u8>,
     /// The last [`MAX_STDERR_BYTES`] of stderr, as UTF-8 with bad bytes replaced.

@@ -295,6 +295,7 @@ display, Windows 11 Pro build 26300, PowerShell 7.6.9, Visual Studio Community 2
 - The conformance vectors, with Node 24.18.0 (the vectors' ICU 78.3; this machine's default Node
   24 is 24.14.1, ICU 78.2): media-domain 33 and media-format 25 pass; media-index, with Developer Mode off then, fails its one
   symlink test; lockstep-core fails the 4 POSIX-path tests above.
+- Tidy's differential runs (step 3) have no result recorded.
 - The GPUI e2e ports (`links`, `shell`, `welcome`, gallery, the Tidy pages) all pass on Windows.
 - A build with cargo's default job count can run out of memory here (a 34 GB commit limit):
   `rustc` crashes and the crates after it fail with "required to be available in rlib format".
@@ -344,21 +345,22 @@ played the H.264 clip at 78% CPU, its overlay counting 60 frames a second.
       a file with its read permission denied gives error 5 rather than 32, and fails with the
       system's message. That denied case was checked at the open, not through a whole step,
       because changing a file's permissions makes the step skip it as changed since the scan.
-      The in-use path was not rerun in the installed app. A video playing in Duplicates, a file
-      open in View and a Defender scan were not tried.
+      "Nothing moved" and "no temp file" were seen before the fix, not after it. The in-use path
+      was not rerun in the installed app, and Undo after closing the file was not run. A video
+      playing in Duplicates, a file open in View and a Defender scan were not tried.
 - [ ] **Replacing in place:** not run (Shrink is not among `ORIEL_TIDY_RUN`'s changes).
 - [ ] **Drives:** not run: it needs a run without `ORIEL_DATA_DIR`, so in the owner's data
       folder, and a whole-drive root needs a VHDX mounted with administrator rights.
 - [x] **Long paths:** works: a 341-character path through the scan, fingerprints, ffprobe,
-      thumbnails and Convert (still to AVIF, MKV to MP4).
+      thumbnails and Convert (still to AVIF, MKV to MP4). Shrink past 260 characters was not run.
 - [x] **Names:** works: `日本語の写真.jpg` to AVIF, `動画テスト.mkv` to MP4 through ffmpeg,
       `café-ñoño.png` to AVIF, and Holding shows the names.
 - [x] **Explorer's files:** works: Clean up removed a hidden, system, read-only folder holding
       `desktop.ini` and `Thumbs.db` in one `remove-folder` step, the two files held.
-- [x] **Hard links:** works: `mklink /H` gives both names one `dev` and `ino` in the catalog.
+- [x] **Hard links:** works: `mklink /H` gives both names one `dev` and `ino` in the catalog. Duplicates' total was not read.
 - [x] **The Recycle Bin:** works: Empty to Trash put the batch in the Recycle Bin under its
-      holding path ("Moved 4 files to the Trash"). A drive with the Recycle Bin off was not tried
-      (a machine setting).
+      holding path ("Moved 4 files to the Trash"). Restoring from the Recycle Bin was not tried, nor a drive with
+      it off (a machine setting).
 - [x] **NTFS change times:** works: for all 32 files whose scan was current, the catalog's
       `ctime_ms` is Node's `ctimeMs` floored; `attrib +r` moved Node's `ctimeMs` and left
       `mtimeMs`. The second scan was not run.
@@ -377,8 +379,9 @@ played the H.264 clip at 78% CPU, its overlay counting 60 frames a second.
 - [x] **One instance and hand-over:** works: `oriel.exe <folder>` handed the folder over and
       exited in 155 ms, and the first window opened it in View. A launch with no folder restored
       the first window from minimized. A run with another `ORIEL_DATA_DIR` started beside it.
-- [x] **The title bar and app menu:** partly. Double-click maximizes and restores, Snap Layouts
+- [ ] **The title bar and app menu:** partly. Double-click maximizes and restores, Snap Layouts
       show on hovering maximize, and the menus open by mouse. File ends with Settings… and Exit.
+      Dragging, the caption buttons, Window's Minimize and Close, and Help's About are not recorded.
       **The menus do not open by Alt**: GPUI Kit's `AppMenuBar` binds only Escape and the arrows.
       **Fixed:** every shortcut was bound to the Windows key, since GPUI reads `cmd-` as Win
       off macOS. The menus read "Win+O", "Win+,", "Win+Q", and Win+1 to 3 and Win+M are
@@ -401,7 +404,7 @@ played the H.264 clip at 78% CPU, its overlay counting 60 frames a second.
 - [x] **Uninstall:** works: the Apps entry's `Update.exe --uninstall --silent` removed the install
       folder, both shortcuts and the Apps entry, and left `%USERPROFILE%\.latch-works\oriel`.
 - [x] **The exe's icon:** works: `oriel.exe` carries Oriel's icon and "Oriel", 1.0.0, Traydr in
-      its version resource, and Snap's previews show the icon.
+      its version resource, and Snap's previews show the icon. The taskbar and the window's own icon are not recorded.
 - [x] **The C runtime:** `dumpbin /dependents oriel.exe` lists `VCRUNTIME140.dll` and the UCRT's
       `api-ms-win-crt-*`. The DLLs beside it (libmpv, libvips, libavif, ffmpeg) are MinGW builds
       and need neither. The owner decides (below).
@@ -418,8 +421,10 @@ played the H.264 clip at 78% CPU, its overlay counting 60 frames a second.
    extension), or leave HEIC out of View's list on Windows.
 3. **Menus by keyboard:** Alt and the menus' access keys need adding, in GPUI Kit or in the app.
 4. **The checks left:** the drives check (which runs in the owner's data folder), the drive with
-   no Recycle Bin, logging off during a push, taskbar progress, replacing in place, and the
-   elevated install paths on a clean machine.
+   no Recycle Bin, restoring from the Recycle Bin, Undo after a held file, Shrink past 260
+   characters, Duplicates' total for hard links, dragging the title bar, logging off during a push,
+   taskbar progress, replacing in place, Tidy's differential runs, and the elevated install paths
+   on a clean machine.
 5. **Smaller:** tooltips and menus in Tidy, Sync, View and the shell, and Tidy's shortcut sheet,
    still say ⌘ and ⌥, Tidy still says "Show in Finder", and About says `~/.latch-works/oriel`; a missing libavif's reason is developer-worded and not
    shown; release builds look for libavif in the clone's `.vendor` by compile-time path; whether the conformance vectors should be made path-neutral;
