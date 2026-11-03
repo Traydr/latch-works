@@ -241,13 +241,12 @@ fn mount_point_of(path: &Path, device: u64) -> PathBuf {
     current
 }
 
-/// Local time's fields (year, month, day, hour, minute, second), from the C library, as
-/// JavaScript's `Date` getters read them. Holding's batch names and Tidy's dates use it.
+/// Local time's fields (year, month, day, hour, minute, second) at `seconds` from 1970, negative
+/// before it, from the C library, as JavaScript's `Date` getters read them. Holding's batch names
+/// and Tidy's dates use it.
 #[cfg(unix)]
-pub fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
-    let seconds = at
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs()) as libc::time_t;
+pub fn local_time(seconds: i64) -> (i32, i32, i32, i32, i32, i32) {
+    let seconds = seconds as libc::time_t;
     // SAFETY: `tm` is plain data; `localtime_r` fills it from `seconds` and is thread-safe.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     // SAFETY: both pointers are valid for the call.
@@ -265,23 +264,27 @@ pub fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
     )
 }
 
-/// Local time's fields on Windows, in the zone and with the daylight saving rules Windows' clock
-/// shows, as JavaScript's `Date` getters read them there. The C library's `localtime_s` would
-/// read a `TZ` variable as POSIX spells it, which Node does not.
+/// Local time's fields at `seconds` from 1970 on Windows, in the zone and with the daylight saving
+/// rules Windows' clock shows, as JavaScript's `Date` getters read them there. The C library's
+/// `localtime_s` would read a `TZ` variable as POSIX spells it, which Node does not. A `FILETIME`
+/// starts in 1601, so anything earlier, or too far ahead for one, gives 1970.
 #[cfg(windows)]
-pub fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
+pub fn local_time(seconds: i64) -> (i32, i32, i32, i32, i32, i32) {
     use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
     use windows_sys::Win32::System::Time::{
         DYNAMIC_TIME_ZONE_INFORMATION, FileTimeToSystemTime, GetDynamicTimeZoneInformation,
         SystemTimeToTzSpecificLocalTimeEx,
     };
 
-    /// 100-nanosecond intervals from 1601 to 1970.
-    const EPOCH_DIFFERENCE: u64 = 116_444_736_000_000_000;
-    let ticks = at
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs() * 10_000_000)
-        + EPOCH_DIFFERENCE;
+    /// Seconds from 1601 to 1970.
+    const EPOCH_DIFFERENCE: i64 = 11_644_473_600;
+    let ticks = seconds
+        .checked_add(EPOCH_DIFFERENCE)
+        .and_then(|since_1601| since_1601.checked_mul(10_000_000))
+        .and_then(|ticks| u64::try_from(ticks).ok());
+    let Some(ticks) = ticks else {
+        return (1970, 1, 1, 0, 0, 0);
+    };
     let file_time = FILETIME {
         dwLowDateTime: ticks as u32,
         dwHighDateTime: (ticks >> 32) as u32,
@@ -313,7 +316,10 @@ pub fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
 /// One folder per plan run, named so the newest sort last: `2026-10-24_093012-plan-12`, in local
 /// time.
 pub fn holding_batch_name(plan_id: Option<PlanId>, now: SystemTime) -> String {
-    let (year, month, day, hour, minute, second) = local_time(now);
+    let seconds = now
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs() as i64);
+    let (year, month, day, hour, minute, second) = local_time(seconds);
     let stamp = format!("{year}-{month:02}-{day:02}_{hour:02}{minute:02}{second:02}");
     match plan_id {
         Some(plan_id) => format!("{stamp}-plan-{plan_id}"),
