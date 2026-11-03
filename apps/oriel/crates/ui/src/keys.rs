@@ -20,8 +20,12 @@ macro_rules! cmd_or_ctrl {
     };
 }
 
-/// Whether the command key is held, for a key or click handler: ⌘ or Ctrl, as Electron Oriel's
-/// `isCommandKey` reads either on every system.
+/// Whether the command key is held, for a key or click handler: ⌘ on macOS, where Ctrl does not
+/// stand in for it, and Ctrl elsewhere.
 pub fn command_held(modifiers: &Modifiers) -> bool {
-    modifiers.platform || modifiers.control
+    if cfg!(target_os = "macos") {
+        modifiers.platform
+    } else {
+        modifiers.control
+    }
 }
