@@ -156,11 +156,15 @@ pub fn is_file_in_use(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| {
         cause.downcast_ref::<io::Error>().is_some_and(|error| {
             error.kind() == io::ErrorKind::ResourceBusy
-                || (cfg!(windows)
-                    && (error.kind() == io::ErrorKind::PermissionDenied
-                        || matches!(error.raw_os_error(), Some(32 | 33))))
+                || is_sharing_violation(error)
+                || (cfg!(windows) && error.kind() == io::ErrorKind::PermissionDenied)
         })
     })
+}
+
+/// Windows' `ERROR_SHARING_VIOLATION` and `ERROR_LOCK_VIOLATION`.
+fn is_sharing_violation(error: &io::Error) -> bool {
+    cfg!(windows) && matches!(error.raw_os_error(), Some(32 | 33))
 }
 
 fn base_name(path: &str) -> &str {
@@ -658,14 +662,24 @@ fn execute_step(
         return remove_folder(deps, step, batch);
     }
     let source = check_source(deps, step)?;
-    if matches!(
-        step.spec,
-        StepSpec::ConvertAvif | StepSpec::ConvertAnimation { .. } | StepSpec::ConvertVideo { .. }
-    ) {
+    if cfg!(windows)
+        && matches!(
+            step.spec,
+            StepSpec::ConvertAvif
+                | StepSpec::ConvertAnimation { .. }
+                | StepSpec::ConvertVideo { .. }
+        )
+    {
         // A file another program holds without sharing still answers `check_source`, which
         // reads only attributes; libvips and ffmpeg would then call it an unknown format. One
-        // open here gives Windows' sharing violation, which `is_file_in_use` reads.
-        fs::File::open(step.from_abs())?;
+        // open here gives Windows' sharing violation, which `is_file_in_use` reads. Any other
+        // failure, such as a denied permission, is the file's own and must not read as in use.
+        if let Err(error) = fs::File::open(step.from_abs()) {
+            if is_sharing_violation(&error) {
+                return Err(error.into());
+            }
+            bail!("{error}");
+        }
     }
 
     match &step.spec {
