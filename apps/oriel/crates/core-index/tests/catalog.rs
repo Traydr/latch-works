@@ -73,7 +73,7 @@ fn run(
                 .strip_prefix(root)
                 .unwrap()
                 .to_string_lossy()
-                .into_owned()
+                .replace(std::path::MAIN_SEPARATOR, "/")
         })
         .collect();
     found.sort();

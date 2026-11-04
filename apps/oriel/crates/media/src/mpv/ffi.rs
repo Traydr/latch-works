@@ -505,10 +505,12 @@ fn missing_rpath_library(message: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
     use std::fs;
 
     use super::*;
 
+    #[cfg(target_os = "macos")]
     fn scratch(test: &str) -> PathBuf {
         let folder = std::env::temp_dir()
             .join("oriel-media-libmpv-tests")
@@ -519,12 +521,14 @@ mod tests {
     }
 
     /// An empty file standing in for a dylib: [`choose`] only looks, it never loads.
+    #[cfg(target_os = "macos")]
     fn put(file: &Path) -> PathBuf {
         fs::create_dir_all(file.parent().unwrap()).unwrap();
         fs::write(file, b"").unwrap();
         file.to_owned()
     }
 
+    #[cfg(target_os = "macos")]
     fn places(root: &Path, executable: &Path, override_file: Option<&Path>) -> Places {
         Places {
             executable: Some(executable.to_owned()),
@@ -537,6 +541,7 @@ mod tests {
     /// The licence rule: a bundle loads its own LGPL set, and never IINA's GPL build, even with
     /// nothing else to load.
     #[test]
+    #[cfg(target_os = "macos")]
     fn a_bundle_loads_its_own_libmpv_and_never_iinas() {
         let root = scratch("bundle");
         put(&root.join("IINA.app/Contents/Frameworks/libmpv.2.dylib"));
@@ -554,6 +559,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn outside_a_bundle_the_override_then_the_dev_build_then_iina() {
         let root = scratch("dev");
         let executable = root.join("target/debug/oriel");

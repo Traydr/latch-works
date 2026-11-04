@@ -6,10 +6,12 @@
 //! an item stays greyed out until its mode handles it, and keys reach only the mode on screen.
 //!
 //! The keys are bound under the shell's key context, which names the mode on screen, so ⌘O is
-//! Open Folder… in View and Add Folder… in Tidy, as in Electron Oriel.
+//! Open Folder… in View and Add Folder… in Tidy, as in Electron Oriel. ⌘ is Ctrl off macOS
+//! (`crate::keys`).
 
 use gpui_kit::{App, KeyBinding, KeyContext, actions};
 
+use crate::cmd_or_ctrl;
 use crate::shell::ModeId;
 
 actions!(
@@ -68,19 +70,28 @@ pub fn bind_keys(cx: &mut App) {
     let view = in_mode(ModeId::View);
     let tidy = in_mode(ModeId::Tidy);
     cx.bind_keys([
-        KeyBinding::new("cmd-o", OpenFolder, Some(&view)),
-        KeyBinding::new("cmd-r", Refresh, Some(&view)),
-        KeyBinding::new("cmd-o", AddFolder, Some(&tidy)),
-        KeyBinding::new("cmd-r", Rescan, Some(&tidy)),
-        KeyBinding::new("cmd-z", UndoChange, Some(&tidy)),
-        KeyBinding::new("cmd-a", SelectAllItems, Some(&tidy)),
-        KeyBinding::new("cmd-f", Find, Some(&tidy)),
-        KeyBinding::new("alt-cmd-1", ShowOverview, Some(&tidy)),
-        KeyBinding::new("alt-cmd-2", ShowDuplicates, Some(&tidy)),
-        KeyBinding::new("alt-cmd-3", ShowConvert, Some(&tidy)),
-        KeyBinding::new("alt-cmd-4", ShowCleanUp, Some(&tidy)),
-        KeyBinding::new("alt-cmd-5", ShowLibrary, Some(&tidy)),
-        KeyBinding::new("alt-cmd-6", ShowHistory, Some(&tidy)),
-        KeyBinding::new("alt-cmd-7", ShowHolding, Some(&tidy)),
+        KeyBinding::new(cmd_or_ctrl!("o"), OpenFolder, Some(&view)),
+        // F5 off macOS, as Electron Oriel's View had it.
+        KeyBinding::new(
+            if cfg!(target_os = "macos") {
+                "cmd-r"
+            } else {
+                "f5"
+            },
+            Refresh,
+            Some(&view),
+        ),
+        KeyBinding::new(cmd_or_ctrl!("o"), AddFolder, Some(&tidy)),
+        KeyBinding::new(cmd_or_ctrl!("r"), Rescan, Some(&tidy)),
+        KeyBinding::new(cmd_or_ctrl!("z"), UndoChange, Some(&tidy)),
+        KeyBinding::new(cmd_or_ctrl!("a"), SelectAllItems, Some(&tidy)),
+        KeyBinding::new(cmd_or_ctrl!("f"), Find, Some(&tidy)),
+        KeyBinding::new(cmd_or_ctrl!("alt-1"), ShowOverview, Some(&tidy)),
+        KeyBinding::new(cmd_or_ctrl!("alt-2"), ShowDuplicates, Some(&tidy)),
+        KeyBinding::new(cmd_or_ctrl!("alt-3"), ShowConvert, Some(&tidy)),
+        KeyBinding::new(cmd_or_ctrl!("alt-4"), ShowCleanUp, Some(&tidy)),
+        KeyBinding::new(cmd_or_ctrl!("alt-5"), ShowLibrary, Some(&tidy)),
+        KeyBinding::new(cmd_or_ctrl!("alt-6"), ShowHistory, Some(&tidy)),
+        KeyBinding::new(cmd_or_ctrl!("alt-7"), ShowHolding, Some(&tidy)),
     ]);
 }

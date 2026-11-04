@@ -1176,6 +1176,22 @@ struct Usage {
 }
 
 impl Usage {
+    /// On Windows the decoder runs inside the process (`d3d11va-copy`), so the process's own
+    /// counters are the whole of it.
+    #[cfg(windows)]
+    fn now() -> Self {
+        let (cpu, rss) = windows_usage::cpu_and_working_set();
+        Self {
+            at: Instant::now(),
+            cpu,
+            rss_kb: rss / 1024,
+            decoder_cpu: Duration::ZERO,
+            decoder_rss_kb: 0,
+            decoders: 0,
+        }
+    }
+
+    #[cfg(not(windows))]
     fn now() -> Self {
         let at = Instant::now();
         let output = Command::new("ps")
@@ -1216,7 +1232,21 @@ impl Usage {
 /// thread count.
 fn at_rest() -> String {
     let footprint = phys_footprint();
-    let threads = Command::new("ps")
+    let threads = thread_count();
+    format!(
+        "footprint {:.1} MB, {threads} threads",
+        footprint.unwrap_or(0) as f64 / 1e6
+    )
+}
+
+#[cfg(windows)]
+fn thread_count() -> usize {
+    windows_usage::thread_count()
+}
+
+#[cfg(not(windows))]
+fn thread_count() -> usize {
+    Command::new("ps")
         .args(["-M", "-p", &std::process::id().to_string()])
         .output()
         .map(|output| {
@@ -1225,11 +1255,7 @@ fn at_rest() -> String {
                 .count()
                 .saturating_sub(1)
         })
-        .unwrap_or(0);
-    format!(
-        "footprint {:.1} MB, {threads} threads",
-        footprint.unwrap_or(0) as f64 / 1e6
-    )
+        .unwrap_or(0)
 }
 
 #[cfg(target_os = "macos")]
@@ -1247,14 +1273,101 @@ fn phys_footprint() -> Option<u64> {
     (status == 0).then(|| unsafe { usage.assume_init() }.ri_phys_footprint)
 }
 
-/// Off macOS the spike reads no footprint yet; the Windows agent measures with Task Manager or
-/// `GetProcessMemoryInfo`.
-#[cfg(not(target_os = "macos"))]
+/// On Windows, the process's private bytes, which Task Manager's Commit size column shows.
+#[cfg(windows)]
+fn phys_footprint() -> Option<u64> {
+    Some(windows_usage::private_bytes())
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
 fn phys_footprint() -> Option<u64> {
     None
 }
 
+/// This process's counters on Windows, where there is no `ps`.
+#[cfg(windows)]
+mod windows_usage {
+    use std::time::Duration;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+    };
+    use windows_sys::Win32::System::ProcessStatus::{
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
+    };
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+
+    fn counters() -> PROCESS_MEMORY_COUNTERS_EX {
+        // SAFETY: plain data, filled in by the call; `cb` names the larger struct it is.
+        let mut counters: PROCESS_MEMORY_COUNTERS_EX = unsafe { std::mem::zeroed() };
+        counters.cb = size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
+        // SAFETY: the pseudo handle needs no closing, and the struct is as large as `cb` says.
+        unsafe {
+            K32GetProcessMemoryInfo(
+                GetCurrentProcess(),
+                (&raw mut counters).cast::<PROCESS_MEMORY_COUNTERS>(),
+                counters.cb,
+            )
+        };
+        counters
+    }
+
+    /// User and kernel CPU time, and the working set in bytes.
+    pub fn cpu_and_working_set() -> (Duration, u64) {
+        let zero = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+        // SAFETY: four FILETIMEs for the call to fill in, for this process's pseudo handle.
+        unsafe {
+            GetProcessTimes(
+                GetCurrentProcess(),
+                &mut created,
+                &mut exited,
+                &mut kernel,
+                &mut user,
+            )
+        };
+        let ticks =
+            |time: FILETIME| u64::from(time.dwHighDateTime) << 32 | u64::from(time.dwLowDateTime);
+        // FILETIME counts 100 ns.
+        let cpu = Duration::from_nanos((ticks(kernel) + ticks(user)) * 100);
+        (cpu, counters().WorkingSetSize as u64)
+    }
+
+    pub fn private_bytes() -> u64 {
+        counters().PrivateUsage as u64
+    }
+
+    /// This process's threads, counted in a snapshot of every thread on the machine.
+    pub fn thread_count() -> usize {
+        let own = std::process::id();
+        // SAFETY: the snapshot takes no pointers, and its handle is closed below.
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+        if snapshot == INVALID_HANDLE_VALUE {
+            return 0;
+        }
+        // SAFETY: plain data, filled in by the calls; `dwSize` names the struct it is.
+        let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
+        entry.dwSize = size_of::<THREADENTRY32>() as u32;
+        let mut count = 0;
+        // SAFETY: the snapshot is open and `entry` is as large as `dwSize` says.
+        let mut more = unsafe { Thread32First(snapshot, &mut entry) } != 0;
+        while more {
+            count += usize::from(entry.th32OwnerProcessID == own);
+            // SAFETY: as for `Thread32First`.
+            more = unsafe { Thread32Next(snapshot, &mut entry) } != 0;
+        }
+        // SAFETY: the snapshot is open, and nothing uses it after this.
+        unsafe { CloseHandle(snapshot) };
+        count
+    }
+}
+
 /// `ps`'s `[[dd-]hh:]mm:ss.cc`.
+#[cfg(not(windows))]
 fn cpu_time(text: &str) -> Duration {
     let seconds = text
         .rsplit(':')

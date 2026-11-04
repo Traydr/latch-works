@@ -186,7 +186,8 @@ fn the_owners_run_takes_a_root_anywhere_with_electrons_refusals() {
         Media::default(),
     ))
     .unwrap();
-    let outside = fs::canonicalize(env!("CARGO_MANIFEST_DIR")).unwrap();
+    let outside =
+        oriel_runtime::paths::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
     let root = block_on(engine.add_root(&outside)).unwrap();
     assert_eq!(Path::new(&root.path), outside);
 

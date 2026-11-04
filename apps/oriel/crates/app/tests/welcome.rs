@@ -56,7 +56,9 @@ fn the_first_starts_welcome_sets_one_folder_up_for_view_and_tidy_then_shows_no_m
     assert!(is_drawn(cx, handle, "welcome-skip"));
 
     // A folder outside the sandbox: View may open it, Tidy may not, and the welcome says why.
-    let outside = std::fs::canonicalize(env!("CARGO_MANIFEST_DIR")).unwrap();
+    let outside =
+        oriel_runtime::paths::canonicalize(std::path::Path::new(env!("CARGO_MANIFEST_DIR")))
+            .unwrap();
     choose(cx, &opened, &outside);
     let tidy_it = |cx: &mut TestAppContext| {
         cx.update_window(handle, |_, window, _| {
@@ -106,7 +108,7 @@ fn the_first_starts_welcome_sets_one_folder_up_for_view_and_tidy_then_shows_no_m
         handle,
         media_tile(&archive.join("root-image.webp"))
     ));
-    press(cx, handle, "cmd-2");
+    press(cx, handle, "secondary-2");
     wait_until(cx, handle, "Tidy's folder", |cx| {
         label_of(cx, handle, "location-switcher").as_deref() == Some("archive")
     });

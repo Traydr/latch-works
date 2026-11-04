@@ -502,7 +502,7 @@ impl FolderPicker {
                 self.move_highlight(1, cx);
                 cx.stop_propagation();
             }
-            "up" if keys.modifiers.platform => {
+            "up" if oriel_ui::keys::command_held(&keys.modifiers) => {
                 self.go_up(window, cx);
                 cx.stop_propagation();
             }

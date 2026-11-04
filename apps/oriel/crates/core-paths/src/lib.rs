@@ -179,13 +179,17 @@ mod tests {
     use super::*;
 
     fn home() -> PathBuf {
-        PathBuf::from("/Users/someone")
+        PathBuf::from(if cfg!(windows) {
+            r"C:\Users\someone"
+        } else {
+            "/Users/someone"
+        })
     }
 
     #[test]
     fn every_folder_stays_inside_the_root() {
         let data = DataRoot::under_home(&home()).unwrap();
-        assert_eq!(data.root(), Path::new("/Users/someone/.latch-works/oriel"));
+        assert_eq!(data.root(), home().join(".latch-works").join("oriel"));
         for folder in data.folders() {
             assert!(data.contains(&folder), "{} left the root", folder.display());
             assert_ne!(folder, data.root());
@@ -223,7 +227,12 @@ mod tests {
         let data = DataRoot::under_home(&home()).unwrap();
         assert!(!data.is_sandboxed());
         assert!(data.admits_tidy_root(&home().join("Pictures")));
-        assert!(data.admits_tidy_root(Path::new("/Volumes/Archive")));
+        let volume = if cfg!(windows) {
+            r"D:\Archive"
+        } else {
+            "/Volumes/Archive"
+        };
+        assert!(data.admits_tidy_root(Path::new(volume)));
         assert!(data.admits_tidy_root(&data.sandbox().join("archive")));
         assert!(!data.admits_tidy_root(Path::new("Pictures")));
     }

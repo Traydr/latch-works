@@ -597,12 +597,18 @@ mod tests {
         ];
         let mut direct = 0;
         for document in &documents {
-            let by_value = parse_value(document, root);
-            if let Some(entries) = read_valid(document, root) {
+            // The root as the cache compares it: resolved, so `C:\Volumes\Archive` on Windows.
+            let canonical = canonical_source_root(Path::new(root));
+            let by_value = parse_value(document, &canonical);
+            if let Some(entries) = read_valid(document, &canonical) {
                 direct += 1;
                 assert_eq!(Ok(entries), by_value, "{document}");
             }
-            assert_eq!(parse_persisted(document, root), by_value, "{document}");
+            assert_eq!(
+                parse_persisted(document, &canonical),
+                by_value,
+                "{document}"
+            );
         }
         assert_eq!(direct, 6, "the valid files read directly");
     }

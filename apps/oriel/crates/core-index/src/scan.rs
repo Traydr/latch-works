@@ -749,9 +749,11 @@ mod tests {
             relative_to(Path::new("/a/b"), Path::new("/a/b/c/d.jpg")),
             "c/d.jpg"
         );
+        // Climbing out joins with the system's separator, as `path.relative` does.
+        let separator = std::path::MAIN_SEPARATOR;
         assert_eq!(
             relative_to(Path::new("/a/b"), Path::new("/a/x.jpg")),
-            "../x.jpg"
+            format!("..{separator}x.jpg")
         );
         assert_eq!(
             normalize(Path::new("/a/b/../c/./d")),

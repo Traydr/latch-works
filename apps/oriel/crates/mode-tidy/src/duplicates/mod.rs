@@ -975,8 +975,7 @@ impl DuplicatesPage {
             return;
         }
         let rows = self.rows();
-        // ⌘, or Ctrl elsewhere, as Electron Oriel's `isCommandKey` reads either.
-        let command = modifiers.platform || modifiers.control;
+        let command = oriel_ui::keys::command_held(&modifiers);
         if command && modifiers.shift && key == "r" {
             if let Some(row) = rows.get(self.target()) {
                 cx.reveal_path(Path::new(&row.file.abs_path));
@@ -2813,13 +2812,21 @@ impl VersionMenu {
             })
         });
         let path = self.file.abs_path.clone();
-        let quick = menu_item(QUICK_LOOK_LABEL, Some("cmd-y"), move |window, cx| {
-            quick_look(Path::new(&path), window, cx);
-        });
+        let quick = menu_item(
+            QUICK_LOOK_LABEL,
+            Some(oriel_ui::cmd_or_ctrl!("y")),
+            move |window, cx| {
+                quick_look(Path::new(&path), window, cx);
+            },
+        );
         let path = self.file.abs_path.clone();
-        let reveal = menu_item("Show in Finder", Some("shift-cmd-r"), move |_, cx| {
-            cx.reveal_path(Path::new(&path));
-        });
+        let reveal = menu_item(
+            "Show in Finder",
+            Some(oriel_ui::cmd_or_ctrl!("shift-r")),
+            move |_, cx| {
+                cx.reveal_path(Path::new(&path));
+            },
+        );
         let (page, path) = (self.page.clone(), self.file.abs_path.clone());
         let view = menu_item("Open in View", None, move |_, cx| {
             page.update(cx, |page, cx| page.open_in_view(path.clone(), cx))

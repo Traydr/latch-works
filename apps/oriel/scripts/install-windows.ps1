@@ -422,11 +422,13 @@ function Remove-ElectronOriel {
   if ($code -ne 0) {
     throw ("Electron Oriel's uninstall exited with code {0}; its log is {1}" -f $code, $log)
   }
-  # Update.exe deletes itself a few seconds after it exits.
-  $current = Join-Path $InstallRoot 'current'
-  for ($i = 0; $i -lt 30 -and (Test-Path -LiteralPath $current); $i++) { Start-Sleep -Seconds 1 }
-  if (Test-Path -LiteralPath $current) {
-    Write-Warn ("{0} is still there; Setup.exe replaces it" -f $current)
+  # Update.exe removes current\ before it exits, then leaves behind
+  # `cmd /C ping -n 4 127.0.0.1 & rmdir /s /q <install folder>`, which deletes the whole folder
+  # a few seconds later. Setup.exe must not start before that has run, or the rmdir deletes
+  # what it installs.
+  for ($i = 0; $i -lt 60 -and (Test-Path -LiteralPath $InstallRoot); $i++) { Start-Sleep -Seconds 1 }
+  if (Test-Path -LiteralPath $InstallRoot) {
+    Write-Warn ("{0} is still there after a minute; Setup.exe replaces it" -f $InstallRoot)
   }
   Write-Done 'Electron Oriel uninstalled'
 }

@@ -423,7 +423,7 @@ impl HoldingPage {
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keys = &event.keystroke;
-        if keys.modifiers.platform && keys.key == "backspace" {
+        if oriel_ui::keys::command_held(&keys.modifiers) && keys.key == "backspace" {
             if keys.modifiers.shift {
                 self.empty(window, cx);
             } else {
@@ -529,7 +529,12 @@ impl HoldingPage {
                         return;
                     }
                     let modifiers = event.modifiers();
-                    this.select(id, modifiers.platform, modifiers.shift, cx);
+                    this.select(
+                        id,
+                        oriel_ui::keys::command_held(&modifiers),
+                        modifiers.shift,
+                        cx,
+                    );
                 })
             })
             .child(

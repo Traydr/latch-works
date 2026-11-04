@@ -80,7 +80,11 @@ pub fn init(cx: &mut App) {
     cx.set_global(SyncKeys);
     // `/` reaches the plan's filter through the page's key handler instead, since a binding
     // would also take it from a text field.
-    cx.bind_keys([KeyBinding::new("cmd-l", ToggleRunLog, Some(KEY_CONTEXT))]);
+    cx.bind_keys([KeyBinding::new(
+        oriel_ui::cmd_or_ctrl!("l"),
+        ToggleRunLog,
+        Some(KEY_CONTEXT),
+    )]);
 }
 
 /// The name of the app's tokio thread, where Sync's HTTP runs.

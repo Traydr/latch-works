@@ -1,23 +1,25 @@
 //! `kill_running_tools` stops every run in the process, so it has a test binary of its own: in
 //! a shared one it would kill the other tests' tools.
 
-#![cfg(unix)]
-
 use std::time::{Duration, Instant};
 
 use oriel_tools::{ToolRun, kill_running_tools};
+
+/// A tool that lasts 30 seconds if nothing kills it.
+fn long_tool() -> ToolRun {
+    let timeout = Duration::from_secs(60);
+    if cfg!(windows) {
+        ToolRun::new("ping", timeout).args(["-n", "30", "127.0.0.1"])
+    } else {
+        ToolRun::new("/bin/sleep", timeout).arg("30")
+    }
+}
 
 #[test]
 fn quitting_kills_the_tools_still_running() {
     let started = Instant::now();
     let runs: Vec<_> = (0..2)
-        .map(|_| {
-            std::thread::spawn(|| {
-                ToolRun::new("/bin/sleep", Duration::from_secs(60))
-                    .arg("30")
-                    .run()
-            })
-        })
+        .map(|_| std::thread::spawn(|| long_tool().run()))
         .collect();
     // Long enough for both to start; the kill reaches only tools already running.
     std::thread::sleep(Duration::from_millis(500));

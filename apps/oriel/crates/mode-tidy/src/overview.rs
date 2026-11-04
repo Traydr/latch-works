@@ -334,7 +334,7 @@ impl OverviewPage {
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keys = &event.keystroke;
-        if keys.modifiers.platform && keys.key == "enter" {
+        if oriel_ui::keys::command_held(&keys.modifiers) && keys.key == "enter" {
             self.tidy_up(window, cx);
             cx.stop_propagation();
         } else if !keys.modifiers.modified() && keys.key == "d" {
