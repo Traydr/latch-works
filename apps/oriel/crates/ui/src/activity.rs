@@ -401,8 +401,9 @@ impl RenderOnce for ActivityIndicator {
             .absolute()
             .right_4()
             .bottom_4()
-            // A press here is its own, and chooses no file under it.
-            .occlude()
+            // A press here is its own, and chooses no file under it; the wheel still scrolls what
+            // is under it.
+            .block_mouse_except_scroll()
             .flex()
             .flex_col()
             .overflow_hidden()

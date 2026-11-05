@@ -928,12 +928,24 @@ impl TidyState {
         if self.undo.len() >= UNDO_LIMIT {
             self.undo.remove(0);
         }
+        // Back in the history, its plans are not undone after all: an Undo that stopped part way.
+        for id in &entry.plan_ids {
+            self.undone_plans.remove(id);
+        }
         self.undo_pushed += 1;
         self.undo.push((self.undo_pushed, entry));
     }
 
     /// Takes `entry` back to its place by age, under whatever has finished since it left.
     fn put_back_entry(&mut self, age: u64, entry: UndoEntry) {
+        // Undone some other way while it waited.
+        if entry
+            .plan_ids
+            .iter()
+            .any(|id| self.undone_plans.contains(id))
+        {
+            return;
+        }
         put_back_by_age(&mut self.undo, age, entry);
         if self.undo.len() > UNDO_LIMIT {
             self.undo.remove(0);
@@ -962,6 +974,7 @@ impl TidyState {
     }
 
     fn forget_plans(&mut self, plan_ids: &[PlanId]) {
+        self.undone_plans.extend(plan_ids.iter().copied());
         self.undo
             .retain(|(_, entry)| !entry.plan_ids.iter().any(|id| plan_ids.contains(id)));
         self.results.retain(|_, plan| !plan_ids.contains(&plan.id));

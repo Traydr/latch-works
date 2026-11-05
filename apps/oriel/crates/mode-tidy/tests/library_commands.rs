@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use gpui_kit::base::test_support::snapshots;
 use gpui_kit::test::TestWindowExt as _;
-use gpui_kit::{AppContext as _, ElementId, Entity, Modifiers, TestAppContext};
+use gpui_kit::{
+    AppContext as _, ElementId, Entity, Modifiers, ScrollDelta, TestAppContext, point, px,
+};
 use oriel_core_tidy::contract::FileId;
 use oriel_mode_tidy::{LibraryPage, TidyPage, last_quick_look};
 use support::*;
@@ -280,6 +282,32 @@ async fn a_press_on_the_bar_chooses_nothing_under_it(cx: &mut TestAppContext) {
     assert_eq!(selection(cx, &session).len(), 1);
 }
 
+/// The wheel over the selection bar scrolls the files under it.
+#[gpui_kit::test]
+async fn the_wheel_over_the_bar_scrolls_the_list(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "bar-scrolls");
+    one_chosen_under_the_bar(cx, &session, false).await;
+    let library = library(cx, &session);
+    let scrolled = |cx: &mut TestAppContext| {
+        cx.read(|cx| {
+            let table = library.read(cx).table().read(cx);
+            let offset = table.vertical_scroll_handle.0.borrow().base_handle.offset();
+            f32::from(offset.y)
+        })
+    };
+    assert_eq!(scrolled(cx), 0.);
+    cx.update_window(session.handle, |_, window, cx| {
+        let down = ScrollDelta::Pixels(point(px(0.), px(-200.)));
+        window.scroll("library-selection", down, cx);
+    })
+    .unwrap();
+    render(cx, &session);
+    assert!(scrolled(cx) < 0., "the list did not scroll");
+}
+
 /// Esc and the bar's Clear moved no file: the cursor stays on it, so the Inspector still shows it
 /// and an arrow goes on from it as usual, by a line in the grid.
 #[gpui_kit::test]
@@ -312,9 +340,19 @@ async fn clearing_the_selection_leaves_the_cursor_where_it_is(cx: &mut TestAppCo
     press(cx, &session, "down");
     assert_eq!(cursor(cx, &session), line.ok());
 
-    // Several chosen, in the list, and cleared from the bar: ↓ does not jump them.
+    // The list, its table having the keys after a click, as the owner has it.
     click(cx, &session, "library-mode-list");
     settle(cx, &session).await;
+    click(cx, &session, ("library-row", 2usize));
+    press(cx, &session, "escape");
+    assert_eq!(selection(cx, &session), Vec::<FileId>::new());
+    assert_eq!(cursor(cx, &session), Some(2));
+    settle(cx, &session).await;
+    assert!(drawn(cx, &session, "inspector-hold"));
+    press(cx, &session, "down");
+    assert_eq!(cursor(cx, &session), Some(3));
+
+    // Several chosen and cleared from the bar: ↓ does not jump them.
     click(cx, &session, ("library-row", 2usize));
     press(cx, &session, "shift-down");
     press(cx, &session, "shift-down");
@@ -329,6 +367,125 @@ async fn clearing_the_selection_leaves_the_cursor_where_it_is(cx: &mut TestAppCo
     press(cx, &session, "down");
     assert_eq!(cursor(cx, &session), Some(5));
     assert_eq!(selection(cx, &session), [id_at(cx, &session, 5)]);
+
+    // A press on a file away from where the bar was works at once.
+    press(cx, &session, "shift-down");
+    settle(cx, &session).await;
+    click(cx, &session, "selection-clear");
+    click(cx, &session, ("library-row", 1usize));
+    assert_eq!(selection(cx, &session), [id_at(cx, &session, 1)]);
+}
+
+/// A press on the activity indicator is its own: the row under it is not chosen, for ⌘⌫ to move.
+#[gpui_kit::test]
+async fn a_press_on_the_activity_indicator_chooses_no_file(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "press-on-activity");
+    open_library(cx, &session).await;
+    press(cx, &session, "i");
+    pause_a_rescan(cx, &session);
+    let spot = centre_of(cx, &session, "activity-indicator");
+    let a_row_under = cx
+        .update_window(session.handle, |_, window, _| {
+            snapshots(window).iter().any(|element| {
+                matches!(
+                    element.path().last(),
+                    Some(ElementId::NamedInteger(name, _)) if name == "library-row"
+                ) && element.bounds().contains(&spot)
+            })
+        })
+        .unwrap();
+    assert!(
+        a_row_under,
+        "a row has to be under the indicator for this to mean anything"
+    );
+    press_at(cx, &session, spot, 1);
+    assert_eq!(selection(cx, &session), Vec::<FileId>::new());
+    resume_the_rescan(cx, &session);
+    wait_for_change(cx, &session).await;
+}
+
+/// ⌘⌫, ↓ and ⌘⌫ again while the first has still to run, then ↑, before either has: it goes to the
+/// file before both, not to the first one taken, still in the list then and in holding after.
+#[gpui_kit::test]
+async fn up_after_two_quick_holds_passes_both_by(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "two-quick-holds");
+    open_library(cx, &session).await;
+    click(cx, &session, ("library-row", 3usize));
+    let before = id_at(cx, &session, 2);
+    // The holds wait their turn behind a paused rescan, so the list does not read itself again
+    // between the keys.
+    pause_a_rescan(cx, &session);
+    press(cx, &session, "secondary-backspace");
+    press(cx, &session, "down");
+    press(cx, &session, "secondary-backspace");
+    press(cx, &session, "up");
+    assert_eq!(selection(cx, &session), [before]);
+    resume_the_rescan(cx, &session);
+    wait_for_change(cx, &session).await;
+    assert_eq!(held_files(&session).len(), 2);
+    assert_eq!(selection(cx, &session), [before]);
+    assert_eq!(
+        cursor(cx, &session).map(|index| id_at(cx, &session, index)),
+        Some(before)
+    );
+    press(cx, &session, "secondary-backspace");
+    wait_for_change(cx, &session).await;
+    assert_eq!(held_files(&session).len(), 3);
+}
+
+/// A file brought back by ⌘Z is where it was, and ↓ from the gap goes to it.
+#[gpui_kit::test]
+async fn down_after_undo_goes_to_the_file_brought_back(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "down-after-undo");
+    open_library(cx, &session).await;
+    click(cx, &session, ("library-row", 3usize));
+    let taken = name_at(cx, &session, 3);
+    press(cx, &session, "secondary-backspace");
+    wait_for_change(cx, &session).await;
+    undo(cx, &session);
+    wait_for_change(cx, &session).await;
+    assert_eq!(held_files(&session), Vec::<String>::new());
+
+    // The catalog counts it again under a new number.
+    press(cx, &session, "down");
+    settle(cx, &session).await;
+    assert_eq!(cursor(cx, &session), Some(3));
+    assert_eq!(selection(cx, &session), [id_at(cx, &session, 3)]);
+    assert_eq!(name_at(cx, &session, 3), taken);
+}
+
+/// A rescan started and paused before its first step, which holds the changes' turn.
+fn pause_a_rescan(cx: &mut TestAppContext, session: &Session) {
+    let state = session.state.clone();
+    cx.update_window(session.handle, |_, window, cx| {
+        state.update(cx, |state, cx| {
+            let root_id = state.root_id().unwrap();
+            state.start_scan(root_id, window, cx);
+            let scan = state.scan().unwrap().job.clone();
+            scan.update(cx, |job, cx| job.set_paused(true, cx));
+        });
+    })
+    .unwrap();
+    cx.run_until_parked();
+    render(cx, session);
+}
+
+fn resume_the_rescan(cx: &mut TestAppContext, session: &Session) {
+    cx.update(|cx| {
+        session.state.update(cx, |state, cx| {
+            let scan = state.scan().unwrap().job.clone();
+            scan.update(cx, |job, cx| job.set_paused(false, cx));
+        });
+    });
 }
 
 /// Holding's tiles: the next tile's Restore, slid under the pointer, takes no second click.
@@ -348,18 +505,30 @@ async fn a_second_click_of_restore_restores_no_other_file(cx: &mut TestAppContex
     assert_eq!(held_files(&session).len(), 3);
     go(cx, &session, TidyPage::Holding);
     settle(cx, &session).await;
+    // In reading order, so the first is where the next slides in when it goes.
     let held_tiles = |cx: &mut TestAppContext| {
         cx.update_window(session.handle, |_, window, cx| {
             window.render_frame(cx);
-            snapshots(window)
+            let mut tiles: Vec<_> = snapshots(window)
                 .iter()
                 .filter_map(|element| match element.path().last() {
-                    Some(ElementId::NamedInteger(name, id)) if name == "held" => Some(*id),
+                    Some(ElementId::NamedInteger(name, id)) if name == "held" => {
+                        let origin = element.bounds().origin;
+                        Some(((f32::from(origin.y), f32::from(origin.x)), *id))
+                    }
                     _ => None,
                 })
-                .collect::<Vec<_>>()
+                .collect();
+            tiles.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            tiles.into_iter().map(|(_, id)| id).collect::<Vec<_>>()
         })
         .unwrap()
+    };
+    let holds_press_at = |cx: &mut TestAppContext, spot| {
+        cx.read(|cx| {
+            let holding = session.tidy.read(cx).holding().read(cx);
+            holding.holds_press_at(spot)
+        })
     };
     // Its button shows while the pointer is on the tile.
     let restore = |cx: &mut TestAppContext, id: u64| {
@@ -374,23 +543,46 @@ async fn a_second_click_of_restore_restores_no_other_file(cx: &mut TestAppContex
 
     let tiles = held_tiles(cx);
     assert_eq!(tiles.len(), 3);
+    cx.update_window(session.handle, |_, window, cx| {
+        window.hover(("held", tiles[0]), cx);
+        window.render_frame(cx);
+    })
+    .unwrap();
+    let where_restored = centre_of(cx, &session, ("restore-held", tiles[0]));
+    let elsewhere = centre_of(cx, &session, ("held", tiles[2]));
+    let pressed = std::time::Instant::now();
     restore(cx, tiles[0]);
     wait_for(cx, &session, "the restore", |_| {
         held_files(&session).len() == 2
     })
     .await;
     render(cx, &session);
+    // Just after, presses wait where the restored tile was, and only there.
+    if pressed.elapsed() < Duration::from_millis(500) {
+        assert!(holds_press_at(cx, where_restored));
+    }
+    assert!(!holds_press_at(cx, elsewhere));
 
-    // A press too soon for anyone to have read the tile that came under the pointer. A machine
-    // this busy can take longer over it than the wait lasts, when it rightly works.
-    let next = held_tiles(cx)[0];
+    // A press too soon for anyone to have read the tile that came under the pointer, while one
+    // on another tile works. A machine this busy can take longer over it than the wait lasts,
+    // when it rightly works too.
+    let tiles = held_tiles(cx);
+    let (next, other) = (tiles[0], tiles[1]);
+    cx.update_window(session.handle, |_, window, cx| {
+        window.hover(("held", next), cx);
+        window.render_frame(cx);
+    })
+    .unwrap();
+    let spot = centre_of(cx, &session, ("restore-held", next));
+    let other_tile = centre_of(cx, &session, ("held", other));
+    if holds_press_at(cx, spot) {
+        assert!(!holds_press_at(cx, other_tile));
+    }
     restore(cx, next);
-    let in_time = cx.read(|cx| session.tidy.read(cx).holding().read(cx).armed());
+    let in_time = holds_press_at(cx, spot);
     wait_for_change(cx, &session).await;
     let held = held_files(&session).len();
-    if in_time {
-        assert_eq!(held, 2, "a second file came back");
-    }
+    assert_eq!(held, if in_time { 2 } else { 1 }, "in time: {in_time}");
 
     // The second press of a double-click slow enough to outlast that does nothing either.
     std::thread::sleep(Duration::from_millis(550));
@@ -494,6 +686,9 @@ async fn a_double_click_on_holdings_bar_reaches_no_tile_under_it(cx: &mut TestAp
     settle(cx, &session).await;
     assert_eq!(chosen_tiles(cx), 0);
     assert_eq!(last_quick_look(), None);
+    // A tile away from where the bar was takes a press at once.
+    click(cx, &session, ("held", tile));
+    assert_eq!(chosen_tiles(cx), 1);
 
     std::thread::sleep(Duration::from_millis(550));
     click(cx, &session, ("held", tile));

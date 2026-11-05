@@ -9,20 +9,24 @@
 //! renames it in place and Esc clears. The table's selected row is the cursor. Bulk actions take
 //! the selection; without one, the Inspector acts on the cursor's file. A command that has run
 //! leaves neither, so the file that slides into the place of those it moved is not a target until
-//! the owner chooses it, and the arrows go on from that place. Esc and the bar's Clear moved
-//! nothing, and leave the cursor where it is.
+//! the owner chooses it, and the arrows go on from that place, passing by the files commands have
+//! taken that the list still shows. Esc and the bar's Clear, in the list or the grid, clear the
+//! selection and leave the cursor where it is; Esc with nothing selected takes the list's cursor
+//! too. The cursor stays with its file as the list reads itself again, and shows only a file the
+//! list has read, the one selected; a new sort or query takes it away and keeps the selection.
 
 mod grid;
 pub mod menu;
 
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Range;
 use std::path::Path;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use gpui_kit::assets::IconName;
-use gpui_kit::base::actions::{SelectDown, SelectUp};
+use gpui_kit::base::actions::{Cancel, SelectDown, SelectUp};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{Escape as InputEscape, Input, InputEvent, InputState};
@@ -32,11 +36,11 @@ use gpui_kit::component::table::{
 };
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable,
-    FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent, Modifiers, ObjectFit,
-    ParentElement as _, Render, SharedString, Stateful, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Task, TestSupportExt as _, UniformListScrollHandle, Window, canvas,
-    div, prelude::FluentBuilder as _, px,
+    AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle, Focusable,
+    FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent, Modifiers, MouseDownEvent,
+    ObjectFit, ParentElement as _, Pixels, Render, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _,
+    UniformListScrollHandle, Window, canvas, div, prelude::FluentBuilder as _, px,
 };
 pub use menu::{LibraryMenu, MenuChoice, last_menu};
 use oriel_core_tidy::TidyEngine;
@@ -46,7 +50,7 @@ use oriel_core_tidy::contract::{
 };
 use oriel_ui::{ControlSize as _, LocalStorage, MENU_ROW_HEIGHT, Toast, TopBar, checkbox_target};
 
-use crate::actions::PerformOptions;
+use crate::actions::{OnUndone, PerformOptions};
 use crate::changes::{PlanRequest, Rename};
 use crate::format;
 use crate::loaded::Loaded;
@@ -229,16 +233,15 @@ fn dimensions_text(row: &FileRow) -> String {
 /// the engine for the ids.
 type SelectAll = Rc<dyn Fn(&mut Window, &mut App)>;
 
-/// The place the cursor left when a command took it away, for the arrows to go on from: the files
-/// either side of those the command took, by id, as the list may read itself again before or after
-/// an arrow is pressed.
+/// Where the cursor was when a command took its files, for the arrows to go on from. It is known by
+/// the files either side, as the list may read itself again before an arrow is pressed.
 struct Gap {
-    /// Where the next file will be once the list has read itself again without those it took.
-    place: usize,
-    /// What the command took, which the list still shows until it reads itself again.
-    leaving: BTreeSet<FileId>,
-    next: Beside,
-    previous: Beside,
+    /// The cursor's row, for when neither file beside it is among the rows read.
+    index: usize,
+    before: Beside,
+    after: Beside,
+    /// An arrow pressed while the row it goes to was not read yet: whether it went on or back.
+    step: Option<bool>,
 }
 
 /// What lies on one side of a [`Gap`].
@@ -251,16 +254,21 @@ enum Beside {
     End,
 }
 
-/// What the cursor waits for, while the list has not caught up with where it went.
-enum Awaited {
-    /// This file: the list reading itself again can shift it, and the cursor goes with it.
-    File(FileId),
-    /// The first file that isn't `leaving`, from `place` on, that way, when its row is read.
-    Row {
-        place: usize,
-        forward: bool,
-        leaving: BTreeSet<FileId>,
-    },
+/// Where an arrow from a gap goes.
+enum Step {
+    To(usize, FileId),
+    /// The row at this place has to be read first.
+    Read(usize),
+    Nowhere,
+}
+
+/// Files a command took from their places, which the list goes on showing until it reads itself
+/// again after the command.
+struct Taken {
+    key: u64,
+    files: BTreeSet<FileId>,
+    /// The reading of the list when the command ended; a later one no longer shows them.
+    ended: Option<u64>,
 }
 
 /// The table's rows: pages of the catalog, read as they come into view.
@@ -284,9 +292,17 @@ pub struct CatalogRows {
     keep_selection: bool,
     /// Where the cursor was, while no file has taken its place.
     gap: Option<Gap>,
-    /// What the cursor waits for, and what a move of the cursor brings to wait for in its place.
-    awaited: Option<Awaited>,
-    arriving: Option<Awaited>,
+    taken: Vec<Taken>,
+    next_taken: u64,
+    /// The file the cursor is on, which it stays with as the list reads itself again; none while
+    /// its row has not been read, when that row's file is selected once it is.
+    cursor_file: Option<FileId>,
+    /// The cursor's file, gone from the cursor's row when the list read itself again, and that
+    /// row: the cursor is hidden until the file is found, so it never shows one file and selects
+    /// another.
+    lost: Option<(FileId, usize)>,
+    /// The pages asked for whose rows have not come yet.
+    in_flight: HashSet<usize>,
     /// The file being renamed in place, and its field.
     renaming: Option<(FileId, Entity<InputState>)>,
     /// Selects every matching file, from the header's checkbox.
@@ -319,8 +335,11 @@ impl CatalogRows {
             pending: None,
             keep_selection: false,
             gap: None,
-            awaited: None,
-            arriving: None,
+            taken: Vec::new(),
+            next_taken: 0,
+            cursor_file: None,
+            lost: None,
+            in_flight: HashSet::new(),
             renaming: None,
             select_all: None,
             thumbs: thumbs.clone(),
@@ -403,9 +422,17 @@ impl CatalogRows {
         self.query = Some(query);
         self.generation += 1;
         self.requested.clear();
+        self.in_flight.clear();
         self.tasks.clear();
         self.first_page_due = true;
         self.request(0, cx);
+    }
+
+    /// Reads the same results again from the first page.
+    fn read_again(&mut self, cx: &mut Context<TableState<Self>>) {
+        if let (Some(engine), Some(query)) = (self.engine.clone(), self.query.clone()) {
+            self.reset(engine, query, cx);
+        }
     }
 
     fn request(&mut self, page: usize, cx: &mut Context<TableState<Self>>) {
@@ -415,6 +442,7 @@ impl CatalogRows {
         if (page != 0 && self.first_page_due) || !self.requested.insert(page) {
             return;
         }
+        self.in_flight.insert(page);
         let generation = self.generation;
         let query = FileQuery {
             offset: (page * PAGE) as u32,
@@ -432,6 +460,7 @@ impl CatalogRows {
                     if rows.generation != generation {
                         return;
                     }
+                    rows.in_flight.remove(&page);
                     if page == 0 {
                         rows.first_page_due = false;
                     }
@@ -441,6 +470,9 @@ impl CatalogRows {
                                 // A fresh first page replaces the rest, read again as they show.
                                 rows.pages.clear();
                                 rows.requested.retain(|requested| *requested == 0);
+                                rows.taken.retain(|taken| {
+                                    taken.ended.is_none_or(|ended| generation <= ended)
+                                });
                             }
                             rows.total = Some(result.total.max(0) as usize);
                             rows.total_bytes = result.total_bytes;
@@ -451,7 +483,7 @@ impl CatalogRows {
                                 let visible = table.visible_range().rows().clone();
                                 table.delegate_mut().request_rows(visible, cx);
                             }
-                            Self::find_awaited(table, cx);
+                            Self::settle_cursor(table, cx);
                         }
                         Err(error) => {
                             log::warn!("The Library could not read the catalog: {error:#}")
@@ -477,29 +509,21 @@ impl CatalogRows {
         cx.notify();
     }
 
-    /// The gap the cursor at `index` leaves when `leaving` go.
-    fn gap_at(&self, index: usize, leaving: BTreeSet<FileId>) -> Gap {
-        let next = self.beside(index..self.total.unwrap_or(0), &leaving);
-        let previous = self.beside((0..index).rev(), &leaving);
-        let leaving_before: usize = self
-            .pages
-            .iter()
-            .flat_map(|(page, rows)| {
-                rows.iter()
-                    .enumerate()
-                    .map(move |(at, row)| (page * PAGE + at, row))
-            })
-            .filter(|(at, row)| *at < index && leaving.contains(&row.id))
-            .count();
+    fn is_taken(&self, id: FileId) -> bool {
+        self.taken.iter().any(|taken| taken.files.contains(&id))
+    }
+
+    /// The gap the cursor at `index` leaves when the command takes `leaving`.
+    fn gap_at(&self, index: usize, leaving: &BTreeSet<FileId>) -> Gap {
         Gap {
-            place: index - leaving_before,
-            leaving,
-            next,
-            previous,
+            index,
+            before: self.beside((0..index).rev(), leaving),
+            after: self.beside(index..self.total.unwrap_or(0), leaving),
+            step: None,
         }
     }
 
-    /// What comes first along `places`, leaving out `leaving`.
+    /// The first file along `places` that is neither among `leaving` nor taken.
     fn beside(
         &self,
         mut places: impl Iterator<Item = usize>,
@@ -508,7 +532,7 @@ impl CatalogRows {
         places
             .find_map(|place| match self.row(place) {
                 None => Some(Beside::NotRead),
-                Some(row) if leaving.contains(&row.id) => None,
+                Some(row) if leaving.contains(&row.id) || self.is_taken(row.id) => None,
                 Some(row) => Some(Beside::File(row.id)),
             })
             .unwrap_or(Beside::End)
@@ -522,107 +546,174 @@ impl CatalogRows {
         })
     }
 
-    /// The first row from `place` on, that way, that isn't one of `leaving`, and its file; no file
-    /// if that row isn't read yet, or the list ends first.
-    fn first_staying(
-        &self,
-        place: usize,
-        forward: bool,
-        leaving: &BTreeSet<FileId>,
-    ) -> (usize, Option<FileId>) {
-        let last = self.total.unwrap_or(0).saturating_sub(1);
-        let mut at = place.min(last);
+    /// Where the gap is among the rows read: after the file before it, or at the file after it.
+    /// Neither found where the cursor was, once that row is read, they have gone, and the gap is
+    /// taken to be where the cursor was; until then, it is not known.
+    fn gap_place(&self, gap: &Gap) -> Option<usize> {
+        let total = self.total.unwrap_or(0);
+        let found = |side: Beside| match side {
+            Beside::File(id) => self.index_of(id),
+            _ => None,
+        };
+        if let Beside::End = gap.before {
+            return Some(0);
+        }
+        found(gap.before)
+            .map(|index| index + 1)
+            .or_else(|| found(gap.after))
+            .or_else(|| matches!(gap.after, Beside::End).then_some(total))
+            .or_else(|| {
+                let index = gap.index.min(total.saturating_sub(1));
+                self.row(index).is_some().then_some(gap.index.min(total))
+            })
+    }
+
+    /// The first file not taken from `place` on, or back from before it.
+    fn walk(&self, place: usize, forward: bool) -> Step {
+        let total = self.total.unwrap_or(0);
+        let mut at = if forward { place } else { place.min(total) };
         loop {
+            if forward && at >= total || !forward && at == 0 {
+                return Step::Nowhere;
+            }
+            if !forward {
+                at -= 1;
+            }
             match self.row(at) {
-                None => return (at, None),
-                Some(row) if !leaving.contains(&row.id) => return (at, Some(row.id)),
-                Some(_) if forward && at < last => at += 1,
-                Some(_) if !forward && at > 0 => at -= 1,
-                Some(_) => return (at, None),
+                None => return Step::Read(at),
+                Some(row) if !self.is_taken(row.id) => return Step::To(at, row.id),
+                Some(_) => {}
+            }
+            if forward {
+                at += 1;
             }
         }
     }
 
-    /// Where an arrow goes from the gap, which it uses up: the file on that side of it, or the one
-    /// on the other where the list ends; `None` without a gap or a file to go to. It leaves what
-    /// the cursor brings for its move to pick up.
-    fn step_from_gap(&mut self, forward: bool) -> Option<usize> {
-        let last = self.total?.checked_sub(1)?;
-        let gap = self.gap.take()?;
-        let (near, far) = if forward {
-            (gap.next, gap.previous)
-        } else {
-            (gap.previous, gap.next)
+    /// Where an arrow goes from the gap: the first file that way, else the first the other way
+    /// where the list ends.
+    fn step(&self, gap: &Gap, forward: bool) -> Step {
+        let Some(place) = self.gap_place(gap) else {
+            return Step::Read(gap.index);
         };
-        let (side, forward) = match near {
-            Beside::End => (far, !forward),
-            near => (near, forward),
-        };
-        let place = if forward {
-            gap.place
-        } else {
-            gap.place.saturating_sub(1)
-        };
-        let (index, file) = match side {
-            Beside::End => return None,
-            // Its page may not have been read again yet: about where it was, until it is.
-            Beside::File(id) => (self.index_of(id).unwrap_or(place), Some(id)),
-            Beside::NotRead => self.first_staying(place, forward, &gap.leaving),
-        };
-        let index = index.min(last);
-        self.anchor = Some(index);
-        self.pending = Some(file.into_iter().collect());
-        self.arriving = Some(match file {
-            Some(id) => Awaited::File(id),
-            None => Awaited::Row {
-                place,
-                forward,
-                leaving: gap.leaving,
-            },
-        });
-        Some(index)
+        match self.walk(place, forward) {
+            Step::Nowhere => self.walk(place, !forward),
+            step => step,
+        }
     }
 
-    /// Brings the cursor to what it waits for, as far as the list has been read.
-    fn find_awaited(table: &mut TableState<Self>, cx: &mut Context<TableState<Self>>) {
+    /// An arrow at the gap, or while the cursor is hidden: the row it goes to, with that file
+    /// selected for the move to pick up, or `Some(None)` when it waits for a row to be read or has
+    /// nowhere to go. `None` when the arrow is the table's.
+    fn step_from_gap(
+        &mut self,
+        forward: bool,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Option<Option<usize>> {
+        if self.lost.is_some() {
+            return Some(None);
+        }
+        let step = self.step(self.gap.as_ref()?, forward);
+        Some(self.take_step(step, forward, cx))
+    }
+
+    fn take_step(
+        &mut self,
+        step: Step,
+        forward: bool,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Option<usize> {
+        let gap = self.gap.as_mut()?;
+        match step {
+            Step::To(index, id) => {
+                self.anchor = Some(index);
+                self.pending = Some(BTreeSet::from([id]));
+                Some(index)
+            }
+            Step::Read(at) => {
+                gap.step = Some(forward);
+                self.request(at / PAGE, cx);
+                None
+            }
+            Step::Nowhere => {
+                gap.step = None;
+                None
+            }
+        }
+    }
+
+    /// Once rows have come: an arrow waiting at the gap goes on, and the cursor stays with its
+    /// file, or is hidden while that file is not where it shows.
+    fn settle_cursor(table: &mut TableState<Self>, cx: &mut Context<TableState<Self>>) {
         let rows = table.delegate_mut();
-        let (index, file) = match &rows.awaited {
-            None => return,
-            // The selection has moved on since.
-            Some(Awaited::File(id)) if !rows.selected.iter().eq([id]) => {
-                rows.awaited = None;
-                return;
+        if let Some((gap, forward)) = rows.gap.as_ref().and_then(|gap| Some((gap, gap.step?))) {
+            let step = rows.step(gap, forward);
+            if let Some(index) = rows.take_step(step, forward, cx) {
+                table.set_selected_row(index, cx);
             }
-            Some(Awaited::Row { .. }) if !rows.selected.is_empty() => {
-                rows.awaited = None;
-                return;
-            }
-            Some(Awaited::File(id)) => match rows.index_of(*id) {
-                Some(index) => (index, Some(*id)),
-                None => return,
-            },
-            Some(Awaited::Row {
-                place,
-                forward,
-                leaving,
-            }) => rows.first_staying(*place, *forward, leaving),
-        };
-        let awaited = match file {
-            Some(id) => Some(Awaited::File(id)),
-            None => rows.awaited.take(),
-        };
-        let selection: BTreeSet<FileId> = file.into_iter().collect();
-        rows.anchor = Some(index);
-        if table.selected_row() == Some(index) {
-            let rows = table.delegate_mut();
-            rows.awaited = awaited;
-            rows.set_selected(selection, cx);
-        } else {
-            let rows = table.delegate_mut();
-            rows.arriving = awaited;
-            rows.pending = Some(selection);
-            table.set_selected_row(index, cx);
+            return;
         }
+        if let Some((id, near)) = rows.lost {
+            match rows.index_of(id) {
+                Some(index) => {
+                    rows.lost = None;
+                    rows.anchor = Some(index);
+                    rows.pending = Some(rows.selected.clone());
+                    table.set_selected_row(index, cx);
+                }
+                // Not about where it was: it stays hidden.
+                None if rows.row(near).is_some() => rows.lost = None,
+                None => rows.request(near / PAGE, cx),
+            }
+            return;
+        }
+        let Some(cursor) = table.selected_row() else {
+            return;
+        };
+        let rows = table.delegate_mut();
+        match rows.cursor_file {
+            Some(id) => match rows.index_of(id) {
+                Some(index) if index == cursor => {}
+                Some(index) => {
+                    rows.anchor = Some(index);
+                    rows.pending = Some(rows.selected.clone());
+                    table.set_selected_row(index, cx);
+                }
+                None if rows.row(cursor).is_some() => {
+                    rows.lost = Some((id, cursor));
+                    rows.keep_selection = true;
+                    table.clear_selection(cx);
+                }
+                None => {}
+            },
+            None => {
+                let file = rows.row(cursor).map(|row| row.id);
+                if let Some(id) = file
+                    && rows.selected.is_empty()
+                {
+                    rows.cursor_file = Some(id);
+                    rows.set_selected(BTreeSet::from([id]), cx);
+                }
+            }
+        }
+    }
+
+    /// A command that took files has ended: the list reads itself again, and then no longer
+    /// shows them.
+    fn command_ended(&mut self, key: u64, cx: &mut Context<TableState<Self>>) {
+        let generation = self.generation;
+        if let Some(taken) = self.taken.iter_mut().find(|taken| taken.key == key) {
+            taken.ended = Some(generation);
+        }
+        self.read_again(cx);
+    }
+
+    /// Whether every row asked for has come, and the cursor has found its place.
+    pub fn settled(&self) -> bool {
+        !self.first_page_due
+            && self.in_flight.is_empty()
+            && self.lost.is_none()
+            && self.gap.as_ref().is_none_or(|gap| gap.step.is_none())
     }
 
     /// The files from `from` to `to`, both included, added to `base`.
@@ -838,7 +929,17 @@ impl TableDelegate for CatalogRows {
         self.sorted = Some((col, descending));
         (query.sort, query.descending) = (column, descending);
         self.rebuild_columns();
-        cx.defer_in(window, |table, _, cx| table.refresh(cx));
+        // A new order: the cursor's place in the old one means nothing, as for a new query, and
+        // the selection stays.
+        self.gap = None;
+        self.lost = None;
+        cx.defer_in(window, |table, _, cx| {
+            table.refresh(cx);
+            if table.selected_row().is_some() {
+                table.delegate_mut().keep_selection = true;
+                table.clear_selection(cx);
+            }
+        });
         self.reset(engine, query, cx);
     }
 
@@ -985,8 +1086,10 @@ pub struct LibraryPage {
     grid_scroll: UniformListScrollHandle,
     /// What the page last read for: the root, the catalog's version and the last preset.
     seen: (Option<RootId>, u64, u64),
-    /// Until when a press on the files does nothing, after one on the selection bar.
-    armed_at: Instant,
+    /// The selection bar where it was last drawn, and where a press on the files under it does
+    /// nothing for a moment after one on the bar.
+    bar_bounds: Rc<Cell<Bounds<Pixels>>>,
+    guard: widgets::PressGuard,
     targets_seen: (Vec<FileId>, u64),
     search_timer: Option<Task<()>>,
     targets_timer: Option<Task<()>>,
@@ -1069,7 +1172,8 @@ impl LibraryPage {
             grid_columns: 1,
             grid_scroll: UniformListScrollHandle::new(),
             seen: (None, 0, 0),
-            armed_at: Instant::now(),
+            bar_bounds: Rc::default(),
+            guard: widgets::PressGuard::default(),
             targets_seen: (Vec::new(), 0),
             search_timer: None,
             targets_timer: None,
@@ -1131,21 +1235,14 @@ impl LibraryPage {
                 self.table.update(cx, |table, cx| {
                     let rows = table.delegate_mut();
                     rows.gap = None;
-                    rows.awaited = rows.arriving.take();
+                    rows.lost = None;
+                    // Its row not read yet, its file is selected once it is.
+                    rows.cursor_file = rows.row(index).map(|row| row.id);
                     let next = match rows.pending.take() {
                         Some(next) => next,
                         None => {
                             rows.anchor = Some(index);
-                            let file = rows.row(index).map(|row| row.id);
-                            // Its page isn't read yet: it is selected when it is.
-                            if file.is_none() {
-                                rows.awaited = Some(Awaited::Row {
-                                    place: index,
-                                    forward: true,
-                                    leaving: BTreeSet::new(),
-                                });
-                            }
-                            file.into_iter().collect()
+                            rows.cursor_file.into_iter().collect()
                         }
                     };
                     rows.set_selected(next, cx);
@@ -1154,7 +1251,9 @@ impl LibraryPage {
             // Esc in the table clears its cursor, and with it the selection.
             TableEvent::ClearSelection => {
                 let keep = self.table.update(cx, |table, _| {
-                    std::mem::take(&mut table.delegate_mut().keep_selection)
+                    let rows = table.delegate_mut();
+                    rows.cursor_file = None;
+                    std::mem::take(&mut rows.keep_selection)
                 });
                 if !keep {
                     self.clear_selection(cx);
@@ -1207,19 +1306,20 @@ impl LibraryPage {
         if total == 0 {
             return;
         }
-        let from_gap = self
-            .table
-            .update(cx, |table, _| table.delegate_mut().step_from_gap(delta > 0));
-        let next = from_gap.unwrap_or_else(|| {
-            cursor.map_or(0, |cursor| {
-                (cursor as isize + delta).clamp(0, total as isize - 1) as usize
-            })
+        let from_gap = self.table.update(cx, |table, cx| {
+            table.delegate_mut().step_from_gap(delta > 0, cx)
         });
+        let next = match from_gap {
+            Some(None) => return,
+            Some(Some(next)) => next,
+            None => cursor.map_or(0, |cursor| {
+                (cursor as isize + delta).clamp(0, total as isize - 1) as usize
+            }),
+        };
         self.table.update(cx, |table, cx| {
             if extend {
                 let rows = table.delegate_mut();
                 let anchor = *rows.anchor.get_or_insert(cursor.unwrap_or(next));
-                rows.arriving = None;
                 rows.pending = Some(rows.range(anchor, next, &BTreeSet::new()));
             }
             table.set_selected_row(next, cx);
@@ -1230,18 +1330,20 @@ impl LibraryPage {
     }
 
     /// An arrow the table would take from its first row, having no cursor: it goes on from the
-    /// gap a command left instead.
+    /// gap a command left instead, or waits while the cursor is hidden.
     fn arrow_from_gap(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         let focus = self.table.read(cx).focus_handle(cx);
         if !focus.contains_focused(window, cx) {
             return;
         }
-        let moved = self.table.update(cx, |table, cx| {
-            let index = table.delegate_mut().step_from_gap(forward)?;
-            table.set_selected_row(index, cx);
-            Some(())
+        let step = self.table.update(cx, |table, cx| {
+            let step = table.delegate_mut().step_from_gap(forward, cx);
+            if let Some(Some(index)) = step {
+                table.set_selected_row(index, cx);
+            }
+            step
         });
-        if moved.is_some() {
+        if step.is_some() {
             cx.stop_propagation();
         }
     }
@@ -1467,6 +1569,10 @@ impl LibraryPage {
         {
             self.apply_preset(preset, cx);
         }
+        if !visible {
+            self.table
+                .update(cx, |table, _| table.delegate_mut().gap = None);
+        }
         if visible && key != self.seen {
             let root_changed = key.0 != self.seen.0;
             self.seen = key;
@@ -1525,7 +1631,7 @@ impl LibraryPage {
             if query_changed {
                 let rows = table.delegate_mut();
                 rows.gap = None;
-                rows.awaited = None;
+                rows.lost = None;
             }
             if query_changed && table.selected_row().is_some() {
                 table.delegate_mut().keep_selection = true;
@@ -1634,26 +1740,31 @@ impl LibraryPage {
     /// Esc, or the bar's Clear: nothing is selected, and the cursor stays where it is.
     fn clear_selection(&mut self, cx: &mut Context<Self>) {
         self.table.update(cx, |table, cx| {
-            let rows = table.delegate_mut();
-            rows.awaited = None;
-            rows.set_selected(BTreeSet::new(), cx);
+            table.delegate_mut().set_selected(BTreeSet::new(), cx);
         });
     }
 
-    /// A command has taken the files at hand. Nothing is chosen, and nothing is a target until the
+    /// A command has the files at hand. Nothing is chosen, and nothing is a target until the
     /// owner chooses: the cursor goes too, or the file it comes to rest on would be, and a list
-    /// reading itself again would change which.
-    fn leave_gap(&mut self, cx: &mut Context<Self>) {
+    /// reading itself again would change which. With `taken`, the command takes the files from
+    /// their places, and the arrows pass them by until the list no longer shows them.
+    fn leave_gap(&mut self, taken: Option<u64>, cx: &mut Context<Self>) {
         let leaving: BTreeSet<FileId> = self.targets(cx).into_iter().collect();
         self.table.update(cx, |table, cx| {
             let cursor = table.selected_row();
             let rows = table.delegate_mut();
             rows.anchor = None;
-            rows.awaited = None;
+            rows.lost = None;
             rows.set_selected(BTreeSet::new(), cx);
-            let place = cursor.or(rows.gap.as_ref().map(|gap| gap.place));
-            if let Some(place) = place {
-                rows.gap = Some(rows.gap_at(place, leaving));
+            if let Some(key) = taken {
+                rows.taken.push(Taken {
+                    key,
+                    files: leaving.clone(),
+                    ended: None,
+                });
+            }
+            if let Some(index) = cursor.or(rows.gap.as_ref().map(|gap| gap.index)) {
+                rows.gap = Some(rows.gap_at(index, &leaving));
             }
             if cursor.is_some() {
                 rows.keep_selection = true;
@@ -1703,10 +1814,33 @@ impl LibraryPage {
 
     /// Runs a command on the files it was shown. Whatever takes their place is not chosen by that.
     fn perform(&mut self, request: PlanRequest, window: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, cx| {
-            state.perform(request, PerformOptions::default(), window, cx);
+        // These take the files from their places; the others leave them where they are.
+        let takes = matches!(
+            request,
+            PlanRequest::Hold { .. } | PlanRequest::Move { .. } | PlanRequest::Optimize { .. }
+        );
+        let key = takes.then(|| {
+            self.table.update(cx, |table, _| {
+                let rows = table.delegate_mut();
+                rows.next_taken += 1;
+                rows.next_taken
+            })
         });
-        self.leave_gap(cx);
+        let mut options = PerformOptions::default();
+        if let Some(key) = key {
+            let table = self.table.downgrade();
+            let ended: OnUndone = Rc::new(move |_, cx| {
+                table
+                    .update(cx, |table, cx| table.delegate_mut().command_ended(key, cx))
+                    .ok();
+            });
+            options.on_failed = Some(ended.clone());
+            options.on_done = Some(Rc::new(move |_, window, cx| ended(window, cx)));
+        }
+        self.state.update(cx, |state, cx| {
+            state.perform(request, options, window, cx);
+        });
+        self.leave_gap(key, cx);
     }
 
     fn hold(&mut self, ids: Vec<FileId>, window: &mut Window, cx: &mut Context<Self>) {
@@ -2439,11 +2573,14 @@ impl LibraryPage {
                     .id("library-selection")
                     .test_support()
                     // A press here is the bar's alone, and the bar may go with it: the second press
-                    // of a double-click must not reach the file under where it was.
-                    .occlude()
+                    // of a double-click must not reach the file under where it was. The wheel
+                    // still scrolls the files.
+                    .block_mouse_except_scroll()
                     .capture_any_mouse_up(cx.listener(|this, _, _, _| {
-                        this.armed_at = Instant::now() + widgets::ARM_DELAY;
+                        this.guard.arm(this.bar_bounds.get());
                     }))
+                    .relative()
+                    .child(widgets::measure(&self.bar_bounds))
                     .aria_label(SharedString::from(label.clone()))
                     .flex()
                     .flex_row()
@@ -2916,6 +3053,14 @@ impl Render for LibraryPage {
             .capture_action(cx.listener(|this, _: &SelectUp, window, cx| {
                 this.arrow_from_gap(false, window, cx);
             }))
+            // Esc with files selected clears them and keeps the cursor, before the table's own
+            // Esc takes the cursor too.
+            .capture_action(cx.listener(|this, _: &Cancel, _, cx| {
+                if this.renaming.is_none() && !this.selected(cx).is_empty() {
+                    this.clear_selection(cx);
+                    cx.stop_propagation();
+                }
+            }))
             .on_action(cx.listener(|this, action: &LibraryMenu, window, cx| {
                 this.choose(action.0, window, cx);
             }))
@@ -2946,11 +3091,13 @@ impl Render for LibraryPage {
                             .flex_col()
                             .flex_1()
                             .min_w_0()
-                            .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
-                                if Instant::now() < this.armed_at {
-                                    cx.stop_propagation();
-                                }
-                            }))
+                            .capture_any_mouse_down(cx.listener(
+                                |this, event: &MouseDownEvent, _, cx| {
+                                    if this.guard.holds(event.position) {
+                                        cx.stop_propagation();
+                                    }
+                                },
+                            ))
                             .child(content)
                             .children(selection_bar),
                     )

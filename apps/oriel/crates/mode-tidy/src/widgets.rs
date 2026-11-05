@@ -2,15 +2,17 @@
 //! empty state, the card, the caption, a row's icon tile, the key hint inside a button, and a
 //! page's main button while its change runs or waits.
 
-use std::time::Duration;
+use std::cell::Cell;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon};
 use gpui_kit::{
-    AnyElement, App, Div, ElementId, FontWeight, InteractiveElement as _, IntoElement as _,
-    ParentElement as _, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
-    TestSupportExt as _, div, prelude::FluentBuilder as _, px, rems,
+    AnyElement, App, Bounds, Div, ElementId, FontWeight, InteractiveElement as _, IntoElement,
+    ParentElement as _, Pixels, Point, Role, SharedString, StatefulInteractiveElement as _,
+    Styled as _, TestSupportExt as _, canvas, div, prelude::FluentBuilder as _, px, rems,
 };
 use oriel_ui::ControlSize as _;
 
@@ -20,6 +22,31 @@ use crate::format;
 /// went. The default double-click time on macOS and Windows, so a double-click's second press is
 /// never the first press on something new.
 pub(crate) const ARM_DELAY: Duration = Duration::from_millis(500);
+
+/// Where a press does nothing for a moment: the place something pressed has just gone from, where
+/// what has come under the pointer is not what the owner meant. A press anywhere else works.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct PressGuard(Option<(Instant, Bounds<Pixels>)>);
+
+impl PressGuard {
+    /// Holds back presses in `place` for [`ARM_DELAY`] from now.
+    pub(crate) fn arm(&mut self, place: Bounds<Pixels>) {
+        self.0 = Some((Instant::now() + ARM_DELAY, place));
+    }
+
+    pub(crate) fn holds(&self, position: Point<Pixels>) -> bool {
+        self.0
+            .is_some_and(|(until, place)| Instant::now() < until && place.contains(&position))
+    }
+}
+
+/// Keeps the bounds its parent was last drawn at, for a [`PressGuard`].
+pub(crate) fn measure(bounds: &Rc<Cell<Bounds<Pixels>>>) -> impl IntoElement + use<> {
+    let bounds = bounds.clone();
+    canvas(move |drawn, _, _| bounds.set(drawn), |_, _, _, _| {})
+        .absolute()
+        .size_full()
+}
 
 /// A centred message for a page with nothing to show (`EmptyState`): an icon, a title, a line
 /// under it, and the actions that lead on.

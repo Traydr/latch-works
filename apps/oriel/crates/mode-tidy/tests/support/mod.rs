@@ -164,13 +164,23 @@ pub fn render(cx: &mut TestAppContext, session: &Session) {
 }
 
 /// Lets the engine's threads and the app's tasks run until `done` holds.
+///
+/// `ORIEL_TEST_WAIT_SECS` gives up sooner, after that many seconds, for runs that only need to
+/// know a case fails, such as a change made on purpose to see that a test catches it.
 pub async fn wait_for(
     cx: &mut TestAppContext,
     session: &Session,
     what: &str,
     done: impl Fn(&App) -> bool,
 ) {
+    let limit = std::env::var("ORIEL_TEST_WAIT_SECS")
+        .ok()
+        .and_then(|secs| secs.parse().ok())
+        .map(|secs| std::time::Instant::now() + Duration::from_secs(secs));
     for _ in 0..20_000 {
+        if limit.is_some_and(|limit| std::time::Instant::now() > limit) {
+            break;
+        }
         cx.run_until_parked();
         render(cx, session);
         if cx.read(|cx| done(cx)) {
