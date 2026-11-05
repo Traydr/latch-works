@@ -18,7 +18,7 @@ use gpui_kit::{
     App, AsyncWindowContext, Context, Entity, SharedString, Subscription, Task, WeakEntity, Window,
 };
 use oriel_core_tidy::contract::{AudioState, FileFilter, FileKind, RootId};
-use oriel_runtime::{Job, JobError, JobEvent, JobProgress};
+use oriel_runtime::{Job, JobError, JobEvent, JobProgress, JobStatus};
 use oriel_ui::Toast;
 
 use crate::changes::{
@@ -195,13 +195,27 @@ impl From<JobError> for Unfinished {
     }
 }
 
-/// A channel that answers once `job` finishes, and the subscription that feeds it.
+/// A channel that answers once `job` finishes, and the subscription that feeds it. A job that has
+/// already finished answers at once: its event has gone, and a quick change can finish before the
+/// task that started it comes back here.
 fn when_finished<T: Clone + Send + 'static>(
     job: &Entity<Job<T>>,
     cx: &mut App,
 ) -> (oneshot::Receiver<Finished<T>>, Subscription) {
     let (sender, receiver) = oneshot::channel();
-    let sender = RefCell::new(Some(sender));
+    let finished = match job.read(cx).status() {
+        JobStatus::Running => None,
+        JobStatus::Succeeded(value) => Some(Ok(value.clone())),
+        JobStatus::Failed(error) => Some(Err(error.clone())),
+    };
+    let sender = match finished {
+        Some(outcome) => {
+            let _ = sender.send(outcome);
+            None
+        }
+        None => Some(sender),
+    };
+    let sender = RefCell::new(sender);
     let subscription = cx.subscribe(job, move |job, event: &JobEvent, cx| {
         let outcome = match event {
             JobEvent::Succeeded => match job.read(cx).value() {
@@ -1020,4 +1034,32 @@ async fn run_steps(
     })
     .ok();
     (plans, notes, follow_up)
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui_kit::TestAppContext;
+
+    use super::*;
+
+    /// A quick change, such as a decision on Duplicates, can finish before the task that started
+    /// it comes back to subscribe. It heard nothing then, and held every later change back until
+    /// the app quit.
+    #[gpui_kit::test]
+    async fn a_job_that_finished_before_anyone_asked_still_answers(cx: &mut TestAppContext) {
+        let done = cx.update(|cx| Job::start("quick", cx, |_| async { Ok(7) }));
+        let failed =
+            cx.update(|cx| Job::<i32>::start("broken", cx, |_| async { anyhow::bail!("no") }));
+        cx.run_until_parked();
+        cx.read(|cx| assert!(!done.read(cx).is_running() && !failed.read(cx).is_running()));
+
+        let (mut done_answer, _done) = cx.update(|cx| when_finished(&done, cx));
+        let (mut failed_answer, _failed) = cx.update(|cx| when_finished(&failed, cx));
+        cx.run_until_parked();
+        assert!(matches!(done_answer.try_recv(), Ok(Some(Ok(7)))));
+        assert!(matches!(
+            failed_answer.try_recv(),
+            Ok(Some(Err(JobError::Failed(_))))
+        ));
+    }
 }
