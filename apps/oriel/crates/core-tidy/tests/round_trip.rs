@@ -24,10 +24,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use futures::executor::block_on;
 use oriel_core_paths::DataRoot;
 use oriel_core_tidy::contract::{
-    DuplicateScope, DuplicateSet, DuplicateSetRequest, FileFilter, FileFormat, FileId, FileQuery,
-    FileSortColumn, HoldingItem, HoldingRequest, OptimizeCategory, PlanId, PlanKind, PlanRequest,
-    PlanStatus, PlanStepAction, PlanStepsRequest, PlanSummary, Rename, ResolveGroup, Root,
-    SimilarityLevel, StepStatus,
+    DuplicateKind, DuplicateScope, DuplicateSet, DuplicateSetRequest, FileFilter, FileFormat,
+    FileId, FileQuery, FileSortColumn, HoldingItem, HoldingRequest, OptimizeCategory, PlanId,
+    PlanKind, PlanRequest, PlanStatus, PlanStepAction, PlanStepsRequest, PlanSummary, Rename,
+    ResolveGroup, Root, SimilarityLevel, StepStatus,
 };
 use oriel_core_tidy::media::probe_video;
 use oriel_core_tidy::passes::{Media, Quiet};
@@ -1089,4 +1089,168 @@ fn emptying_holding_after_a_change_leaves_nothing_held() {
     assert!(now.files.contains_key("photos/cover.jpg"));
     assert!(now.folders.contains("empty"));
     assert!(!now.files.contains_key("._sunset.png"));
+}
+
+/// The file kept is what makes the others safe to take away: a keeper changed or gone since the
+/// scan leaves them alone, and the scan that catches the catalog up follows.
+#[test]
+fn a_copy_goes_only_while_the_file_kept_is_as_the_scan_saw_it() {
+    type Change = fn(&Path);
+    let changes: [(&str, Change); 4] = [
+        ("overwritten", |kept| {
+            fs::write(kept, b"something else").unwrap()
+        }),
+        // Only the bytes tell this one apart: the change time moved, so the hash decides.
+        ("overwritten with the same size and date", |kept| {
+            let before = fs::metadata(kept).unwrap();
+            fs::write(kept, vec![0x5a; before.len() as usize]).unwrap();
+            set_mtime(kept, before.modified().unwrap());
+        }),
+        ("deleted", |kept| fs::remove_file(kept).unwrap()),
+        ("moved away", |kept| {
+            fs::rename(kept, kept.with_extension("gone")).unwrap();
+        }),
+    ];
+    for (name, change) in changes {
+        let Some(bench) = Bench::open("kept-changed") else {
+            return;
+        };
+        let set = bench
+            .duplicate_sets(DuplicateScope::All)
+            .into_iter()
+            .find(|set| set.kind == DuplicateKind::Exact)
+            .unwrap();
+        let group = bench.suggestion(&set);
+        let kept = set
+            .versions
+            .iter()
+            .flat_map(|version| &version.files)
+            .find(|file| group.keep.contains(&file.id))
+            .unwrap();
+        let going: Vec<PathBuf> = set
+            .versions
+            .iter()
+            .flat_map(|version| &version.files)
+            .filter(|file| group.remove.contains(&file.id))
+            .map(|file| bench.archive.join(&file.rel_path))
+            .collect();
+        assert!(!going.is_empty());
+        change(&bench.archive.join(&kept.rel_path));
+
+        let performed = bench
+            .engine
+            .perform_blocking(
+                PlanRequest::ResolveDuplicates {
+                    groups: vec![group],
+                },
+                &bench.quiet(),
+            )
+            .unwrap();
+        assert!(
+            bench.held().is_empty(),
+            "{name}: {:?}",
+            performed.applied.plan
+        );
+        for file in &going {
+            assert!(file.is_file(), "{name}");
+        }
+        assert_eq!(
+            performed.applied.follow_up.rescan,
+            [bench.root.id],
+            "{name}"
+        );
+        let steps = bench.steps(performed.applied.plan.id);
+        assert!(
+            steps.iter().all(|step| step.status == StepStatus::Skipped),
+            "{name}: {steps:?}"
+        );
+    }
+}
+
+/// Every keeper the step relies on: a set that keeps two pictures, one of them changed.
+#[test]
+fn a_copy_stays_when_any_file_kept_with_it_has_changed() {
+    let Some(bench) = Bench::open("keepers-changed") else {
+        return;
+    };
+    let mut settings = block_on(bench.engine.settings()).unwrap();
+    settings.spot_variants = true;
+    let update = block_on(bench.engine.update_settings(settings)).unwrap();
+    if update.analyze {
+        bench
+            .engine
+            .analyze_blocking(bench.root.id, &bench.quiet())
+            .unwrap();
+    }
+    let set = bench
+        .duplicate_sets(DuplicateScope::All)
+        .into_iter()
+        .find(|set| {
+            set.keep.len() > 1
+                && set
+                    .versions
+                    .iter()
+                    .flat_map(|version| &version.files)
+                    .any(|file| !set.keep.contains(&file.id))
+        })
+        .expect("a set keeping two pictures and removing another file");
+    let group = bench.suggestion(&set);
+    let last = set
+        .versions
+        .iter()
+        .flat_map(|version| &version.files)
+        .rfind(|file| group.keep.contains(&file.id))
+        .unwrap();
+    fs::write(bench.archive.join(&last.rel_path), b"something else").unwrap();
+    let performed = bench
+        .engine
+        .perform_blocking(
+            PlanRequest::ResolveDuplicates {
+                groups: vec![group],
+            },
+            &bench.quiet(),
+        )
+        .unwrap();
+    assert!(bench.held().is_empty(), "{:?}", performed.applied.plan);
+}
+
+/// A keeper that is only touched, as a sync client tags a file, holds what it held: the removal
+/// goes ahead.
+#[cfg(unix)]
+#[test]
+fn a_keeper_only_touched_still_lets_its_copies_go() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let Some(bench) = Bench::open("kept-touched") else {
+        return;
+    };
+    let set = bench
+        .duplicate_sets(DuplicateScope::All)
+        .into_iter()
+        .find(|set| set.kind == DuplicateKind::Exact)
+        .unwrap();
+    let group = bench.suggestion(&set);
+    let kept = set
+        .versions
+        .iter()
+        .flat_map(|version| &version.files)
+        .find(|file| group.keep.contains(&file.id))
+        .unwrap();
+    let path = bench.archive.join(&kept.rel_path);
+    let mode = fs::metadata(&path).unwrap().permissions().mode();
+    fs::set_permissions(&path, fs::Permissions::from_mode(mode ^ 0o040)).unwrap();
+    let going = group.remove.len();
+    let plan = bench.perform(PlanRequest::ResolveDuplicates {
+        groups: vec![group],
+    });
+    assert_eq!(plan.status, PlanStatus::Applied);
+    assert_eq!(bench.held().len(), going);
+}
+
+/// A plan drafted before this check has no keepers in its steps: its record still reads.
+#[test]
+fn a_step_recorded_before_keepers_were_kept_still_reads() {
+    let spec: oriel_core_tidy::plans::planner::StepSpec =
+        serde_json::from_str(r#"{"kind":"hold","reason":"Duplicate of a.png"}"#).unwrap();
+    assert_eq!(spec.action(), PlanStepAction::Hold);
 }

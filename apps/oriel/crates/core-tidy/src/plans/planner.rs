@@ -31,7 +31,7 @@ use crate::scan::preferred_extension;
 
 /// What a step does, stored as JSON beside it in glazier-core's form: the `kind` matches the
 /// step's `action` column.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
     rename_all = "kebab-case",
@@ -40,6 +40,10 @@ use crate::scan::preferred_extension;
 pub enum StepSpec {
     Hold {
         reason: String,
+        /// What makes this file safe to take away, as the catalog had them when it was drafted.
+        /// Steps recorded before this was kept have none.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        keepers: Vec<Keeper>,
     },
     Move,
     Rename,
@@ -55,6 +59,17 @@ pub enum StepSpec {
         require_smaller: bool,
     },
     RemoveFolder,
+}
+
+/// A file a duplicate goes in favour of, as it must still be for that to hold.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Keeper {
+    pub path: String,
+    pub size: i64,
+    pub mtime_ms: f64,
+    pub ctime_ms: f64,
+    pub sha256: Option<String>,
 }
 
 impl StepSpec {
@@ -231,6 +246,18 @@ fn draft_resolution(
             .map(|record| (*record).clone())
             .chain(group.remove.iter().filter_map(|id| by_id.get(id).cloned()))
             .collect();
+        let keeper_states: Vec<Keeper> = keepers
+            .iter()
+            .map(|record| Keeper {
+                path: to_absolute_path(&record.root_path, &record.rel_path)
+                    .to_string_lossy()
+                    .into_owned(),
+                size: record.size,
+                mtime_ms: record.mtime_ms,
+                ctime_ms: record.ctime_ms,
+                sha256: record.sha256.clone(),
+            })
+            .collect();
         let mut changed = false;
         for record in removals_for(&members, &group.keep) {
             if removed.contains(&record.id) || kept.contains(&record.id) {
@@ -242,6 +269,7 @@ fn draft_resolution(
                 record,
                 StepSpec::Hold {
                     reason: format!("Duplicate of {}", keeper.rel_path),
+                    keepers: keeper_states.clone(),
                 },
                 None,
             ));
@@ -315,6 +343,7 @@ fn junk_hold(record: &FileRecord) -> DraftStep {
         record,
         StepSpec::Hold {
             reason: "System junk".into(),
+            keepers: Vec::new(),
         },
         None,
     )
@@ -383,6 +412,7 @@ pub fn draft_steps(
                     &record,
                     StepSpec::Hold {
                         reason: "Removed".into(),
+                        keepers: Vec::new(),
                     },
                     None,
                 ));
@@ -735,6 +765,7 @@ mod tests {
         );
         let hold = StepSpec::Hold {
             reason: "System junk".into(),
+            keepers: Vec::new(),
         };
         assert_eq!(
             serde_json::to_string(&hold).unwrap(),

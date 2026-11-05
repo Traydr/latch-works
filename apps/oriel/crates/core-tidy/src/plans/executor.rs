@@ -34,7 +34,7 @@ use super::holding::{
     path_exists, restorable, restore_held,
 };
 use super::journal::{StepRecord, load_steps, plan_subject, temp_path_of};
-use super::planner::{StepSpec, is_within};
+use super::planner::{Keeper, StepSpec, is_within};
 use crate::catalog::rows::{PROBE_VERSION, to_absolute_path};
 use crate::catalog::{Catalog, now_ms};
 use crate::contract::{
@@ -59,6 +59,10 @@ const FOLDER_FILES_REASON: &str = "Left by Finder or Explorer in an empty folder
 const FINDER_SETTINGS_REASON: &str = "Finder's settings for an empty folder";
 
 const CHANGED_SINCE_SCAN: &str = "The file changed since the scan; rescan before changing it.";
+
+const KEPT_FILE_CHANGED: &str = "The file kept instead has changed since the scan.";
+
+const KEPT_FILE_GONE: &str = "The file kept instead is no longer there.";
 
 /// How the plan kinds that keep only a smaller result remember a file that did not shrink, so
 /// they stop offering it: Convert and Shrink each keep their own mark.
@@ -228,6 +232,30 @@ fn check_source(deps: &ExecutorDeps<'_>, step: &StepRecord) -> anyhow::Result<fs
     Ok(fs::symlink_metadata(&source)?)
 }
 
+/// Re-reads what a duplicate goes in favour of, just before it goes, as [`check_source`] does the
+/// file itself. Any of them changed or gone, and the page or the answers it rested on are out of
+/// date: the step is skipped, and the scan that catches them up follows.
+fn check_keepers(deps: &ExecutorDeps<'_>, keepers: &[Keeper]) -> anyhow::Result<()> {
+    for keeper in keepers {
+        let path = Path::new(&keeper.path);
+        let Ok(current) = fs::symlink_metadata(path) else {
+            return Err(StepSkip::stale(KEPT_FILE_GONE));
+        };
+        if !current.is_file()
+            || current.size() as i64 != keeper.size
+            || whole_mtime(&current) != keeper.mtime_ms.trunc() as i64
+        {
+            return Err(StepSkip::stale(KEPT_FILE_CHANGED));
+        }
+        if whole_ctime(path, &current) != keeper.ctime_ms.trunc() as i64
+            && !hashes_to(deps, path, &current, keeper.sha256.as_deref())?
+        {
+            return Err(StepSkip::stale(KEPT_FILE_CHANGED));
+        }
+    }
+    Ok(())
+}
+
 /// Whether the file still hashes to the SHA-256 the catalog has for it; false without one.
 fn holds_catalogued_bytes(
     deps: &ExecutorDeps<'_>,
@@ -245,16 +273,26 @@ fn holds_catalogued_bytes(
             .optional()?
             .flatten())
     })?;
-    let Some(catalogued) = catalogued else {
+    hashes_to(deps, &step.from_abs(), current, catalogued.as_deref())
+}
+
+/// Whether a file's bytes hash to `sha256`; false without one, or unread.
+fn hashes_to(
+    deps: &ExecutorDeps<'_>,
+    path: &Path,
+    current: &fs::Metadata,
+    sha256: Option<&str>,
+) -> anyhow::Result<bool> {
+    let Some(sha256) = sha256 else {
         return Ok(false);
     };
     let expected = (
         current.size() as i64,
         whole_mtime(current) as f64,
-        whole_ctime(&step.from_abs(), current) as f64,
+        whole_ctime(path, current) as f64,
     );
-    match hash_whole_file(&step.from_abs(), expected, deps.progress) {
-        Ok(sha256) => Ok(sha256 == catalogued),
+    match hash_whole_file(path, expected, deps.progress) {
+        Ok(hashed) => Ok(hashed == sha256),
         Err(HashError::Cancelled) => Err(Cancelled.into()),
         Err(HashError::Unreadable) => Ok(false),
     }
@@ -684,7 +722,8 @@ fn execute_step(
 
     match &step.spec {
         StepSpec::RemoveFolder => unreachable!("handled above"),
-        StepSpec::Hold { reason } => {
+        StepSpec::Hold { reason, keepers } => {
+            check_keepers(deps, keepers)?;
             let holding_id = hold_file(
                 deps.store(),
                 &HoldRequest {
