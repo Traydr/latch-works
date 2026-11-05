@@ -172,22 +172,60 @@ async fn clicking_convert_to_close_its_options_only_closes_them(cx: &mut TestApp
     assert!(cx.read(last_toast).unwrap().starts_with("Converted"));
 }
 
-/// A press inside a popover is the popover's, and is not taken for one outside it.
+/// A press inside a menu is the menu's, and is not taken for one outside it: its first item, Look
+/// closer, opens the loupe.
 #[gpui_kit::test]
 async fn a_press_inside_a_menu_still_works(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
     }
     let session = launch_changing(cx, "press-inside");
-    add_archive(cx, &session).await;
-    go(cx, &session, TidyPage::Convert);
-    settle(cx, &session).await;
-    click(cx, &session, "convert-options");
+    let (first, _) = on_a_set(cx, &session).await;
+    click(cx, &session, ("version-menu", first));
     assert!(popup_open(cx));
-    press(cx, &session, "down");
-    press(cx, &session, "enter");
+    cx.update_window(session.handle, |_, window, cx| {
+        window.render_frame(cx);
+        window
+            .within("popup-menu")
+            .click(gpui_kit::ElementId::Integer(0), cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
     settle(cx, &session).await;
     assert!(!popup_open(cx), "the item ran, and the menu closed");
+    cx.update_window(session.handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert!(window.try_find("loupe-close").is_some(), "the loupe opened");
+    })
+    .unwrap();
+}
+
+/// ⌘Z while a menu is open would move files back behind it. It waits for the menu to close.
+#[gpui_kit::test]
+async fn undo_does_nothing_under_an_open_menu(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "undo-menu");
+    on_a_set(cx, &session).await;
+    press(cx, &session, "enter");
+    wait_for_change(cx, &session).await;
+    let held = held_files(&session);
+    assert!(!held.is_empty());
+    let stage = stage_ids(cx, &session);
+    click(cx, &session, ("version-menu", stage[0]));
+    assert!(popup_open(cx));
+
+    undo(cx, &session);
+    settle(cx, &session).await;
+    assert_eq!(held_files(&session), held, "files moved behind the menu");
+
+    press(cx, &session, "escape");
+    settle(cx, &session).await;
+    assert!(!popup_open(cx));
+    undo(cx, &session);
+    wait_for_change(cx, &session).await;
+    assert_eq!(held_files(&session), Vec::<String>::new());
 }
 
 /// Digits, N and Enter while a menu is open are not the page's.

@@ -875,6 +875,7 @@ impl TidyState {
         let this = cx.entity().downgrade();
         cx.spawn_in(window, async move |_, cx| {
             let mut failure = None;
+            let mut stopped = false;
             let mut follow_up = FollowUp::default();
             for plan in plans.iter().rev() {
                 let Ok(finished) = this.update(cx, |this, cx| this.start_undo(plan.id, cx)) else {
@@ -891,6 +892,10 @@ impl TidyState {
                         failure = Some(undone.message.unwrap_or_default());
                         break;
                     }
+                    Err(error) if error.is_cancelled() => {
+                        stopped = true;
+                        break;
+                    }
                     Err(error) => {
                         failure = Some(job_message(&error));
                         break;
@@ -900,6 +905,10 @@ impl TidyState {
             this.update_in(cx, |this, window, cx| {
                 this.follow_up(&follow_up, window, cx);
                 let toast = match failure {
+                    None if stopped => {
+                        this.push_entry(unfinished);
+                        Toast::info("Undo stopped").detail("Undo again to finish it.")
+                    }
                     None => Toast::info(format!("Undid “{title}”")),
                     Some(message) => {
                         this.push_entry(unfinished);

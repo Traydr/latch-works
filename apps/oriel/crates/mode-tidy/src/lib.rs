@@ -534,6 +534,10 @@ impl Render for TidyMode {
                     cx.propagate();
                     return;
                 }
+                // It would move files back behind an open menu.
+                if oriel_ui::popups::popup_open(window, cx) {
+                    return;
+                }
                 this.state
                     .update(cx, |state, cx| state.undo_last(window, cx));
             }))
