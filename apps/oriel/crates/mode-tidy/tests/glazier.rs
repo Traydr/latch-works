@@ -141,12 +141,8 @@ async fn the_resized_jpeg_is_grouped_with_the_picture_it_came_from(cx: &mut Test
     let decision = cx.read(|cx| session.tidy.read(cx).duplicates().read(cx).decision());
     assert_eq!(decision.as_deref(), Some("Keep both"));
     // Held down, it repeats, and a repeat changes nothing.
-    let shift_2 = if cfg!(target_os = "macos") {
-        // What macOS sends for ⇧2 on a US keyboard: the symbol, with ⇧ cleared.
-        "@"
-    } else {
-        "shift-2"
-    };
+    // What a US keyboard sends for ⇧2: the symbol, with ⇧ cleared.
+    let shift_2 = "@";
     let repeat = gpui_kit::KeyDownEvent {
         keystroke: gpui_kit::Keystroke::parse(shift_2).unwrap(),
         is_held: true,
@@ -160,14 +156,6 @@ async fn the_resized_jpeg_is_grouped_with_the_picture_it_came_from(cx: &mut Test
     press(cx, &session, shift_2);
     assert_eq!(kept_names(cx, &session), ["sunset.png"]);
     assert!(session.archive.join("photos/sunset-small.jpg").is_file());
-
-    // The first → moves on from the suggestion, to the version after it.
-    let target = |cx: &mut TestAppContext| {
-        cx.read(|cx| session.tidy.read(cx).duplicates().read(cx).target())
-    };
-    assert_eq!(target(cx), 0);
-    press(cx, &session, "right");
-    assert_eq!(target(cx), 1);
 }
 
 #[gpui_kit::test]

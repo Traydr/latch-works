@@ -57,17 +57,14 @@ pub fn digit_key(keystroke: &Keystroke) -> Option<DigitKey> {
             shift: key.shift,
         });
     }
-    // With no system event, a test or a scripted run's press stands in for a US keyboard's, which
-    // on macOS says `@` for ⇧2. Windows has the digit with ⇧ set, and keys of its own for these
-    // symbols, so it is not to read them.
+    // With no system event to read, as on Windows or in a test, the keystroke is all there is. GPUI
+    // reports a US keyboard's ⇧2 as `@` with ⇧ cleared, as on macOS. Other layouts' symbols are not
+    // read here, and a layout whose ⇧ makes the digit reads as that digit alone.
     if let Some(digit) = typed {
         return Some(DigitKey {
             digit,
             shift: keystroke.modifiers.shift,
         });
-    }
-    if !cfg!(target_os = "macos") {
-        return None;
     }
     let digit = ["!", "@", "#", "$", "%", "^", "&", "*", "("]
         .iter()
@@ -135,14 +132,12 @@ mod tests {
         );
         assert_eq!(digit("0"), None);
         assert_eq!(digit("a"), None);
-        if cfg!(target_os = "macos") {
-            assert_eq!(
-                digit("@"),
-                Some(DigitKey {
-                    digit: 2,
-                    shift: true
-                })
-            );
-        }
+        assert_eq!(
+            digit("@"),
+            Some(DigitKey {
+                digit: 2,
+                shift: true
+            })
+        );
     }
 }
