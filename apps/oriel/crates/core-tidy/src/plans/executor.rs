@@ -233,8 +233,8 @@ fn check_source(deps: &ExecutorDeps<'_>, step: &StepRecord) -> anyhow::Result<fs
 }
 
 /// Re-reads what a duplicate goes in favour of, just before it goes, as [`check_source`] does the
-/// file itself. Any of them changed or gone, on a volume unmounted too, and the page or the answers
-/// it rested on are out of date: the step is skipped, and the scan that catches them up follows.
+/// file itself. Any of them changed or gone, and the page or the answers it rested on are out of
+/// date: the step is skipped, and the scan that catches them up follows.
 fn check_keepers(deps: &ExecutorDeps<'_>, keepers: &[Keeper]) -> anyhow::Result<()> {
     for keeper in keepers {
         let path = Path::new(&keeper.path);

@@ -246,10 +246,6 @@ fn draft_resolution(
             .map(|record| (*record).clone())
             .chain(group.remove.iter().filter_map(|id| by_id.get(id).cloned()))
             .collect();
-        // A keeper the catalog no longer has is a page gone stale: nothing goes in its favour.
-        if keepers.len() != group.keep.len() {
-            continue;
-        }
         let keeper_states: Vec<Keeper> = keepers
             .iter()
             .map(|record| Keeper {

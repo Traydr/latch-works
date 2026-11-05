@@ -1096,12 +1096,18 @@ fn emptying_holding_after_a_change_leaves_nothing_held() {
 #[test]
 fn a_copy_goes_only_while_the_file_kept_is_as_the_scan_saw_it() {
     type Change = fn(&Path);
-    let changes: [(&str, Change); 3] = [
+    let changes: [(&str, Change); 4] = [
         ("overwritten", |kept| {
             fs::write(kept, b"something else").unwrap()
         }),
+        // Only the bytes tell this one apart: the change time moved, so the hash decides.
+        ("overwritten with the same size and date", |kept| {
+            let before = fs::metadata(kept).unwrap();
+            fs::write(kept, vec![0x5a; before.len() as usize]).unwrap();
+            set_mtime(kept, before.modified().unwrap());
+        }),
         ("deleted", |kept| fs::remove_file(kept).unwrap()),
-        ("moved away, as a volume unmounted", |kept| {
+        ("moved away", |kept| {
             fs::rename(kept, kept.with_extension("gone")).unwrap();
         }),
     ];
