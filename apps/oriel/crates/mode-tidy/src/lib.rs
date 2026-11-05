@@ -46,6 +46,7 @@ pub use actions::{PerformOptions, TidyStep};
 pub use changes::{Changes, EngineChanges, NotYet, TidyChanges};
 pub use duplicates::DuplicatesPage;
 pub use folder_picker::{FolderPicker, PickOptions};
+pub use holding::HoldingPage;
 pub use library::{LibraryMenu, LibraryMode, LibraryPage, MenuChoice, last_menu};
 pub use links::TidyEvent;
 pub use overview::OverviewPage;
@@ -75,7 +76,6 @@ use oriel_ui::{
 use crate::cleanup::CleanupPage;
 use crate::convert::ConvertPage;
 use crate::history::HistoryPage;
-use crate::holding::HoldingPage;
 use crate::shrink::ShrinkPage;
 use crate::thumbs::Thumbs;
 
@@ -263,6 +263,10 @@ impl TidyMode {
 
     pub fn library(&self) -> &Entity<LibraryPage> {
         &self.library
+    }
+
+    pub fn holding(&self) -> &Entity<HoldingPage> {
+        &self.holding
     }
 
     /// Phase 0's synthetic Library, when the spike runs.

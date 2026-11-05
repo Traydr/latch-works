@@ -401,6 +401,8 @@ impl RenderOnce for ActivityIndicator {
             .absolute()
             .right_4()
             .bottom_4()
+            // A press here is its own, and chooses no file under it.
+            .occlude()
             .flex()
             .flex_col()
             .overflow_hidden()

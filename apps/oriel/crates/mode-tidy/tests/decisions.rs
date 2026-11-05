@@ -459,3 +459,23 @@ async fn undo_again_after_stopping_a_queued_undo_is_the_same_plan(cx: &mut TestA
     );
     assert!(newer.iter().all(|file| !held.contains(file)), "{held:?}");
 }
+
+/// The loupe covers the tiles, and a press on its picture is for the picture: it decides nothing
+/// behind it.
+#[gpui_kit::test]
+async fn a_press_on_the_loupe_decides_nothing_behind_it(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "press-on-loupe");
+    on_a_set(cx, &session).await;
+    press(cx, &session, "space");
+    settle(cx, &session).await;
+    let kept = kept_names(cx, &session);
+    let spot = centre_of(cx, &session, "loupe");
+
+    press_at(cx, &session, spot, 1);
+    wait_for_change(cx, &session).await;
+    assert_eq!(held_files(&session), Vec::<String>::new());
+    assert_eq!(kept_names(cx, &session), kept);
+}

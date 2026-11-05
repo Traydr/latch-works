@@ -928,11 +928,13 @@ impl TidyState {
         if self.undo.len() >= UNDO_LIMIT {
             self.undo.remove(0);
         }
-        self.undo.push(entry);
+        self.undo_pushed += 1;
+        self.undo.push((self.undo_pushed, entry));
     }
 
-    fn put_back_entry(&mut self, place: usize, entry: UndoEntry) {
-        self.undo.insert(place.min(self.undo.len()), entry);
+    /// Takes `entry` back to its place by age, under whatever has finished since it left.
+    fn put_back_entry(&mut self, age: u64, entry: UndoEntry) {
+        put_back_by_age(&mut self.undo, age, entry);
         if self.undo.len() > UNDO_LIMIT {
             self.undo.remove(0);
         }
@@ -956,30 +958,29 @@ impl TidyState {
     /// Takes an entry [`Self::push_undo`] added off ⌘Z's history.
     pub fn drop_undo(&mut self, key: usize) {
         self.undo
-            .retain(|entry| Rc::as_ptr(&entry.run) as *const () as usize != key);
+            .retain(|(_, entry)| Rc::as_ptr(&entry.run) as *const () as usize != key);
     }
 
     fn forget_plans(&mut self, plan_ids: &[PlanId]) {
         self.undo
-            .retain(|entry| !entry.plan_ids.iter().any(|id| plan_ids.contains(id)));
+            .retain(|(_, entry)| !entry.plan_ids.iter().any(|id| plan_ids.contains(id)));
         self.results.retain(|_, plan| !plan_ids.contains(&plan.id));
     }
 
     /// ⌘Z: the newest change of this session, else the newest undoable plan in the journal.
     pub fn undo_last(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(entry) = self.undo.pop() {
-            let place = self.undo.len();
+        if let Some((age, entry)) = self.undo.pop() {
             let queued = self.next_queued;
             (entry.run)(self, window, cx);
-            // It waits behind another change. Stopped there it has not happened, so it is still
-            // the next Undo, under whatever has finished since.
+            // It waits behind another change. Stopped there it has not happened, so it goes back
+            // where it was, under whatever has finished since.
             if self.next_queued != queued
                 && let Some(waiting) = self.queue.back_mut()
             {
                 let this = cx.entity().downgrade();
                 waiting.on_dropped = Some(Rc::new(move |_, cx| {
                     let entry = entry.clone();
-                    this.update(cx, |this, _| this.put_back_entry(place, entry))
+                    this.update(cx, |this, _| this.put_back_entry(age, entry))
                         .ok();
                 }));
             }
@@ -1006,6 +1007,12 @@ impl TidyState {
         })
         .detach();
     }
+}
+
+/// Puts an entry back among `stack`'s, which are in order of `age`.
+fn put_back_by_age<T>(stack: &mut Vec<(u64, T)>, age: u64, entry: T) {
+    let place = stack.partition_point(|(other, _)| *other < age);
+    stack.insert(place, (age, entry));
 }
 
 /// Resolves and runs each step in turn; answers with the plans that did something, what went
@@ -1106,6 +1113,19 @@ mod tests {
     use gpui_kit::TestAppContext;
 
     use super::*;
+
+    /// Undos stopped in the queue go back by age, in whichever order they are stopped, under what
+    /// finished while they waited.
+    #[test]
+    fn a_stopped_undo_goes_back_under_what_finished_since() {
+        for stopped in [[(2, 'b'), (3, 'c')], [(3, 'c'), (2, 'b')]] {
+            let mut stack = vec![(1, 'a'), (4, 'd')];
+            for (age, entry) in stopped {
+                put_back_by_age(&mut stack, age, entry);
+            }
+            assert_eq!(stack, [(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')]);
+        }
+    }
 
     /// A quick change, such as a decision on Duplicates, can finish before the task that started
     /// it comes back to subscribe. It heard nothing then, and held every later change back until

@@ -2,6 +2,8 @@
 //! empty state, the card, the caption, a row's icon tile, the key hint inside a button, and a
 //! page's main button while its change runs or waits.
 
+use std::time::Duration;
+
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon};
@@ -13,6 +15,11 @@ use gpui_kit::{
 use oriel_ui::ControlSize as _;
 
 use crate::format;
+
+/// How long a press on what has just come under the pointer does nothing: it was meant for what
+/// went. The default double-click time on macOS and Windows, so a double-click's second press is
+/// never the first press on something new.
+pub(crate) const ARM_DELAY: Duration = Duration::from_millis(500);
 
 /// A centred message for a page with nothing to show (`EmptyState`): an icon, a title, a line
 /// under it, and the actions that lead on.

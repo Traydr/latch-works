@@ -12,7 +12,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 use std::path::Path;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -44,10 +44,6 @@ const PAGE: usize = 300;
 
 /// A tile's width.
 const TILE: f32 = 176.;
-
-/// How long after a restore a tile's Restore does nothing. The next tile has slid under the pointer
-/// with its own button, and a press this soon was meant for the one that went.
-const ARM_DELAY: Duration = Duration::from_millis(400);
 
 /// The change that put a run of files in holding, or none for files held on their own.
 struct Group {
@@ -142,6 +138,8 @@ pub struct HoldingPage {
     /// Tiles to a line as last laid out, which ↑ ↓ move across.
     columns: usize,
     busy: bool,
+    /// Until when a press on the page does nothing: what is under the pointer has only just come
+    /// there, after a restore or a press on the selection bar.
     armed_at: Instant,
     seen: (Option<RootId>, u64),
     /// How much narrower than the window the column was when last laid out, and the window's
@@ -243,6 +241,11 @@ impl HoldingPage {
         self.held
             .as_ref()
             .map_or(&[], |held| held.ordered.as_slice())
+    }
+
+    /// Whether a press on the page would do nothing yet.
+    pub fn armed(&self) -> bool {
+        Instant::now() < self.armed_at
     }
 
     /// ⌘A: every held file listed.
@@ -357,7 +360,7 @@ impl HoldingPage {
             let restored = restored.await;
             this.update_in(cx, |this, window, cx| {
                 this.busy = false;
-                this.armed_at = Instant::now() + ARM_DELAY;
+                this.armed_at = Instant::now() + widgets::ARM_DELAY;
                 this.selected.clear();
                 let toast = match restored {
                     Ok(result) if result.failed.is_empty() => Toast::done(format!(
@@ -573,7 +576,7 @@ impl HoldingPage {
                             .on_click(cx.listener(
                                 move |this, event: &gpui_kit::ClickEvent, window, cx| {
                                     cx.stop_propagation();
-                                    if event.click_count() == 1 && Instant::now() >= this.armed_at {
+                                    if event.click_count() == 1 {
                                         this.restore(vec![id], window, cx);
                                     }
                                 },
@@ -913,6 +916,11 @@ impl Render for HoldingPage {
                 .child(
                     div()
                         .id("holding-selection")
+                        // A press here is the bar's alone, and the bar may go with it.
+                        .occlude()
+                        .capture_any_mouse_up(cx.listener(|this, _, _, _| {
+                            this.armed_at = Instant::now() + widgets::ARM_DELAY;
+                        }))
                         .flex()
                         .flex_row()
                         .items_center()
@@ -966,6 +974,11 @@ impl Render for HoldingPage {
             .track_focus(&self.focus)
             .key_context("TidyHolding")
             .on_key_down(cx.listener(Self::on_key_down))
+            .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
+                if this.armed() {
+                    cx.stop_propagation();
+                }
+            }))
             .relative()
             .flex()
             .flex_col()
