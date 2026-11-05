@@ -13,6 +13,7 @@ pub mod folders;
 pub mod keys;
 pub mod layout;
 pub mod locations;
+pub mod popups;
 pub mod segmented;
 pub mod settings;
 pub mod shell;

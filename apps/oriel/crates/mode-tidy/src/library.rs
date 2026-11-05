@@ -1572,6 +1572,10 @@ impl LibraryPage {
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // It is the open menu's, or nothing's; the page must not act on it behind the menu.
+        if oriel_ui::popups::popup_open(window, cx) {
+            return;
+        }
         let keys = &event.keystroke;
         let modifiers = keys.modifiers;
         // While a name is being edited, its field has the keys.
