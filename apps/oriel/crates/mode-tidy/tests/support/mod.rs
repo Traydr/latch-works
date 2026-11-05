@@ -213,6 +213,28 @@ pub fn click(cx: &mut TestAppContext, session: &Session, id: impl Into<ElementId
     render(cx, session);
 }
 
+/// Clicks `id` once it is drawn: what a page shows of the file at hand comes and goes as its
+/// list reads itself again.
+pub async fn click_when_drawn(cx: &mut TestAppContext, session: &Session, id: &'static str) {
+    for _ in 0..1000 {
+        cx.run_until_parked();
+        let drawn = cx
+            .update_window(session.handle, |_, window, cx| {
+                window.render_frame(cx);
+                window.try_find(id).is_some()
+            })
+            .unwrap();
+        if drawn {
+            click(cx, session, id);
+            return;
+        }
+        cx.background_executor
+            .timer(Duration::from_millis(10))
+            .await;
+    }
+    panic!("{id} was never drawn");
+}
+
 /// Edit › Undo (⌘Z), as the shell's menu sends it to the mode on screen.
 pub fn undo(cx: &mut TestAppContext, session: &Session) {
     cx.update_window(session.handle, |_, window, cx| {

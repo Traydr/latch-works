@@ -7,7 +7,9 @@
 //! adds or removes one, ⇧-click extends from the last one clicked; the arrows move the cursor
 //! (← → too in the grid) and ⇧ extends; Space shows the cursor's file in Quick Look, Return
 //! renames it in place and Esc clears. The table's selected row is the cursor. Bulk actions take
-//! the selection; without one, the Inspector and the shortcuts act on the cursor's file.
+//! the selection; without one, the Inspector acts on the cursor's file. A command that has run
+//! leaves neither, so the file that slides into the place of those it moved is not a target until
+//! the owner chooses it, and the arrows go on from that place.
 
 mod grid;
 pub mod menu;
@@ -18,6 +20,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName;
+use gpui_kit::base::actions::{SelectDown, SelectUp};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{Escape as InputEscape, Input, InputEvent, InputState};
@@ -224,6 +227,15 @@ fn dimensions_text(row: &FileRow) -> String {
 /// the engine for the ids.
 type SelectAll = Rc<dyn Fn(&mut Window, &mut App)>;
 
+/// The place the cursor left when a command took it away, for the arrows to go on from: the files
+/// either side of those the command took, by id, as the list may read itself again before or after
+/// an arrow is pressed.
+struct Gap {
+    index: usize,
+    next: Option<FileId>,
+    previous: Option<FileId>,
+}
+
 /// The table's rows: pages of the catalog, read as they come into view.
 pub struct CatalogRows {
     engine: Option<TidyEngine>,
@@ -240,6 +252,8 @@ pub struct CatalogRows {
     pending: Option<BTreeSet<FileId>>,
     /// The cursor goes when the query changes, the selection stays.
     keep_selection: bool,
+    /// Where the cursor was, while no file has taken its place.
+    gap: Option<Gap>,
     /// The file being renamed in place, and its field.
     renaming: Option<(FileId, Entity<InputState>)>,
     /// Selects every matching file, from the header's checkbox.
@@ -270,6 +284,7 @@ impl CatalogRows {
             anchor: None,
             pending: None,
             keep_selection: false,
+            gap: None,
             renaming: None,
             select_all: None,
             thumbs: thumbs.clone(),
@@ -404,6 +419,50 @@ impl CatalogRows {
     fn set_selected(&mut self, selected: BTreeSet<FileId>, cx: &mut Context<TableState<Self>>) {
         self.selected = selected;
         cx.notify();
+    }
+
+    /// The gap the cursor at `index` leaves, with `leaving` no longer counted as next to it.
+    fn gap_at(&self, index: usize, leaving: &BTreeSet<FileId>) -> Gap {
+        let staying = |index: usize| {
+            self.row(index)
+                .map(|row| row.id)
+                .filter(|id| !leaving.contains(id))
+        };
+        Gap {
+            index,
+            next: (index..)
+                .take_while(|index| self.row(*index).is_some())
+                .find_map(staying),
+            previous: (0..index)
+                .rev()
+                .take_while(|index| self.row(*index).is_some())
+                .find_map(staying),
+        }
+    }
+
+    /// Where an arrow goes from the gap, which it uses up: the file on that side of it, else the
+    /// one on the other; `None` without a gap or a file to go to.
+    fn step_from_gap(&mut self, forward: bool) -> Option<usize> {
+        let last = self.total?.checked_sub(1)?;
+        let gap = self.gap.take()?;
+        let (near, far) = if forward {
+            (gap.next, gap.previous)
+        } else {
+            (gap.previous, gap.next)
+        };
+        let found = near.or(far).and_then(|id| {
+            self.pages.iter().find_map(|(page, rows)| {
+                let at = rows.iter().position(|row| row.id == id)?;
+                Some(page * PAGE + at)
+            })
+        });
+        // Its page has not been read again yet: about where it was.
+        let index = found.unwrap_or(if forward {
+            gap.index
+        } else {
+            gap.index.saturating_sub(1)
+        });
+        Some(index.min(last))
     }
 
     /// The files from `from` to `to`, both included, added to `base`.
@@ -913,6 +972,7 @@ impl LibraryPage {
                 let index = *index;
                 self.table.update(cx, |table, cx| {
                     let rows = table.delegate_mut();
+                    rows.gap = None;
                     let next = match rows.pending.take() {
                         Some(next) => next,
                         None => {
@@ -979,8 +1039,13 @@ impl LibraryPage {
         if total == 0 {
             return;
         }
-        let next = cursor.map_or(0, |cursor| {
-            (cursor as isize + delta).clamp(0, total as isize - 1) as usize
+        let from_gap = self
+            .table
+            .update(cx, |table, _| table.delegate_mut().step_from_gap(delta > 0));
+        let next = from_gap.unwrap_or_else(|| {
+            cursor.map_or(0, |cursor| {
+                (cursor as isize + delta).clamp(0, total as isize - 1) as usize
+            })
         });
         self.table.update(cx, |table, cx| {
             let rows = table.delegate_mut();
@@ -996,6 +1061,25 @@ impl LibraryPage {
         });
         if self.mode == LibraryMode::Grid {
             self.reveal_in_grid(next);
+        }
+    }
+
+    /// An arrow the table would take from its first row, having no cursor: it goes on from the
+    /// gap a command left instead.
+    fn arrow_from_gap(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let focus = self.table.read(cx).focus_handle(cx);
+        if !focus.contains_focused(window, cx) {
+            return;
+        }
+        let moved = self.table.update(cx, |table, cx| {
+            let rows = table.delegate_mut();
+            let index = rows.step_from_gap(forward)?;
+            rows.anchor = Some(index);
+            table.set_selected_row(index, cx);
+            Some(())
+        });
+        if moved.is_some() {
+            cx.stop_propagation();
         }
     }
 
@@ -1275,6 +1359,9 @@ impl LibraryPage {
             table.delegate_mut().reset(engine.clone(), query, cx);
             // The cursor points into one query's results; a new query starts without one, and
             // keeps the selection.
+            if query_changed {
+                table.delegate_mut().gap = None;
+            }
             if query_changed && table.selected_row().is_some() {
                 table.delegate_mut().keep_selection = true;
                 table.clear_selection(cx);
@@ -1379,9 +1466,20 @@ impl LibraryPage {
             .collect()
     }
 
+    /// Nothing is chosen, and nothing is a target until the owner chooses: the cursor goes too, or
+    /// the file it comes to rest on would be, and a list reading itself again would change which.
     fn clear_selection(&mut self, cx: &mut Context<Self>) {
+        let leaving: BTreeSet<FileId> = self.targets(cx).into_iter().collect();
         self.table.update(cx, |table, cx| {
-            table.delegate_mut().set_selected(BTreeSet::new(), cx);
+            let cursor = table.selected_row();
+            let rows = table.delegate_mut();
+            rows.anchor = None;
+            rows.set_selected(BTreeSet::new(), cx);
+            if let Some(cursor) = cursor {
+                rows.gap = Some(rows.gap_at(cursor, &leaving));
+                rows.keep_selection = true;
+                table.clear_selection(cx);
+            }
         });
     }
 
@@ -1424,6 +1522,7 @@ impl LibraryPage {
         .detach();
     }
 
+    /// Runs a command on the files it was shown. Whatever takes their place is not chosen by that.
     fn perform(&mut self, request: PlanRequest, window: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
             state.perform(request, PerformOptions::default(), window, cx);
@@ -2626,6 +2725,12 @@ impl Render for LibraryPage {
             .track_focus(&self.focus)
             .key_context("TidyLibrary")
             .on_key_down(cx.listener(Self::on_key_down))
+            .capture_action(cx.listener(|this, _: &SelectDown, window, cx| {
+                this.arrow_from_gap(true, window, cx);
+            }))
+            .capture_action(cx.listener(|this, _: &SelectUp, window, cx| {
+                this.arrow_from_gap(false, window, cx);
+            }))
             .on_action(cx.listener(|this, action: &LibraryMenu, window, cx| {
                 this.choose(action.0, window, cx);
             }))

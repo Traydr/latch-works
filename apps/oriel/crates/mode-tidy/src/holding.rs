@@ -12,6 +12,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 use std::path::Path;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -43,6 +44,10 @@ const PAGE: usize = 300;
 
 /// A tile's width.
 const TILE: f32 = 176.;
+
+/// How long after a restore a tile's Restore does nothing. The next tile has slid under the pointer
+/// with its own button, and a press this soon was meant for the one that went.
+const ARM_DELAY: Duration = Duration::from_millis(400);
 
 /// The change that put a run of files in holding, or none for files held on their own.
 struct Group {
@@ -137,6 +142,7 @@ pub struct HoldingPage {
     /// Tiles to a line as last laid out, which ↑ ↓ move across.
     columns: usize,
     busy: bool,
+    armed_at: Instant,
     seen: (Option<RootId>, u64),
     /// How much narrower than the window the column was when last laid out, and the window's
     /// width then, so a line holds as many tiles as fit before the column is laid out again.
@@ -165,6 +171,7 @@ impl HoldingPage {
             reveal_cursor: false,
             columns: 1,
             busy: false,
+            armed_at: Instant::now(),
             seen: (None, 0),
             margin: None,
             window_width: 0.,
@@ -350,6 +357,7 @@ impl HoldingPage {
             let restored = restored.await;
             this.update_in(cx, |this, window, cx| {
                 this.busy = false;
+                this.armed_at = Instant::now() + ARM_DELAY;
                 this.selected.clear();
                 let toast = match restored {
                     Ok(result) if result.failed.is_empty() => Toast::done(format!(
@@ -562,10 +570,14 @@ impl HoldingPage {
                             .outline()
                             .label("Restore")
                             .disabled(self.busy)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                cx.stop_propagation();
-                                this.restore(vec![id], window, cx);
-                            })),
+                            .on_click(cx.listener(
+                                move |this, event: &gpui_kit::ClickEvent, window, cx| {
+                                    cx.stop_propagation();
+                                    if event.click_count() == 1 && Instant::now() >= this.armed_at {
+                                        this.restore(vec![id], window, cx);
+                                    }
+                                },
+                            )),
                     ),
             )
             .child(

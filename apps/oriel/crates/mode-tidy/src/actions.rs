@@ -41,6 +41,7 @@ pub type OnDone = Rc<dyn Fn(&PlanSummary, &mut Window, &mut App)>;
 type UndoRun = Rc<dyn Fn(&mut TidyState, &mut Window, &mut Context<TidyState>)>;
 
 /// Something the owner did that ⌘Z can take back.
+#[derive(Clone)]
 pub struct UndoEntry {
     /// The plans it reverses, so undoing one of them another way drops the entry.
     plan_ids: Vec<PlanId>,
@@ -930,6 +931,13 @@ impl TidyState {
         self.undo.push(entry);
     }
 
+    fn put_back_entry(&mut self, place: usize, entry: UndoEntry) {
+        self.undo.insert(place.min(self.undo.len()), entry);
+        if self.undo.len() > UNDO_LIMIT {
+            self.undo.remove(0);
+        }
+    }
+
     /// Adds a change that is not a plan (a dismissal, a preferred folder) to ⌘Z's history.
     /// Returns its number, for [`Self::drop_undo`] when it is undone some other way.
     pub fn push_undo(
@@ -960,7 +968,21 @@ impl TidyState {
     /// ⌘Z: the newest change of this session, else the newest undoable plan in the journal.
     pub fn undo_last(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(entry) = self.undo.pop() {
+            let place = self.undo.len();
+            let queued = self.next_queued;
             (entry.run)(self, window, cx);
+            // It waits behind another change. Stopped there it has not happened, so it is still
+            // the next Undo, under whatever has finished since.
+            if self.next_queued != queued
+                && let Some(waiting) = self.queue.back_mut()
+            {
+                let this = cx.entity().downgrade();
+                waiting.on_dropped = Some(Rc::new(move |_, cx| {
+                    let entry = entry.clone();
+                    this.update(cx, |this, _| this.put_back_entry(place, entry))
+                        .ok();
+                }));
+            }
             return;
         }
         let Some(engine) = self.engine().cloned() else {
