@@ -13,7 +13,7 @@ mod support;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use gpui_kit::TestAppContext;
+use gpui_kit::{AppContext as _, TestAppContext};
 use oriel_mode_tidy::{TidyPage, last_toast};
 use oriel_ui::ModeId;
 use support::*;
@@ -140,9 +140,34 @@ async fn the_resized_jpeg_is_grouped_with_the_picture_it_came_from(cx: &mut Test
     assert_eq!(kept_names(cx, &session), ["sunset-small.jpg", "sunset.png"]);
     let decision = cx.read(|cx| session.tidy.read(cx).duplicates().read(cx).decision());
     assert_eq!(decision.as_deref(), Some("Keep both"));
-    press(cx, &session, "shift-2");
+    // Held down, it repeats, and a repeat changes nothing.
+    let shift_2 = if cfg!(target_os = "macos") {
+        // What macOS sends for ⇧2 on a US keyboard: the symbol, with ⇧ cleared.
+        "@"
+    } else {
+        "shift-2"
+    };
+    let repeat = gpui_kit::KeyDownEvent {
+        keystroke: gpui_kit::Keystroke::parse(shift_2).unwrap(),
+        is_held: true,
+        prefer_character_input: false,
+    };
+    cx.update_window(session.handle, |_, window, cx| {
+        window.dispatch_event(gpui_kit::PlatformInput::KeyDown(repeat), cx);
+    })
+    .unwrap();
+    assert_eq!(kept_names(cx, &session), ["sunset-small.jpg", "sunset.png"]);
+    press(cx, &session, shift_2);
     assert_eq!(kept_names(cx, &session), ["sunset.png"]);
     assert!(session.archive.join("photos/sunset-small.jpg").is_file());
+
+    // The first → moves on from the suggestion, to the version after it.
+    let target = |cx: &mut TestAppContext| {
+        cx.read(|cx| session.tidy.read(cx).duplicates().read(cx).target())
+    };
+    assert_eq!(target(cx), 0);
+    press(cx, &session, "right");
+    assert_eq!(target(cx), 1);
 }
 
 #[gpui_kit::test]
