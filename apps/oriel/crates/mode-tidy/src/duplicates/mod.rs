@@ -510,6 +510,10 @@ impl DuplicatesPage {
                         cx.notify();
                     })
                     .ok();
+                    // Some step failed: the change's own toast says what, with its Undo.
+                    if plan.failed > 0 {
+                        return;
+                    }
                     // A file that changed since the scan stays where it is.
                     let stayed = (plan.skipped > 0).then(|| {
                         format!(
@@ -518,14 +522,12 @@ impl DuplicatesPage {
                         )
                     });
                     if plan.done == 0 {
-                        if plan.failed == 0 {
-                            let toast = Toast::info("Nothing moved");
-                            let toast = match stayed {
-                                Some(stayed) => toast.detail(stayed),
-                                None => toast,
-                            };
-                            crate::widgets::show_toast(window, toast, cx);
-                        }
+                        let toast = Toast::info("Nothing moved");
+                        let toast = match stayed {
+                            Some(stayed) => toast.detail(stayed),
+                            None => toast,
+                        };
+                        crate::widgets::show_toast(window, toast, cx);
                         return;
                     }
                     let message = if several {
@@ -961,6 +963,10 @@ impl DuplicatesPage {
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // It is the open menu's, or nothing's; the page must not act on it behind the menu.
+        if oriel_ui::popups::popup_open(window, cx) {
+            return;
+        }
         let keys = &event.keystroke;
         let modifiers = keys.modifiers;
         let key = keys.key.as_str();

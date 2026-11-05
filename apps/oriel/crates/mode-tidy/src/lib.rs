@@ -327,6 +327,10 @@ impl TidyMode {
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // It is the open menu's, or nothing's; the page must not act on it behind the menu.
+        if oriel_ui::popups::popup_open(window, cx) {
+            return;
+        }
         // ? opens the shortcut sheet from anywhere but a text field.
         if event.keystroke.key_char.as_deref() == Some("?") && !window.has_focused_input(cx) {
             shortcuts::open(window, cx);
@@ -512,6 +516,8 @@ impl Render for TidyMode {
             .track_focus(&self.focus)
             .size_full()
             .on_key_down(cx.listener(Self::on_key_down))
+            .capture_any_mouse_down(oriel_ui::popups::note_press)
+            .child(oriel_ui::popups::press_guard())
             .on_action(cx.listener(|this, _: &commands::AddFolder, window, cx| {
                 this.choose_folder(window, cx);
             }))
@@ -526,6 +532,10 @@ impl Render for TidyMode {
                 // A text field keeps ⌘Z for its own undo.
                 if window.has_focused_input(cx) {
                     cx.propagate();
+                    return;
+                }
+                // It would move files back behind an open menu.
+                if oriel_ui::popups::popup_open(window, cx) {
                     return;
                 }
                 this.state

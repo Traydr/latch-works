@@ -246,6 +246,8 @@ impl SyncMode {
                 div()
                     .id("sync-page")
                     .key_context(KEY_CONTEXT)
+                    .capture_any_mouse_down(oriel_ui::popups::note_press)
+                    .child(oriel_ui::popups::press_guard())
                     .track_focus(&self.focus_handle)
                     .on_action(cx.listener(|this, _: &ToggleRunLog, _, cx| this.toggle_run_log(cx)))
                     .on_action(cx.listener(|this, _: &FocusPlanFilter, window, cx| {

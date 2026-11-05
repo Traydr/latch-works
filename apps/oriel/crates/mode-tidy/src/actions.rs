@@ -666,6 +666,16 @@ impl TidyState {
         cx: &mut Context<Self>,
     ) {
         self.forget_plans(&[plan.id]);
+        // What did not finish is still the next Undo, not the plan before it.
+        let unfinished = {
+            let (plan, options) = (plan.clone(), options.clone());
+            UndoEntry {
+                plan_ids: vec![plan.id],
+                run: Rc::new(move |this, window, cx| {
+                    this.undo_plan(plan.clone(), options.clone(), window, cx);
+                }),
+            }
+        };
         let finished = self.start_undo(plan.id, cx);
         cx.spawn_in(window, async move |this, cx| {
             let outcome = finished.await;
@@ -682,17 +692,28 @@ impl TidyState {
                             show_toast(window, toast, cx);
                         }
                     }
-                    Ok(undone) => show_toast(
-                        window,
-                        Toast::error("Undo did not finish")
-                            .detail(undone.message.unwrap_or_default()),
-                        cx,
-                    ),
-                    Err(error) => show_toast(
-                        window,
-                        Toast::error("Undo failed").detail(job_message(&error)),
-                        cx,
-                    ),
+                    Ok(undone) => {
+                        this.push_entry(unfinished);
+                        show_toast(
+                            window,
+                            Toast::error("Undo did not finish")
+                                .detail(undone.message.unwrap_or_default()),
+                            cx,
+                        );
+                    }
+                    Err(error) if error.is_cancelled() => {
+                        this.push_entry(unfinished);
+                        let toast = Toast::info("Undo stopped").detail("Undo again to finish it.");
+                        show_toast(window, toast, cx);
+                    }
+                    Err(error) => {
+                        this.push_entry(unfinished);
+                        show_toast(
+                            window,
+                            Toast::error("Undo failed").detail(job_message(&error)),
+                            cx,
+                        );
+                    }
                 }
                 this.release_turn(window, cx);
             })
@@ -841,9 +862,20 @@ impl TidyState {
     ) {
         let ids: Vec<PlanId> = plans.iter().map(|plan| plan.id).collect();
         self.forget_plans(&ids);
+        // What did not finish is still the next Undo, not the change before it.
+        let unfinished = {
+            let (plans, title) = (plans.clone(), title.clone());
+            UndoEntry {
+                plan_ids: ids,
+                run: Rc::new(move |this, window, cx| {
+                    this.undo_all(plans.clone(), title.clone(), window, cx);
+                }),
+            }
+        };
         let this = cx.entity().downgrade();
         cx.spawn_in(window, async move |_, cx| {
             let mut failure = None;
+            let mut stopped = false;
             let mut follow_up = FollowUp::default();
             for plan in plans.iter().rev() {
                 let Ok(finished) = this.update(cx, |this, cx| this.start_undo(plan.id, cx)) else {
@@ -860,6 +892,10 @@ impl TidyState {
                         failure = Some(undone.message.unwrap_or_default());
                         break;
                     }
+                    Err(error) if error.is_cancelled() => {
+                        stopped = true;
+                        break;
+                    }
                     Err(error) => {
                         failure = Some(job_message(&error));
                         break;
@@ -869,8 +905,15 @@ impl TidyState {
             this.update_in(cx, |this, window, cx| {
                 this.follow_up(&follow_up, window, cx);
                 let toast = match failure {
+                    None if stopped => {
+                        this.push_entry(unfinished);
+                        Toast::info("Undo stopped").detail("Undo again to finish it.")
+                    }
                     None => Toast::info(format!("Undid “{title}”")),
-                    Some(message) => Toast::error("Undo did not finish").detail(message),
+                    Some(message) => {
+                        this.push_entry(unfinished);
+                        Toast::error("Undo did not finish").detail(message)
+                    }
                 };
                 show_toast(window, toast, cx);
                 this.release_turn(window, cx);
