@@ -522,14 +522,12 @@ impl DuplicatesPage {
                         )
                     });
                     if plan.done == 0 {
-                        if plan.failed == 0 {
-                            let toast = Toast::info("Nothing moved");
-                            let toast = match stayed {
-                                Some(stayed) => toast.detail(stayed),
-                                None => toast,
-                            };
-                            crate::widgets::show_toast(window, toast, cx);
-                        }
+                        let toast = Toast::info("Nothing moved");
+                        let toast = match stayed {
+                            Some(stayed) => toast.detail(stayed),
+                            None => toast,
+                        };
+                        crate::widgets::show_toast(window, toast, cx);
                         return;
                     }
                     let message = if several {

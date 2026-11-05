@@ -200,7 +200,8 @@ async fn a_press_inside_a_menu_still_works(cx: &mut TestAppContext) {
     .unwrap();
 }
 
-/// ⌘Z while a menu is open would move files back behind it. It waits for the menu to close.
+/// ⌘Z while a menu is open would move files back behind it, so it does nothing until the menu has
+/// closed.
 #[gpui_kit::test]
 async fn undo_does_nothing_under_an_open_menu(cx: &mut TestAppContext) {
     if !media_ready() {
@@ -228,7 +229,7 @@ async fn undo_does_nothing_under_an_open_menu(cx: &mut TestAppContext) {
     assert_eq!(held_files(&session), Vec::<String>::new());
 }
 
-/// Digits, N and Enter while a menu is open are not the page's.
+/// Digits, N and S while a menu is open are not the page's.
 #[gpui_kit::test]
 async fn keys_do_not_decide_a_set_under_an_open_menu(cx: &mut TestAppContext) {
     if !media_ready() {
