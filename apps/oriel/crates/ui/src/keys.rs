@@ -58,8 +58,9 @@ pub fn digit_key(keystroke: &Keystroke) -> Option<DigitKey> {
         });
     }
     // With no system event to read, as on Windows or in a test, the keystroke is all there is. GPUI
-    // reports a US keyboard's ⇧2 as `@` with ⇧ cleared, as on macOS. Other layouts' symbols are not
-    // read here, and a layout whose ⇧ makes the digit reads as that digit alone.
+    // reports a US keyboard's ⇧2 as `@` with ⇧ cleared, as on macOS. A symbol is read as a US
+    // keyboard's on every layout, so a layout that types one otherwise reads as that ⇧ digit, and a
+    // layout whose ⇧ makes the digit reads as that digit alone.
     if let Some(digit) = typed {
         return Some(DigitKey {
             digit,
