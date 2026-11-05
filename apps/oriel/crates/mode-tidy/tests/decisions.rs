@@ -376,3 +376,33 @@ async fn a_decision_with_a_failed_step_says_so(cx: &mut TestAppContext) {
     wait_for_change(cx, &session).await;
     assert!(held_files(&session).is_empty());
 }
+
+/// The first arrow moves on from what a key acted on until then: on a set of three or more, it does
+/// not skip the version after the suggestion.
+#[gpui_kit::test]
+async fn the_first_arrow_goes_to_the_version_after_the_suggestion(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "first-arrow");
+    add_archive(cx, &session).await;
+    go(cx, &session, TidyPage::Duplicates);
+    settle(cx, &session).await;
+    for index in 0..8usize {
+        if stage_ids(cx, &session).len() >= 3 {
+            break;
+        }
+        click(cx, &session, ("set-row", index + 1));
+        settle(cx, &session).await;
+    }
+    let versions = stage_ids(cx, &session).len();
+    assert!(versions >= 3, "a set of three or more, not {versions}");
+    let target = |cx: &mut TestAppContext| {
+        cx.read(|cx| session.tidy.read(cx).duplicates().read(cx).target())
+    };
+    assert_eq!(target(cx), 0);
+    press(cx, &session, "right");
+    assert_eq!(target(cx), 1);
+    press(cx, &session, "right");
+    assert_eq!(target(cx), 2);
+}

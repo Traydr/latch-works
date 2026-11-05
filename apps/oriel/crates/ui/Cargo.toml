@@ -11,6 +11,11 @@ gpui-kit.workspace = true
 log.workspace = true
 serde_json.workspace = true
 
+# Which key a press came from (`keys::digit_key`), which GPUI's keystroke does not say.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSEvent", "NSResponder"] }
+
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
 

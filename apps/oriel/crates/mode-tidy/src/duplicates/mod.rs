@@ -296,7 +296,7 @@ impl DuplicatesPage {
 
     /// The version a key acts on: the keyboard's focus once the arrows moved it, else the one
     /// under the pointer, else the suggestion.
-    fn target(&self) -> usize {
+    pub fn target(&self) -> usize {
         if self.looking || self.keyboard_focus {
             return self.focus_row();
         }
@@ -738,7 +738,9 @@ impl DuplicatesPage {
         if count == 0 {
             return;
         }
-        self.focused_row = (self.focus_row() as isize + delta).clamp(0, count - 1) as usize;
+        // The first press moves on from what a key acts on until now, the suggestion or the version
+        // under the pointer.
+        self.focused_row = (self.target() as isize + delta).clamp(0, count - 1) as usize;
         self.keyboard_focus = true;
         self.keep_video_in_sight();
         cx.notify();
@@ -970,10 +972,7 @@ impl DuplicatesPage {
         let keys = &event.keystroke;
         let modifiers = keys.modifiers;
         let key = keys.key.as_str();
-        let digit = key
-            .parse::<usize>()
-            .ok()
-            .filter(|digit| (1..=9).contains(digit));
+        let digit = oriel_ui::keys::digit_key(keys);
         // A held key repeats; a decision never should.
         let deciding = digit.is_some() || matches!(key, "enter" | "n" | "s");
         if event.is_held && deciding {
@@ -999,9 +998,9 @@ impl DuplicatesPage {
         if modifiers.platform || modifiers.control || modifiers.alt {
             return;
         }
-        if let Some(digit) = digit {
+        if let Some(oriel_ui::keys::DigitKey { digit, shift }) = digit {
             if digit <= rows.len() {
-                if modifiers.shift {
+                if shift {
                     self.toggle_keep(digit - 1, cx);
                     self.focused_row = digit - 1;
                     self.keep_video_in_sight();
