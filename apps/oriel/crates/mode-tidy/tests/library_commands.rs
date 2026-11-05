@@ -11,7 +11,7 @@ use gpui_kit::{
     AppContext as _, ElementId, Entity, Modifiers, ScrollDelta, TestAppContext, point, px,
 };
 use oriel_core_tidy::contract::FileId;
-use oriel_mode_tidy::{LibraryPage, TidyPage, last_quick_look};
+use oriel_mode_tidy::{LibraryPage, TidyPage, last_quick_look, last_toast};
 use support::*;
 
 fn library(cx: &mut TestAppContext, session: &Session) -> Entity<LibraryPage> {
@@ -57,20 +57,6 @@ fn cursor(cx: &mut TestAppContext, session: &Session) -> Option<usize> {
     cx.read(|cx| library.read(cx).cursor(cx))
 }
 
-/// Whether the row at `index` has been read.
-fn row_read(cx: &mut TestAppContext, session: &Session, index: usize) -> bool {
-    let library = library(cx, session);
-    cx.read(|cx| {
-        library
-            .read(cx)
-            .table()
-            .read(cx)
-            .delegate()
-            .row(index)
-            .is_some()
-    })
-}
-
 async fn open_library(cx: &mut TestAppContext, session: &Session) {
     add_archive(cx, session).await;
     go(cx, session, TidyPage::Library);
@@ -98,9 +84,6 @@ fn click_tile(cx: &mut TestAppContext, session: &Session, index: usize) {
     click(cx, session, ("library-tile", id as u64));
 }
 
-/// More than two pages of files, for [`add_files`].
-const MANY: usize = 460;
-
 /// Adds `count` files to the archive, whose names say where they belong.
 fn add_files(session: &Session, count: usize) {
     let picture = session.archive.join("photos/sunset-small.jpg");
@@ -111,73 +94,9 @@ fn add_files(session: &Session, count: usize) {
     }
 }
 
-fn name_at(cx: &mut TestAppContext, session: &Session, index: usize) -> String {
-    let library = library(cx, session);
-    cx.read(|cx| {
-        library
-            .read(cx)
-            .table()
-            .read(cx)
-            .delegate()
-            .row(index)
-            .unwrap_or_else(|| panic!("no file at {index}"))
-            .name
-            .clone()
-    })
-}
-
-/// The row the many files start at, as the archive's own folders sort around them.
-fn first_of_many(cx: &mut TestAppContext, session: &Session) -> usize {
-    let library = library(cx, session);
-    cx.read(|cx| {
-        library
-            .read(cx)
-            .table()
-            .read(cx)
-            .delegate()
-            .loaded_rows()
-            .iter()
-            .position(|row| row.name == "0000.jpg")
-            .expect("the many files sort on the first page")
-    })
-}
-
-/// Puts the cursor on `index`, wherever it is, and waits for its row.
-async fn go_to_row(cx: &mut TestAppContext, session: &Session, index: usize) {
-    let library = library(cx, session);
-    cx.update(|cx| {
-        let table = library.read(cx).table().clone();
-        table.update(cx, |table, cx| table.set_selected_row(index, cx));
-    });
-    wait_for_chosen(cx, session).await;
-}
-
-/// Waits until one file is chosen and the cursor's row is that file.
-async fn wait_for_chosen(cx: &mut TestAppContext, session: &Session) {
-    let library = library(cx, session);
-    wait_for(cx, session, "the cursor's file", move |cx| {
-        let library = library.read(cx);
-        let table = library.table().read(cx);
-        table
-            .selected_row()
-            .and_then(|index| table.delegate().row(index))
-            .is_some_and(|row| library.selection(cx) == [row.id])
-    })
-    .await;
-}
-
-/// The name of the file the cursor is on, which is the one selected.
-fn chosen_name(cx: &mut TestAppContext, session: &Session) -> String {
-    let index = cursor(cx, session).expect("a cursor");
-    assert_eq!(selection(cx, session), [id_at(cx, session, index)]);
-    name_at(cx, session, index)
-}
-
-fn numbered(number: usize) -> String {
-    format!("{number:04}.jpg")
-}
-
-/// Pressing "Move to holding" again, once the list has read itself again, holds nothing more.
+/// Pressing "Move to holding" again, once the list has read itself again, holds nothing more:
+/// the file that slid into the place shows as no cursor and is no target. An arrow then goes on
+/// from the cursor's place, as it always has.
 #[gpui_kit::test]
 async fn a_second_press_of_hold_moves_no_other_file(cx: &mut TestAppContext) {
     if !media_ready() {
@@ -194,6 +113,12 @@ async fn a_second_press_of_hold_moves_no_other_file(cx: &mut TestAppContext) {
     press_if_drawn(cx, &session, "inspector-hold");
     wait_for_change(cx, &session).await;
     assert_eq!(held_files(&session).len(), 1, "a second file moved");
+    assert_eq!(cursor(cx, &session), None);
+    assert_eq!(selection(cx, &session), Vec::<FileId>::new());
+
+    press(cx, &session, "down");
+    assert_eq!(cursor(cx, &session), Some(4));
+    assert_eq!(selection(cx, &session), [id_at(cx, &session, 4)]);
 }
 
 /// So too in the grid.
@@ -308,8 +233,8 @@ async fn the_wheel_over_the_bar_scrolls_the_list(cx: &mut TestAppContext) {
     assert!(scrolled(cx) < 0., "the list did not scroll");
 }
 
-/// Esc and the bar's Clear moved no file: the cursor stays on it, so the Inspector still shows it
-/// and an arrow goes on from it as usual, by a line in the grid.
+/// Esc in the grid and the bar's Clear moved no file: the cursor stays on it, so the Inspector
+/// still shows it and an arrow goes on from it as usual, by a line in the grid.
 #[gpui_kit::test]
 async fn clearing_the_selection_leaves_the_cursor_where_it_is(cx: &mut TestAppContext) {
     if !media_ready() {
@@ -340,19 +265,9 @@ async fn clearing_the_selection_leaves_the_cursor_where_it_is(cx: &mut TestAppCo
     press(cx, &session, "down");
     assert_eq!(cursor(cx, &session), line.ok());
 
-    // The list, its table having the keys after a click, as the owner has it.
+    // Several chosen in the list and cleared from the bar: ↓ goes on from the cursor.
     click(cx, &session, "library-mode-list");
     settle(cx, &session).await;
-    click(cx, &session, ("library-row", 2usize));
-    press(cx, &session, "escape");
-    assert_eq!(selection(cx, &session), Vec::<FileId>::new());
-    assert_eq!(cursor(cx, &session), Some(2));
-    settle(cx, &session).await;
-    assert!(drawn(cx, &session, "inspector-hold"));
-    press(cx, &session, "down");
-    assert_eq!(cursor(cx, &session), Some(3));
-
-    // Several chosen and cleared from the bar: ↓ does not jump them.
     click(cx, &session, ("library-row", 2usize));
     press(cx, &session, "shift-down");
     press(cx, &session, "shift-down");
@@ -407,62 +322,6 @@ async fn a_press_on_the_activity_indicator_chooses_no_file(cx: &mut TestAppConte
     wait_for_change(cx, &session).await;
 }
 
-/// ⌘⌫, ↓ and ⌘⌫ again while the first has still to run, then ↑, before either has: it goes to the
-/// file before both, not to the first one taken, still in the list then and in holding after.
-#[gpui_kit::test]
-async fn up_after_two_quick_holds_passes_both_by(cx: &mut TestAppContext) {
-    if !media_ready() {
-        return;
-    }
-    let session = launch_changing(cx, "two-quick-holds");
-    open_library(cx, &session).await;
-    click(cx, &session, ("library-row", 3usize));
-    let before = id_at(cx, &session, 2);
-    // The holds wait their turn behind a paused rescan, so the list does not read itself again
-    // between the keys.
-    pause_a_rescan(cx, &session);
-    press(cx, &session, "secondary-backspace");
-    press(cx, &session, "down");
-    press(cx, &session, "secondary-backspace");
-    press(cx, &session, "up");
-    assert_eq!(selection(cx, &session), [before]);
-    resume_the_rescan(cx, &session);
-    wait_for_change(cx, &session).await;
-    assert_eq!(held_files(&session).len(), 2);
-    assert_eq!(selection(cx, &session), [before]);
-    assert_eq!(
-        cursor(cx, &session).map(|index| id_at(cx, &session, index)),
-        Some(before)
-    );
-    press(cx, &session, "secondary-backspace");
-    wait_for_change(cx, &session).await;
-    assert_eq!(held_files(&session).len(), 3);
-}
-
-/// A file brought back by ⌘Z is where it was, and ↓ from the gap goes to it.
-#[gpui_kit::test]
-async fn down_after_undo_goes_to_the_file_brought_back(cx: &mut TestAppContext) {
-    if !media_ready() {
-        return;
-    }
-    let session = launch_changing(cx, "down-after-undo");
-    open_library(cx, &session).await;
-    click(cx, &session, ("library-row", 3usize));
-    let taken = name_at(cx, &session, 3);
-    press(cx, &session, "secondary-backspace");
-    wait_for_change(cx, &session).await;
-    undo(cx, &session);
-    wait_for_change(cx, &session).await;
-    assert_eq!(held_files(&session), Vec::<String>::new());
-
-    // The catalog counts it again under a new number.
-    press(cx, &session, "down");
-    settle(cx, &session).await;
-    assert_eq!(cursor(cx, &session), Some(3));
-    assert_eq!(selection(cx, &session), [id_at(cx, &session, 3)]);
-    assert_eq!(name_at(cx, &session, 3), taken);
-}
-
 /// A rescan started and paused before its first step, which holds the changes' turn.
 fn pause_a_rescan(cx: &mut TestAppContext, session: &Session) {
     let state = session.state.clone();
@@ -482,8 +341,10 @@ fn pause_a_rescan(cx: &mut TestAppContext, session: &Session) {
 fn resume_the_rescan(cx: &mut TestAppContext, session: &Session) {
     cx.update(|cx| {
         session.state.update(cx, |state, cx| {
-            let scan = state.scan().unwrap().job.clone();
-            scan.update(cx, |job, cx| job.set_paused(false, cx));
+            if let Some(scan) = state.scan() {
+                let scan = scan.job.clone();
+                scan.update(cx, |job, cx| job.set_paused(false, cx));
+            }
         });
     });
 }
@@ -701,174 +562,189 @@ async fn a_double_click_on_holdings_bar_reaches_no_tile_under_it(cx: &mut TestAp
     assert_eq!(last_quick_look(), None);
 }
 
-/// ⌘⌫ pressed twice moves one file; the arrows then choose the next, one at a time, without
-/// skipping the file that took the moved one's place, or going back to the top.
+/// The cursor's row, as the list shows it, and the files a command would act on: the selection,
+/// else that row's file.
+fn highlight_and_targets(
+    cx: &mut TestAppContext,
+    session: &Session,
+) -> (Option<FileId>, Vec<FileId>) {
+    let library = library(cx, session);
+    cx.read(|cx| {
+        let library = library.read(cx);
+        let table = library.table().read(cx);
+        let shown = table
+            .selected_row()
+            .and_then(|index| table.delegate().row(index))
+            .map(|row| row.id);
+        let selected = library.selection(cx);
+        let targets = if selected.is_empty() {
+            shown.into_iter().collect()
+        } else {
+            selected
+        };
+        (shown, targets)
+    })
+}
+
+/// Where a file chosen now would be in holding, under its plan's folder.
+fn chosen_paths(cx: &mut TestAppContext, session: &Session, ids: &[FileId]) -> Vec<String> {
+    let library = library(cx, session);
+    cx.read(|cx| {
+        let library = library.read(cx);
+        let rows = library.table().read(cx).delegate().loaded_rows();
+        ids.iter()
+            .filter_map(|id| rows.iter().find(|row| row.id == *id))
+            .map(|row| {
+                if row.dir.is_empty() {
+                    row.name.clone()
+                } else {
+                    format!("{}/{}", row.dir, row.name)
+                }
+            })
+            .collect()
+    })
+}
+
+/// After a command nothing is a target until the owner chooses a file. Through runs of keys before
+/// and after the list reads itself again, some while holds wait their turn: until an arrow, nothing
+/// shows as the cursor and the Inspector offers nothing; a row that shows as the cursor is always
+/// the target; and a hold takes only files chosen when it was asked for. `ORIEL_LIBRARY_SEEDS`
+/// runs more seeds.
 #[gpui_kit::test]
-async fn the_arrows_go_on_from_a_held_file(cx: &mut TestAppContext) {
+async fn after_a_command_only_a_chosen_file_is_a_target(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "arrows-after-hold");
+    let seeds: u64 = std::env::var("ORIEL_LIBRARY_SEEDS")
+        .ok()
+        .and_then(|seeds| seeds.parse().ok())
+        .unwrap_or(1);
+    let session = launch_changing(cx, "only-chosen");
+    add_files(&session, 40);
+    open_library(cx, &session).await;
+    click(cx, &session, ("library-row", 0usize));
+    let mut chosen = Vec::new();
+    let mut paused = false;
+    // Whether the owner has chosen a file since the last command.
+    let mut choosing = true;
+    for seed in 1..=seeds {
+        let mut state = seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
+        let mut below = |bound: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % bound
+        };
+        for step in 0..40 {
+            let key = below(100);
+            match key {
+                0..22 => {
+                    press(cx, &session, "down");
+                    choosing = true;
+                }
+                22..36 => {
+                    press(cx, &session, "up");
+                    choosing = true;
+                }
+                36..56 => {
+                    let selected = selection(cx, &session);
+                    chosen.extend(chosen_paths(cx, &session, &selected));
+                    press(cx, &session, "secondary-backspace");
+                    if !selected.is_empty() {
+                        choosing = false;
+                    }
+                }
+                56..66 => {
+                    let (_, targets) = highlight_and_targets(cx, &session);
+                    if drawn(cx, &session, "inspector-hold") {
+                        chosen.extend(chosen_paths(cx, &session, &targets));
+                        click(cx, &session, "inspector-hold");
+                        choosing = false;
+                    }
+                }
+                66..78 => {
+                    // The list's Esc takes the selection and the cursor.
+                    press(cx, &session, "escape");
+                    choosing = false;
+                }
+                78..86 if !paused => {
+                    // A rescan starts only once nothing else runs.
+                    wait_for_change(cx, &session).await;
+                    pause_a_rescan(cx, &session);
+                    paused = true;
+                }
+                78..86 => {
+                    resume_the_rescan(cx, &session);
+                    paused = false;
+                }
+                _ if paused => {}
+                _ => wait_for_change(cx, &session).await,
+            }
+            let (shown, targets) = highlight_and_targets(cx, &session);
+            if !choosing {
+                assert_eq!(
+                    (shown, targets.clone()),
+                    (None, Vec::new()),
+                    "seed {seed}, step {step}, key {key}: a target before the owner chose one"
+                );
+            }
+            if let Some(shown) = shown {
+                assert!(
+                    targets.contains(&shown),
+                    "seed {seed}, step {step}, key {key}: the cursor shows a file that is no target"
+                );
+            }
+        }
+    }
+    if paused {
+        resume_the_rescan(cx, &session);
+    }
+    wait_for_change(cx, &session).await;
+    let held = held_files(&session);
+    assert!(!held.is_empty());
+    for path in &held {
+        assert!(
+            chosen.iter().any(|chosen| path.ends_with(chosen.as_str())),
+            "{path} was held but never chosen"
+        );
+    }
+}
+
+/// ⌘⌫, ↑ and ↓ while the hold waits its turn: the cursor comes back to the file on its way, as the
+/// list still shows it. ⌘⌫ on it is refused with a reason once its turn comes, and moves nothing
+/// else; the cursor then shows no other file as chosen.
+#[gpui_kit::test]
+async fn a_file_on_its_way_to_holding_is_refused_plainly(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "on-its-way");
     open_library(cx, &session).await;
     click(cx, &session, ("library-row", 3usize));
-    settle(cx, &session).await;
-    let (before, after) = (id_at(cx, &session, 2), id_at(cx, &session, 4));
-
+    let going = id_at(cx, &session, 3);
+    pause_a_rescan(cx, &session);
     press(cx, &session, "secondary-backspace");
-    press(cx, &session, "secondary-backspace");
-    wait_for_change(cx, &session).await;
-    assert_eq!(held_files(&session).len(), 1, "a second file moved");
-    assert_eq!(selection(cx, &session), Vec::<FileId>::new());
-
-    press(cx, &session, "down");
-    assert_eq!(selection(cx, &session), vec![after]);
-    let beyond = id_at(cx, &session, 4);
-    press(cx, &session, "secondary-backspace");
-    wait_for_change(cx, &session).await;
-    assert_eq!(held_files(&session).len(), 2);
-
-    press(cx, &session, "down");
-    assert_eq!(selection(cx, &session), vec![beyond]);
-    press(cx, &session, "secondary-backspace");
-    // Before the list has read itself again, the file on its way is not chosen a second time.
+    assert_eq!(cursor(cx, &session), None);
+    assert!(!drawn(cx, &session, "inspector-hold"));
+    // Space and Return have no file: Quick Look would open one, which the test platform cannot.
+    press(cx, &session, "space");
+    press(cx, &session, "enter");
+    let renaming = library(cx, &session);
+    assert_eq!(cx.read(|cx| renaming.read(cx).renaming()), None);
     press(cx, &session, "up");
-    assert_eq!(selection(cx, &session), vec![before]);
+    press(cx, &session, "down");
+    assert_eq!(selection(cx, &session), [going]);
+    resume_the_rescan(cx, &session);
     wait_for_change(cx, &session).await;
-    assert_eq!(held_files(&session).len(), 3);
-}
-
-/// An arrow goes on from a moved file to the next one across a page's end, where the next page
-/// has not been read: it does not go back to a file already passed.
-#[gpui_kit::test]
-async fn the_arrow_after_the_last_row_read_goes_on(cx: &mut TestAppContext) {
-    if !media_ready() {
-        return;
-    }
-    let session = launch_changing(cx, "arrow-at-page-end");
-    add_files(&session, MANY);
-    open_library(cx, &session).await;
-    let first = first_of_many(cx, &session);
-    let number = |index: usize| index - first;
-    click(cx, &session, ("library-row", 0usize));
-    go_to_row(cx, &session, 199).await;
-    assert!(!row_read(cx, &session, 200), "the next page is unread");
-    let number_199 = number(199);
-    assert_eq!(chosen_name(cx, &session), numbered(number_199));
+    // Another file is in its row now: the cursor does not show it.
+    let (shown, targets) = highlight_and_targets(cx, &session);
+    assert!(shown.is_none_or(|shown| targets.contains(&shown)));
 
     press(cx, &session, "secondary-backspace");
     wait_for_change(cx, &session).await;
-    press(cx, &session, "down");
-    wait_for_chosen(cx, &session).await;
-    assert_eq!(chosen_name(cx, &session), numbered(number_199 + 1));
-
-    // The same at the next page's end, the arrow pressed before the list has read itself again.
-    go_to_row(cx, &session, 399).await;
-    assert!(!row_read(cx, &session, 400), "the next page is unread");
-    let name = chosen_name(cx, &session);
-    let number_399: usize = name[..4].parse().unwrap();
-    press(cx, &session, "secondary-backspace");
-    press(cx, &session, "down");
-    wait_for_change(cx, &session).await;
-    wait_for_chosen(cx, &session).await;
-    assert_eq!(chosen_name(cx, &session), numbered(number_399 + 1));
-    assert_eq!(cursor(cx, &session), Some(399));
-    assert_eq!(held_files(&session).len(), 2);
-}
-
-/// ⌘⌫ and an arrow, round after round, past the first page and across pages' ends, both ways: each
-/// round moves one file and chooses the next, whether the arrow comes before or after the list has
-/// read itself again.
-#[gpui_kit::test]
-async fn the_arrows_and_hold_keep_their_rhythm_across_pages(cx: &mut TestAppContext) {
-    if !media_ready() {
-        return;
-    }
-    let session = launch_changing(cx, "rhythm-across-pages");
-    add_files(&session, MANY);
-    open_library(cx, &session).await;
-    click(cx, &session, ("library-row", 0usize));
-    let first = first_of_many(cx, &session);
-
-    // Down, from before the first page's end to past it, the arrow after the list has settled.
-    let start = 195;
-    go_to_row(cx, &session, start).await;
-    let mut held = 0;
-    for number in start - first..start - first + 10 {
-        assert_eq!(chosen_name(cx, &session), numbered(number));
-        press(cx, &session, "secondary-backspace");
-        wait_for_change(cx, &session).await;
-        held += 1;
-        assert_eq!(held_files(&session).len(), held);
-        press(cx, &session, "down");
-        wait_for_chosen(cx, &session).await;
-    }
-
-    // Up, from page 1 across the same end, the arrow before it has read itself again. The files
-    // above are the ones not moved yet, from 194 back.
-    let at = cursor(cx, &session).unwrap();
-    assert_eq!(at, start);
-    let mut number = start - first - 1;
-    press(cx, &session, "up");
-    wait_for_chosen(cx, &session).await;
-    for _ in 0..10 {
-        assert_eq!(chosen_name(cx, &session), numbered(number));
-        press(cx, &session, "secondary-backspace");
-        press(cx, &session, "up");
-        wait_for_change(cx, &session).await;
-        wait_for_chosen(cx, &session).await;
-        held += 1;
-        assert_eq!(held_files(&session).len(), held);
-        number -= 1;
-    }
-
-    // Deep in page 1, where the first page's reading again leaves the rows on screen to be read.
-    go_to_row(cx, &session, 299).await;
-    let name = chosen_name(cx, &session);
-    let mut number: usize = name[..4].parse().unwrap();
-    for _ in 0..6 {
-        assert_eq!(chosen_name(cx, &session), numbered(number));
-        press(cx, &session, "secondary-backspace");
-        wait_for_change(cx, &session).await;
-        held += 1;
-        assert_eq!(held_files(&session).len(), held);
-        press(cx, &session, "down");
-        wait_for_chosen(cx, &session).await;
-        assert_eq!(cursor(cx, &session), Some(299));
-        number += 1;
-    }
-
-    // ↓ before the list reads itself again, then a plain ↓ after: the cursor has followed its file
-    // up a row, so the second skips nothing.
-    press(cx, &session, "secondary-backspace");
-    press(cx, &session, "down");
-    wait_for_change(cx, &session).await;
-    wait_for_chosen(cx, &session).await;
-    held += 1;
-    number += 1;
-    assert_eq!(held_files(&session).len(), held);
-    assert_eq!(chosen_name(cx, &session), numbered(number));
-    assert_eq!(cursor(cx, &session), Some(299));
-    press(cx, &session, "down");
-    wait_for_chosen(cx, &session).await;
-    assert_eq!(chosen_name(cx, &session), numbered(number + 1));
-    press(cx, &session, "secondary-backspace");
-    wait_for_change(cx, &session).await;
-    held += 1;
-
-    // The grid, across the first page's end: an arrow from the gap goes one file on, not a line.
-    click(cx, &session, "library-mode-grid");
-    settle(cx, &session).await;
-    click_tile(cx, &session, 0);
-    go_to_row(cx, &session, 195).await;
-    let name = chosen_name(cx, &session);
-    let from: usize = name[..4].parse().unwrap();
-    for number in from..from + 8 {
-        assert_eq!(chosen_name(cx, &session), numbered(number));
-        press(cx, &session, "secondary-backspace");
-        wait_for_change(cx, &session).await;
-        held += 1;
-        assert_eq!(held_files(&session).len(), held);
-        press(cx, &session, "down");
-        wait_for_chosen(cx, &session).await;
-    }
+    assert_eq!(held_files(&session).len(), 1);
+    assert_eq!(
+        cx.read(last_toast).as_deref(),
+        Some("Some of these files are no longer in the catalog, so nothing changed.")
+    );
 }

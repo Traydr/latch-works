@@ -18,6 +18,7 @@ use gpui_kit::{
     App, AsyncWindowContext, Context, Entity, SharedString, Subscription, Task, WeakEntity, Window,
 };
 use oriel_core_tidy::contract::{AudioState, FileFilter, FileKind, RootId};
+use oriel_core_tidy::plans::planner::PlanRequestError;
 use oriel_runtime::{Job, JobError, JobEvent, JobProgress, JobStatus};
 use oriel_ui::Toast;
 
@@ -237,6 +238,18 @@ fn job_message(error: &JobError) -> String {
         JobError::Cancelled => "Stopped".into(),
         JobError::Failed(error) => format!("{error:#}"),
     }
+}
+
+/// Why the engine would not draft a change, in its own words, such as a file at hand that has gone
+/// since it was chosen.
+fn refusal(error: &JobError) -> Option<String> {
+    let JobError::Failed(error) = error else {
+        return None;
+    };
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<PlanRequestError>())
+        .map(ToString::to_string)
 }
 
 fn is_not_available(error: &JobError) -> bool {
@@ -540,7 +553,10 @@ impl TidyState {
                 let toast = match (error, plan) {
                     (JobError::Cancelled, _) => Toast::info("Stopped"),
                     (error, Some(plan)) => self.failed_toast(plan, &error, options, cx),
-                    (error, None) => Toast::error("That didn't work").detail(job_message(&error)),
+                    (error, None) => match refusal(&error) {
+                        Some(reason) => Toast::error(reason),
+                        None => Toast::error("That didn't work").detail(job_message(&error)),
+                    },
                 };
                 show_toast(window, toast, cx);
                 return;
