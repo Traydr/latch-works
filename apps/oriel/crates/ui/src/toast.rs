@@ -332,9 +332,6 @@ impl Toast {
         self.tone
     }
 
-    /// What just went well, with its Undo, or with nothing more to say, takes one line: the owner
-    /// knows what they just did, so the rest can wait in the hover text. A fault keeps its reason
-    /// in sight.
     /// How wide a slot must be for this toast's words and action, at a generous reckoning.
     fn needs_in_slot(&self) -> Pixels {
         let words = self.brief.as_ref().unwrap_or(&self.message).chars().count();
@@ -346,6 +343,9 @@ impl Toast {
             }
     }
 
+    /// What just went well, with its Undo, or with nothing more to say, takes one line: the owner
+    /// knows what they just did, so the rest can wait in the hover text. A fault keeps its reason
+    /// in sight.
     fn takes_one_line(&self) -> bool {
         self.tone != ToastTone::Error && (self.action.is_some() || self.detail.is_none())
     }

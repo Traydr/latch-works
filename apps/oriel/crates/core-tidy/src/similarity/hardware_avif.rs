@@ -1,5 +1,5 @@
-//! Plain AVIF stills through the Mac's hardware AV1 decoder, for the pixels prints and closer looks
-//! are made from. AV1's decoding is exact, so the hardware's planes are aom's bytes, and turning
+//! Plain AVIF stills through the Mac's hardware AV1 decoder, for the pixels prints are made from;
+//! closer looks read through libvips. AV1's decoding is exact, so the hardware's planes are aom's bytes, and turning
 //! them to RGB as libheif does gives what libvips' loader gives, at a fraction of its CPU.
 //!
 //! Stored prints depend on those bytes, so this only takes a file it can be sure of: one AV1 picture
@@ -741,6 +741,16 @@ impl Drop for Owned {
     }
 }
 
+/// A decompression session, invalidated before it is released, as Apple asks, on every way out.
+struct Session(Owned);
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        // SAFETY: the session is live until `Owned` releases it, which comes after this.
+        unsafe { VTDecompressionSessionInvalidate(self.0.0) }
+    }
+}
+
 /// A one-entry Core Foundation dictionary.
 fn dictionary(key: CfRef, value: CfRef) -> Result<Owned, Declined> {
     // SAFETY: one key and one value, both live objects, retained by the dictionary.
@@ -849,7 +859,7 @@ fn decode_planes(item: &Item, data: &[u8]) -> Result<HardwareStill, Declined> {
             &raw const record,
             &raw mut session,
         ))?;
-        let session = Owned::new(session)?;
+        let session = Session(Owned::new(session)?);
         let mut block = ptr::null();
         succeeded(CMBlockBufferCreateWithMemoryBlock(
             ptr::null(),
@@ -884,14 +894,14 @@ fn decode_planes(item: &Item, data: &[u8]) -> Result<HardwareStill, Declined> {
         };
         let mut info = 0;
         let status = VTDecompressionSessionDecodeFrame(
-            session.0,
+            session.0.0,
             sample.0,
             0,
             (&raw mut decoded).cast(),
             &raw mut info,
         );
-        VTDecompressionSessionWaitForAsynchronousFrames(session.0);
-        VTDecompressionSessionInvalidate(session.0);
+        VTDecompressionSessionWaitForAsynchronousFrames(session.0.0);
+        drop(session);
         let buffer = decoded.buffer;
         let rgb = if status == 0 && decoded.status == 0 && decoded.frames == 1 && !buffer.is_null()
         {

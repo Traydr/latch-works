@@ -1655,6 +1655,15 @@ fn library(catalog: &str, scratch: &Path) {
     read_only(catalog)
         .execute_batch(&format!("VACUUM INTO '{}'", copy.display()))
         .unwrap();
+    // Opened, the engine recovers a change that was under way, removing its temp files beside the
+    // owner's own files. The owner's app may be running that change: the copy leaves it alone.
+    Connection::open(&copy)
+        .unwrap()
+        .execute(
+            "UPDATE plans SET status = 'cancelled' WHERE status = 'applying'",
+            [],
+        )
+        .unwrap();
     let size_before = std::fs::metadata(&copy).unwrap().len();
     let data = DataRoot::at(folder.clone()).unwrap();
     let engine = block_on(TidyEngine::open_with(data, copy.clone(), Media::locate())).unwrap();

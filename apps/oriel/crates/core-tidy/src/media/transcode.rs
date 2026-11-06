@@ -231,9 +231,11 @@ pub fn encoder_capabilities(
 }
 
 /// The position `pipe:1` of ffmpeg's `-progress` has reached, in seconds, from one piece of its
-/// output, which holds lines such as `out_time_us=1500000`, or `N/A` before the first frame.
+/// output, which holds lines such as `out_time_us=1500000`, or `N/A` before the first frame. A line
+/// the piece cuts off counts for nothing: `out_time_us=15` may be the start of a larger number.
 fn progress_seconds(text: &str) -> Option<f64> {
-    text.lines()
+    text.split_inclusive('\n')
+        .filter_map(|line| line.strip_suffix('\n'))
         .rev()
         .find_map(|line| line.strip_prefix("out_time_us="))
         .and_then(|micros| micros.trim().parse::<f64>().ok())
@@ -285,6 +287,11 @@ mod tests {
         assert_eq!(progress_seconds(piece), Some(2.5));
         assert_eq!(progress_seconds("out_time_us=N/A\n"), None);
         assert_eq!(progress_seconds("frame=10\n"), None);
+        // A read can end partway through a line.
+        assert_eq!(
+            progress_seconds("out_time_us=1500000\nout_time_us=25"),
+            Some(1.5)
+        );
     }
 
     fn text(args: Vec<std::ffi::OsString>) -> String {

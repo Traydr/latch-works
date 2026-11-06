@@ -187,14 +187,6 @@ pub const MIGRATIONS: &[&str] = &[
   ALTER TABLE plan_steps ADD COLUMN output_sha256 TEXT;
   CREATE INDEX plan_steps_by_source ON plan_steps (source_sha256)
     WHERE source_sha256 IS NOT NULL;
-  UPDATE files SET reencoded = 1 WHERE id IN (
-    SELECT f.id FROM plan_steps s
-      JOIN roots r ON r.id = s.root_id
-      JOIN files f ON f.root_id = s.root_id
-        AND f.rel_path = substr(s.to_abs, length(r.path) + 2)
-        AND f.size = s.bytes_after
-      WHERE s.status = 'done' AND s.action = 'convert-video'
-        AND s.spec LIKE '%"requireSmaller":true%');
   "#,
     "
   CREATE TABLE file_comparisons (

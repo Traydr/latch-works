@@ -201,9 +201,11 @@ shrink like any other, and the sets can be resolved afterwards:
 - Files keep their ids through a change and its Undo, so dismissals and choices made in a set
   stay. Set keys are `set:<lowest id>`.
 - When pixels, sound, length, home folder, format and extension tie, the keeper rules prefer the
-  copy Tidy re-encoded to save space over one with more bytes (`files.reencoded`, cleared when the
-  bytes change): the owner asked for that encode. The reason says so and names the size difference,
-  and the owner can keep the larger copy. Whichever goes waits in holding.
+  copy Tidy re-encoded to save space over the very bytes it was made from, while those wait in
+  holding (`files.reencoded`, cleared when the bytes change, matched to the step's
+  `source_sha256`): the owner asked for that encode. A larger file that is not its source still
+  wins. The reason says so and names the size difference, and the owner can keep the larger copy.
+  Whichever goes waits in holding.
 - Shrink's totals count one encode for a set of copies and a hard-linked file's bytes once, and a
   run's batch never cuts a set of copies in two. Overview's savings leave out copies its duplicate
   totals would remove, so the two figures add up. Convert and Shrink's own pages count every file
