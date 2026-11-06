@@ -16,6 +16,6 @@ pub use fetch::{FETCH_COMMAND, Fetched, dev_cache, ensure_media_tools};
 pub use locate::{LocateError, MediaTools, OVERRIDE_VARIABLE, ToolSource};
 pub use pins::{MediaToolsPin, PINS, PinnedArchive, current_platform, pin_for, tool_files};
 pub use run::{
-    MAX_STDERR_BYTES, MAX_STDOUT_BYTES, ToolError, ToolOutput, ToolRun, kill_running_tools,
+    MAX_STDERR_BYTES, MAX_STDOUT_BYTES, ToolError, ToolOutput, ToolRun, kill_running_tools, spawn,
     tools_suspend,
 };

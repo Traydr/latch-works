@@ -411,14 +411,16 @@ impl Encode {
 }
 
 fn start_ffmpeg(ffmpeg: &Path, args: &[impl AsRef<std::ffi::OsStr>], target: &Path) -> Encode {
-    let child = Command::new(ffmpeg)
+    let mut command = Command::new(ffmpeg);
+    command
         .args(["-y", "-hide_banner", "-loglevel", "error"])
         .args(args)
         .arg(target)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+    // Other tests' tools start in this process too.
+    let child = oriel_tools::spawn(&mut command)
         .unwrap_or_else(|error| panic!("Could not run {}: {error}", ffmpeg.display()));
     Encode {
         child,

@@ -160,7 +160,7 @@ mod mac {
     use std::ffi::OsString;
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::process::Command;
+    use std::process::{Child, Command, Stdio};
 
     use gpui_kit::{AnyWindowHandle, App, AsyncWindowContext, PromptLevel};
     use oriel_core_paths::DataRoot;
@@ -356,9 +356,13 @@ mod mac {
     /// Whether a process runs the executable of the bundle at `target`.
     fn is_running(target: &Path) -> bool {
         let inside = target.join("Contents").join("MacOS");
-        Command::new("/bin/ps")
-            .args(["-axo", "comm="])
-            .output()
+        let mut ps = Command::new("/bin/ps");
+        ps.args(["-axo", "comm="])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        oriel_tools::spawn(&mut ps)
+            .and_then(Child::wait_with_output)
             .map(|output| {
                 String::from_utf8_lossy(&output.stdout)
                     .lines()

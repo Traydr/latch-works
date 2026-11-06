@@ -286,13 +286,16 @@ static RUNNING: Mutex<BTreeMap<u64, Arc<Mutex<Tool>>>> = Mutex::new(BTreeMap::ne
 
 static NEXT_RUN: AtomicU64 = AtomicU64::new(0);
 
-/// Held while a tool starts. On macOS the standard library makes a pipe and marks it close-on-exec
-/// in two steps, so a tool another thread started in between inherited the pipe. A quick probe then
-/// read no end of output until that tool, perhaps a long encode, ended or its own time ran out,
-/// and the file it was reading was recorded as unreadable.
+/// Held while a process starts. On macOS the standard library makes a pipe and marks it
+/// close-on-exec in two steps, so a process another thread started in between inherited the pipe.
+/// A quick probe then read no end of output until that process, perhaps an encode of several
+/// minutes, ended, and the pass waiting on the probe waited as long.
 static STARTING: Mutex<()> = Mutex::new(());
 
-fn spawn(command: &mut Command) -> std::io::Result<Child> {
+/// Starts `command` as no other process this app starts through here is starting, so neither
+/// inherits the other's pipes. Only starts made through here are kept apart: anything that runs
+/// alongside tools starts this way.
+pub fn spawn(command: &mut Command) -> std::io::Result<Child> {
     let _starting = lock(&STARTING);
     command.spawn()
 }
