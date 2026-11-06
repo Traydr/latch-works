@@ -294,7 +294,7 @@ static STARTING: Mutex<()> = Mutex::new(());
 
 /// Starts `command` as no other process this app starts through here is starting, so neither
 /// inherits the other's pipes. Only starts made through here are kept apart: anything that runs
-/// alongside tools starts this way.
+/// alongside tools should start this way.
 pub fn spawn(command: &mut Command) -> std::io::Result<Child> {
     let _starting = lock(&STARTING);
     command.spawn()
