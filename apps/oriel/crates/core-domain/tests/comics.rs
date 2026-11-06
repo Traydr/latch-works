@@ -1,13 +1,11 @@
 //! Checks `comics.ts`'s port against `conformance/media-domain/comics.json`.
 
-mod support;
-
+use crate::support::{GeneratedWith, check, fail_with, read_vectors};
 use oriel_core_domain::{
     ArchiveComicPaths, ComicEntry, ComicMediaItem, ComicOptions, GallerySortMode, MediaType,
     NamedPath, SortableMediaItem, build_comic_entries, sort_comic_entries,
 };
 use serde::Deserialize;
-use support::{GeneratedWith, check, fail_with, read_vectors};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

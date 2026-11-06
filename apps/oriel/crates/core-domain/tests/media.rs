@@ -1,13 +1,11 @@
 //! Checks `media.ts`'s port against `conformance/media-domain/media.json`.
 
-mod support;
-
+use crate::support::{GeneratedWith, check, describe, fail_with, read_vectors};
 use oriel_core_domain::{
     GallerySortMode, IMAGE_EXTENSIONS, MediaType, PDF_EXTENSIONS, VIDEO_EXTENSIONS,
     detect_media_type, get_extension, is_supported_media_file,
 };
 use serde::Deserialize;
-use support::{GeneratedWith, check, describe, fail_with, read_vectors};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

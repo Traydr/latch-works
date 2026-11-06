@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+# The integration tests are modules of one binary, tests/main.rs.
+autotests = false
 
 [dependencies]
 gpui-kit.workspace = true
@@ -31,6 +33,10 @@ uuid = { version = "1", features = ["v4"] }
 gpui-kit = { workspace = true, features = ["test-support"] }
 oriel-core-sync = { workspace = true, features = ["test-support"] }
 tempfile = "3"
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
 
 [lints]
 workspace = true

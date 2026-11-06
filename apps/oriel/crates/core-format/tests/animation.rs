@@ -1,15 +1,13 @@
 //! Checks `animation-mp4.ts`'s decisions against `conformance/media-format/animation-mp4.json`,
 //! which records what the real function painted and handed its encoder for each animation.
 
-mod support;
-
+use crate::support::{check, fail_with, json, read_vectors};
 use oriel_core_format::{
     ANIMATION_BACKGROUND, ANIMATION_MP4_SETTINGS, AnimatedImageMimeType, animation_canvas_size,
     plan_animation_frames,
 };
 use serde::Deserialize;
 use serde_json::Value;
-use support::{check, fail_with, json, read_vectors};
 
 #[derive(Deserialize)]
 struct AnimationVectors {

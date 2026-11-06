@@ -2,17 +2,16 @@
 //! code: every control meets the 32 point floor, Tab's focus stays in sight however short the
 //! window, Space and Enter press a plain button, and Escape gives focus back.
 
-mod support;
-
 use std::time::Duration;
 
+use crate::support::*;
 use gpui_kit::base::test_support::{ElementSnapshot, has_observed_focus, snapshots};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
     AppContext as _, Bounds, ElementId, Modifiers, Pixels, Role, TestAppContext, px, size,
 };
 use oriel_mode_tidy::TidyPage;
-use support::*;
+use oriel_ui::toast::ToastExt as _;
 
 const FLOOR: Pixels = px(32.);
 
@@ -254,6 +253,14 @@ async fn tab_keeps_focus_in_sight_however_short_the_window(cx: &mut TestAppConte
     wait_for_change(cx, &session).await;
     let mut hidden = Vec::new();
     for (width, height) in [(1320., 860.), (960., 640.), (960., 420.)] {
+        if height < 640. {
+            // Below the app's least height only the pages are being pushed, as with the sidebar
+            // below. The run's toast stays its five seconds into this walk or not as the machine
+            // is fast or slow, so it goes first.
+            cx.update_window(session.handle, |_, window, cx| window.dismiss_toast(cx))
+                .unwrap();
+            settle(cx, &session).await;
+        }
         cx.simulate_window_resize(session.handle, size(px(width), px(height)));
         let screen = viewport(cx, &session);
         for page in PAGES {

@@ -1,7 +1,6 @@
 //! Checks `video-policy.ts`'s port against `conformance/media-format/video-policy.json`.
 
-mod support;
-
+use crate::support::{check, fail_with, json, read_vectors};
 use oriel_core_format::{
     ARCHIVE_AUDIO_CODECS, ARCHIVE_DEFAULT_VIDEO_CODEC, ARCHIVE_VIDEO_CODECS, ArchiveVideoCodec,
     ArchiveVideoSource, AudioCodec, VIDEO_CONTAINERS, VideoCodec, VideoContainer,
@@ -9,7 +8,6 @@ use oriel_core_format::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use support::{check, fail_with, json, read_vectors};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

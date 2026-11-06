@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+# The integration tests are modules of one binary, tests/main.rs.
+autotests = false
 
 [dependencies]
 anyhow.workspace = true
@@ -33,6 +35,10 @@ futures = { workspace = true, features = ["executor"] }
 [features]
 # `testing::FakePaneView`, a small Pane View on a local port for tests of Sync without the stack.
 test-support = []
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
 
 [lints]
 workspace = true

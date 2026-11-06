@@ -2,16 +2,14 @@
 //! in sight at every height the window can have, and every control over the 32 point floor in View,
 //! Sync and Settings. Tidy's pages have their own walk.
 
-mod support;
-
 use std::time::Duration;
 
+use crate::support::*;
 use gpui_kit::base::test_support::{ElementSnapshot, has_observed_focus, snapshots};
 use gpui_kit::{
     AnyWindowHandle, AppContext as _, Bounds, ElementId, Pixels, Role, TestAppContext, px, size,
 };
 use oriel_core_paths::DataRoot;
-use support::*;
 
 const FLOOR: Pixels = px(32.);
 

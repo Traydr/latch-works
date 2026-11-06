@@ -3,9 +3,6 @@
 //! The vectors are made from the TypeScript, never by hand (each file's `about` says how), so a
 //! failure is a difference between the two implementations.
 
-// Each test binary uses part of this.
-#![allow(dead_code)]
-
 use std::{fmt::Debug, fs, path::Path};
 
 use serde::de::DeserializeOwned;

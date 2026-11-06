@@ -40,7 +40,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             apps/oriel/target
-          key: oriel-${{ runner.os }}-${{ hashFiles('apps/oriel/Cargo.lock', 'apps/oriel/rust-toolchain.toml') }}
+          key: oriel-${{ runner.os }}-${{ hashFiles('apps/oriel/Cargo.lock', 'apps/oriel/Cargo.toml', 'apps/oriel/rust-toolchain.toml') }}
           restore-keys: oriel-${{ runner.os }}-
 
       - name: Check the vectors from TypeScript

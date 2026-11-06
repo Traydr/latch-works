@@ -8,17 +8,14 @@
 //! clips and the scans need libvips and the pinned ffmpeg and ffprobe (`cargo run -p xtask --
 //! vendor`, `fetch-media-tools`); without them a read-side case says so and passes.
 
-mod support;
-
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
+use crate::support::*;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AppContext as _, TestAppContext};
 use oriel_core_tidy::contract::{FileFilter, FileQuery, FileSortColumn};
 use oriel_mode_tidy::{TidyPage, last_toast};
 use oriel_ui::ModeId;
-use support::*;
 
 #[gpui_kit::test]
 async fn a_folder_outside_the_sandbox_is_not_offered(cx: &mut TestAppContext) {
@@ -41,9 +38,7 @@ async fn a_folder_outside_the_sandbox_is_not_offered(cx: &mut TestAppContext) {
     for _ in 0..10 {
         cx.run_until_parked();
         render(cx, &session);
-        cx.background_executor
-            .timer(Duration::from_millis(10))
-            .await;
+        tick(cx);
     }
     let note = label(cx, &session, "picker-note").expect("the picker says why");
     assert!(note.contains("sandbox"), "{note}");
@@ -733,15 +728,17 @@ async fn stopping_an_analysis_takes_those_waiting_with_it(cx: &mut TestAppContex
     assert_eq!(*seen.borrow(), [first]);
 }
 
-/// Runs the app for a moment, with no waiting for it to be free: paused work never is.
+/// Runs the app for a moment, two seconds, with no waiting for it to be free: paused work never
+/// is. It draws every tenth of a second, not every tick: a frame is what costs here.
 async fn a_moment(cx: &mut TestAppContext, session: &Session) {
-    for _ in 0..200 {
+    for round in 0..200 {
         cx.run_until_parked();
-        render(cx, session);
-        cx.background_executor
-            .timer(Duration::from_millis(10))
-            .await;
+        if round % 10 == 0 {
+            render(cx, session);
+        }
+        tick(cx);
     }
+    render(cx, session);
 }
 
 /// Lets go of what a test paused, and waits for it to end.
@@ -878,8 +875,11 @@ async fn forgetting_a_folder_sends_holding_to_the_runs_own_trash(cx: &mut TestAp
             .update(cx, |state, cx| state.forget_root(root, window, cx));
     })
     .unwrap();
-    a_moment(cx, &session).await;
-    assert_eq!(cx.read(|cx| session.state.read(cx).roots().len()), 0);
+    let state = session.state.clone();
+    wait_for(cx, &session, "the folder to go", move |cx| {
+        state.read(cx).roots().is_empty()
+    })
+    .await;
     assert!(held_files(&session).is_empty());
     assert!(std::fs::read_dir(&trash).unwrap().next().is_some());
 }

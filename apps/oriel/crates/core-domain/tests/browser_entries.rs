@@ -1,13 +1,11 @@
 //! Checks `browser-entries.ts`'s port against `conformance/media-domain/browser-entries.json`.
 
-mod support;
-
+use crate::support::{GeneratedWith, check, fail_with, read_vectors};
 use oriel_core_domain::{
     BrowserEntry, BrowserListing, ComicEntry, FolderNode, GallerySortMode, MediaItem,
     build_browser_entries,
 };
 use serde::Deserialize;
-use support::{GeneratedWith, check, fail_with, read_vectors};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

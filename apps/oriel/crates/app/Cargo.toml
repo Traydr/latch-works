@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+# The integration tests are modules of one binary, tests/main.rs, but sync_targets.rs, which
+# sets the environment, has one of its own.
+autotests = false
 
 [[bin]]
 name = "oriel"
@@ -60,6 +63,14 @@ embed-resource = "3"
 # Frame time, CPU, GPU and memory overlay for Phase 0's measurements.
 fps = ["dep:gpui-fps"]
 gpui-fast = ["gpui-kit/gpui-fast"]
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
+
+[[test]]
+name = "sync_targets"
+path = "tests/sync_targets.rs"
 
 [lints]
 workspace = true

@@ -4,10 +4,9 @@
 //! Duplicates' scope list, decision line, and N with its Undo. Quick Look and the native menu need a real window, so these check what was asked of
 //! them ([`last_quick_look`], [`last_menu`]).
 
-mod support;
-
 use std::path::Path;
 
+use crate::support::*;
 use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{AppContext as _, Entity, Focusable as _, Modifiers, TestAppContext};
 use oriel_core_tidy::catalog::Catalog;
@@ -17,7 +16,6 @@ use oriel_mode_tidy::{
     last_toast,
 };
 use oriel_ui::LocalStorage;
-use support::*;
 
 fn library(cx: &mut TestAppContext, session: &Session) -> Entity<LibraryPage> {
     cx.read(|cx| session.tidy.read(cx).library().clone())
