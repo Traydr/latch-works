@@ -18,6 +18,7 @@ use gpui_kit::{
     App, AsyncWindowContext, Context, Entity, SharedString, Subscription, Task, WeakEntity, Window,
 };
 use oriel_core_tidy::contract::{AudioState, FileFilter, FileKind, RootId};
+use oriel_core_tidy::plans::planner::PlanRequestError;
 use oriel_runtime::{Job, JobError, JobEvent, JobProgress, JobStatus};
 use oriel_ui::Toast;
 
@@ -41,6 +42,7 @@ pub type OnDone = Rc<dyn Fn(&PlanSummary, &mut Window, &mut App)>;
 type UndoRun = Rc<dyn Fn(&mut TidyState, &mut Window, &mut Context<TidyState>)>;
 
 /// Something the owner did that ⌘Z can take back.
+#[derive(Clone)]
 pub struct UndoEntry {
     /// The plans it reverses, so undoing one of them another way drops the entry.
     plan_ids: Vec<PlanId>,
@@ -236,6 +238,18 @@ fn job_message(error: &JobError) -> String {
         JobError::Cancelled => "Stopped".into(),
         JobError::Failed(error) => format!("{error:#}"),
     }
+}
+
+/// Why the engine would not draft a change, in its own words, such as a file at hand that has gone
+/// since it was chosen.
+fn refusal(error: &JobError) -> Option<String> {
+    let JobError::Failed(error) = error else {
+        return None;
+    };
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<PlanRequestError>())
+        .map(ToString::to_string)
 }
 
 fn is_not_available(error: &JobError) -> bool {
@@ -539,7 +553,10 @@ impl TidyState {
                 let toast = match (error, plan) {
                     (JobError::Cancelled, _) => Toast::info("Stopped"),
                     (error, Some(plan)) => self.failed_toast(plan, &error, options, cx),
-                    (error, None) => Toast::error("That didn't work").detail(job_message(&error)),
+                    (error, None) => match refusal(&error) {
+                        Some(reason) => Toast::error(reason),
+                        None => Toast::error("That didn't work").detail(job_message(&error)),
+                    },
                 };
                 show_toast(window, toast, cx);
                 return;
@@ -927,7 +944,28 @@ impl TidyState {
         if self.undo.len() >= UNDO_LIMIT {
             self.undo.remove(0);
         }
-        self.undo.push(entry);
+        // Back in the history, its plans are not undone after all: an Undo that stopped part way.
+        for id in &entry.plan_ids {
+            self.undone_plans.remove(id);
+        }
+        self.undo_pushed += 1;
+        self.undo.push((self.undo_pushed, entry));
+    }
+
+    /// Takes `entry` back to its place by age, under whatever has finished since it left.
+    fn put_back_entry(&mut self, age: u64, entry: UndoEntry) {
+        // Undone some other way while it waited.
+        if entry
+            .plan_ids
+            .iter()
+            .any(|id| self.undone_plans.contains(id))
+        {
+            return;
+        }
+        put_back_by_age(&mut self.undo, age, entry);
+        if self.undo.len() > UNDO_LIMIT {
+            self.undo.remove(0);
+        }
     }
 
     /// Adds a change that is not a plan (a dismissal, a preferred folder) to ⌘Z's history.
@@ -948,19 +986,33 @@ impl TidyState {
     /// Takes an entry [`Self::push_undo`] added off ⌘Z's history.
     pub fn drop_undo(&mut self, key: usize) {
         self.undo
-            .retain(|entry| Rc::as_ptr(&entry.run) as *const () as usize != key);
+            .retain(|(_, entry)| Rc::as_ptr(&entry.run) as *const () as usize != key);
     }
 
     fn forget_plans(&mut self, plan_ids: &[PlanId]) {
+        self.undone_plans.extend(plan_ids.iter().copied());
         self.undo
-            .retain(|entry| !entry.plan_ids.iter().any(|id| plan_ids.contains(id)));
+            .retain(|(_, entry)| !entry.plan_ids.iter().any(|id| plan_ids.contains(id)));
         self.results.retain(|_, plan| !plan_ids.contains(&plan.id));
     }
 
     /// ⌘Z: the newest change of this session, else the newest undoable plan in the journal.
     pub fn undo_last(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(entry) = self.undo.pop() {
+        if let Some((age, entry)) = self.undo.pop() {
+            let queued = self.next_queued;
             (entry.run)(self, window, cx);
+            // It waits behind another change. Stopped there it has not happened, so it goes back
+            // where it was, under whatever has finished since.
+            if self.next_queued != queued
+                && let Some(waiting) = self.queue.back_mut()
+            {
+                let this = cx.entity().downgrade();
+                waiting.on_dropped = Some(Rc::new(move |_, cx| {
+                    let entry = entry.clone();
+                    this.update(cx, |this, _| this.put_back_entry(age, entry))
+                        .ok();
+                }));
+            }
             return;
         }
         let Some(engine) = self.engine().cloned() else {
@@ -984,6 +1036,12 @@ impl TidyState {
         })
         .detach();
     }
+}
+
+/// Puts an entry back among `stack`'s, which are in order of `age`.
+fn put_back_by_age<T>(stack: &mut Vec<(u64, T)>, age: u64, entry: T) {
+    let place = stack.partition_point(|(other, _)| *other < age);
+    stack.insert(place, (age, entry));
 }
 
 /// Resolves and runs each step in turn; answers with the plans that did something, what went
@@ -1084,6 +1142,19 @@ mod tests {
     use gpui_kit::TestAppContext;
 
     use super::*;
+
+    /// Undos stopped in the queue go back by age, in whichever order they are stopped, under what
+    /// finished while they waited.
+    #[test]
+    fn a_stopped_undo_goes_back_under_what_finished_since() {
+        for stopped in [[(2, 'b'), (3, 'c')], [(3, 'c'), (2, 'b')]] {
+            let mut stack = vec![(1, 'a'), (4, 'd')];
+            for (age, entry) in stopped {
+                put_back_by_age(&mut stack, age, entry);
+            }
+            assert_eq!(stack, [(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')]);
+        }
+    }
 
     /// A quick change, such as a decision on Duplicates, can finish before the task that started
     /// it comes back to subscribe. It heard nothing then, and held every later change back until

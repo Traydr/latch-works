@@ -2225,6 +2225,8 @@ impl DuplicatesPage {
         div()
             .id("loupe")
             .test_support()
+            // A press here is for what it shows, not the tile behind, which it would decide.
+            .occlude()
             .aria_label(SharedString::from(format!(
                 "{} of {}",
                 focus + 1,

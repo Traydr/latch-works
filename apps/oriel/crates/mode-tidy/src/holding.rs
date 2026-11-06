@@ -8,6 +8,7 @@
 //! Holding is drawn a screen at a time ([`crate::windowed`]): each change's heading and each
 //! line of its tiles are items of one column, broken into lines as the tiles would wrap.
 
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 use std::path::Path;
@@ -17,10 +18,11 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon};
 use gpui_kit::{
-    AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement as _,
-    IntoElement, KeyDownEvent, ObjectFit, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription,
-    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
+    AnyElement, App, Bounds, Context, Entity, FocusHandle, Focusable, FontWeight,
+    InteractiveElement as _, IntoElement, KeyDownEvent, MouseDownEvent, ObjectFit,
+    ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _,
+    Styled as _, StyledImage as _, Subscription, TestSupportExt as _, Window, canvas, div,
+    prelude::FluentBuilder as _, px,
 };
 use oriel_core_domain::{MediaType, detect_media_type};
 use oriel_core_tidy::contract::RootId;
@@ -137,6 +139,13 @@ pub struct HoldingPage {
     /// Tiles to a line as last laid out, which ↑ ↓ move across.
     columns: usize,
     busy: bool,
+    /// Until when a press on the page does nothing: what is under the pointer has only just come
+    /// there, after a restore or a press on the selection bar.
+    /// Where a press does nothing for a moment: where a restored tile or the selection bar was.
+    guard: widgets::PressGuard,
+    /// The selection bar and each tile where last drawn.
+    bar_bounds: Rc<Cell<Bounds<Pixels>>>,
+    tile_bounds: Rc<RefCell<HashMap<HoldingId, Bounds<Pixels>>>>,
     seen: (Option<RootId>, u64),
     /// How much narrower than the window the column was when last laid out, and the window's
     /// width then, so a line holds as many tiles as fit before the column is laid out again.
@@ -165,6 +174,9 @@ impl HoldingPage {
             reveal_cursor: false,
             columns: 1,
             busy: false,
+            guard: widgets::PressGuard::default(),
+            bar_bounds: Rc::default(),
+            tile_bounds: Rc::default(),
             seen: (None, 0),
             margin: None,
             window_width: 0.,
@@ -236,6 +248,11 @@ impl HoldingPage {
         self.held
             .as_ref()
             .map_or(&[], |held| held.ordered.as_slice())
+    }
+
+    /// Whether a press at `position` would do nothing yet.
+    pub fn holds_press_at(&self, position: Point<Pixels>) -> bool {
+        self.guard.holds(position)
     }
 
     /// ⌘A: every held file listed.
@@ -336,7 +353,15 @@ impl HoldingPage {
         cx.notify();
     }
 
-    fn restore(&mut self, ids: Vec<HoldingId>, window: &mut Window, cx: &mut Context<Self>) {
+    /// Restores `ids`. A press brought it from `place`, where what comes under the pointer next is
+    /// not what that press meant, so a press there waits a moment.
+    fn restore(
+        &mut self,
+        ids: Vec<HoldingId>,
+        place: Option<Bounds<Pixels>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if ids.is_empty() || self.busy {
             return;
         }
@@ -350,6 +375,9 @@ impl HoldingPage {
             let restored = restored.await;
             this.update_in(cx, |this, window, cx| {
                 this.busy = false;
+                if let Some(place) = place {
+                    this.guard.arm(place);
+                }
                 this.selected.clear();
                 let toast = match restored {
                     Ok(result) if result.failed.is_empty() => Toast::done(format!(
@@ -432,7 +460,7 @@ impl HoldingPage {
                 self.empty(window, cx);
             } else {
                 let ids = self.selected.iter().copied().collect();
-                self.restore(ids, window, cx);
+                self.restore(ids, None, window, cx);
             }
         } else if keys.key == "escape" && !self.selected.is_empty() {
             self.selected.clear();
@@ -509,6 +537,17 @@ impl HoldingPage {
             .p_1()
             .rounded(theme.radius_lg)
             .relative()
+            .child({
+                let tiles = self.tile_bounds.clone();
+                canvas(
+                    move |bounds, _, _| {
+                        tiles.borrow_mut().insert(id, bounds);
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full()
+            })
             .group("held-tile")
             .border_2()
             .border_color(if current {
@@ -562,10 +601,15 @@ impl HoldingPage {
                             .outline()
                             .label("Restore")
                             .disabled(self.busy)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                cx.stop_propagation();
-                                this.restore(vec![id], window, cx);
-                            })),
+                            .on_click(cx.listener(
+                                move |this, event: &gpui_kit::ClickEvent, window, cx| {
+                                    cx.stop_propagation();
+                                    if event.click_count() == 1 {
+                                        let place = this.tile_bounds.borrow().get(&id).copied();
+                                        this.restore(vec![id], place, window, cx);
+                                    }
+                                },
+                            )),
                     ),
             )
             .child(
@@ -901,6 +945,14 @@ impl Render for HoldingPage {
                 .child(
                     div()
                         .id("holding-selection")
+                        // A press here is the bar's alone, and the bar may go with it. The wheel
+                        // still scrolls the tiles.
+                        .block_mouse_except_scroll()
+                        .capture_any_mouse_up(cx.listener(|this, _, _, _| {
+                            this.guard.arm(this.bar_bounds.get());
+                        }))
+                        .relative()
+                        .child(widgets::measure(&self.bar_bounds))
                         .flex()
                         .flex_row()
                         .items_center()
@@ -920,7 +972,8 @@ impl Render for HoldingPage {
                                 .tooltip("Restore  ⌘⌫")
                                 .disabled(self.busy)
                                 .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.restore(ids.clone(), window, cx);
+                                    let place = Some(this.bar_bounds.get());
+                                    this.restore(ids.clone(), place, window, cx);
                                 })),
                         )
                         .child(
@@ -954,6 +1007,11 @@ impl Render for HoldingPage {
             .track_focus(&self.focus)
             .key_context("TidyHolding")
             .on_key_down(cx.listener(Self::on_key_down))
+            .capture_any_mouse_down(cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                if this.guard.holds(event.position) {
+                    cx.stop_propagation();
+                }
+            }))
             .relative()
             .flex()
             .flex_col()

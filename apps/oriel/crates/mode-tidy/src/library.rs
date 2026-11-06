@@ -7,17 +7,22 @@
 //! adds or removes one, ⇧-click extends from the last one clicked; the arrows move the cursor
 //! (← → too in the grid) and ⇧ extends; Space shows the cursor's file in Quick Look, Return
 //! renames it in place and Esc clears. The table's selected row is the cursor. Bulk actions take
-//! the selection; without one, the Inspector and the shortcuts act on the cursor's file.
+//! the selection; without one, the Inspector and the shortcuts act on the cursor's file. A command
+//! that has run leaves neither: the cursor keeps its place for the arrows but shows nothing and is
+//! no target, so a file that slides into the place of those it took is acted on only once the
+//! owner chooses a file again, with an arrow, a click or a selection.
 
 mod grid;
 pub mod menu;
 
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName;
+use gpui_kit::base::actions::{SelectDown, SelectPageDown, SelectPageUp, SelectUp};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{Escape as InputEscape, Input, InputEvent, InputState};
@@ -27,11 +32,11 @@ use gpui_kit::component::table::{
 };
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable,
-    FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent, Modifiers, ObjectFit,
-    ParentElement as _, Render, SharedString, Stateful, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Task, TestSupportExt as _, UniformListScrollHandle, Window, canvas,
-    div, prelude::FluentBuilder as _, px,
+    AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle, Focusable,
+    FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent, Modifiers, MouseDownEvent,
+    ObjectFit, ParentElement as _, Pixels, Render, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _,
+    UniformListScrollHandle, Window, canvas, div, prelude::FluentBuilder as _, px,
 };
 pub use menu::{LibraryMenu, MenuChoice, last_menu};
 use oriel_core_tidy::TidyEngine;
@@ -238,6 +243,9 @@ pub struct CatalogRows {
     anchor: Option<usize>,
     /// The selection a move of the cursor brings, in place of the cursor's file alone.
     pending: Option<BTreeSet<FileId>>,
+    /// Where the cursor was when a command took the files at hand: hidden and no target until a
+    /// file is chosen, and where the arrows go on from.
+    resting: Option<usize>,
     /// The cursor goes when the query changes, the selection stays.
     keep_selection: bool,
     /// The file being renamed in place, and its field.
@@ -269,6 +277,7 @@ impl CatalogRows {
             selected: BTreeSet::new(),
             anchor: None,
             pending: None,
+            resting: None,
             keep_selection: false,
             renaming: None,
             select_all: None,
@@ -390,6 +399,7 @@ impl CatalogRows {
                             rows.total = Some(result.total.max(0) as usize);
                             rows.total_bytes = result.total_bytes;
                             rows.pages.insert(page, result.rows);
+                            Self::hide_a_stray_cursor(table, cx);
                         }
                         Err(error) => {
                             log::warn!("The Library could not read the catalog: {error:#}")
@@ -399,6 +409,23 @@ impl CatalogRows {
                 })
                 .ok();
         }));
+    }
+
+    /// A row shown as the cursor is the target: once the list reads itself again, a cursor whose
+    /// row now holds a file outside the selection is hidden, as after a command.
+    fn hide_a_stray_cursor(table: &mut TableState<Self>, cx: &mut Context<TableState<Self>>) {
+        let Some(cursor) = table.selected_row() else {
+            return;
+        };
+        let rows = table.delegate_mut();
+        let stray = rows
+            .row(cursor)
+            .is_some_and(|row| !rows.selected.is_empty() && !rows.selected.contains(&row.id));
+        if stray {
+            rows.resting = Some(cursor);
+            rows.keep_selection = true;
+            table.clear_selection(cx);
+        }
     }
 
     fn set_selected(&mut self, selected: BTreeSet<FileId>, cx: &mut Context<TableState<Self>>) {
@@ -769,6 +796,10 @@ pub struct LibraryPage {
     grid_width: f32,
     grid_columns: usize,
     grid_scroll: UniformListScrollHandle,
+    /// The selection bar where it was last drawn, and where a press on the files under it does
+    /// nothing for a moment after one on the bar.
+    bar_bounds: Rc<Cell<Bounds<Pixels>>>,
+    guard: widgets::PressGuard,
     /// What the page last read for: the root, the catalog's version and the last preset.
     seen: (Option<RootId>, u64, u64),
     targets_seen: (Vec<FileId>, u64),
@@ -852,6 +883,8 @@ impl LibraryPage {
             grid_width: 0.,
             grid_columns: 1,
             grid_scroll: UniformListScrollHandle::new(),
+            bar_bounds: Rc::default(),
+            guard: widgets::PressGuard::default(),
             seen: (None, 0, 0),
             targets_seen: (Vec::new(), 0),
             search_timer: None,
@@ -913,6 +946,7 @@ impl LibraryPage {
                 let index = *index;
                 self.table.update(cx, |table, cx| {
                     let rows = table.delegate_mut();
+                    rows.resting = None;
                     let next = match rows.pending.take() {
                         Some(next) => next,
                         None => {
@@ -974,7 +1008,7 @@ impl LibraryPage {
     /// The arrows: the cursor `delta` files on, the selection with it, or ⇧ extending it from
     /// the anchor (`move`).
     fn move_cursor(&mut self, delta: isize, extend: bool, cx: &mut Context<Self>) {
-        let cursor = self.cursor(cx);
+        let cursor = self.cursor(cx).or(self.table.read(cx).delegate().resting);
         let total = self.total(cx).unwrap_or(0);
         if total == 0 {
             return;
@@ -1275,6 +1309,9 @@ impl LibraryPage {
             table.delegate_mut().reset(engine.clone(), query, cx);
             // The cursor points into one query's results; a new query starts without one, and
             // keeps the selection.
+            if query_changed {
+                table.delegate_mut().resting = None;
+            }
             if query_changed && table.selected_row().is_some() {
                 table.delegate_mut().keep_selection = true;
                 table.clear_selection(cx);
@@ -1428,7 +1465,36 @@ impl LibraryPage {
         self.state.update(cx, |state, cx| {
             state.perform(request, PerformOptions::default(), window, cx);
         });
-        self.clear_selection(cx);
+        self.rest_cursor(cx);
+    }
+
+    /// Nothing is chosen after a command: the selection goes, and the cursor rests, hidden.
+    fn rest_cursor(&mut self, cx: &mut Context<Self>) {
+        self.table.update(cx, |table, cx| {
+            let cursor = table.selected_row();
+            let rows = table.delegate_mut();
+            rows.set_selected(BTreeSet::new(), cx);
+            if let Some(cursor) = cursor {
+                rows.resting = Some(cursor);
+                rows.keep_selection = true;
+                table.clear_selection(cx);
+            }
+        });
+    }
+
+    /// The table's own move from a resting cursor: it goes from that place, as from the cursor.
+    fn wake_cursor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let focus = self.table.read(cx).focus_handle(cx);
+        if !focus.contains_focused(window, cx) {
+            return;
+        }
+        self.table.update(cx, |table, cx| {
+            if table.selected_row().is_none()
+                && let Some(resting) = table.delegate_mut().resting
+            {
+                table.set_selected_row(resting, cx);
+            }
+        });
     }
 
     fn hold(&mut self, ids: Vec<FileId>, window: &mut Window, cx: &mut Context<Self>) {
@@ -1628,6 +1694,11 @@ impl LibraryPage {
                 }
             }
             "escape" if !selected.is_empty() => self.clear_selection(cx),
+            // In the list, as Esc takes a cursor that shows.
+            "escape" if !grid => {
+                self.table
+                    .update(cx, |table, _| table.delegate_mut().resting = None);
+            }
             _ => return,
         }
         cx.stop_propagation();
@@ -2160,6 +2231,15 @@ impl LibraryPage {
                 div()
                     .id("library-selection")
                     .test_support()
+                    // A press here is the bar's alone, and the bar may go with it: the second press
+                    // of a double-click must not reach the file under where it was. The wheel
+                    // still scrolls the files.
+                    .block_mouse_except_scroll()
+                    .capture_any_mouse_up(cx.listener(|this, _, _, _| {
+                        this.guard.arm(this.bar_bounds.get());
+                    }))
+                    .relative()
+                    .child(widgets::measure(&self.bar_bounds))
                     .aria_label(SharedString::from(label.clone()))
                     .flex()
                     .flex_row()
@@ -2626,6 +2706,18 @@ impl Render for LibraryPage {
             .track_focus(&self.focus)
             .key_context("TidyLibrary")
             .on_key_down(cx.listener(Self::on_key_down))
+            .capture_action(cx.listener(|this, _: &SelectDown, window, cx| {
+                this.wake_cursor(window, cx);
+            }))
+            .capture_action(cx.listener(|this, _: &SelectUp, window, cx| {
+                this.wake_cursor(window, cx);
+            }))
+            .capture_action(cx.listener(|this, _: &SelectPageDown, window, cx| {
+                this.wake_cursor(window, cx);
+            }))
+            .capture_action(cx.listener(|this, _: &SelectPageUp, window, cx| {
+                this.wake_cursor(window, cx);
+            }))
             .on_action(cx.listener(|this, action: &LibraryMenu, window, cx| {
                 this.choose(action.0, window, cx);
             }))
@@ -2656,6 +2748,13 @@ impl Render for LibraryPage {
                             .flex_col()
                             .flex_1()
                             .min_w_0()
+                            .capture_any_mouse_down(cx.listener(
+                                |this, event: &MouseDownEvent, _, cx| {
+                                    if this.guard.holds(event.position) {
+                                        cx.stop_propagation();
+                                    }
+                                },
+                            ))
                             .child(content)
                             .children(selection_bar),
                     )

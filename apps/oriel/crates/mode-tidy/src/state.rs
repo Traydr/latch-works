@@ -25,7 +25,7 @@ use oriel_ui::{
 };
 
 use crate::actions::{QueuedChange, RunningChange, UndoEntry};
-use crate::changes::{Changes, HoldingList, PlanSummary};
+use crate::changes::{Changes, HoldingList, PlanId, PlanSummary};
 use crate::links::TidyEvent;
 use crate::loaded::Loaded;
 use crate::pages::TidyPage;
@@ -173,7 +173,11 @@ pub struct TidyState {
     /// The changes asked for while another held the turn, in the order they were asked for.
     pub(crate) queue: VecDeque<QueuedChange>,
     pub(crate) next_queued: u64,
-    pub(crate) undo: Vec<UndoEntry>,
+    /// ⌘Z's history, oldest first, each with its number from `undo_pushed`.
+    pub(crate) undo: Vec<(u64, UndoEntry)>,
+    pub(crate) undo_pushed: u64,
+    /// Plans undone this session, which a stopped ⌘Z does not put back.
+    pub(crate) undone_plans: HashSet<PlanId>,
     /// The newest finished plan started from each place in the UI (`resultFor`).
     pub(crate) results: HashMap<SharedString, PlanSummary>,
     requests: Requests,
@@ -263,6 +267,8 @@ impl TidyState {
             queue: VecDeque::new(),
             next_queued: 0,
             undo: Vec::new(),
+            undo_pushed: 0,
+            undone_plans: HashSet::new(),
             results: HashMap::new(),
             requests: Requests::default(),
             request_number: 0,

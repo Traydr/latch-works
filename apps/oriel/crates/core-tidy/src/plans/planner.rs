@@ -170,7 +170,7 @@ fn load_records(connection: &Connection, ids: &[FileId]) -> anyhow::Result<Vec<F
     let records = get_file_records(connection, &unique)?;
     if records.len() != unique.len() {
         bail!(PlanRequestError(
-            "Some files are no longer in the catalog. Rescan and try again.".into()
+            "Some of these files are no longer in the catalog, so nothing changed.".into()
         ));
     }
     Ok(records)

@@ -10,9 +10,10 @@ use std::time::Duration;
 
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Bounds, Context, ElementId, Entity, IntoElement,
-    ParentElement as _, Render, Styled as _, TestAppContext, Window, WindowBounds, WindowOptions,
-    div, px, size,
+    AnyWindowHandle, App, AppContext as _, Bounds, Context, ElementId, Entity, InputEvent as _,
+    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _,
+    Pixels, Point, Render, Styled as _, TestAppContext, Window, WindowBounds, WindowOptions, div,
+    px, size,
 };
 use oriel_core_paths::DataRoot;
 use oriel_core_tidy::passes::Media;
@@ -163,13 +164,23 @@ pub fn render(cx: &mut TestAppContext, session: &Session) {
 }
 
 /// Lets the engine's threads and the app's tasks run until `done` holds.
+///
+/// `ORIEL_TEST_WAIT_SECS` gives up sooner, after that many seconds, for runs that only need to
+/// know a case fails, such as a change made on purpose to see that a test catches it.
 pub async fn wait_for(
     cx: &mut TestAppContext,
     session: &Session,
     what: &str,
     done: impl Fn(&App) -> bool,
 ) {
+    let limit = std::env::var("ORIEL_TEST_WAIT_SECS")
+        .ok()
+        .and_then(|secs| secs.parse().ok())
+        .map(|secs| std::time::Instant::now() + Duration::from_secs(secs));
     for _ in 0..20_000 {
+        if limit.is_some_and(|limit| std::time::Instant::now() > limit) {
+            break;
+        }
         cx.run_until_parked();
         render(cx, session);
         if cx.read(|cx| done(cx)) {
@@ -211,6 +222,102 @@ pub fn click(cx: &mut TestAppContext, session: &Session, id: impl Into<ElementId
     .unwrap();
     cx.run_until_parked();
     render(cx, session);
+}
+
+/// Clicks `id` once it is drawn: what a page shows of the file at hand comes and goes as its
+/// list reads itself again.
+pub async fn click_when_drawn(cx: &mut TestAppContext, session: &Session, id: &'static str) {
+    for _ in 0..1000 {
+        cx.run_until_parked();
+        let drawn = cx
+            .update_window(session.handle, |_, window, cx| {
+                window.render_frame(cx);
+                window.try_find(id).is_some()
+            })
+            .unwrap();
+        if drawn {
+            click(cx, session, id);
+            return;
+        }
+        cx.background_executor
+            .timer(Duration::from_millis(10))
+            .await;
+    }
+    panic!("{id} was never drawn");
+}
+
+/// The middle of what `id` draws.
+pub fn centre_of(
+    cx: &mut TestAppContext,
+    session: &Session,
+    id: impl Into<ElementId>,
+) -> Point<Pixels> {
+    let id = id.into();
+    cx.update_window(session.handle, |_, window, cx| {
+        window.render_frame(cx);
+        window.find(id).bounds().center()
+    })
+    .unwrap()
+}
+
+/// A press and release at `position`, whatever is there by then: the `count`th click there, as the
+/// system counts them.
+pub fn press_at(cx: &mut TestAppContext, session: &Session, position: Point<Pixels>, count: usize) {
+    press_and_release(cx, session, position, count);
+    cx.run_until_parked();
+    render(cx, session);
+}
+
+/// A double-click at `position`: what the first press does has drawn once, and no more, when the
+/// second comes.
+pub fn double_press_at(cx: &mut TestAppContext, session: &Session, position: Point<Pixels>) {
+    press_and_release(cx, session, position, 1);
+    press_and_release(cx, session, position, 2);
+    cx.run_until_parked();
+    render(cx, session);
+}
+
+fn press_and_release(
+    cx: &mut TestAppContext,
+    session: &Session,
+    position: Point<Pixels>,
+    count: usize,
+) {
+    cx.update_window(session.handle, |_, window, cx| {
+        let modifiers = window.modifiers();
+        window.dispatch_event(
+            MouseMoveEvent {
+                position,
+                pressed_button: None,
+                modifiers,
+            }
+            .to_platform_input(),
+            cx,
+        );
+        window.render_frame(cx);
+        window.dispatch_event(
+            MouseDownEvent {
+                button: MouseButton::Left,
+                position,
+                modifiers,
+                click_count: count,
+                first_mouse: false,
+            }
+            .to_platform_input(),
+            cx,
+        );
+        window.dispatch_event(
+            MouseUpEvent {
+                button: MouseButton::Left,
+                position,
+                modifiers,
+                click_count: count,
+            }
+            .to_platform_input(),
+            cx,
+        );
+    })
+    .unwrap();
 }
 
 /// Edit › Undo (⌘Z), as the shell's menu sends it to the mode on screen.
