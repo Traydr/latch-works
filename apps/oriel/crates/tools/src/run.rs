@@ -99,7 +99,7 @@ impl ToolRun {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         hide_console_window(&mut command);
-        let mut child = command.spawn().map_err(|source| ToolError::Start {
+        let mut child = spawn(&mut command).map_err(|source| ToolError::Start {
             executable: self.executable.clone(),
             source,
         })?;
@@ -286,6 +286,20 @@ static RUNNING: Mutex<BTreeMap<u64, Arc<Mutex<Tool>>>> = Mutex::new(BTreeMap::ne
 
 static NEXT_RUN: AtomicU64 = AtomicU64::new(0);
 
+/// Held while a process starts. On macOS the standard library makes a pipe and marks it
+/// close-on-exec in two steps, so a process another thread started in between inherited the pipe.
+/// A quick probe then read no end of output until that process, perhaps an encode of several
+/// minutes, ended, and the pass waiting on the probe waited as long.
+static STARTING: Mutex<()> = Mutex::new(());
+
+/// Starts `command` as no other process this app starts through here is starting, so neither
+/// inherits the other's pipes. Only starts made through here are kept apart: anything that runs
+/// alongside tools should start this way.
+pub fn spawn(command: &mut Command) -> std::io::Result<Child> {
+    let _starting = lock(&STARTING);
+    command.spawn()
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -327,14 +341,15 @@ impl Tool {
     #[cfg(unix)]
     fn suspend(&mut self) {
         let pid = self.child.id();
-        self.watcher = Command::new("/bin/sh")
-            .args(["-c", "read -r _; kill -KILL \"$1\"", "oriel-tool-watch"])
-            .arg(pid.to_string())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok();
+        self.watcher = spawn(
+            Command::new("/bin/sh")
+                .args(["-c", "read -r _; kill -KILL \"$1\"", "oriel-tool-watch"])
+                .arg(pid.to_string())
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null()),
+        )
+        .ok();
         // SAFETY: `kill` takes no pointers, and this child has not been waited for, so its id
         // cannot have been given to another process.
         unsafe { libc::kill(pid as libc::pid_t, libc::SIGSTOP) };
