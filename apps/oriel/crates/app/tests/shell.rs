@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-use gpui_kit::component::ActiveTheme as _;
+use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
     Action, AnyWindowHandle, App, AppContext as _, Bounds, Entity, Focusable as _, OwnedMenuItem,
@@ -712,7 +712,10 @@ fn every_modes_jobs_show_in_one_place_at_the_bottom_right(cx: &mut TestAppContex
                 .stoppable(true),
         ],
     );
-    // Collapsed: the work that runs first, and how much more runs and waits.
+    // Collapsed, once it has run long enough to say: the work that runs first, and how much more
+    // runs and waits.
+    cx.executor().advance_clock(Duration::from_millis(300));
+    cx.run_until_parked();
     assert_eq!(
         label_of(cx, handle, "activity-indicator").as_deref(),
         Some("View · Scanning Pictures · 1 more running · 1 queued")
@@ -759,6 +762,10 @@ fn every_modes_jobs_show_in_one_place_at_the_bottom_right(cx: &mut TestAppContex
     assert!(!is_drawn(cx, handle, "activity-panel"));
     assert!(!is_drawn(cx, handle, "activity-indicator"));
     publish(cx, ModeId::Sync, vec![ActivityJob::new("run", "Planning")]);
+    // Work that ends at once has its toast to say so: the indicator waits to see that it won't.
+    assert!(!is_drawn(cx, handle, "activity-indicator"));
+    cx.executor().advance_clock(Duration::from_millis(300));
+    cx.run_until_parked();
     assert!(is_drawn(cx, handle, "activity-indicator"));
     assert!(!is_drawn(cx, handle, "activity-panel"));
 }
@@ -810,6 +817,66 @@ fn voiceover_reads_the_switcher_the_sidebar_and_the_top_bar_by_name(cx: &mut Tes
         );
     })
     .unwrap();
+}
+
+#[gpui_kit::test]
+fn the_app_mark_reads_once_in_every_mode_and_settings_and_takes_no_tab_stop(
+    cx: &mut TestAppContext,
+) {
+    let data = DataRoot::at(scratch("mark").join("data")).unwrap();
+    start(cx, &data);
+    let opened = open_shell(cx, &data);
+    let handle = opened.handle;
+
+    let check = |cx: &mut TestAppContext| {
+        cx.update_window(handle, |_, window, _| {
+            let mark = window.find("app-mark");
+            assert_eq!(
+                (mark.role(), mark.label()),
+                (Some(Role::Label), Some("Oriel"))
+            );
+            assert_eq!(mark.focused(), None);
+        })
+        .unwrap();
+    };
+    for mode in ["secondary-1", "secondary-2", "secondary-3"] {
+        press(cx, handle, mode);
+        check(cx);
+    }
+    click(cx, handle, "settings-item");
+    check(cx);
+}
+
+/// `?` and Help › Keyboard Shortcuts open a sheet in every mode, not only in Tidy.
+#[gpui_kit::test]
+fn every_mode_opens_a_shortcut_sheet(cx: &mut TestAppContext) {
+    let data = DataRoot::at(scratch("sheets").join("data")).unwrap();
+    start(cx, &data);
+    let opened = open_shell(cx, &data);
+    let handle = opened.handle;
+    let sheet_open = |cx: &mut TestAppContext| {
+        cx.update_window(handle, |_, window, cx| window.has_active_dialog(cx))
+            .unwrap()
+    };
+    let close = |cx: &mut TestAppContext| {
+        cx.update_window(handle, |_, window, cx| window.close_dialog(cx))
+            .unwrap();
+        frame(cx, handle);
+    };
+    for mode in ["secondary-1", "secondary-2", "secondary-3"] {
+        press(cx, handle, mode);
+        assert!(!sheet_open(cx));
+        press(cx, handle, "?");
+        assert!(sheet_open(cx), "? in {mode}");
+        close(cx);
+        cx.update_window(handle, |_, window, cx| {
+            window.dispatch_action(Box::new(oriel_ui::commands::ShowShortcuts), cx);
+        })
+        .unwrap();
+        frame(cx, handle);
+        assert!(sheet_open(cx), "the Help menu's item in {mode}");
+        close(cx);
+    }
 }
 
 #[gpui_kit::test]
@@ -866,7 +933,7 @@ fn about_names_the_version_and_the_licences_the_app_carries(cx: &mut TestAppCont
         );
         assert_eq!(
             window.find("about-show-licences").label(),
-            Some("Show Licences")
+            Some("Show licences")
         );
     })
     .unwrap();

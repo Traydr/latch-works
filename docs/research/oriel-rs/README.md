@@ -101,6 +101,8 @@ medians of 3.
 
 ## The detail pages
 
+- [The round of 2026-11-05](perf-2026-11.md): next set latency, the rebuild of duplicate sets, and
+  hardware AV1 decoding measured against prints.
 - [Scorecard](scorecard.md): Phase 9's numbers for both apps, what changed since Phase 0, the
   catch-up list, and what numbers miss.
 - [Parity](parity.md): every Electron Oriel feature by area, its state in Oriel RS, the GPUI test

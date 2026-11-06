@@ -270,6 +270,8 @@ impl Engine {
             log::warn!("an mpv engine did not trim; shutting it down");
             return false;
         }
+        // A draw under way when the file ended has finished by now, and counted itself.
+        self.shared.begin_file();
         self.core.observed().forget_file();
         true
     }

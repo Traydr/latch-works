@@ -10,7 +10,7 @@ use std::fmt;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
@@ -24,6 +24,9 @@ pub const MAX_STDOUT_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_STDERR_BYTES: usize = 64 * 1024;
 
 const READ_CHUNK: usize = 64 * 1024;
+
+/// What hears each piece of a tool's stdout as it arrives.
+type OnStdout<'a> = dyn Fn(&[u8]) + Send + Sync + 'a;
 
 /// One run of a tool: what to run, with which arguments, for how long at most.
 #[derive(Clone, Debug)]
@@ -76,7 +79,17 @@ impl ToolRun {
     /// Runs the tool to its end, blocking this thread, so call it from background work. Fails
     /// only when the tool cannot start, when reading from it fails, or when it was cancelled.
     pub fn run(&self) -> Result<ToolOutput, ToolError> {
-        if self.is_cancelled() {
+        self.run_reading(None)
+    }
+
+    /// [`Self::run`] for a tool that reports as it goes: `on_stdout` sees each piece of its stdout
+    /// as it arrives, none of which is kept, so a run of any length stays within the bound.
+    pub fn run_streaming(&self, on_stdout: &OnStdout) -> Result<ToolOutput, ToolError> {
+        self.run_reading(Some(on_stdout))
+    }
+
+    fn run_reading(&self, on_stdout: Option<&OnStdout<'_>>) -> Result<ToolOutput, ToolError> {
+        if self.is_cancelled() || quitting() {
             return Err(ToolError::Cancelled);
         }
         let mut command = Command::new(&self.executable);
@@ -93,12 +106,22 @@ impl ToolRun {
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
         let running = Running::register(child);
+        // Registered as the quit went through the list, so the quit may not have seen it.
+        if quitting() {
+            running.kill();
+        }
 
         let (events, received) = mpsc::channel();
         let _cancel = self.cancel.as_ref().map(|token| {
             let events = events.clone();
             token.on_cancel(move || {
                 let _ = events.send(Event::Cancel);
+            })
+        });
+        let _hold = self.cancel.as_ref().map(|token| {
+            let events = events.clone();
+            token.on_hold(move |held| {
+                let _ = events.send(Event::Hold(held));
             })
         });
         let deadline = Instant::now().checked_add(self.timeout);
@@ -108,7 +131,9 @@ impl ToolRun {
             let stderr_events = events;
             let readers = std::thread::Builder::new()
                 .name("tool stdout".to_owned())
-                .spawn_scoped(scope, move || read_stdout(stdout, &stdout_events))
+                .spawn_scoped(scope, move || {
+                    read_stdout(stdout, &stdout_events, on_stdout)
+                })
                 .and_then(|_| {
                     std::thread::Builder::new()
                         .name("tool stderr".to_owned())
@@ -124,8 +149,11 @@ impl ToolRun {
         let (status, killed) = running.finish().map_err(ToolError::Io)?;
         let collected = collected.map_err(ToolError::Io)?;
 
-        if collected.cancelled || self.is_cancelled() {
+        if collected.cancelled || self.is_cancelled() || quitting() {
             return Err(ToolError::Cancelled);
+        }
+        if !killed && told_to_stop(&status) {
+            return Err(ToolError::Killed);
         }
         Ok(ToolOutput {
             status,
@@ -149,7 +177,7 @@ pub struct ToolOutput {
     pub stderr: String,
     /// Whether the run was killed for lasting longer than its timeout.
     pub timed_out: bool,
-    /// Whether the tool was killed, for its timeout, its stdout bound or [`kill_running_tools`].
+    /// Whether the tool was killed, for its timeout or its stdout bound.
     killed: bool,
 }
 
@@ -176,8 +204,12 @@ pub enum ToolError {
         executable: PathBuf,
         source: io::Error,
     },
-    /// The run's token was cancelled, before it started or while it ran; the tool was killed.
+    /// The run's token was cancelled or the app is quitting, before it started or while it ran;
+    /// the tool was killed.
     Cancelled,
+    /// Something other than this app stopped the tool: the system, short of memory, or the owner.
+    /// That says nothing about what it was reading, so a pass records nothing and goes on.
+    Killed,
     /// Reading from the tool or waiting for it failed.
     Io(io::Error),
 }
@@ -193,6 +225,7 @@ impl fmt::Display for ToolError {
         match self {
             Self::Start { executable, .. } => write!(f, "starting {}", executable.display()),
             Self::Cancelled => f.write_str("cancelled"),
+            Self::Killed => f.write_str("the tool was stopped from outside the app"),
             Self::Io(_) => f.write_str("running the tool"),
         }
     }
@@ -202,18 +235,50 @@ impl std::error::Error for ToolError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Start { source, .. } | Self::Io(source) => Some(source),
-            Self::Cancelled => None,
+            Self::Cancelled | Self::Killed => None,
         }
     }
 }
 
-/// Kills every tool this process started that is still running. The app calls it as it quits: a
-/// child process outlives its parent, and a long ffmpeg would keep running. Each run then
-/// finishes with no exit code.
+/// Set, tools run on when their job is paused, as they do where they cannot be suspended, to see
+/// what the app says then on a machine where they can.
+pub const KEEP_RUNNING_VARIABLE: &str = "ORIEL_TOOLS_KEEP_RUNNING";
+
+/// Whether a tool in the middle of a file stops at once when its job is paused. Where it cannot,
+/// it runs to the end of that file, and the app says "Pausing" until it has.
+pub fn tools_suspend() -> bool {
+    cfg!(unix) && std::env::var_os(KEEP_RUNNING_VARIABLE).is_none()
+}
+
+/// Kills every tool this process started that is still running, and refuses any more. The app
+/// calls it as it quits: a child process outlives its parent, and a long ffmpeg would keep
+/// running. Each run then finishes as [`ToolError::Cancelled`], so the work that asked for it
+/// records nothing about the file before the process ends.
 pub fn kill_running_tools() {
+    QUITTING.store(true, Ordering::SeqCst);
     for tool in lock(&RUNNING).values() {
         lock(tool).kill();
     }
+}
+
+/// Set by [`kill_running_tools`], for good: the process is on its way out.
+static QUITTING: AtomicBool = AtomicBool::new(false);
+
+fn quitting() -> bool {
+    QUITTING.load(Ordering::SeqCst)
+}
+
+/// Whether the tool ended on a signal that says stop rather than what it was reading: `SIGSEGV` on
+/// a bad file stays that file's failure. Windows does not say how a process was ended.
+#[cfg(unix)]
+fn told_to_stop(status: &ExitStatus) -> bool {
+    use std::os::unix::process::ExitStatusExt as _;
+    matches!(status.signal(), Some(libc::SIGKILL | libc::SIGTERM))
+}
+
+#[cfg(not(unix))]
+fn told_to_stop(_: &ExitStatus) -> bool {
+    false
 }
 
 /// Every tool still running, so [`kill_running_tools`] can reach it.
@@ -237,13 +302,58 @@ struct Running {
 struct Tool {
     child: Child,
     killed: bool,
+    /// While the tool is suspended, what kills it should this app die first.
+    watcher: Option<Child>,
 }
 
 impl Tool {
     fn kill(&mut self) {
         self.killed = true;
+        self.end_watcher();
+        // A suspended process takes a kill as any other does.
         let _ = self.child.kill();
     }
+
+    fn end_watcher(&mut self) {
+        if let Some(mut watcher) = self.watcher.take() {
+            let _ = watcher.kill();
+            let _ = watcher.wait();
+        }
+    }
+
+    /// Stops the process where it is, keeping what it holds in memory and its files open. Left
+    /// suspended it would never end by itself, so a small shell waits on a pipe only this app
+    /// holds: if the app dies, the pipe closes, and the shell kills the tool.
+    #[cfg(unix)]
+    fn suspend(&mut self) {
+        let pid = self.child.id();
+        self.watcher = Command::new("/bin/sh")
+            .args(["-c", "read -r _; kill -KILL \"$1\"", "oriel-tool-watch"])
+            .arg(pid.to_string())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok();
+        // SAFETY: `kill` takes no pointers, and this child has not been waited for, so its id
+        // cannot have been given to another process.
+        unsafe { libc::kill(pid as libc::pid_t, libc::SIGSTOP) };
+    }
+
+    #[cfg(unix)]
+    fn resume(&mut self) {
+        self.end_watcher();
+        // SAFETY: as in `suspend`.
+        unsafe { libc::kill(self.child.id() as libc::pid_t, libc::SIGCONT) };
+    }
+
+    /// Windows has no documented call to suspend a process, so a tool runs to its end there and
+    /// the app says so: see [`tools_suspend`].
+    #[cfg(not(unix))]
+    fn suspend(&mut self) {}
+
+    #[cfg(not(unix))]
+    fn resume(&mut self) {}
 }
 
 impl Running {
@@ -252,9 +362,18 @@ impl Running {
         let tool = Arc::new(Mutex::new(Tool {
             child,
             killed: false,
+            watcher: None,
         }));
         lock(&RUNNING).insert(id, tool.clone());
         Self { id, tool }
+    }
+
+    fn suspend(&self) {
+        lock(&self.tool).suspend();
+    }
+
+    fn resume(&self) {
+        lock(&self.tool).resume();
     }
 
     fn kill(&self) {
@@ -281,6 +400,8 @@ impl Drop for Running {
 }
 
 enum Event {
+    /// The tool's job was paused, or went on.
+    Hold(bool),
     Stdout(Vec<u8>),
     Stderr(String),
     Overflow,
@@ -304,8 +425,11 @@ fn collect(
     let mut stdout = None;
     let mut stderr = None;
     let (mut timed_out, mut cancelled, mut killed) = (false, false, false);
+    let mut deadline = deadline;
+    // While the tool is held it does no work, so none of its time passes.
+    let mut held_since = None;
     while stdout.is_none() || stderr.is_none() {
-        let event = match deadline.filter(|_| !killed) {
+        let event = match deadline.filter(|_| !killed && held_since.is_none()) {
             Some(deadline) => {
                 match received.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
                     Ok(event) => Some(event),
@@ -332,6 +456,17 @@ fn collect(
                 killed = true;
                 running.kill();
             }
+            Some(Event::Hold(true)) if !killed && held_since.is_none() && tools_suspend() => {
+                running.suspend();
+                held_since = Some(Instant::now());
+            }
+            Some(Event::Hold(false)) => {
+                if let Some(since) = held_since.take() {
+                    running.resume();
+                    deadline = deadline.and_then(|at| at.checked_add(since.elapsed()));
+                }
+            }
+            Some(Event::Hold(true)) => {}
             // Both readers are gone without a word, which only a panic in one does.
             None => break,
         }
@@ -346,11 +481,19 @@ fn collect(
 
 /// Keeps the first [`MAX_STDOUT_BYTES`], asks for a kill past them, and drains the pipe to its
 /// end so the tool never blocks on a full pipe.
-fn read_stdout(mut pipe: impl Read, events: &mpsc::Sender<Event>) {
+fn read_stdout(
+    mut pipe: impl Read,
+    events: &mpsc::Sender<Event>,
+    on_stdout: Option<&OnStdout<'_>>,
+) {
     let mut kept = Vec::new();
     let mut chunk = vec![0; READ_CHUNK];
     let mut overflowed = false;
     while let Some(read) = read_some(&mut pipe, &mut chunk) {
+        if let Some(on_stdout) = on_stdout {
+            on_stdout(&chunk[..read]);
+            continue;
+        }
         if overflowed {
             continue;
         }
@@ -427,6 +570,74 @@ fn hide_console_window(command: &mut Command) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tool that counts up on stdout, a little at a time, and how many it has said.
+    #[cfg(unix)]
+    fn counter(token: &CancelToken) -> (ToolRun, Arc<std::sync::atomic::AtomicUsize>) {
+        let run = ToolRun::new("/bin/sh", Duration::from_secs(60))
+            .args([
+                "-c",
+                "i=0; while [ $i -lt 40 ]; do echo $i; i=$((i+1)); sleep 0.05; done",
+            ])
+            .cancel_on(token);
+        (run, Arc::default())
+    }
+
+    #[cfg(unix)]
+    fn wait_for(what: &str, ready: impl Fn() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !ready() {
+            assert!(Instant::now() < deadline, "timed out waiting for {what}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_held_tool_stops_where_it_is_and_finishes_when_let_go() {
+        let token = CancelToken::new();
+        let (run, said) = counter(&token);
+        let counted = said.clone();
+        let tool = std::thread::spawn(move || {
+            run.run_streaming(&|piece: &[u8]| {
+                let lines = piece.iter().filter(|byte| **byte == b'\n').count();
+                counted.fetch_add(lines, Ordering::SeqCst);
+            })
+        });
+        wait_for("the tool to start", || said.load(Ordering::SeqCst) >= 3);
+        token.hold(true);
+        std::thread::sleep(Duration::from_millis(300));
+        let at_hold = said.load(Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(500));
+        assert_eq!(
+            said.load(Ordering::SeqCst),
+            at_hold,
+            "it went on while held"
+        );
+        token.hold(false);
+        let output = tool.join().unwrap().unwrap();
+        assert!(output.success());
+        assert_eq!(said.load(Ordering::SeqCst), 40);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_held_tool_stops_for_good_when_cancelled() {
+        let token = CancelToken::new();
+        let (run, said) = counter(&token);
+        let counted = said.clone();
+        let tool = std::thread::spawn(move || {
+            run.run_streaming(&|piece: &[u8]| {
+                let lines = piece.iter().filter(|byte| **byte == b'\n').count();
+                counted.fetch_add(lines, Ordering::SeqCst);
+            })
+        });
+        wait_for("the tool to start", || said.load(Ordering::SeqCst) >= 3);
+        token.hold(true);
+        std::thread::sleep(Duration::from_millis(200));
+        token.cancel();
+        assert!(matches!(tool.join().unwrap(), Err(ToolError::Cancelled)));
+    }
 
     #[test]
     fn a_cut_tail_drops_the_rest_of_a_split_character() {

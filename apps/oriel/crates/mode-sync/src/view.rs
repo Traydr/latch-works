@@ -7,10 +7,10 @@ use std::ops::Range;
 use std::time::SystemTime;
 
 use gpui_kit::assets::IconName;
-use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
+use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::Input;
-use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
+use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{
@@ -19,11 +19,13 @@ use gpui_kit::component::{
 use gpui_kit::{
     AnyElement, App, Context, Entity, FontWeight, Hsla, InteractiveElement as _, IntoElement,
     ParentElement as _, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
-    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px, relative, uniform_list,
+    TestSupportExt as _, Window, canvas, div, prelude::FluentBuilder as _, px, relative,
+    uniform_list,
 };
 use oriel_core_domain::format_bytes;
 use oriel_core_index::SyncPlanAction;
 use oriel_core_sync::{RunAction, format_count, parse_iso_timestamp};
+use oriel_ui::TextRole as _;
 use oriel_ui::locations::{LocationItem, LocationSwitcher, shared_locations};
 use oriel_ui::segmented::{Segmented, SegmentedItem};
 use oriel_ui::{
@@ -35,10 +37,10 @@ use crate::run::{self, ItemState, PruneAvailability, RunPhase};
 use crate::{FocusPlanFilter, KEY_CONTEXT, RowModel, RunFilter, Screen, SyncMode, ToggleRunLog};
 
 /// A plan row's height, as Electron Oriel's `h-8`.
-const ROW_HEIGHT: f32 = 32.;
+const ROW_HEIGHT: f32 = 40.;
 
 /// The run panel's width.
-const RUN_PANEL_WIDTH: f32 = 300.;
+const RUN_PANEL_WIDTH: f32 = 400.;
 
 /// Points along the throughput chart.
 const CHART_BUCKETS: usize = 48;
@@ -56,16 +58,10 @@ pub(crate) fn confirm(
 ) {
     let on_confirm = std::rc::Rc::new(on_confirm);
     let sync = sync.clone();
-    window.open_alert_dialog(cx, move |alert, _, _| {
+    window.open_alert_dialog(cx, move |alert, _, cx| {
         let on_confirm = on_confirm.clone();
         let (confirmed, closed) = (sync.clone(), sync.clone());
-        alert
-            .title(title.clone())
-            .description(description)
-            .confirm()
-            .ok_text(action)
-            .ok_variant(ButtonVariant::Danger)
-            .cancel_text("Cancel")
+        oriel_ui::dialogs::confirmation(alert, title.clone(), description, action, true, cx)
             .on_ok(move |_, window, cx| {
                 confirmed.update(cx, |sync, cx| sync.set_confirmation(None, cx));
                 on_confirm(window, cx);
@@ -258,6 +254,15 @@ impl SyncMode {
                     .on_key_down(
                         cx.listener(|this, event: &gpui_kit::KeyDownEvent, window, cx| {
                             let keystroke = &event.keystroke;
+                            // Esc leaves the filter, as it leaves Library's search.
+                            if keystroke.key == "escape"
+                                && gpui_kit::Focusable::focus_handle(&this.filter, cx)
+                                    .is_focused(window)
+                            {
+                                this.focus_handle.focus(window, cx);
+                                cx.stop_propagation();
+                                return;
+                            }
                             if keystroke.key == "/"
                                 && !keystroke.modifiers.modified()
                                 && this.plan.is_some()
@@ -298,7 +303,7 @@ impl SyncMode {
             None => LocationSwitcher::new("No profile yet", move |menu, _, cx| {
                 profile_menu(&sync, menu, cx)
             })
-            .caption("Add one to sync a folder"),
+            .caption("Add one to sync"),
         };
         switcher.rail(rail)
     }
@@ -422,7 +427,7 @@ impl SyncMode {
                 .min_w_0()
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_body()
                         .font_weight(FontWeight::MEDIUM)
                         .child(label),
                 )
@@ -462,7 +467,7 @@ impl SyncMode {
                             .child(
                                 div()
                                     .px_1()
-                                    .text_xs()
+                                    .text_caption()
                                     .text_color(theme.muted_foreground)
                                     .child(if editing.is_some() {
                                         "Changing the source folder or the API URL clears this \
@@ -491,6 +496,7 @@ impl SyncMode {
                                             .child(field(
                                                 "Profile name",
                                                 Input::new(&self.form.name)
+                                                    .bar_size()
                                                     .id("profile-name")
                                                     .aria_label("Profile name")
                                                     .into_any_element(),
@@ -498,6 +504,7 @@ impl SyncMode {
                                             .child(field(
                                                 "Pane View API URL",
                                                 Input::new(&self.form.api_url)
+                                                    .bar_size()
                                                     .id("profile-api-url")
                                                     .aria_label("Pane View API URL")
                                                     .into_any_element(),
@@ -512,12 +519,14 @@ impl SyncMode {
                                             .child(
                                                 div().flex_1().min_w_0().child(
                                                     Input::new(&self.form.source_root)
+                                                        .bar_size()
                                                         .id("profile-source-root")
                                                         .aria_label("Source folder"),
                                                 ),
                                             )
                                             .child(
                                                 Button::new("profile-choose-folder")
+                                                    .bar_size()
                                                     .icon(IconName::FolderOpen)
                                                     .label("Choose…")
                                                     .on_click(cx.listener(
@@ -536,6 +545,7 @@ impl SyncMode {
                                             .gap_1p5()
                                             .child(
                                                 Input::new(&self.form.token)
+                                                    .bar_size()
                                                     .id("profile-token")
                                                     .aria_label("Sync API token")
                                                     .disabled(self.form.clear_token),
@@ -543,7 +553,7 @@ impl SyncMode {
                                             .when(token_state == TokenState::Unreadable, |this| {
                                                 this.child(
                                                     div()
-                                                        .text_xs()
+                                                        .text_caption()
                                                         .text_color(theme.muted_foreground)
                                                         .child(
                                                             "The saved token could not be \
@@ -554,16 +564,18 @@ impl SyncMode {
                                             })
                                             .when(has_saved_token, |this| {
                                                 this.child(
-                                                    Checkbox::new("profile-clear-token")
-                                                        .checked(self.form.clear_token)
-                                                        .label("Forget the saved token")
-                                                        .on_click(cx.listener(
-                                                            |this, checked: &bool, window, cx| {
-                                                                this.set_clear_token(
-                                                                    *checked, window, cx,
-                                                                );
-                                                            },
-                                                        )),
+                                                    oriel_ui::checkbox_target(Checkbox::new(
+                                                        "profile-clear-token",
+                                                    ))
+                                                    .checked(self.form.clear_token)
+                                                    .label("Forget the saved token")
+                                                    .on_click(cx.listener(
+                                                        |this, checked: &bool, window, cx| {
+                                                            this.set_clear_token(
+                                                                *checked, window, cx,
+                                                            );
+                                                        },
+                                                    )),
                                                 )
                                             })
                                             .into_any_element(),
@@ -604,7 +616,7 @@ impl SyncMode {
     fn render_workspace(
         &self,
         profile: &Profile,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme = cx.theme().clone();
@@ -624,15 +636,20 @@ impl SyncMode {
             None => describe_last_run(profile).unwrap_or_default(),
         };
         let token_state = self.store.token_state(&profile.id);
+        // A narrow window's bar keeps its room for the plan's commands.
+        let narrow = f32::from(window.viewport_size().width) < oriel_ui::shell::NARROW_WINDOW;
         let bar = TopBar::new(&self.shell, profile.name.clone())
-            .trailing(
-                div()
-                    .max_w(px(320.))
-                    .truncate()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(meta),
-            )
+            .when(!narrow, |bar| {
+                bar.quiet(
+                    div()
+                        .min_w_0()
+                        .max_w(px(420.))
+                        .truncate()
+                        .text_caption()
+                        .text_color(theme.muted_foreground)
+                        .child(meta),
+                )
+            })
             .trailing(self.render_profile_menu(profile, cx));
         let bar = match &self.plan {
             Some(_) => bar.trailing(self.render_plan_actions(cx)),
@@ -653,8 +670,10 @@ impl SyncMode {
             .when(
                 token_state != TokenState::Saved || self.doctor_result.is_some(),
                 |this| {
+                    let page = cx.entity().downgrade();
                     this.child(
                         div()
+                            .relative()
                             .flex()
                             .flex_col()
                             .flex_shrink_0()
@@ -663,6 +682,27 @@ impl SyncMode {
                             .py_4()
                             .border_t_1()
                             .border_color(theme.border)
+                            .child(
+                                canvas(
+                                    move |bounds, window, cx| {
+                                        let height = bounds.size.height;
+                                        let changed = page.update(cx, |page, _| {
+                                            let changed = page.band_height != height;
+                                            page.band_height = height;
+                                            changed
+                                        });
+                                        if changed.unwrap_or(false) {
+                                            oriel_ui::redraw::notify_next_frame(
+                                                page.clone(),
+                                                window,
+                                            );
+                                        }
+                                    },
+                                    |_, _, _, _| {},
+                                )
+                                .absolute()
+                                .size_full(),
+                            )
                             .when(token_state != TokenState::Saved, |this| {
                                 this.child(
                                     div()
@@ -672,25 +712,26 @@ impl SyncMode {
                                         .max_w(px(448.))
                                         .child(
                                             div()
-                                                .text_size(px(13.))
+                                                .text_body()
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .child("Sync API token"),
                                         )
                                         .child(
                                             Input::new(&self.session_token)
                                                 .id("session-token")
+                                                .bar_size()
                                                 .aria_label("Sync API token"),
                                         )
                                         .child(
                                             div()
-                                                .text_xs()
+                                                .text_caption()
                                                 .text_color(theme.muted_foreground)
                                                 .child(if token_state == TokenState::Unreadable {
                                                     "The saved token could not be unlocked. \
                                                      Enter it again to replace it."
                                                 } else {
-                                                    "Encrypted with a key kept in \
-                                                     ~/.latch-works/oriel/sync."
+                                                    "Saved encrypted, with a key kept in this \
+                                                     app's data folder."
                                                 }),
                                         ),
                                 )
@@ -732,7 +773,7 @@ impl SyncMode {
                     .child(
                         div()
                             .flex_1()
-                            .text_size(px(13.))
+                            .text_body()
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(if result.ok {
                                 "Every check passed"
@@ -774,7 +815,7 @@ impl SyncMode {
                                 } else {
                                     IconName::CircleX
                                 })
-                                .size(px(16.))
+                                .size(px(20.))
                                 .text_color(if check.ok {
                                     theme.success
                                 } else {
@@ -788,13 +829,15 @@ impl SyncMode {
                                     .min_w_0()
                                     .child(
                                         div()
-                                            .text_size(px(13.))
+                                            .text_body()
                                             .font_weight(FontWeight::MEDIUM)
                                             .child(check.label.clone()),
                                     )
                                     .child(
-                                        div().text_xs().text_color(theme.muted_foreground).child(
-                                            match &check.detail {
+                                        div()
+                                            .text_caption()
+                                            .text_color(theme.muted_foreground)
+                                            .child(match &check.detail {
                                                 Some(detail) => format!(
                                                     "{} · {detail}",
                                                     if check.ok { "Passed" } else { "Failed" }
@@ -803,8 +846,7 @@ impl SyncMode {
                                                     (if check.ok { "Passed" } else { "Failed" })
                                                         .to_owned()
                                                 }
-                                            },
-                                        ),
+                                            }),
                                     ),
                             )
                     })),
@@ -827,7 +869,7 @@ impl SyncMode {
                 let (viewed, tidied) = (this.clone(), this.clone());
                 let (edit_id, delete_id) = (id.clone(), id.clone());
                 menu.item(
-                    PopupMenuItem::new("Edit profile…")
+                    oriel_ui::menu_row("Edit profile…")
                         .disabled(running)
                         .on_click(move |_, window, cx| {
                             edit.update(cx, |this, cx| {
@@ -836,29 +878,29 @@ impl SyncMode {
                         }),
                 )
                 .item(
-                    PopupMenuItem::new("Check connection")
+                    oriel_ui::menu_row("Check connection")
                         .disabled(running)
                         .on_click(move |_, window, cx| {
                             check.update(cx, |this, cx| this.check_connection(window, cx));
                         }),
                 )
-                .item(PopupMenuItem::new("Run log  ⌘L").on_click(move |_, _, cx| {
+                .item(oriel_ui::menu_row("Run log  ⌘L").on_click(move |_, _, cx| {
                     log.update(cx, |this, cx| this.toggle_run_log(cx));
                 }))
                 .separator()
                 .item(
-                    PopupMenuItem::new("Open in View").on_click(move |_, _, cx| {
+                    oriel_ui::menu_row("Open in View").on_click(move |_, _, cx| {
                         viewed.update(cx, |this, cx| this.hand_off_source(ModeId::View, cx));
                     }),
                 )
                 .item(
-                    PopupMenuItem::new("Tidy this folder").on_click(move |_, _, cx| {
+                    oriel_ui::menu_row("Tidy this folder").on_click(move |_, _, cx| {
                         tidied.update(cx, |this, cx| this.hand_off_source(ModeId::Tidy, cx));
                     }),
                 )
                 .separator()
                 .item(
-                    PopupMenuItem::new("Delete profile…")
+                    oriel_ui::menu_row("Delete profile…")
                         .disabled(running)
                         .on_click(move |_, window, cx| {
                             delete.update(cx, |this, cx| {
@@ -915,7 +957,7 @@ impl SyncMode {
                             format_count(counts.delete),
                             if enabled { "…" } else { "" }
                         ))
-                        .when(enabled, |this| this.danger())
+                        .when(enabled, |this| this.outline().danger())
                         .tooltip(tooltip.clone())
                         .accessibility_label(format!("Prune {}", format_count(counts.delete)))
                         .disabled(running || !enabled)
@@ -960,19 +1002,20 @@ impl SyncMode {
             .p_10()
             .child(
                 div()
-                    .text_base()
+                    .text_heading()
                     .font_weight(FontWeight::SEMIBOLD)
                     .child("No plan yet"),
             )
             .child(
                 div()
-                    .max_w(px(420.))
-                    .text_sm()
+                    .max_w(px(520.))
+                    .text_body()
                     .text_center()
                     .text_color(theme.muted_foreground)
                     .child(format!(
-                        "Plan compares {} with {}. Nothing changes on the server until you push.",
-                        profile.source_root, profile.api_url
+                        "Plan compares this folder with {}. Nothing changes on the server until \
+                         you push.",
+                        profile.api_url
                     )),
             )
             .child(
@@ -981,8 +1024,11 @@ impl SyncMode {
                     .role(Role::Status)
                     .test_support()
                     .aria_label(profile.source_root.clone())
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
+                    .max_w(px(520.))
+                    .whitespace_nowrap()
+                    .overflow_hidden()
+                    .text_ellipsis_start()
+                    .text_sm()
                     .child(profile.source_root.clone()),
             )
             .child(
@@ -1066,25 +1112,35 @@ impl SyncMode {
                         )))
                         .bar_size()
                         .outline()
+                        .quiet_edge(cx)
                         .selected(selected)
+                        // GPUI Kit's selected outline takes the field edge's colour as its fill,
+                        // too heavy behind words in the light theme.
+                        .when(selected, |this| this.bg(theme.secondary_active))
                         .accessibility_label(text.clone())
                         .tooltip(format!("Show only what to {}", plan_action_key(action)))
-                        .when(dimmed, |this| this.opacity(0.5))
                         .child(
                             div()
                                 .flex()
                                 .flex_row()
                                 .items_center()
                                 .gap_2()
+                                // Filtered out: quieter, and still plain to read.
+                                .when(dimmed, |this| this.text_color(theme.muted_foreground))
                                 .child(
                                     div()
                                         .size(px(8.))
                                         .rounded_full()
-                                        .bg(plan_action_color(action, cx)),
+                                        .bg(plan_action_color(action, cx))
+                                        .when(dimmed, |this| this.opacity(0.5)),
                                 )
                                 .child(text)
                                 .children(detail.map(|detail| {
-                                    div().text_color(theme.muted_foreground).child(detail)
+                                    div()
+                                        .when(!selected, |this| {
+                                            this.text_color(theme.muted_foreground)
+                                        })
+                                        .child(detail)
                                 })),
                         )
                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -1118,7 +1174,7 @@ impl SyncMode {
                     .child(
                         div()
                             .truncate()
-                            .text_xs()
+                            .text_caption()
                             .text_color(theme.muted_foreground)
                             .child(format!(
                                 "{} \u{2192} {}",
@@ -1136,10 +1192,11 @@ impl SyncMode {
                             .child(
                                 div()
                                     .ml_auto()
-                                    .w(px(240.))
+                                    .w(px(280.))
                                     .max_w(gpui_kit::relative(0.4))
                                     .child(
                                         Input::new(&self.filter)
+                                            .bar_size()
                                             .id("plan-filter")
                                             .aria_label("Filter plan paths")
                                             .bar_size(),
@@ -1152,7 +1209,7 @@ impl SyncMode {
                     .flex_1()
                     .py_12()
                     .text_center()
-                    .text_size(px(13.))
+                    .text_body()
                     .text_color(theme.muted_foreground)
                     .child(status_text("plan-empty", empty_hint))
                     .into_any_element()
@@ -1177,7 +1234,7 @@ impl SyncMode {
                     .gap_3()
                     .px_5()
                     .py_3()
-                    .text_xs()
+                    .text_caption()
                     .text_color(theme.muted_foreground)
                     .child(status_text(
                         "plan-count-keep",
@@ -1208,7 +1265,7 @@ impl SyncMode {
                         .overflow_y_scroll()
                         .px_5()
                         .pb_4()
-                        .text_xs()
+                        .text_caption()
                         .text_color(theme.muted_foreground)
                         .children(plan.skipped_entries.iter().map(|entry| {
                             let reason = serde_json::to_value(entry.reason)
@@ -1284,7 +1341,7 @@ impl SyncMode {
                                 } else {
                                     IconName::ChevronRight
                                 })
-                                .size(px(14.))
+                                .size(px(16.))
                                 .text_color(theme.muted_foreground),
                             )
                             .child(
@@ -1292,30 +1349,30 @@ impl SyncMode {
                                     .flex_1()
                                     .min_w_0()
                                     .truncate()
-                                    .text_size(px(13.))
+                                    .text_body()
                                     .font_weight(FontWeight::MEDIUM)
                                     .child(format!("{label}/")),
                             )
                             .child(
                                 div()
-                                    .w(px(84.))
+                                    .w(px(104.))
                                     .text_right()
-                                    .text_xs()
+                                    .text_caption()
                                     .text_color(theme.muted_foreground)
                                     .child(format_size(Some(size))),
                             )
                             .child(
                                 div()
-                                    .w(px(72.))
+                                    .w(px(88.))
                                     .text_right()
-                                    .text_xs()
+                                    .text_caption()
                                     .text_color(theme.muted_foreground)
                                     .child(match progress {
                                         Some((done, failed)) => format!(
                                             "{}/{item_count}{}",
                                             done + failed,
                                             if failed > 0 {
-                                                format!(" ·{failed}\u{2715}")
+                                                format!(" · {failed} \u{2715}")
                                             } else {
                                                 String::new()
                                             }
@@ -1345,7 +1402,7 @@ impl SyncMode {
                         .pr_5()
                         .border_b_1()
                         .border_color(theme.border)
-                        .text_xs()
+                        .text_caption()
                         .text_color(theme.muted_foreground)
                         .hover(|style| style.bg(theme.accent).text_color(theme.foreground))
                         .child(format!(
@@ -1373,12 +1430,12 @@ impl SyncMode {
                             Some(ItemState::Active) => Spinner::new().xsmall().into_any_element(),
                             Some(ItemState::Done | ItemState::Skipped(_)) => {
                                 Icon::new(IconName::Check)
-                                    .size(px(14.))
+                                    .size(px(16.))
                                     .text_color(theme.success)
                                     .into_any_element()
                             }
                             Some(ItemState::Failed(_)) => Icon::new(IconName::Close)
-                                .size(px(14.))
+                                .size(px(16.))
                                 .text_color(theme.danger)
                                 .into_any_element(),
                             None => div().into_any_element(),
@@ -1418,18 +1475,26 @@ impl SyncMode {
                                     .gap(px(10.))
                                     .flex_1()
                                     .min_w_0()
-                                    .when(faded, |this| this.opacity(0.45))
+                                    // A finished row reads as done by its mark and by losing its
+                                    // colour, not by fading past what can be read.
                                     .child(
                                         div()
-                                            .w(px(60.))
+                                            .w(px(76.))
                                             .flex_shrink_0()
                                             .py_0p5()
                                             .rounded(theme.radius)
                                             .text_center()
-                                            .text_xs()
+                                            .text_caption()
                                             .font_weight(FontWeight::MEDIUM)
-                                            .bg(plan_action_color(action, cx).opacity(0.12))
-                                            .text_color(plan_action_color(action, cx))
+                                            .map(|chip| {
+                                                if faded {
+                                                    chip.bg(theme.muted)
+                                                        .text_color(theme.muted_foreground)
+                                                } else {
+                                                    let color = plan_action_color(action, cx);
+                                                    chip.bg(color.opacity(0.12)).text_color(color)
+                                                }
+                                            })
                                             .child(plan_action_label(action)),
                                     )
                                     .child(
@@ -1437,7 +1502,10 @@ impl SyncMode {
                                             .flex_1()
                                             .min_w_0()
                                             .truncate()
-                                            .text_size(px(13.))
+                                            .text_body()
+                                            .when(faded, |this| {
+                                                this.text_color(theme.muted_foreground)
+                                            })
                                             .child(name),
                                     ),
                             )
@@ -1445,24 +1513,24 @@ impl SyncMode {
                                 div()
                                     .max_w(px(260.))
                                     .truncate()
-                                    .text_xs()
+                                    .text_caption()
                                     .text_color(color)
                                     .child(note)
                             }))
                             .child(
                                 div()
-                                    .w(px(84.))
+                                    .w(px(104.))
                                     .text_right()
-                                    .text_xs()
+                                    .text_caption()
                                     .text_color(theme.muted_foreground)
                                     .child(format_size(size)),
                             )
                             // The lane the folder rows count their items in.
                             .child(
                                 div()
-                                    .w(px(72.))
+                                    .w(px(88.))
                                     .text_right()
-                                    .text_xs()
+                                    .text_caption()
                                     .text_color(theme.muted_foreground)
                                     .child(match &state {
                                         Some(ItemState::Skipped(_)) => "Skipped",
@@ -1510,7 +1578,7 @@ impl SyncMode {
                         )
                         .child(
                             div()
-                                .text_xs()
+                                .text_caption()
                                 .text_color(theme.muted_foreground)
                                 .child(run::format_clock(elapsed)),
                         ),
@@ -1519,7 +1587,7 @@ impl SyncMode {
                 .child(
                     div()
                         .truncate()
-                        .text_xs()
+                        .text_caption()
                         .text_color(theme.muted_foreground)
                         .child(self.run.label.clone()),
                 )
@@ -1540,6 +1608,7 @@ impl SyncMode {
                 .into_any_element()
         };
         let prune = self.prune_availability();
+        let page = cx.entity().downgrade();
         div()
             .id("run-panel")
             .role(Role::Group)
@@ -1558,6 +1627,24 @@ impl SyncMode {
             .border_1()
             .border_color(theme.border)
             .shadow_lg()
+            .child(
+                canvas(
+                    move |bounds, window, cx| {
+                        let height = bounds.size.height;
+                        let changed = page.update(cx, |page, _| {
+                            let changed = page.panel_height != height;
+                            page.panel_height = height;
+                            changed
+                        });
+                        if changed.unwrap_or(false) {
+                            oriel_ui::redraw::notify_next_frame(page.clone(), window);
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .child(body)
             .child(div().flex().flex_col().gap_2().p_4().map(|this| {
                 this.child(
@@ -1578,7 +1665,12 @@ impl SyncMode {
                         this.child(
                             Button::new("run-prune")
                                 .bar_size()
+                                .outline()
                                 .danger()
+                                // A lighter red, for the tint of the panel's own ground.
+                                .when(cx.theme().is_dark(), |this| {
+                                    this.text_color(gpui_kit::rgb(0xf87171))
+                                })
                                 .label(format!("Prune {}…", format_count(count)))
                                 .tooltip(format!(
                                     "Delete the {} the reviewed plan lists",
@@ -1668,7 +1760,7 @@ impl SyncMode {
                             .child(
                                 div()
                                     .ml_auto()
-                                    .text_xs()
+                                    .text_caption()
                                     .text_color(theme.muted_foreground)
                                     .child(run::format_clock(elapsed)),
                             ),
@@ -1683,7 +1775,7 @@ impl SyncMode {
                         div()
                             .flex()
                             .flex_row()
-                            .text_xs()
+                            .text_caption()
                             .text_color(theme.muted_foreground)
                             .child(if by_bytes {
                                 format!(
@@ -1716,14 +1808,14 @@ impl SyncMode {
                             .items_baseline()
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_caption()
                                     .text_color(theme.muted_foreground)
                                     .child("Throughput"),
                             )
                             .child(
                                 div()
                                     .ml_auto()
-                                    .text_size(px(13.))
+                                    .text_body()
                                     .font_weight(FontWeight::MEDIUM)
                                     .child(format!("{}/s on average", format_bytes(rate))),
                             ),
@@ -1808,7 +1900,7 @@ impl SyncMode {
                     this.right_4()
                 }
             })
-            .h(px(224.))
+            .h(px(260.))
             .flex()
             .flex_col()
             .overflow_hidden()
@@ -1823,20 +1915,20 @@ impl SyncMode {
                     .flex_row()
                     .items_center()
                     .gap_2()
-                    .h(px(40.))
+                    .h(px(48.))
                     .flex_shrink_0()
                     .px_4()
                     .border_b_1()
                     .border_color(theme.border)
                     .child(
                         div()
-                            .text_size(px(13.))
+                            .text_body()
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("Run log"),
                     )
                     .child(
                         div()
-                            .text_xs()
+                            .text_caption()
                             .text_color(theme.muted_foreground)
                             .child(format!(
                                 "{} {}",
@@ -1868,7 +1960,7 @@ impl SyncMode {
                     .px_4()
                     .py(px(10.))
                     .font_family("Menlo")
-                    .text_size(px(11.))
+                    .text_caption()
                     .text_color(theme.muted_foreground)
                     .map(|this| {
                         if self.run.logs.is_empty() {
@@ -1907,7 +1999,7 @@ impl SyncMode {
                             ))
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_caption()
                                     .text_color(if state == TokenState::Unreadable {
                                         theme.danger
                                     } else {
@@ -1978,7 +2070,7 @@ fn stat(label: &'static str, value: String, tone: Option<Hsla>) -> impl IntoElem
         .min_w_0()
         .child(
             div()
-                .text_xs()
+                .text_caption()
                 .child(format!("{}{}", label[..1].to_uppercase(), &label[1..])),
         )
         .child(
@@ -1989,7 +2081,7 @@ fn stat(label: &'static str, value: String, tone: Option<Hsla>) -> impl IntoElem
                 .aria_label(value.clone())
                 .mt_0p5()
                 .truncate()
-                .text_size(px(15.))
+                .text_heading()
                 .font_weight(FontWeight::SEMIBOLD)
                 .when_some(tone, |this, tone| this.text_color(tone))
                 .child(value),
@@ -2067,7 +2159,7 @@ fn profile_menu(sync: &Entity<SyncMode>, mut menu: PopupMenu, cx: &App) -> Popup
     );
     let adder = sync.clone();
     menu.separator().item(
-        PopupMenuItem::new("New Profile…")
+        oriel_ui::menu_row("New profile…")
             .disabled(running)
             .on_click(move |_, window, cx| {
                 adder.update(cx, |this, cx| this.start_create_profile(window, cx));

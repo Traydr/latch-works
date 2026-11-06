@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
@@ -63,6 +63,21 @@ pub struct Harness {
 
 impl Render for Harness {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Where the shell stands toasts and the indicator, or a toast rests on the panel's
+        // controls here, where it never does in the app, and takes their presses.
+        let jobs = self.shell.read(cx).jobs().clone();
+        let tidy = self.tidy.read(cx);
+        let (foot, slot, room) = if self.settings {
+            (gpui_kit::px(0.), None, None)
+        } else {
+            (
+                tidy.foot_height(cx),
+                tidy.toast_slot(cx),
+                tidy.activity_room(cx),
+            )
+        };
+        let standing = foot + jobs.read(cx).footprint();
+        oriel_ui::toast::dock_toasts(standing, window.viewport_size(), slot, cx);
         let content = if self.settings {
             let section = self
                 .tidy
@@ -75,7 +90,7 @@ impl Render for Harness {
             .relative()
             .size_full()
             .child(content)
-            .child(ActivityIndicator::new(self.shell.read(cx).jobs()))
+            .child(ActivityIndicator::new(&jobs, foot).room(room))
     }
 }
 
@@ -163,6 +178,10 @@ pub fn render(cx: &mut TestAppContext, session: &Session) {
         .unwrap();
 }
 
+/// How long any one wait may take, however busy the machine. A press that is lost leaves a wait
+/// that never ends, and counting frames instead took 39 minutes to say so.
+const WAIT_LIMIT: Duration = Duration::from_secs(180);
+
 /// Lets the engine's threads and the app's tasks run until `done` holds.
 ///
 /// `ORIEL_TEST_WAIT_SECS` gives up sooner, after that many seconds, for runs that only need to
@@ -176,11 +195,9 @@ pub async fn wait_for(
     let limit = std::env::var("ORIEL_TEST_WAIT_SECS")
         .ok()
         .and_then(|secs| secs.parse().ok())
-        .map(|secs| std::time::Instant::now() + Duration::from_secs(secs));
-    for _ in 0..20_000 {
-        if limit.is_some_and(|limit| std::time::Instant::now() > limit) {
-            break;
-        }
+        .map_or(WAIT_LIMIT, Duration::from_secs);
+    let deadline = Instant::now() + limit;
+    while Instant::now() < deadline {
         cx.run_until_parked();
         render(cx, session);
         if cx.read(|cx| done(cx)) {
@@ -191,6 +208,21 @@ pub async fn wait_for(
             .await;
     }
     panic!("timed out waiting for {what}");
+}
+
+/// Lets a toast finish its slide in, as it has by the time anyone can have read it and reached for
+/// a control: on its way up it passes over what it comes to stand above.
+///
+/// It takes both clocks: its height runs on the executor's, its offset on the wall's.
+pub fn let_toast_land(cx: &mut TestAppContext, session: &Session) {
+    for _ in 0..6 {
+        cx.run_until_parked();
+        render(cx, session);
+        cx.executor().advance_clock(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    cx.run_until_parked();
+    render(cx, session);
 }
 
 /// Waits until the engine is open, nothing runs, and Overview's numbers are in.

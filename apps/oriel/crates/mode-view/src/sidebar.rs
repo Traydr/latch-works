@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use gpui_kit::assets::IconName;
-use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
+use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Icon,
     button::{Button, ButtonVariants as _},
@@ -18,6 +18,7 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px,
 };
 use gpui_kit::{App, Entity};
+use oriel_ui::TextRole as _;
 use oriel_ui::layout::NavItem;
 use oriel_ui::locations::{LocationItem, LocationSwitcher, location_id, shared_locations};
 use oriel_ui::{ControlSize as _, ModeId};
@@ -47,12 +48,12 @@ impl ViewMode {
                 .w_full()
                 .child(self.location_switcher(true, cx))
                 .child(
-                    // The rail's items' frame, 48 by 44 px, with the bar's type and icon.
+                    // The rail's items' frame, 56 by 52 px, with the bar's type and icon.
                     Button::new("sidebar-parent")
                         .ghost()
                         .bar_size()
-                        .w(px(48.))
-                        .h(px(44.))
+                        .w(px(56.))
+                        .h(px(52.))
                         .icon(Icon::new(IconName::ArrowUp))
                         .tooltip(match &parent {
                             Some(parent) => format!("Up to {}", display_name(parent)),
@@ -114,7 +115,7 @@ impl ViewMode {
                     div()
                         .pl(px(indent(depth + 1) + 10.))
                         .py(px(6.))
-                        .text_xs()
+                        .text_caption()
                         .text_color(theme.muted_foreground)
                         .child(if children_loading {
                             "Looking for subfolders…"
@@ -140,7 +141,7 @@ impl ViewMode {
                         .px(px(18.))
                         .pt_4()
                         .pb(px(6.))
-                        .text_xs()
+                        .text_caption()
                         .font_weight(gpui_kit::FontWeight::MEDIUM)
                         .text_color(theme.muted_foreground)
                         .child("Folders"),
@@ -215,7 +216,7 @@ fn folder_menu(view: &Entity<ViewMode>, mut menu: PopupMenu, cx: &App) -> PopupM
     );
     let chooser = view.clone();
     menu.separator().item(
-        PopupMenuItem::new("Open Folder…  ⌘O").on_click(move |_, _, cx| {
+        oriel_ui::menu_row("Open folder…  ⌘O").on_click(move |_, _, cx| {
             chooser.update(cx, |view, cx| view.choose_folder(cx));
         }),
     )

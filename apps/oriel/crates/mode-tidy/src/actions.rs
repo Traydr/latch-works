@@ -12,6 +12,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use futures::channel::oneshot;
 use gpui_kit::{
@@ -20,7 +21,7 @@ use gpui_kit::{
 use oriel_core_tidy::contract::{AudioState, FileFilter, FileKind, RootId};
 use oriel_core_tidy::plans::planner::PlanRequestError;
 use oriel_runtime::{Job, JobError, JobEvent, JobProgress, JobStatus};
-use oriel_ui::Toast;
+use oriel_ui::{Toast, ToastExt as _};
 
 use crate::changes::{
     Applied, FollowUp, PlanId, PlanKind, PlanListRequest, PlanPreview, PlanRequest, PlanStatus,
@@ -33,8 +34,30 @@ use crate::widgets::show_toast;
 /// The most entries ⌘Z remembers, as Electron Oriel's history keeps 50.
 const UNDO_LIMIT: usize = 50;
 
+/// How often the pages read again while a change runs.
+const READ_AGAIN_WHILE_CHANGING: Duration = Duration::from_secs(2);
+
 /// Runs once a change is undone, however that happens (its toast's Undo, ⌘Z), to show it again.
 pub type OnUndone = Rc<dyn Fn(&mut Window, &mut App)>;
+
+/// What the last Tidy up did, as its own plans measured it.
+pub struct Tidied {
+    pub root_id: RootId,
+    /// The bytes the folder lost, which wait in holding until it is emptied.
+    pub saved: i64,
+    pub plan_ids: Vec<PlanId>,
+}
+
+/// The file a running change is on.
+pub struct RunningFile {
+    pub rel_path: String,
+    pub name: String,
+    pub share: Option<f32>,
+    /// The owner paused the change and the tool has stopped where it is.
+    pub paused: bool,
+    /// The owner paused the change and the tool, which cannot be stopped, works on to the file's end.
+    pub pausing: bool,
+}
 
 /// Runs with a finished plan.
 pub type OnDone = Rc<dyn Fn(&PlanSummary, &mut Window, &mut App)>;
@@ -58,6 +81,9 @@ pub struct PerformOptions {
     /// queue does. An undo of it is quiet too.
     pub quiet: bool,
     pub on_undone: Option<OnUndone>,
+    /// What an undo calls the change, where its own toast called it something plainer than the
+    /// plan's title: "Kept 1 of 4".
+    pub undo_name: Option<String>,
     /// Runs with the finished plan, before its toast, for a page that shows the result itself.
     pub on_done: Option<OnDone>,
     /// Runs when nothing ran: the change failed, was stopped, or is not available.
@@ -117,6 +143,15 @@ pub struct QueuedChange {
     start: StartChange,
     /// Runs if it leaves the queue without running, as `PerformOptions::on_failed` does.
     on_dropped: Option<OnUndone>,
+    /// It is an Undo, which adds no new change to ⌘Z's history; one that stops puts its own back.
+    undoes: bool,
+}
+
+/// What asks for the changes' turn: a change, which may add to ⌘Z's history, with what runs if it
+/// leaves the queue without running; or an Undo.
+enum Turn {
+    Change(Option<OnUndone>),
+    Undo,
 }
 
 /// What a queued change is called before its plan names it.
@@ -298,6 +333,24 @@ pub fn describe_plan(plan: &PlanSummary) -> String {
 }
 
 impl TidyState {
+    /// The file the running change is on, if it says, for its tile to show: what it is doing, how
+    /// far it has got, and whether it is paused.
+    pub fn running_file(&self, cx: &App) -> Option<RunningFile> {
+        let progress = self.change.as_ref()?.progress(cx);
+        Some(RunningFile {
+            rel_path: progress.item()?.to_string(),
+            name: progress
+                .item()?
+                .rsplit('/')
+                .next()
+                .unwrap_or_default()
+                .to_owned(),
+            share: progress.item_share(),
+            paused: progress.is_paused() && oriel_tools::tools_suspend(),
+            pausing: progress.is_paused() && !oriel_tools::tools_suspend(),
+        })
+    }
+
     /// The running change started from `source`, if any (`jobFor`).
     pub fn change_for(&self, source: &str) -> Option<&RunningChange> {
         self.change
@@ -341,13 +394,19 @@ impl TidyState {
         &mut self,
         label: impl Into<SharedString>,
         source: Option<SharedString>,
-        on_dropped: Option<OnUndone>,
+        turn: Turn,
         start: impl FnOnce(&mut TidyState, &mut Window, &mut Context<TidyState>) + 'static,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.say_if_waiting_on_paused_work(window, cx);
+        let (undoes, on_dropped) = match turn {
+            Turn::Change(on_dropped) => (false, on_dropped),
+            Turn::Undo => (true, None),
+        };
         if !self.change_turn {
             self.change_turn = true;
+            self.turn_undoes = undoes;
             start(self, window, cx);
             return;
         }
@@ -359,9 +418,16 @@ impl TidyState {
             source,
             start: Box::new(start),
             on_dropped,
+            undoes,
         });
         self.report_activity(cx);
         cx.notify();
+    }
+
+    /// Whether a change runs, or waits to. Its Undo may need what is in holding, so holding stays
+    /// until it has ended.
+    pub(crate) fn holding_may_be_needed(&self) -> bool {
+        self.change_turn || !self.queue.is_empty()
     }
 
     /// The change holding the turn has been reported: the next in the queue starts.
@@ -369,6 +435,7 @@ impl TidyState {
         self.change_turn = false;
         if let Some(next) = self.queue.pop_front() {
             self.change_turn = true;
+            self.turn_undoes = next.undoes;
             (next.start)(self, window, cx);
         }
         self.report_activity(cx);
@@ -419,7 +486,16 @@ impl TidyState {
             let finished = this
                 .update(cx, |this, cx| {
                     let (finished, subscription) = when_finished(&job, cx);
-                    let observing = cx.observe(&job, |this, _, cx| {
+                    let mut read_at = Instant::now();
+                    let observing = cx.observe(&job, move |this, job, cx| {
+                        // Files change step by step, and a long run must not leave the pages
+                        // showing ones that have gone until it ends.
+                        if job.read(cx).progress().done() > 0
+                            && read_at.elapsed() >= READ_AGAIN_WHILE_CHANGING
+                        {
+                            read_at = Instant::now();
+                            this.changed(cx);
+                        }
                         this.report_activity(cx);
                         cx.notify();
                     });
@@ -430,6 +506,9 @@ impl TidyState {
                             change.cancel(cx);
                         }
                     }
+                    // The job may have said it waits for its turn before anything observed it, and
+                    // behind a paused scan it says nothing more.
+                    this.report_activity(cx);
                     finished
                 })
                 .map_err(job_error)?;
@@ -481,6 +560,7 @@ impl TidyState {
     /// The running change ended: the catalog may have changed.
     fn change_ended(&mut self, cx: &mut Context<Self>) {
         self.change = None;
+        self.forget_held_sets();
         self.report_activity(cx);
         self.changed(cx);
         self.reload_roots(cx);
@@ -488,10 +568,14 @@ impl TidyState {
 
     /// Scans or analyses again the roots a change asks for.
     fn follow_up(&mut self, follow_up: &FollowUp, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(root_id) = follow_up.rescan.first() {
-            self.start_scan(*root_id, window, cx);
-        } else if let Some(root_id) = follow_up.analyze.first() {
-            self.start_background_analysis(*root_id, window, cx);
+        for root_id in &follow_up.rescan {
+            self.rescan_after_change(*root_id, window, cx);
+        }
+        // A scan's end sees to the analysis of its root.
+        for root_id in &follow_up.analyze {
+            if !follow_up.rescan.contains(root_id) {
+                self.start_background_analysis(*root_id, window, cx);
+            }
         }
     }
 
@@ -509,7 +593,7 @@ impl TidyState {
         self.when_free(
             label,
             source,
-            on_dropped,
+            Turn::Change(on_dropped),
             move |this, window, cx| this.perform_now(request, options, window, cx),
             window,
             cx,
@@ -574,7 +658,11 @@ impl TidyState {
         let undoable = can_undo(&plan);
         if undoable {
             let entry_plan = plan.clone();
-            let entry_options = options.clone();
+            // ⌘Z says what it undid, even where the toast's own Undo needs no words.
+            let entry_options = PerformOptions {
+                quiet: false,
+                ..options.clone()
+            };
             self.push_entry(UndoEntry {
                 plan_ids: vec![plan.id],
                 run: Rc::new(move |this, window, cx| {
@@ -601,6 +689,9 @@ impl TidyState {
         };
         let mut toast = if plan.failed > 0 {
             Toast::error(message)
+        } else if plan.done == 0 {
+            // A check mark would say it worked.
+            Toast::info(message)
         } else {
             Toast::done(message)
         };
@@ -664,11 +755,13 @@ impl TidyState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A toast still offering Undo for this would be out of date at once.
+        window.dismiss_toast(cx);
         let label = format!("Undo “{}”", plan.title);
         self.when_free(
             label,
             None,
-            None,
+            Turn::Undo,
             move |this, window, cx| this.undo_plan_now(plan, options, window, cx),
             window,
             cx,
@@ -705,12 +798,15 @@ impl TidyState {
                             window.defer(cx, move |window, cx| on_undone(window, cx));
                         }
                         if !options.quiet {
-                            let toast = Toast::info(format!("Undid “{}”", plan.title));
+                            let name = options.undo_name.as_ref().unwrap_or(&plan.title);
+                            let toast = Toast::info(format!("Undid “{name}”"));
                             show_toast(window, toast, cx);
                         }
                     }
                     Ok(undone) => {
-                        this.push_entry(unfinished);
+                        this.return_entry(unfinished);
+                        // The steps that did come back have changed under the catalog.
+                        this.follow_up(&undone.follow_up, window, cx);
                         show_toast(
                             window,
                             Toast::error("Undo did not finish")
@@ -718,13 +814,14 @@ impl TidyState {
                             cx,
                         );
                     }
+                    // Stopped before its turn came: nothing was touched.
                     Err(error) if error.is_cancelled() => {
-                        this.push_entry(unfinished);
+                        this.return_entry(unfinished);
                         let toast = Toast::info("Undo stopped").detail("Undo again to finish it.");
                         show_toast(window, toast, cx);
                     }
                     Err(error) => {
-                        this.push_entry(unfinished);
+                        this.return_entry(unfinished);
                         show_toast(
                             window,
                             Toast::error("Undo failed").detail(job_message(&error)),
@@ -755,7 +852,7 @@ impl TidyState {
         self.when_free(
             label,
             Some(source.into()),
-            None,
+            Turn::Change(None),
             move |this, window, cx| this.perform_all_now(steps, title, source, window, cx),
             window,
             cx,
@@ -807,6 +904,14 @@ impl TidyState {
         if before > after {
             summary.push(format!("{} out", format::bytes((before - after) as f64)));
         }
+        // What Tidy up itself measured, for Overview to go on saying once the toast has gone.
+        if source == crate::overview::TIDY_SOURCE {
+            self.tidied = self.root_id().map(|root_id| Tidied {
+                root_id,
+                saved: (before - after).max(0),
+                plan_ids: plans.iter().map(|plan| plan.id).collect(),
+            });
+        }
         if held > 0 {
             summary.push(format!("{} in holding", format::bytes(held as f64)));
         }
@@ -828,6 +933,8 @@ impl TidyState {
             "Nothing to tidy".to_string()
         } else if plans.is_empty() {
             "That didn't work".to_string()
+        } else if before > after {
+            format!("{title} · {}", format::bytes((before - after) as f64))
         } else {
             title
         };
@@ -863,7 +970,7 @@ impl TidyState {
         self.when_free(
             label,
             None,
-            None,
+            Turn::Undo,
             move |this, window, cx| this.undo_all_now(plans, title, window, cx),
             window,
             cx,
@@ -906,6 +1013,9 @@ impl TidyState {
                         follow_up.analyze.extend(undone.follow_up.analyze);
                     }
                     Ok(undone) => {
+                        // The steps that did come back have changed under the catalog.
+                        follow_up.rescan.extend(undone.follow_up.rescan);
+                        follow_up.analyze.extend(undone.follow_up.analyze);
                         failure = Some(undone.message.unwrap_or_default());
                         break;
                     }
@@ -923,12 +1033,12 @@ impl TidyState {
                 this.follow_up(&follow_up, window, cx);
                 let toast = match failure {
                     None if stopped => {
-                        this.push_entry(unfinished);
+                        this.return_entry(unfinished);
                         Toast::info("Undo stopped").detail("Undo again to finish it.")
                     }
                     None => Toast::info(format!("Undid “{title}”")),
                     Some(message) => {
-                        this.push_entry(unfinished);
+                        this.return_entry(unfinished);
                         Toast::error("Undo did not finish").detail(message)
                     }
                 };
@@ -941,31 +1051,22 @@ impl TidyState {
     }
 
     fn push_entry(&mut self, entry: UndoEntry) {
+        self.undo_pushed += 1;
+        self.keep_entry(entry);
+    }
+
+    /// Puts back the entry of an Undo that stopped or did not finish: it is still the next Undo,
+    /// though no new change has landed.
+    fn return_entry(&mut self, entry: UndoEntry) {
+        self.undo_returned += 1;
+        self.keep_entry(entry);
+    }
+
+    fn keep_entry(&mut self, entry: UndoEntry) {
         if self.undo.len() >= UNDO_LIMIT {
             self.undo.remove(0);
         }
-        // Back in the history, its plans are not undone after all: an Undo that stopped part way.
-        for id in &entry.plan_ids {
-            self.undone_plans.remove(id);
-        }
-        self.undo_pushed += 1;
-        self.undo.push((self.undo_pushed, entry));
-    }
-
-    /// Takes `entry` back to its place by age, under whatever has finished since it left.
-    fn put_back_entry(&mut self, age: u64, entry: UndoEntry) {
-        // Undone some other way while it waited.
-        if entry
-            .plan_ids
-            .iter()
-            .any(|id| self.undone_plans.contains(id))
-        {
-            return;
-        }
-        put_back_by_age(&mut self.undo, age, entry);
-        if self.undo.len() > UNDO_LIMIT {
-            self.undo.remove(0);
-        }
+        self.undo.push(entry);
     }
 
     /// Adds a change that is not a plan (a dismissal, a preferred folder) to ⌘Z's history.
@@ -986,33 +1087,81 @@ impl TidyState {
     /// Takes an entry [`Self::push_undo`] added off ⌘Z's history.
     pub fn drop_undo(&mut self, key: usize) {
         self.undo
-            .retain(|(_, entry)| Rc::as_ptr(&entry.run) as *const () as usize != key);
+            .retain(|entry| Rc::as_ptr(&entry.run) as *const () as usize != key);
     }
 
     fn forget_plans(&mut self, plan_ids: &[PlanId]) {
-        self.undone_plans.extend(plan_ids.iter().copied());
         self.undo
-            .retain(|(_, entry)| !entry.plan_ids.iter().any(|id| plan_ids.contains(id)));
+            .retain(|entry| !entry.plan_ids.iter().any(|id| plan_ids.contains(id)));
         self.results.retain(|_, plan| !plan_ids.contains(&plan.id));
+        // Taken back, so no longer saved.
+        if self
+            .tidied
+            .as_ref()
+            .is_some_and(|tidied| tidied.plan_ids.iter().any(|id| plan_ids.contains(id)))
+        {
+            self.tidied = None;
+        }
     }
 
     /// ⌘Z: the newest change of this session, else the newest undoable plan in the journal.
+    ///
+    /// While a change runs or waits, the newest change is that one, which is not yet on the list:
+    /// answering now would undo something older than the owner meant. So this waits its turn behind
+    /// it, and then undoes only what has landed since, never reaching back into the journal. Behind
+    /// Undos alone the newest change is already on the list, so it undoes that, as a second ⌘Z
+    /// means. Behind an Undo that stopped or did not finish it undoes nothing: that Undo said so,
+    /// and is still the next.
     pub fn undo_last(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some((age, entry)) = self.undo.pop() {
-            let queued = self.next_queued;
+        // What is on screen may be the Undo this answers; the result says what happened.
+        window.dismiss_toast(cx);
+        if self.undo_entries_coming > 0 {
+            cx.spawn_in(window, async move |this, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(50))
+                    .await;
+                this.update_in(cx, |this, window, cx| this.undo_last(window, cx))
+                    .ok();
+            })
+            .detach();
+            return;
+        }
+        if self.holding_may_be_needed() {
+            let pushed_before = self.undo_pushed;
+            let returned_before = self.undo_returned;
+            let behind_a_change = (self.change_turn && !self.turn_undoes)
+                || self.queue.iter().any(|queued| !queued.undoes);
+            self.when_free(
+                "Undo the last change",
+                None,
+                Turn::Undo,
+                move |this, window, cx| {
+                    // The turn was kept for this; what it runs asks for the turn itself.
+                    this.change_turn = false;
+                    let landed = this.undo_pushed != pushed_before;
+                    let returned = this.undo_returned != returned_before;
+                    let next = if !returned && (landed || !behind_a_change) {
+                        this.undo.pop()
+                    } else {
+                        None
+                    };
+                    match next {
+                        Some(entry) => (entry.run)(this, window, cx),
+                        // That Undo's toast says to undo again, unless a change has spoken since.
+                        None if returned && !landed => {}
+                        None => show_toast(window, Toast::info("Nothing to undo"), cx),
+                    }
+                    if !this.change_turn {
+                        this.release_turn(window, cx);
+                    }
+                },
+                window,
+                cx,
+            );
+            return;
+        }
+        if let Some(entry) = self.undo.pop() {
             (entry.run)(self, window, cx);
-            // It waits behind another change. Stopped there it has not happened, so it goes back
-            // where it was, under whatever has finished since.
-            if self.next_queued != queued
-                && let Some(waiting) = self.queue.back_mut()
-            {
-                let this = cx.entity().downgrade();
-                waiting.on_dropped = Some(Rc::new(move |_, cx| {
-                    let entry = entry.clone();
-                    this.update(cx, |this, _| this.put_back_entry(age, entry))
-                        .ok();
-                }));
-            }
             return;
         }
         let Some(engine) = self.engine().cloned() else {
@@ -1027,6 +1176,11 @@ impl TidyState {
         cx.spawn_in(window, async move |this, cx| {
             let plans = plans.await.unwrap_or_default();
             this.update_in(cx, |this, window, cx| {
+                // A change begun meanwhile is now the newest.
+                if this.holding_may_be_needed() {
+                    this.undo_last(window, cx);
+                    return;
+                }
                 match plans.into_iter().find(can_undo) {
                     Some(plan) => this.undo_plan(plan, PerformOptions::default(), window, cx),
                     None => show_toast(window, Toast::info("Nothing to undo"), cx),
@@ -1036,12 +1190,6 @@ impl TidyState {
         })
         .detach();
     }
-}
-
-/// Puts an entry back among `stack`'s, which are in order of `age`.
-fn put_back_by_age<T>(stack: &mut Vec<(u64, T)>, age: u64, entry: T) {
-    let place = stack.partition_point(|(other, _)| *other < age);
-    stack.insert(place, (age, entry));
 }
 
 /// Resolves and runs each step in turn; answers with the plans that did something, what went
@@ -1142,19 +1290,6 @@ mod tests {
     use gpui_kit::TestAppContext;
 
     use super::*;
-
-    /// Undos stopped in the queue go back by age, in whichever order they are stopped, under what
-    /// finished while they waited.
-    #[test]
-    fn a_stopped_undo_goes_back_under_what_finished_since() {
-        for stopped in [[(2, 'b'), (3, 'c')], [(3, 'c'), (2, 'b')]] {
-            let mut stack = vec![(1, 'a'), (4, 'd')];
-            for (age, entry) in stopped {
-                put_back_by_age(&mut stack, age, entry);
-            }
-            assert_eq!(stack, [(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')]);
-        }
-    }
 
     /// A quick change, such as a decision on Duplicates, can finish before the task that started
     /// it comes back to subscribe. It heard nothing then, and held every later change back until

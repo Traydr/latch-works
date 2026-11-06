@@ -10,13 +10,15 @@ use gpui_kit::component::{
 };
 use gpui_kit::{
     App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div, px,
+    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
+    prelude::FluentBuilder as _, px,
 };
+use oriel_ui::TextRole as _;
 use oriel_ui::{ControlSize as _, TopBar};
 
 use crate::ViewMode;
 use crate::browser::Tile;
-use crate::catalog::{READY_STATUS_FOR, ScanState};
+use crate::catalog::ScanState;
 use crate::gallery::display_name;
 
 /// A neutral pill in the top bar (`lw-badge lw-badge-neutral`), named for tests and VoiceOver by
@@ -33,13 +35,18 @@ fn pill(id: &'static str, text: SharedString, cx: &App) -> impl IntoElement {
         .py(px(2.))
         .rounded_full()
         .bg(theme.muted)
-        .text_xs()
+        .text_caption()
         .text_color(theme.muted_foreground)
         .child(text)
 }
 
 impl ViewMode {
-    pub(crate) fn render_top_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_top_bar(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let narrow = oriel_ui::top_bar::narrow_top_bar(window, &self.shell, cx);
         let catalog = self.catalog.read(cx);
         let gallery = self.gallery.read(cx);
         let root = catalog.root().cloned();
@@ -49,14 +56,9 @@ impl ViewMode {
             .unwrap_or_else(|| "View".to_string());
         let mut bar = TopBar::new(&self.shell, title);
 
-        // The scan's status after an error, and for a while after it is done. While it runs it
-        // is in the shell's activity panel, with the rest of the app's work.
-        let state = catalog.state();
-        let ready = state == ScanState::Done
-            && catalog
-                .finished_at()
-                .is_some_and(|finished| finished.elapsed() < READY_STATUS_FOR);
-        if root.is_some() && (state == ScanState::Error || ready) {
+        // The scan's status after an error. While it runs it is in the shell's activity panel, with
+        // the rest of the app's work, and a scan that went well has nothing to report.
+        if root.is_some() && catalog.state() == ScanState::Error {
             let text: SharedString = match catalog.message_path() {
                 Some(path) => format!("{}: {path}", catalog.message()).into(),
                 None => catalog.message().clone(),
@@ -78,7 +80,7 @@ impl ViewMode {
                     .py(px(2.))
                     .rounded_full()
                     .bg(theme.muted)
-                    .text_xs()
+                    .text_caption()
                     .text_color(theme.muted_foreground)
                     .child(div().truncate().child(text)),
             );
@@ -124,15 +126,15 @@ impl ViewMode {
             let parent = self.parent_folder(cx);
             let previous = self.sibling_folder(-1, cx);
             let next = self.sibling_folder(1, cx);
-            // The bar's size in the house scale: a 36 px target with a 16 px icon, as the
-            // sidebar's toggle at the bar's other end.
+            // The bar's size in the house scale, as the sidebar's toggle at the bar's other end;
+            // their labels go first when the window is narrow, and their tooltips say the same.
             bar = bar
                 .trailing(
                     Button::new("parent-folder")
                         .bar_size()
                         .ghost()
                         .icon(Icon::new(IconName::ArrowUp))
-                        .label("Parent")
+                        .when(!narrow, |this| this.label("Parent"))
                         .tooltip("Open the parent folder")
                         .disabled(parent.is_none())
                         .on_click(cx.listener(|this, _, _, cx| this.open_parent_folder(cx))),
@@ -142,7 +144,7 @@ impl ViewMode {
                         .bar_size()
                         .ghost()
                         .icon(Icon::new(IconName::ChevronLeft))
-                        .label("Prev Folder")
+                        .when(!narrow, |this| this.label("Previous folder"))
                         .tooltip("Open the previous sibling folder")
                         .disabled(previous.is_none())
                         .on_click(cx.listener(|this, _, _, cx| this.open_sibling_folder(-1, cx))),
@@ -151,7 +153,7 @@ impl ViewMode {
                     Button::new("next-folder")
                         .bar_size()
                         .ghost()
-                        .label("Next Folder")
+                        .when(!narrow, |this| this.label("Next folder"))
                         .icon(Icon::new(IconName::ChevronRight))
                         .tooltip("Open the next sibling folder")
                         .disabled(next.is_none())

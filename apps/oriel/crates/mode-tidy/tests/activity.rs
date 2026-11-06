@@ -53,6 +53,10 @@ async fn the_panel_lists_running_and_queued_jobs_and_pauses_and_stops_them(
             .any(|job| job.key().as_ref() == "scan" && job.job_state() == JobState::Paused)
     })
     .await;
+    // It shows once the work has run long enough to say.
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(300));
+    cx.run_until_parked();
     let indicator = label(cx, &session, "activity-indicator").unwrap();
     assert!(
         indicator.starts_with("Tidy · ") && indicator.ends_with(" · Paused"),
@@ -82,11 +86,12 @@ async fn the_panel_lists_running_and_queued_jobs_and_pauses_and_stops_them(
     );
 
     // The panel lists each job with where it is.
+    let_toast_land(cx, &session);
     click(cx, &session, "activity-indicator");
     assert!(label(cx, &session, "activity-panel").is_some());
     assert_eq!(
         label(cx, &session, "activity-panel-counts").as_deref(),
-        Some("1 running · 2 queued")
+        Some("1 paused · 2 queued")
     );
     assert_eq!(
         label(cx, &session, "activity-tidy-scan-state").as_deref(),
@@ -115,6 +120,7 @@ async fn the_panel_lists_running_and_queued_jobs_and_pauses_and_stops_them(
         Some("Queued")
     );
     // Stop ends the waiting conversion before it has changed anything.
+    let_toast_land(cx, &session);
     click(cx, &session, "activity-tidy-change-stop");
     wait_for(cx, &session, "the conversion to stop", |cx| {
         !session
@@ -131,6 +137,7 @@ async fn the_panel_lists_running_and_queued_jobs_and_pauses_and_stops_them(
     assert!(session.archive.join("clips/talk.mov").is_file());
 
     // Resume lets the rescan finish, and with Tidy idle the indicator goes.
+    let_toast_land(cx, &session);
     click(cx, &session, "activity-tidy-scan-pause");
     settle(cx, &session).await;
     assert!(label(cx, &session, "activity-panel").is_none());

@@ -325,6 +325,187 @@ async fn undo_again_after_a_stopped_undo_is_the_same_plan(cx: &mut TestAppContex
     assert!(newer.iter().all(|file| !held.contains(file)), "{held:?}");
 }
 
+/// An Undo stopped while it waits its turn has not happened: the next one is still that plan.
+#[gpui_kit::test]
+async fn undo_again_after_stopping_a_queued_undo_is_the_same_plan(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "undo-queued");
+    let (older, newer) = two_decisions(cx, &session).await;
+
+    // A rescan paused before its first step keeps its turn, so a change asked for next holds the
+    // changes' turn, waiting, and the ⌘Z after that joins their queue.
+    let state = session.state.clone();
+    let root_id = cx.read(|cx| state.read(cx).root_id().unwrap());
+    cx.update_window(session.handle, |_, window, cx| {
+        state.update(cx, |state, cx| {
+            state.start_scan(root_id, window, cx);
+            let scan = state.scan().unwrap().job.clone();
+            scan.update(cx, |job, cx| job.set_paused(true, cx));
+        });
+    })
+    .unwrap();
+    go(cx, &session, TidyPage::Library);
+    click(cx, &session, ("library-row", 0usize));
+    click_when_drawn(cx, &session, "inspector-hold").await;
+    undo(cx, &session);
+    cx.update(|cx| {
+        let jobs = session.shell.read(cx).jobs().clone();
+        jobs.update(cx, |jobs, cx| jobs.set_open(true, cx));
+    });
+    render(cx, &session);
+    click(cx, &session, "activity-tidy-queued-0-stop");
+    assert!(label(cx, &session, "activity-tidy-queued-0").is_none());
+
+    cx.update(|cx| {
+        state.update(cx, |state, cx| {
+            state.stop_change(cx);
+            let scan = state.scan().unwrap().job.clone();
+            scan.update(cx, |job, cx| job.set_paused(false, cx));
+        });
+    });
+    wait_for_change(cx, &session).await;
+    assert_eq!(held_files(&session).len(), older.len() + newer.len());
+
+    undo(cx, &session);
+    wait_for_change(cx, &session).await;
+    let held = held_files(&session);
+    assert!(
+        older.iter().all(|file| held.contains(file)),
+        "the older plan was undone instead"
+    );
+    assert!(newer.iter().all(|file| !held.contains(file)), "{held:?}");
+}
+
+/// Two ⌘Zs pressed quickly undo the two newest changes in turn: the second waits for the first,
+/// then takes back the change before it.
+#[gpui_kit::test]
+async fn two_quick_undos_take_back_the_two_newest_changes(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "undo-twice");
+    let (older, newer) = two_decisions(cx, &session).await;
+    cx.update_window(session.handle, |_, window, cx| {
+        session.state.update(cx, |state, cx| {
+            state.undo_last(window, cx);
+            state.undo_last(window, cx);
+        });
+    })
+    .unwrap();
+    wait_for_change(cx, &session).await;
+    let held = held_files(&session);
+    assert!(
+        older.iter().chain(&newer).all(|file| !held.contains(file)),
+        "{held:?}"
+    );
+}
+
+/// A ⌘Z waiting behind an Undo the owner stops does not start that Undo again: it is still the
+/// next one, for the owner to ask for.
+#[gpui_kit::test]
+async fn a_quick_undo_behind_a_stopped_undo_leaves_it_stopped(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "undo-twice-stopped");
+    let (older, newer) = two_decisions(cx, &session).await;
+    cx.update_window(session.handle, |_, window, cx| {
+        session.state.update(cx, |state, cx| {
+            state.undo_last(window, cx);
+            state.undo_last(window, cx);
+            state.stop_change(cx);
+        });
+    })
+    .unwrap();
+    wait_for_change(cx, &session).await;
+    assert_eq!(held_files(&session).len(), older.len() + newer.len());
+
+    undo(cx, &session);
+    wait_for_change(cx, &session).await;
+    let held = held_files(&session);
+    assert!(
+        older.iter().all(|file| held.contains(file)),
+        "the older plan was undone instead"
+    );
+    assert!(newer.iter().all(|file| !held.contains(file)), "{held:?}");
+}
+
+/// A ⌘Z waiting behind a change meant that change. Stopped, the change adds nothing to undo, and
+/// the ⌘Z takes back nothing older; the change before is still the next Undo.
+#[gpui_kit::test]
+async fn an_undo_behind_a_change_that_never_lands_undoes_nothing_older(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "undo-behind-stopped");
+    let (older, newer) = two_decisions(cx, &session).await;
+
+    // A rescan paused before its first step keeps the change asked for next waiting with the turn,
+    // and the ⌘Z after it waits behind it.
+    let state = session.state.clone();
+    let root_id = cx.read(|cx| state.read(cx).root_id().unwrap());
+    cx.update_window(session.handle, |_, window, cx| {
+        state.update(cx, |state, cx| {
+            state.start_scan(root_id, window, cx);
+            let scan = state.scan().unwrap().job.clone();
+            scan.update(cx, |job, cx| job.set_paused(true, cx));
+        });
+    })
+    .unwrap();
+    go(cx, &session, TidyPage::Library);
+    click(cx, &session, ("library-row", 0usize));
+    click_when_drawn(cx, &session, "inspector-hold").await;
+    undo(cx, &session);
+    cx.update(|cx| {
+        state.update(cx, |state, cx| {
+            state.stop_change(cx);
+            let scan = state.scan().unwrap().job.clone();
+            scan.update(cx, |job, cx| job.set_paused(false, cx));
+        });
+    });
+    wait_for_change(cx, &session).await;
+    assert_eq!(held_files(&session).len(), older.len() + newer.len());
+    assert_eq!(cx.read(last_toast).as_deref(), Some("Nothing to undo"));
+
+    undo(cx, &session);
+    wait_for_change(cx, &session).await;
+    let held = held_files(&session);
+    assert!(
+        older.iter().all(|file| held.contains(file)),
+        "the older plan was undone instead"
+    );
+    assert!(newer.iter().all(|file| !held.contains(file)), "{held:?}");
+}
+
+/// An Undo that could not put a file back: pressed again, once that is cleared, it is the same plan.
+#[gpui_kit::test]
+async fn undo_again_after_an_undo_that_did_not_finish_is_the_same_plan(cx: &mut TestAppContext) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch_changing(cx, "undo-unfinished");
+    let (older, newer) = two_decisions(cx, &session).await;
+    // Something now stands where one of the newer plan's files was.
+    let rel = newer[0].splitn(3, '/').nth(2).unwrap().to_owned();
+    let blocker = session.archive.join(&rel);
+    std::fs::write(&blocker, b"in the way").unwrap();
+    undo(cx, &session);
+    wait_for_change(cx, &session).await;
+    assert_eq!(cx.read(last_toast).as_deref(), Some("Undo did not finish"));
+
+    std::fs::remove_file(&blocker).unwrap();
+    undo(cx, &session);
+    wait_for_change(cx, &session).await;
+    let held = held_files(&session);
+    assert!(
+        older.iter().all(|file| held.contains(file)),
+        "the older plan was undone instead"
+    );
+    assert!(newer.iter().all(|file| !held.contains(file)), "{held:?}");
+}
+
 /// One file of the decision cannot move: the owner reads that, not "Kept".
 #[cfg(unix)]
 #[gpui_kit::test]
@@ -405,59 +586,6 @@ async fn the_first_arrow_goes_to_the_version_after_the_suggestion(cx: &mut TestA
     assert_eq!(target(cx), 1);
     press(cx, &session, "right");
     assert_eq!(target(cx), 2);
-}
-
-/// An Undo stopped while it waits its turn has not happened: the next one is still that plan.
-#[gpui_kit::test]
-async fn undo_again_after_stopping_a_queued_undo_is_the_same_plan(cx: &mut TestAppContext) {
-    if !media_ready() {
-        return;
-    }
-    let session = launch_changing(cx, "undo-queued");
-    let (older, newer) = two_decisions(cx, &session).await;
-
-    // A rescan paused before its first step keeps its turn, so a change asked for next holds the
-    // changes' turn, waiting, and the ⌘Z after that joins their queue.
-    let state = session.state.clone();
-    let root_id = cx.read(|cx| state.read(cx).root_id().unwrap());
-    cx.update_window(session.handle, |_, window, cx| {
-        state.update(cx, |state, cx| {
-            state.start_scan(root_id, window, cx);
-            let scan = state.scan().unwrap().job.clone();
-            scan.update(cx, |job, cx| job.set_paused(true, cx));
-        });
-    })
-    .unwrap();
-    go(cx, &session, TidyPage::Library);
-    click(cx, &session, ("library-row", 0usize));
-    click_when_drawn(cx, &session, "inspector-hold").await;
-    undo(cx, &session);
-    cx.update(|cx| {
-        let jobs = session.shell.read(cx).jobs().clone();
-        jobs.update(cx, |jobs, cx| jobs.set_open(true, cx));
-    });
-    render(cx, &session);
-    click(cx, &session, "activity-tidy-queued-0-stop");
-    assert!(label(cx, &session, "activity-tidy-queued-0").is_none());
-
-    cx.update(|cx| {
-        state.update(cx, |state, cx| {
-            state.stop_change(cx);
-            let scan = state.scan().unwrap().job.clone();
-            scan.update(cx, |job, cx| job.set_paused(false, cx));
-        });
-    });
-    wait_for_change(cx, &session).await;
-    assert_eq!(held_files(&session).len(), older.len() + newer.len());
-
-    undo(cx, &session);
-    wait_for_change(cx, &session).await;
-    let held = held_files(&session);
-    assert!(
-        older.iter().all(|file| held.contains(file)),
-        "the older plan was undone instead"
-    );
-    assert!(newer.iter().all(|file| !held.contains(file)), "{held:?}");
 }
 
 /// The loupe covers the tiles, and a press on its picture is for the picture: it decides nothing

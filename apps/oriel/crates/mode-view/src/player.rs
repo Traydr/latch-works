@@ -83,20 +83,20 @@ const PANEL_INSET: f32 = 4.;
 /// two curves run concentric (the Design Guides' nested radii).
 const PANEL_ROW_RADIUS: f32 = PANEL_RADIUS - PANEL_INSET - 1.;
 /// The volume thumb's diameter. Its travel reaches half of it past each end of the track.
-const VOLUME_THUMB: f32 = 14.;
+const VOLUME_THUMB: f32 = 18.;
 /// The volume track's length.
-const VOLUME_TRACK: f32 = 112.;
-const VOLUME_PANEL_WIDTH: f32 = 56.;
-const SPEED_PANEL_WIDTH: f32 = 80.;
-const SPEED_BUTTON_WIDTH: f32 = 44.;
-/// The capsule's height, its round buttons' and Play's, a step up from Electron Oriel's 48, 32
-/// and 40 px, the owner having found them too small to hit (the house scale, `oriel_ui::controls`).
-const CAPSULE_HEIGHT: f32 = 56.;
-const CAPSULE_BUTTON: f32 = 40.;
-const PLAY_BUTTON: f32 = 48.;
+const VOLUME_TRACK: f32 = 136.;
+const VOLUME_PANEL_WIDTH: f32 = 64.;
+const SPEED_PANEL_WIDTH: f32 = 96.;
+const SPEED_BUTTON_WIDTH: f32 = 52.;
+/// The capsule's height, its round buttons' and Play's, the owner having found smaller ones too
+/// small to hit (the house scale, `oriel_ui::controls`).
+const CAPSULE_HEIGHT: f32 = 64.;
+const CAPSULE_BUTTON: f32 = 48.;
+const PLAY_BUTTON: f32 = 56.;
 /// A row of the speed panel: `oriel_ui::MENU_ROW_HEIGHT`, which this file cannot name, as the
 /// media crate's spike builds it without the house kit.
-const SPEED_ROW_HEIGHT: f32 = 32.;
+const SPEED_ROW_HEIGHT: f32 = 40.;
 
 /// Marks that the player's keys are bound, so the first player binds them for the app.
 struct KeysBound;
@@ -563,7 +563,7 @@ impl Render for CapsulePlayer {
                 this.child(
                     div()
                         .px_4()
-                        .text_size(px(14.))
+                        .text_size(px(15.))
                         .text_color(gpui_kit::white().opacity(0.7))
                         .child(error),
                 )
@@ -678,13 +678,13 @@ impl CapsulePlayer {
             .items_center()
             .gap_2()
             .px_1()
-            .text_size(px(13.))
-            .text_color(gpui_kit::white().opacity(0.8))
-            .child(div().w(px(40.)).flex_shrink_0().child(clock(position)))
+            .text_size(px(15.))
+            .text_color(gpui_kit::white().opacity(0.9))
+            .child(div().w(px(60.)).flex_shrink_0().child(clock(position)))
             .child(self.render_scrubber(played, duration, cx))
             .child(
                 div()
-                    .w(px(40.))
+                    .w(px(60.))
                     .flex_shrink_0()
                     .text_right()
                     .child(duration.map(clock).unwrap_or_else(|| "–:––".into())),
@@ -773,10 +773,10 @@ impl CapsulePlayer {
                             .child(
                                 div()
                                     .absolute()
-                                    .top(px(-4.))
+                                    .top(px(-5.))
                                     .left(relative(played))
-                                    .ml(px(-7.))
-                                    .size(px(14.))
+                                    .ml(px(-8.))
+                                    .size(px(16.))
                                     .rounded_full()
                                     .bg(gpui_kit::white())
                                     .shadow_md(),
@@ -799,7 +799,7 @@ impl CapsulePlayer {
                                                 .bg(rgba(PANEL))
                                                 .border_1()
                                                 .border_color(rgba(CAPSULE_RING))
-                                                .text_size(px(11.))
+                                                .text_size(px(13.))
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(gpui_kit::white())
                                                 .child(clock(duration.mul_f32(along))),
@@ -897,7 +897,7 @@ impl CapsulePlayer {
                                                         div()
                                                             .absolute()
                                                             .bottom(relative(level))
-                                                            .left(px(-4.))
+                                                            .left(px(-6.))
                                                             .mb(px(-VOLUME_THUMB / 2.))
                                                             .size(px(VOLUME_THUMB))
                                                             .rounded_full()
@@ -914,8 +914,8 @@ impl CapsulePlayer {
                                 .role(Role::Status)
                                 .test_support()
                                 .aria_label(SharedString::from(format!("{percent}%")))
-                                .text_size(px(11.))
-                                .text_color(gpui_kit::white().opacity(0.6))
+                                .text_size(px(13.))
+                                .text_color(gpui_kit::white().opacity(0.9))
                                 .child(format!("{percent}%")),
                         )
                         .child(
@@ -955,7 +955,7 @@ impl CapsulePlayer {
             .min_w(px(SPEED_BUTTON_WIDTH))
             .px(px(6.))
             .rounded_full()
-            .text_size(px(13.))
+            .text_size(px(15.))
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(if speed == 1. && !open {
                 gpui_kit::white().opacity(0.9)
@@ -996,7 +996,7 @@ impl CapsulePlayer {
                                 .h(px(SPEED_ROW_HEIGHT))
                                 .px_3()
                                 .rounded(px(PANEL_ROW_RADIUS))
-                                .text_size(px(14.))
+                                .text_size(px(15.))
                                 .when(chosen, |this| {
                                     this.font_weight(FontWeight::SEMIBOLD)
                                         .text_color(rgba(ACTIVE))
@@ -1061,10 +1061,10 @@ fn held_badge() -> impl IntoElement {
                 .bg(gpui_kit::black().opacity(0.6))
                 .border_1()
                 .border_color(gpui_kit::white().opacity(0.15))
-                .text_size(px(14.))
+                .text_size(px(15.))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(gpui_kit::white())
-                .child(Icon::new(IconName::FastForward).size(px(16.)))
+                .child(Icon::new(IconName::FastForward).size(px(20.)))
                 .child(format_speed(HELD_SPEED)),
         )
 }
@@ -1127,7 +1127,7 @@ fn skip_count() -> impl IntoElement {
         .items_center()
         .justify_center()
         .pt(px(1.))
-        .text_size(px(9.))
+        .text_size(px(11.))
         .font_weight(FontWeight::BOLD)
         .child(SharedString::new_static("5"))
 }

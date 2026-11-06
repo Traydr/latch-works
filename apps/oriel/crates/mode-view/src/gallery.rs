@@ -24,6 +24,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui_kit::assets::IconName;
+use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Icon, tooltip::Tooltip};
 use gpui_kit::{
     App, AppContext as _, Bounds, ClickEvent, Context, DispatchPhase, ElementId, Entity,
@@ -35,8 +36,9 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px, size, uniform_list,
 };
 use oriel_core_domain::format_bytes;
+use oriel_ui::TextRole as _;
 use oriel_ui::layout::{RAIL_WIDTH, SIDEBAR_WIDTH};
-use oriel_ui::{ModeId, OfferedFolders, ShellState};
+use oriel_ui::{ControlSize as _, ModeId, OfferedFolders, ShellState};
 
 use crate::browser::{Comic, Tile};
 use crate::listing::MediaEntry;
@@ -156,6 +158,8 @@ pub enum GalleryEvent {
     Selected,
     /// A folder another mode works on, chosen from the offer before View has a folder.
     OpenOffered(PathBuf),
+    /// The empty page's Open, which asks for a folder.
+    OpenChosen,
 }
 
 pub struct Gallery {
@@ -1046,14 +1050,14 @@ impl Gallery {
                                 .px_2()
                                 .rounded_full()
                                 .bg(theme.muted)
-                                .text_xs()
+                                .text_caption()
                                 .text_color(theme.muted_foreground)
                                 .child("Folder"),
                         ),
                 )
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_body()
                         .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                         .line_clamp(2)
                         .child(name.clone()),
@@ -1245,7 +1249,7 @@ fn video_badge() -> impl IntoElement {
         .rounded_full()
         .bg(gpui_kit::black().opacity(0.5))
         .text_color(gpui_kit::white())
-        .text_xs()
+        .text_caption()
         .font_weight(gpui_kit::FontWeight::MEDIUM)
         .child("VIDEO")
 }
@@ -1342,8 +1346,8 @@ fn hover_caption(
         .pb_3()
         .bg(linear_gradient(
             0.,
-            linear_color_stop(gpui_kit::black().opacity(0.7), 0.),
-            linear_color_stop(gpui_kit::black().opacity(0.), 0.5),
+            linear_color_stop(gpui_kit::black().opacity(0.75), 0.),
+            linear_color_stop(gpui_kit::black().opacity(0.), 0.6),
         ))
         .child(
             div()
@@ -1355,8 +1359,8 @@ fn hover_caption(
         )
         .child(
             div()
-                .text_size(px(11.))
-                .text_color(gpui_kit::white().opacity(0.7))
+                .text_caption()
+                .text_color(gpui_kit::white().opacity(0.9))
                 .child(detail),
         )
 }
@@ -1387,8 +1391,8 @@ fn caption(title: SharedString, detail: SharedString, radius: Pixels) -> impl In
         )
         .child(
             div()
-                .text_size(px(11.))
-                .text_color(gpui_kit::white().opacity(0.75))
+                .text_caption()
+                .text_color(gpui_kit::white().opacity(0.9))
                 .child(detail),
         )
 }
@@ -1442,7 +1446,8 @@ impl Render for Gallery {
         if let Some(message) = message {
             self.drawn_complete = true;
             // Before View has a folder, the folders Tidy and Sync work on are offered.
-            let offered = (self.listing == Listing::Empty)
+            let empty = self.listing == Listing::Empty;
+            let offered = empty
                 .then(|| self.shell.read(cx).offered_to(ModeId::View))
                 .filter(|folders| !folders.is_empty())
                 .map(|folders| {
@@ -1462,21 +1467,67 @@ impl Render for Gallery {
                 .items_center()
                 .justify_center()
                 .text_color(theme.muted_foreground)
-                .child(
+                .child(if empty {
+                    // Before any folder, the page says what it is for, and leads to Open, as
+                    // Sync's first page does.
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .w(px(520.))
+                        .max_w_full()
+                        .px_6()
+                        .gap_2()
+                        .child(
+                            Icon::new(ModeId::View.icon())
+                                .size(px(48.))
+                                .text_color(theme.primary),
+                        )
+                        .child(
+                            div()
+                                .mt_2()
+                                .text_xl()
+                                .font_weight(gpui_kit::FontWeight::SEMIBOLD)
+                                .text_color(theme.foreground)
+                                .child("Open a folder to view"),
+                        )
+                        .child(
+                            div()
+                                .id("gallery-message")
+                                .role(Role::Status)
+                                .test_support()
+                                .aria_label(message.clone())
+                                .text_body()
+                                .text_center()
+                                .child(
+                                    "Drop one anywhere here, or choose it. Oriel never writes \
+                                        into the folder it shows.",
+                                ),
+                        )
+                        .child(
+                            div().mt_4().child(
+                                Button::new("gallery-open")
+                                    .page_size()
+                                    .primary()
+                                    .icon(Icon::new(IconName::FolderOpen))
+                                    .label("Open folder…")
+                                    .on_click(cx.listener(|_, _, _, cx| {
+                                        cx.emit(GalleryEvent::OpenChosen);
+                                    })),
+                            ),
+                        )
+                        .into_any_element()
+                } else {
                     div()
                         .id("gallery-message")
                         .role(Role::Status)
                         .test_support()
                         .aria_label(message.clone())
-                        .px_6()
-                        .py_4()
-                        .rounded(theme.radius_lg)
-                        .bg(theme.background)
-                        .border_1()
-                        .border_color(theme.border)
-                        .text_size(px(13.))
-                        .child(message),
-                )
+                        .text_body()
+                        .text_center()
+                        .child(message)
+                        .into_any_element()
+                })
                 .children(offered)
                 .into_any_element();
         }

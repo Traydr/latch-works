@@ -13,6 +13,8 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px,
 };
 use oriel_core_tidy::contract::{RootId, ShrinkItem, ShrinkSummary, shrink_batch};
+use oriel_runtime::JobProgress;
+use oriel_ui::TextRole as _;
 use oriel_ui::segmented::{Segmented, SegmentedItem};
 use oriel_ui::{LocalStorage, TopBar};
 
@@ -45,18 +47,6 @@ fn skip_words(reason: &str) -> Option<(&'static str, &'static str)> {
         "Came out no smaller as AV1" => {
             ("came out no smaller as AV1", "came out no smaller as AV1")
         }
-        "Identical copies (resolve duplicates first)" => (
-            "is an identical copy and waits for duplicate review",
-            "are identical copies and wait for duplicate review",
-        ),
-        "Similar versions (review them first)" => (
-            "is in a similar set and waits for review",
-            "are in similar sets and wait for review",
-        ),
-        "Not checked for similar versions yet" => (
-            "is still being checked for similar versions",
-            "are still being checked for similar versions",
-        ),
         "Won't decode" => ("won't open", "won't open"),
         "A file with the target name already exists" => (
             "would take a name already in use",
@@ -103,6 +93,7 @@ pub struct ShrinkPage {
     focus: FocusHandle,
     summary: Loaded<ShrinkSummary>,
     left_open: bool,
+    about_open: bool,
     seen: (Option<RootId>, u64),
     _subscriptions: Vec<Subscription>,
 }
@@ -119,6 +110,7 @@ impl ShrinkPage {
             focus: cx.focus_handle(),
             summary: Loaded::default(),
             left_open: false,
+            about_open: false,
             seen: (None, 0),
             _subscriptions: subscriptions,
         }
@@ -230,7 +222,15 @@ impl Render for ShrinkPage {
         let (choice, limit) = Self::batch(cx);
         let batch = shrink_batch(&summary.items, limit).to_vec();
         let next = totals(&batch);
-        let all = totals(&summary.items);
+        // A run going: how far it has got, and the file it is on.
+        let run = self
+            .state
+            .read(cx)
+            .change_for(SOURCE)
+            .map(|change| change.progress(cx));
+        let running = self.state.read(cx).running_file(cx);
+        let pausing = running.as_ref().filter(|file| file.pausing);
+        let paused = run.as_ref().is_some_and(JobProgress::is_paused) && pausing.is_none();
         let in_batch: HashMap<i64, &ShrinkItem> = summary
             .items
             .iter()
@@ -251,7 +251,11 @@ impl Render for ShrinkPage {
                     .filter(|item| item.bytes > 0)
                     .map(|item| item.estimated_bytes as f64 / item.bytes as f64);
                 let folder = repeated.contains(&row.name);
-                widgets::media_tile(&self.thumbs, row, ratio, folder, cx)
+                let badge = running
+                    .as_ref()
+                    .filter(|file| file.rel_path == row.rel_path)
+                    .map(|file| widgets::running_badge("Shrinking", file, cx));
+                widgets::media_tile(&self.thumbs, row, ratio, folder, badge, cx)
             })
             .collect();
         let more = batch.len() as i64 - tiles.len() as i64;
@@ -260,14 +264,6 @@ impl Render for ShrinkPage {
         let theme = cx.theme();
         let muted = theme.muted_foreground;
 
-        let meta = (!summary.items.is_empty()).then(|| {
-            format!(
-                "{} · {} → about {}",
-                format::plural(summary.items.len() as i64, "video"),
-                format::bytes(all.bytes),
-                format::bytes(all.estimated)
-            )
-        });
         // The control says what it sets: how much one run takes on.
         let batches = (!summary.items.is_empty()).then(|| {
             let segmented = Segmented::new("shrink-batch", "How much each run takes").items(
@@ -288,34 +284,41 @@ impl Render for ShrinkPage {
                 .child(widgets::caption("Each run", cx))
                 .child(segmented)
         });
-        let action: AnyElement = widgets::while_changing(
-            widgets::primary_action(
-                "shrink-run",
-                format!("Shrink {}", format::count(batch.len() as i64)),
-                "⌘↩",
-            )
-            .disabled(batch.is_empty())
-            .on_click(cx.listener(|this, _, window, cx| this.shrink(window, cx))),
-            status,
-        )
-        .into_any_element();
-        let top_bar = TopBar::new(&shell, "Shrink")
-            .when_some(meta, |bar, meta| bar.trailing(widgets::caption(meta, cx)))
-            .when_some(batches, |bar, batches| bar.trailing(batches))
-            .trailing(action);
-
-        let next_card = if summary.items.is_empty() {
-            widgets::empty_state(
-                "shrink-empty",
-                Some(IconName::Shrink),
-                "Nothing left to shrink",
-                None,
-                Vec::new(),
-                cx,
+        // With nothing left to shrink there is no command to offer, only a run still finishing.
+        let action = (!batch.is_empty() || status.is_some()).then(|| {
+            widgets::while_changing(
+                widgets::primary_action(
+                    "shrink-run",
+                    format!("Shrink {}", format::count(batch.len() as i64)),
+                    "⌘↩",
+                )
+                .disabled(batch.is_empty())
+                .on_click(cx.listener(|this, _, window, cx| this.shrink(window, cx))),
+                status,
             )
             .into_any_element()
-        } else {
-            widgets::card(cx)
+        });
+        let top_bar = TopBar::new(&shell, "Shrink")
+            .when_some(batches, |bar, batches| bar.trailing(batches))
+            .when_some(action, |bar, action| bar.trailing(action));
+
+        let next_card =
+            if summary.items.is_empty() {
+                widgets::empty_state(
+                    "shrink-empty",
+                    Some(IconName::Shrink),
+                    "Nothing left to shrink",
+                    Some(if reasons.is_empty() {
+                        "Videos that can shrink show up here.".into_any_element()
+                    } else {
+                        reasons.join(" · ").into_any_element()
+                    }),
+                    Vec::new(),
+                    cx,
+                )
+                .into_any_element()
+            } else {
+                widgets::card(cx)
                 .id("shrink-next")
                 .test_support()
                 .aria_label(SharedString::from(format!(
@@ -327,80 +330,176 @@ impl Render for ShrinkPage {
                 .p_5()
                 .child(
                     div()
-                        .text_xs()
+                        .text_caption()
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(muted)
-                        .child(if choice == "all" { "Every video" } else { "Next run" }),
+                        .child(match &run {
+                            Some(_) if paused => "This run",
+                            Some(_) if pausing.is_some() => "Pausing",
+                            Some(_) => "Running now",
+                            None if choice == "all" => "Every video",
+                            None => "Next run",
+                        }),
                 )
                 .child(
                     div()
+                        .id("shrink-headline")
+                        .test_support()
                         .mt_1()
-                        .text_size(px(24.))
+                        .text_size(px(32.))
                         .font_weight(FontWeight::SEMIBOLD)
-                        .child(format!(
-                            "{} → about {}",
-                            format::bytes(next.bytes),
-                            format::bytes(next.estimated)
-                        )),
+                        .child(match &run {
+                            Some(_) if pausing.is_some() => format!(
+                                "Pausing after {}",
+                                pausing.map_or("", |file| file.name.as_str())
+                            ),
+                            Some(run) if paused && run.total() > 0 => format!(
+                                "Paused, {} of {} done",
+                                format::count(run.done() as i64),
+                                format::count(run.total() as i64)
+                            ),
+                            Some(run) if run.total() > 0 => format!(
+                                "Shrinking {}, {} done",
+                                format::plural(run.total() as i64, "video"),
+                                format::count(run.done() as i64)
+                            ),
+                            Some(_) => "Starting to shrink".to_owned(),
+                            None => format!(
+                                "{} → about {}",
+                                format::bytes(next.bytes),
+                                format::bytes(next.estimated)
+                            ),
+                        }),
                 )
-                .child(widgets::caption(
+                .when_some(run.as_ref().map(|_| running.as_ref()), |this, file| {
+                    this.child(
+                        widgets::caption(
+                            match (file, paused) {
+                                (Some(file), true) => format!(
+                                    "Paused on {} · resume or stop it from the activity panel",
+                                    widgets::file_and_share(file)
+                                ),
+                                (None, true) => {
+                                    "Waiting · resume or stop it from the activity panel".to_owned()
+                                }
+                                (Some(file), false) => widgets::file_and_share(file),
+                                (None, false) => "Getting the next video ready".to_owned(),
+                            },
+                            cx,
+                        )
+                        .mt(px(6.)),
+                    )
+                })
+                .when(run.is_none(), |this| this.child(widgets::caption(
                     format!(
-                        "{}, the most space saved first · roughly {} of encoding{}. Stop \
-                         whenever you like: finished videos stay done, and the next run starts \
-                         with what is left.",
+                        "{}{}, the most space saved first · roughly {}{}",
                         format::plural(batch.len() as i64, "video"),
+                        match batch.iter().filter(|item| item.copy_of.is_some()).count() as i64 {
+                            0 => String::new(),
+                            1 => " (1 an identical copy, encoded once)".to_owned(),
+                            copies => format!(
+                                " ({} identical copies, encoded once)",
+                                format::count(copies)
+                            ),
+                        },
                         format::span(next.encode_ms),
                         if summary.speed_measured {
-                            " at this computer's speed"
+                            ""
                         } else {
-                            ", a first guess until this computer has shrunk a few videos"
+                            ", a first guess"
                         }
                     ),
                     cx,
-                ).mt(px(6.)))
+                ).mt(px(6.))))
                 .child(widgets::caption(
-                    "AV1 with SVT-AV1; Video quality in Settings sets how hard it squeezes (High \
-                     is CRF 35). Originals wait in holding, and Undo puts them back. Safari, and \
-                     every browser on iPhone and iPad, plays AV1 only on A17 Pro, M3 and later \
-                     chips.",
+                    "Stop whenever you like: finished videos stay done, and originals wait in \
+                     holding for Undo.",
                     cx,
-                ).mt_3())
-                .into_any_element()
-        };
-        let left_section = (left > 0).then(|| {
-            div()
-                .flex()
-                .flex_col()
+                ).mt_1())
                 .child(
                     div()
-                        .id("shrink-left-toggle")
+                        .id("shrink-about-av1")
+                        .test_support()
+                        .mt_2()
+                        .h_8()
                         .flex()
                         .flex_row()
                         .items_center()
-                        .gap(px(6.))
-                        .h(px(36.))
+                        .gap_1()
                         .cursor_pointer()
-                        .text_size(px(13.))
-                        .font_weight(FontWeight::MEDIUM)
+                        .text_sm()
+                        .text_color(muted)
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.left_open = !this.left_open;
+                            this.about_open = !this.about_open;
                             cx.notify();
                         }))
                         .child(
-                            Icon::new(if self.left_open {
+                            Icon::new(if self.about_open {
                                 IconName::ChevronDown
                             } else {
                                 IconName::ChevronRight
                             })
-                            .size(px(14.))
-                            .text_color(muted),
+                            .size_4(),
                         )
-                        .child(format!("{} left as they are", format::count(left))),
+                        .child("About AV1"),
                 )
-                .when(self.left_open, |this| {
-                    this.child(widgets::left_list(&reasons, cx))
+                .when(self.about_open, |this| {
+                    this.child(widgets::caption(
+                        "AV1 with SVT-AV1; Video quality in Settings sets how hard it squeezes. \
+                         Safari, and every browser on iPhone and iPad, plays AV1 only on A17 Pro, \
+                         M3 and later chips.",
+                        cx,
+                    ))
                 })
-        });
+                .into_any_element()
+            };
+        // One reason says it all on one line; several open from a count.
+        let left_section =
+            (left > 0 && !summary.items.is_empty()).then(|| match reasons.as_slice() {
+                [reason] => div()
+                    .id("shrink-left")
+                    .test_support()
+                    .h(px(44.))
+                    .flex()
+                    .items_center()
+                    .text_body()
+                    .text_color(muted)
+                    .child(reason.clone()),
+                _ => div()
+                    .id("shrink-left")
+                    .test_support()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .id("shrink-left-toggle")
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap(px(6.))
+                            .h(px(44.))
+                            .cursor_pointer()
+                            .text_body()
+                            .font_weight(FontWeight::MEDIUM)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.left_open = !this.left_open;
+                                cx.notify();
+                            }))
+                            .child(
+                                Icon::new(if self.left_open {
+                                    IconName::ChevronDown
+                                } else {
+                                    IconName::ChevronRight
+                                })
+                                .size(px(16.))
+                                .text_color(muted),
+                            )
+                            .child(format!("{} not shrunk", format::plural(left, "video"))),
+                    )
+                    .when(self.left_open, |this| {
+                        this.child(widgets::left_list(&reasons, cx))
+                    }),
+            });
 
         div()
             .id("shrink")

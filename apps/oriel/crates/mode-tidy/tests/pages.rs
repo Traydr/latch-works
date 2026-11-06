@@ -10,7 +10,8 @@ use std::path::Path;
 
 use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{AppContext as _, Entity, Focusable as _, Modifiers, TestAppContext};
-use oriel_core_tidy::contract::FileId;
+use oriel_core_tidy::catalog::Catalog;
+use oriel_core_tidy::contract::{FileId, Settings};
 use oriel_mode_tidy::{
     LibraryMenu, LibraryMode, LibraryPage, MenuChoice, TidyPage, last_menu, last_quick_look,
     last_toast,
@@ -342,6 +343,77 @@ async fn quick_look_shows_a_file_without_deciding_anything(cx: &mut TestAppConte
 }
 
 #[gpui_kit::test]
+async fn sets_not_yet_compared_wait_with_a_count_and_check_now_finishes_them(
+    cx: &mut TestAppContext,
+) {
+    if !media_ready() {
+        return;
+    }
+    let session = launch(cx, "duplicates-checking");
+    add_archive(cx, &session).await;
+    go(cx, &session, TidyPage::Duplicates);
+    settle(cx, &session).await;
+    assert_eq!(label(cx, &session, "scope-checking"), None);
+    let counts = |cx: &mut TestAppContext| {
+        cx.read(|cx| {
+            let duplicates = session.tidy.read(cx).duplicates().read(cx);
+            duplicates.page().map(|page| page.counts).unwrap()
+        })
+    };
+    let settled = counts(cx);
+
+    // With no analysis to finish them, as after one that stopped. The sidebar's other pages keep
+    // working; only what is unknown waits. Background analysis is off so nothing starts by itself.
+    let settings = cx
+        .read(|cx| session.state.read(cx).settings().cloned())
+        .unwrap();
+    let off = Settings {
+        auto_analyze: false,
+        ..settings
+    };
+    cx.update_window(session.handle, |_, window, cx| {
+        session
+            .state
+            .update(cx, |state, cx| state.update_settings(off, window, cx));
+    })
+    .unwrap();
+    settle(cx, &session).await;
+    let path = session
+        .root
+        .join("data")
+        .join("tidy")
+        .join("catalog.sqlite");
+    Catalog::open_blocking(path)
+        .unwrap()
+        .blocking(|connection| {
+            connection.execute_batch("DELETE FROM file_details; DELETE FROM file_comparisons;")?;
+            Ok(())
+        })
+        .unwrap();
+    // Marking the clips' set moves the catalog on, so the page reads it again.
+    click(cx, &session, "scope-exact");
+    settle(cx, &session).await;
+    press(cx, &session, "n");
+    settle(cx, &session).await;
+    undo(cx, &session);
+    settle(cx, &session).await;
+
+    let held = counts(cx);
+    assert!(held.checking > 0, "{held:?}");
+    assert_eq!(held.variants, 0);
+    let line = label(cx, &session, "scope-checking").unwrap();
+    assert_eq!(line, format!("{} sets not checked yet", held.checking));
+
+    click(cx, &session, "duplicates-check-now");
+    settle(cx, &session).await;
+    assert_eq!(label(cx, &session, "scope-checking"), None);
+    let back = counts(cx);
+    assert_eq!(back.checking, 0);
+    assert_eq!(back.similar, settled.similar);
+    assert_eq!(back.variants, settled.variants);
+}
+
+#[gpui_kit::test]
 async fn duplicates_lists_its_scopes_says_why_and_n_marks_a_set_until_undone(
     cx: &mut TestAppContext,
 ) {
@@ -359,13 +431,16 @@ async fn duplicates_lists_its_scopes_says_why_and_n_marks_a_set_until_undone(
         })
     };
 
-    // The scopes are rows with their counts; Variants shows only with Spot variants on, and
-    // an empty list stays in its place.
+    // The scopes are rows with their counts; Variants shows with Spot variants on, as it is by
+    // default, and an empty list stays in its place.
     assert_eq!(
         label(cx, &session, "scope-similar").as_deref(),
-        Some("Similar 4")
+        Some("Similar 3")
     );
-    assert_eq!(label(cx, &session, "scope-variants"), None);
+    assert_eq!(
+        label(cx, &session, "scope-variants").as_deref(),
+        Some("Variants 1")
+    );
     assert_eq!(
         label(cx, &session, "scope-exact").as_deref(),
         Some("Identical 1")
@@ -392,14 +467,14 @@ async fn duplicates_lists_its_scopes_says_why_and_n_marks_a_set_until_undone(
     assert_eq!(dismissed(cx), Some(1));
     assert_eq!(
         label(cx, &session, "scope-similar").as_deref(),
-        Some("Similar 3")
+        Some("Similar 2")
     );
     undo(cx, &session);
     settle(cx, &session).await;
     assert_eq!(dismissed(cx), Some(0));
     assert_eq!(
         label(cx, &session, "scope-similar").as_deref(),
-        Some("Similar 4")
+        Some("Similar 3")
     );
     let back = cx.read(|cx| {
         let duplicates = session.tidy.read(cx).duplicates().read(cx);

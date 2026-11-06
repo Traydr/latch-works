@@ -6,14 +6,17 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName;
+use gpui_kit::component::scroll::{Scrollbar, ScrollbarMode};
 use gpui_kit::component::{ActiveTheme as _, Icon, progress::ProgressCircle};
 use gpui_kit::{
     Animation, AnimationExt as _, AnyElement, App, ClickEvent, ElementId, Entity, FontWeight,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, RenderOnce, Role, SharedString,
-    StatefulInteractiveElement as _, Styled, TestSupportExt as _, Window, div,
+    InteractiveElement, IntoElement, MouseButton, ParentElement, RenderOnce, Role, ScrollHandle,
+    SharedString, StatefulInteractiveElement as _, Styled, TestSupportExt as _, Window, div,
     prelude::FluentBuilder as _, pulsating_between, px,
 };
 
+use crate::app_mark::AppMark;
+use crate::controls::TextRole as _;
 use crate::drag::DragStrip;
 use crate::segmented::{Segmented, SegmentedItem};
 use crate::shell::{ModeActivity, ModeId, SettingsSection, ShellState};
@@ -30,14 +33,31 @@ pub trait KeepsFocus: InteractiveElement + Sized {
 impl<T: InteractiveElement> KeepsFocus for T {}
 
 /// The full sidebar's width.
-pub const SIDEBAR_WIDTH: f32 = 240.;
+pub const SIDEBAR_WIDTH: f32 = 248.;
 /// The rail's width on macOS, where the window buttons sit in its top strip: at 16 px in they end
 /// near 76 px, so the rail is wide enough to hold them.
 pub const RAIL_WIDTH: f32 = 88.;
-/// The strip above the switcher, which holds the window buttons and moves the window.
-pub const SIDEBAR_STRIP_HEIGHT: f32 = 52.;
-/// The rail's buttons: 48 px targets in the 88 px macOS rail, as Glazier's were.
-const RAIL_BUTTON: f32 = 48.;
+/// The strip above the switcher, which holds the window buttons and the app's mark, and moves the
+/// window.
+pub const SIDEBAR_STRIP_HEIGHT: f32 = 60.;
+/// The rail's buttons: 56 px targets in the 88 px macOS rail.
+const RAIL_BUTTON: f32 = 56.;
+
+/// What a short window's rail takes for a mode's button and for an item, so that every
+/// destination stays in sight.
+const SHORT_MODE_BUTTON: f32 = 40.;
+const SHORT_RAIL_ITEM: f32 = 36.;
+
+/// A window shorter than this keeps its whole sidebar in sight with smaller rows.
+pub fn is_short_window(window: &Window) -> bool {
+    f32::from(window.viewport_size().height) < 760.
+}
+
+/// A window shorter than this keeps its whole rail in sight with smaller buttons: the rail's mode
+/// buttons and folder take more of the height than the full sidebar's do.
+pub fn is_short_rail(window: &Window) -> bool {
+    f32::from(window.viewport_size().height) < 860.
+}
 
 #[derive(IntoElement)]
 pub struct ModeLayout {
@@ -85,11 +105,20 @@ impl ParentElement for ModeLayout {
 }
 
 impl RenderOnce for ModeLayout {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let navigation_scroll = window
+            .use_keyed_state("mode-navigation-scroll", cx, |_, _| ScrollHandle::new())
+            .read(cx)
+            .clone();
+        let last = f32::from(navigation_scroll.max_offset().y);
+        let overflows = last > 1.;
+        let more_below = overflows && f32::from(-navigation_scroll.offset().y) < last - 1.;
+        let short = is_short_rail(window);
         let state = self.shell.read(cx);
         let rail = state.rail();
         let mode = state.mode();
         let theme = cx.theme();
+        let sidebar_ground = theme.sidebar;
         let navigation_label = self.navigation_label.unwrap_or_else(|| mode.label().into());
 
         div()
@@ -117,21 +146,51 @@ impl RenderOnce for ModeLayout {
                         DragStrip::new("sidebar-strip")
                             .w_full()
                             .flex_shrink_0()
-                            .h(px(SIDEBAR_STRIP_HEIGHT)),
+                            .h(px(SIDEBAR_STRIP_HEIGHT))
+                            .children(AppMark::for_sidebar(rail)),
                     )
                     .child(ModeSwitcher::new(&self.shell, rail))
                     .child(
                         div()
-                            .id("mode-navigation")
-                            .role(Role::Navigation)
-                            .aria_label(navigation_label)
-                            .flex()
-                            .flex_col()
+                            .relative()
                             .w_full()
                             .flex_1()
                             .min_h_0()
-                            .overflow_y_scroll()
-                            .children(self.navigation),
+                            .child(
+                                div()
+                                    .id("mode-navigation")
+                                    .test_support()
+                                    .role(Role::Navigation)
+                                    .aria_label(navigation_label)
+                                    .flex()
+                                    .flex_col()
+                                    .size_full()
+                                    .overflow_y_scroll()
+                                    .track_scroll(&navigation_scroll)
+                                    .children(self.navigation),
+                            )
+                            // More below: the same fade and scrollbar the grid of versions has, so
+                            // that nothing on the list is out of sight unannounced.
+                            .when(more_below, |this| {
+                                this.child(div().absolute().left_0().right_0().bottom_0().h_8().bg(
+                                    gpui_kit::linear_gradient(
+                                        180.,
+                                        gpui_kit::linear_color_stop(sidebar_ground.opacity(0.), 0.),
+                                        gpui_kit::linear_color_stop(
+                                            sidebar_ground.opacity(0.95),
+                                            1.,
+                                        ),
+                                    ),
+                                ))
+                            })
+                            .when(overflows, |this| {
+                                this.child(
+                                    div().absolute().inset_0().child(
+                                        Scrollbar::vertical(&navigation_scroll)
+                                            .mode(ScrollbarMode::Always),
+                                    ),
+                                )
+                            }),
                     )
                     .child(
                         div()
@@ -141,8 +200,8 @@ impl RenderOnce for ModeLayout {
                             .w_full()
                             .gap_0p5()
                             .px_2()
-                            .pt_2()
-                            .pb_3()
+                            .when(rail && short, |this| this.pt_1().pb_1())
+                            .when(!(rail && short), |this| this.pt_2().pb_3())
                             .when(rail, |this| this.items_center())
                             .children(self.footer)
                             .child(SettingsItem::new(&self.shell, rail)),
@@ -186,7 +245,8 @@ pub fn mode_button_id(mode: ModeId) -> SharedString {
 }
 
 impl RenderOnce for ModeSwitcher {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let rail_short = is_short_rail(window);
         let state = self.shell.read(cx);
         let current = state.mode();
         // The work to show for each mode: none on the mode the owner is looking at.
@@ -225,7 +285,12 @@ impl RenderOnce for ModeSwitcher {
                             this.aria_description(activity.describe(mode))
                         })
                         .relative()
-                        .size(px(RAIL_BUTTON))
+                        .w(px(RAIL_BUTTON))
+                        .h(px(if rail_short {
+                            SHORT_MODE_BUTTON
+                        } else {
+                            RAIL_BUTTON
+                        }))
                         .rounded(theme.radius_lg)
                         .border_2()
                         .border_color(theme.transparent)
@@ -242,7 +307,7 @@ impl RenderOnce for ModeSwitcher {
                                     .build(window, cx)
                             }
                         })
-                        .child(Icon::new(mode.icon()).size(px(22.)))
+                        .child(Icon::new(mode.icon()).size(px(26.)))
                         .when_some(activity, |this, activity| {
                             this.child(
                                 div()
@@ -315,7 +380,7 @@ impl RenderOnce for ActivityMark {
             ModeActivity::Progress(_) => div()
                 .id(id)
                 .test_support()
-                .size(px(10.))
+                .size(px(14.))
                 .flex_shrink_0()
                 .child(
                     ProgressCircle::new("ring")
@@ -328,7 +393,7 @@ impl RenderOnce for ActivityMark {
                 let dot = div()
                     .id(id)
                     .test_support()
-                    .size(px(6.))
+                    .size(px(8.))
                     .flex_shrink_0()
                     .rounded_full()
                     .bg(theme.primary);
@@ -351,7 +416,7 @@ impl RenderOnce for ActivityMark {
 
 type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-/// One entry of a mode's navigation, as `.lw-sidebar-item`: 32 px, the icon then the label, the
+/// One entry of a mode's navigation, as `.lw-sidebar-item`: 44 px, the icon then the label, the
 /// current page lifted on neutral ground. In the rail it is the icon alone, with its name as the
 /// tooltip. It is a button: Tab reaches it, Return and Space press it, and VoiceOver reads its
 /// name and whether it is the page on screen.
@@ -363,6 +428,7 @@ pub struct NavItem {
     /// What VoiceOver reads instead of the label, where the label alone says too little.
     accessibility_label: Option<SharedString>,
     current: bool,
+    quiet: bool,
     rail: bool,
     tooltip: Option<SharedString>,
     trailing: Option<AnyElement>,
@@ -381,6 +447,7 @@ impl NavItem {
             label: label.into(),
             accessibility_label: None,
             current: false,
+            quiet: false,
             rail: false,
             tooltip: None,
             trailing: None,
@@ -397,6 +464,12 @@ impl NavItem {
 
     pub fn current(mut self, current: bool) -> Self {
         self.current = current;
+        self
+    }
+
+    /// Words a step quieter, for a destination with nothing in it.
+    pub fn quiet(mut self, quiet: bool) -> Self {
+        self.quiet = quiet;
         self
     }
 
@@ -427,9 +500,12 @@ impl NavItem {
 }
 
 impl RenderOnce for NavItem {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let current = self.current;
+        // A short window keeps Tidy's whole list in sight, rather than scrolling its last rows.
+        let short = is_short_window(window);
+        let rail_short = is_short_rail(window);
         let tooltip = self
             .tooltip
             .or_else(|| self.rail.then(|| self.label.clone()));
@@ -449,21 +525,27 @@ impl RenderOnce for NavItem {
             .justify_start()
             .rounded(theme.radius)
             .gap(px(10.))
-            .text_size(px(13.))
+            .text_body()
             // The keyboard's focus line sits inside the item, as `.lw-sidebar-item`'s inset
             // outline does; the border is always there and only its colour changes.
             .border_2()
             .border_color(theme.transparent)
             .map(|this| {
                 if self.rail {
-                    this.w(px(RAIL_BUTTON)).h(px(44.)).justify_center()
+                    this.w(px(RAIL_BUTTON))
+                        .h(px(if rail_short { SHORT_RAIL_ITEM } else { 48. }))
+                        .justify_center()
                 } else {
                     // Roomier than Electron Oriel's 32 px, as the owner asked of every control.
-                    this.w_full().h(px(36.)).px(px(8.))
+                    this.w_full()
+                        .h(px(if short { 36. } else { 44. }))
+                        .px(px(10.))
                 }
             })
             .text_color(if current {
                 theme.foreground
+            } else if self.quiet {
+                theme.muted_foreground
             } else {
                 theme.sidebar_foreground
             })
@@ -473,7 +555,7 @@ impl RenderOnce for NavItem {
                 this.bg(theme.sidebar_accent)
                     .font_weight(FontWeight::MEDIUM)
             })
-            .child(self.icon.size(px(16.)).text_color(if current {
+            .child(self.icon.size(px(20.)).text_color(if current {
                 theme.foreground
             } else {
                 theme.muted_foreground

@@ -120,6 +120,7 @@ pub fn init(cx: &mut App) {
     theme.light_theme = light;
     theme.dark_theme = dark;
     ThemeChoice::stored(cx).apply(None, cx);
+    crate::toast::init(cx);
 }
 
 /// What GPUI Kit's own start does after creating its theme, which [`prepare`] took the place
@@ -200,6 +201,7 @@ mod tests {
             let theme = Theme::global_mut(cx);
             theme.light_theme = light;
             theme.dark_theme = dark;
+            crate::toast::init(cx);
         });
         oriel.update(|cx| {
             super::prepare(cx);

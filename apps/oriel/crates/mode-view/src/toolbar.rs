@@ -10,10 +10,11 @@ use gpui_kit::component::{
 };
 use gpui_kit::{
     App, Context, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Role,
-    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div,
+    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
     prelude::FluentBuilder as _, px,
 };
 use oriel_core_domain::GallerySortMode;
+use oriel_ui::TextRole as _;
 use oriel_ui::{ControlSize as _, MENU_ROW_HEIGHT};
 
 use crate::ViewMode;
@@ -42,14 +43,21 @@ pub fn sort_option_id(mode: GallerySortMode) -> SharedString {
 fn separator(cx: &App) -> impl IntoElement {
     div()
         .mx(px(2.))
-        .h(px(20.))
+        .h(px(24.))
         .w(px(1.))
         .flex_shrink_0()
         .bg(cx.theme().border)
 }
 
 impl ViewMode {
-    pub(crate) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_toolbar(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        // A narrow window keeps the toolbar inside itself: the labels of all but Open and the sort
+        // go, and their tooltips still name them.
+        let narrow = oriel_ui::top_bar::narrow_top_bar(window, &self.shell, cx);
         let catalog = self.catalog.read(cx);
         let has_folder = catalog.root().is_some();
         let refreshing = catalog.is_scanning();
@@ -71,10 +79,11 @@ impl ViewMode {
             .relative()
             .child(
                 Button::new("folders")
+                    .track_focus(&self.folders_button)
                     .bar_size()
                     .ghost()
                     .icon(Icon::new(IconName::Folders))
-                    .label("Folders")
+                    .when(!narrow, |this| this.label("Folders"))
                     .tooltip(if excludes {
                         "Browse subfolders (some are excluded)"
                     } else {
@@ -112,7 +121,7 @@ impl ViewMode {
                         } else {
                             IconName::ChevronUp
                         })
-                        .size(px(14.))
+                        .size(px(16.))
                         .text_color(theme.muted_foreground),
                     )
                     .tooltip("Sort")
@@ -166,7 +175,7 @@ impl ViewMode {
                             .bar_size()
                             .ghost()
                             .icon(Icon::new(IconName::ListTree))
-                            .label("Recursive")
+                            .when(!narrow, |this| this.label("Recursive"))
                             .tooltip(if has_folder {
                                 "Recursive browsing"
                             } else {
@@ -184,7 +193,7 @@ impl ViewMode {
                             .bar_size()
                             .ghost()
                             .icon(Icon::new(IconName::Image))
-                            .label("Comic")
+                            .when(!narrow, |this| this.label("Comic"))
                             .tooltip(if has_folder {
                                 "Comic grouping"
                             } else {
@@ -204,7 +213,7 @@ impl ViewMode {
                                 .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::Shuffle))
-                                .label("Shuffle")
+                                .when(!narrow, |this| this.label("Shuffle"))
                                 .tooltip("Shuffle again")
                                 .on_click(cx.listener(|this, _, _, cx| this.shuffle(cx))),
                         )
@@ -215,7 +224,9 @@ impl ViewMode {
                             .bar_size()
                             .ghost()
                             .icon(Icon::new(IconName::RefreshCcw))
-                            .label(if refreshing { "Refreshing" } else { "Refresh" })
+                            .when(!narrow, |this| {
+                                this.label(if refreshing { "Refreshing" } else { "Refresh" })
+                            })
                             .tooltip("Refresh")
                             .disabled(refreshing || !has_folder)
                             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
@@ -239,7 +250,7 @@ impl ViewMode {
             .absolute()
             .bottom(px(48.))
             .left_0()
-            .min_w(px(176.))
+            .min_w(px(200.))
             .p_1()
             .flex()
             .flex_col()
@@ -263,13 +274,13 @@ impl ViewMode {
                     .h(MENU_ROW_HEIGHT)
                     .px_2()
                     .rounded(theme.radius)
-                    .text_size(px(13.))
+                    .text_body()
                     .text_color(theme.popover_foreground)
                     .hover(|style| style.bg(theme.accent))
                     .child(label)
                     .child(
                         Icon::new(IconName::Check)
-                            .size(px(14.))
+                            .size(px(16.))
                             .text_color(theme.primary)
                             .when(!checked, |icon| icon.invisible()),
                     )

@@ -109,9 +109,17 @@ impl QuitGuard {
             return;
         }
         self.waiting = true;
+        self.stop_paused(cx);
         self.sync_hold(cx);
         self.platform.hide(cx);
         cx.notify();
+    }
+
+    /// With the window gone nothing can resume a paused job, which would keep the app waiting for
+    /// ever with its encoder stopped. What was finished stays, as with Stop.
+    fn stop_paused(&self, cx: &mut Context<Self>) {
+        let jobs = self.state.read(cx).jobs().clone();
+        jobs.update(cx, |jobs, cx| jobs.stop_paused(cx));
     }
 
     /// Whether closing the window may go ahead now. While work runs it may not: the window
@@ -122,6 +130,7 @@ impl QuitGuard {
         }
         if !self.waiting {
             self.waiting = true;
+            self.stop_paused(cx);
             self.sync_hold(cx);
             self.platform.hide(cx);
             cx.notify();

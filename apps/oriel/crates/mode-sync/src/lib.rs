@@ -13,10 +13,12 @@
 //! The profile menu's Open in View and Tidy this folder go to the shell as [`SyncEvent`]s; a
 //! folder another mode hands Sync arrives through [`SyncMode::show_hand_off`].
 
+mod check;
 pub mod plan_tree;
 pub mod profiles;
 pub mod run;
 pub mod secrets;
+mod shortcuts;
 mod view;
 
 use std::collections::{HashMap, HashSet};
@@ -47,9 +49,13 @@ pub use plan_tree::{PlanFolder, PlanRow};
 pub use profiles::{Profile, ProfileInput, ProfilePatch, ProfileStore, TokenState};
 pub use run::{ItemState, PruneAvailability, RunPhase, RunState};
 pub use secrets::FileSecretStorage;
+pub use shortcuts::open as show_shortcuts;
 
 /// The key context of Sync's page.
 pub const KEY_CONTEXT: &str = "Sync";
+
+/// How much of the window's foot the run log takes while it is open.
+const LOG_FOOT: gpui_kit::Pixels = gpui_kit::px(276.);
 
 /// The run's key in the shell's activity panel: Sync runs one thing at a time.
 const RUN_JOB: &str = "run";
@@ -348,6 +354,10 @@ pub struct SyncMode {
     scroll: UniformListScrollHandle,
     /// What another mode handed Sync while a run held the profile on screen.
     pending_hand_off: Option<HandOff>,
+    /// How tall the token's band and the run panel were drawn last, for the window's foot, which
+    /// the activity panel and toasts stand on.
+    pub(crate) band_height: gpui_kit::Pixels,
+    pub(crate) panel_height: gpui_kit::Pixels,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -363,6 +373,7 @@ impl SyncMode {
         if std::env::var_os(PLAN_VARIABLE).is_some_and(|value| value == "1") {
             sync.plan_now(window, cx);
         }
+        sync.apply_check(window, cx);
         sync
     }
 
@@ -445,6 +456,8 @@ impl SyncMode {
             focus_handle: cx.focus_handle(),
             scroll: UniformListScrollHandle::new(),
             pending_hand_off: None,
+            band_height: gpui_kit::px(0.),
+            panel_height: gpui_kit::px(0.),
             _subscriptions: subscriptions,
         }
     }
@@ -519,6 +532,28 @@ impl SyncMode {
     /// and where their tokens are kept.
     pub fn settings_section(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         self.render_settings(window, cx).into_any_element()
+    }
+
+    /// How much of the window's foot Sync keeps for its own: the token's band, and the run panel
+    /// and the log, which float over the plan's lower part.
+    pub fn foot_height(&self) -> gpui_kit::Pixels {
+        use gpui_kit::px;
+        let band = match self.store.active_profile() {
+            Some(profile)
+                if self.store.token_state(&profile.id) != TokenState::Saved
+                    || self.doctor_result.is_some() =>
+            {
+                self.band_height
+            }
+            _ => px(0.),
+        };
+        let panel = if self.shows_run_panel() && !self.run.running {
+            self.panel_height + px(16.)
+        } else {
+            px(0.)
+        };
+        let log = if self.log_open { LOG_FOOT } else { px(0.) };
+        band.max(panel).max(log)
     }
 
     pub fn profiles(&self) -> &ProfileStore {
@@ -1623,7 +1658,7 @@ impl SyncMode {
 }
 
 /// What a token field shows before anything is typed.
-pub(crate) const SAVED_TOKEN_PLACEHOLDER: &str = "Saved encrypted in ~/.latch-works/oriel";
+pub(crate) const SAVED_TOKEN_PLACEHOLDER: &str = "Paste the server's token";
 
 impl Focusable for SyncMode {
     fn focus_handle(&self, _: &App) -> FocusHandle {

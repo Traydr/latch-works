@@ -109,11 +109,14 @@ async fn background_analysis_waits_behind_asked_for_work_that_holds_its_root(
     });
     assert_eq!(engine.queued_jobs(), 1, "the analysis waits; the scan runs");
 
+    // Nothing but work behind it waits: what the pages read, and emptying holding, answer.
+    assert_eq!(engine.roots().await.unwrap().len(), 1);
+    engine.overview(root.id).await.unwrap();
+    engine.empty_holding(root.id).await.unwrap();
+
     let refused = engine.remove_root(root.id).await.unwrap_err();
-    assert_eq!(
-        refused.to_string(),
-        "Wait for this root's jobs to finish before removing it."
-    );
+    assert!(refused.to_string().contains("paused"), "{refused}");
+    assert!(engine.check_root_removable(root.id).is_err());
 
     scan.update(cx, |job, cx| job.resume(cx));
     until(cx, |cx| !scan.read(cx).is_running()).await;
@@ -316,4 +319,227 @@ fn background_analysis_steps_aside_for_a_scan_and_goes_on_after() {
     )
     .unwrap();
     assert_eq!(pending, 0, "every file got its fingerprint");
+}
+
+/// A stand-in for ffmpeg that works for a while on its first run of these `calls`, a pattern over
+/// its arguments, ticking so its progress shows, then does the real thing.
+#[cfg(unix)]
+fn a_slow_tool(scratch: &Scratch, real: &std::path::Path, calls: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+    let shim = scratch.0.join("slow-ffmpeg");
+    let (started, ticks) = (scratch.0.join("started"), scratch.0.join("ticks"));
+    fs::write(
+        &shim,
+        format!(
+            "#!/bin/sh\ncase \"$*\" in {calls})\n  if [ ! -f '{started}' ]; then\n    : > '{started}'\n    i=0\n    while [ $i -lt 25 ]; do\n      sleep 0.1\n      echo x >> '{ticks}'\n      i=$((i+1))\n    done\n  fi;;\nesac\nexec '{real}' \"$@\"\n",
+            started = started.display(),
+            ticks = ticks.display(),
+            real = real.display(),
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).unwrap();
+    shim
+}
+
+#[cfg(unix)]
+fn ticks(scratch: &Scratch) -> usize {
+    fs::read(scratch.0.join("ticks")).map_or(0, |bytes| bytes.len())
+}
+
+/// Waits for a piece of asked-for work on a thread of its own, with time for the tool to finish.
+#[cfg(unix)]
+async fn proceeds<T: Send + 'static>(
+    cx: &mut TestAppContext,
+    what: &str,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> T {
+    let handle = std::thread::spawn(work);
+    for _ in 0..6000 {
+        if handle.is_finished() {
+            return handle.join().unwrap();
+        }
+        cx.run_until_parked();
+        cx.background_executor
+            .timer(Duration::from_millis(10))
+            .await;
+    }
+    panic!("{what} still waits behind the paused analysis");
+}
+
+/// Pausing background analysis while it is in a tool must not stop what the owner asks for: the
+/// tool finishes its file, the analysis steps aside, and a scan, an Undo and a change each go ahead.
+/// Resumed, the analysis finishes.
+#[cfg(unix)]
+#[gpui_kit::test]
+async fn paused_analysis_in_a_tool_lets_asked_for_work_go_and_resumes(cx: &mut TestAppContext) {
+    use oriel_core_tidy::contract::PlanRequest;
+
+    cx.executor().allow_parking();
+    let media = Media::locate();
+    let Some(ffmpeg) = media.ffmpeg.clone() else {
+        return;
+    };
+    let scratch = Scratch::new("analysis-in-tool");
+    let archive = scratch.0.join("clips-archive");
+    assert!(oriel_test_archive::build_shrink_archive(&archive));
+    let shim = a_slow_tool(&scratch, &ffmpeg, "*");
+    let engine = scratch.engine(Media {
+        ffmpeg: Some(shim),
+        ..media
+    });
+    let root = engine.add_root(&archive).await.unwrap();
+    engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+    let files = block_on(engine.list_files(FileQuery {
+        filter: FileFilter::root(Some(root.id)),
+        sort: FileSortColumn::Path,
+        descending: false,
+        offset: 0,
+        limit: 100,
+    }))
+    .unwrap();
+    let undoable = engine
+        .perform_blocking(
+            PlanRequest::Hold {
+                file_ids: vec![files.rows[0].id],
+            },
+            &Quiet::new(),
+        )
+        .unwrap();
+
+    // The first run from here on is the analysis's own.
+    let _ = fs::remove_file(scratch.0.join("started"));
+    let _ = fs::remove_file(scratch.0.join("ticks"));
+    let analysis = cx.update(|cx| engine.start_background_analysis(root.id, cx));
+    until(cx, |_| scratch.0.join("started").exists()).await;
+    analysis.update(cx, |job, cx| job.pause(cx));
+    let at_pause = ticks(&scratch);
+
+    let (scanning, id) = (engine.clone(), root.id);
+    proceeds(cx, "a scan", move || {
+        scanning.scan_blocking(id, &Quiet::new())
+    })
+    .await
+    .unwrap();
+    assert!(
+        ticks(&scratch) > at_pause,
+        "the tool ran on to finish its file"
+    );
+    assert!(cx.read(|cx| analysis.read(cx).is_running()));
+
+    let (undoing, plan) = (engine.clone(), undoable.applied.plan.id);
+    let undone = proceeds(cx, "an Undo", move || {
+        undoing.undo_plans_blocking(&[plan], &Quiet::new())
+    })
+    .await
+    .unwrap();
+    assert!(undone.complete, "{:?}", undone.message);
+
+    let (changing, file) = (engine.clone(), files.rows[1].id);
+    let changed = proceeds(cx, "a change", move || {
+        changing.perform_blocking(
+            PlanRequest::Hold {
+                file_ids: vec![file],
+            },
+            &Quiet::new(),
+        )
+    })
+    .await
+    .unwrap();
+    assert_eq!(changed.applied.plan.done, 1);
+
+    analysis.update(cx, |job, cx| job.resume(cx));
+    for _ in 0..6000 {
+        cx.run_until_parked();
+        if !cx.read(|cx| analysis.read(cx).is_running()) {
+            break;
+        }
+        cx.background_executor
+            .timer(Duration::from_millis(10))
+            .await;
+    }
+    assert!(
+        cx.read(|cx| analysis.read(cx).value().is_some()),
+        "it finished"
+    );
+    let pending = block_on(engine.analysis_due(root.id)).unwrap();
+    assert!(!pending, "and nothing is left to analyse");
+}
+
+/// A change the owner paused stays truly suspended, tool and all, and goes on when resumed.
+#[cfg(unix)]
+#[gpui_kit::test]
+async fn a_paused_change_keeps_its_tool_suspended(cx: &mut TestAppContext) {
+    use oriel_core_tidy::contract::{PlanRequest, VideoCodecChoice, VideoQuality};
+
+    cx.executor().allow_parking();
+    let media = Media::locate();
+    let Some(ffmpeg) = media.ffmpeg.clone() else {
+        return;
+    };
+    let scratch = Scratch::new("change-in-tool");
+    let archive = scratch.0.join("clips-archive");
+    assert!(oriel_test_archive::build_shrink_archive(&archive));
+    let shim = a_slow_tool(&scratch, &ffmpeg, "*-c:v*");
+    let engine = scratch.engine(Media {
+        ffmpeg: Some(shim),
+        ..media
+    });
+    let root = engine.add_root(&archive).await.unwrap();
+    engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+    let files = block_on(engine.list_files(FileQuery {
+        filter: FileFilter::root(Some(root.id)),
+        sort: FileSortColumn::Path,
+        descending: false,
+        offset: 0,
+        limit: 100,
+    }))
+    .unwrap();
+    let busy = files
+        .rows
+        .iter()
+        .find(|row| row.rel_path.ends_with("busy.mp4"))
+        .unwrap()
+        .id;
+    let (_, change) = cx
+        .update(|cx| {
+            engine.perform(
+                PlanRequest::Reencode {
+                    file_ids: vec![busy],
+                    codec: VideoCodecChoice::Av1,
+                    quality: VideoQuality::High,
+                },
+                cx,
+            )
+        })
+        .await
+        .unwrap();
+    until(cx, |_| ticks(&scratch) > 0).await;
+    change.update(cx, |job, cx| job.pause(cx));
+    // A tick written just as the pause arrived lands, then nothing more.
+    cx.background_executor
+        .timer(Duration::from_millis(400))
+        .await;
+    let held_at = ticks(&scratch);
+    cx.background_executor
+        .timer(Duration::from_millis(1200))
+        .await;
+    assert_eq!(ticks(&scratch), held_at, "the tool held still");
+    assert!(cx.read(|cx| change.read(cx).is_running()));
+
+    change.update(cx, |job, cx| job.resume(cx));
+    for _ in 0..6000 {
+        cx.run_until_parked();
+        if !cx.read(|cx| change.read(cx).is_running()) {
+            break;
+        }
+        cx.background_executor
+            .timer(Duration::from_millis(10))
+            .await;
+    }
+    assert!(ticks(&scratch) > held_at, "it went on when resumed");
+    assert!(
+        cx.read(|cx| change.read(cx).value().is_some()),
+        "and finished"
+    );
 }

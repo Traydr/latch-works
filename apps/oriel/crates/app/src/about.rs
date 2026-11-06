@@ -19,6 +19,7 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px,
 };
 use oriel_ui::ControlSize as _;
+use oriel_ui::TextRole as _;
 use serde::Deserialize;
 
 /// The app's version: the workspace's, which the bundle's `Info.plist` carries too.
@@ -73,8 +74,8 @@ impl LicenceIndex {
 
 /// The dialog's text about the app.
 fn summary() -> String {
-    "A desktop app for a local Latch Works archive: view it, tidy it and sync it. It keeps its \
-     data in ~/.latch-works/oriel."
+    "A desktop app for a local Latch Works archive: view it, tidy it and sync it. Its data \
+     stays in your home folder, under .latch-works/oriel."
         .to_owned()
 }
 
@@ -130,21 +131,20 @@ pub fn show(licences: Option<LicenceIndex>, window: &mut Window, cx: &mut App) {
                 .test_support()
                 .text_color(muted)
                 .child(
-                    "This development build carries no licence notices. The app bundle has \
-                     them in Contents/Resources/licenses (cargo run -p xtask -- bundle).",
+                    "This development build carries no licence notices. The app bundle has them: \
+                     build it with cargo run -p xtask -- bundle.",
                 )
                 .into_any_element(),
         };
         let folder = licences.as_ref().map(|index| index.folder.clone());
-        dialog
-            .w(px(480.))
-            .title("Oriel")
+        oriel_ui::dialogs::titled(dialog, "Oriel", cx)
+            .w(oriel_ui::dialogs::TEXT_WIDTH)
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .gap_3()
-                    .text_size(px(13.))
+                    .text_body()
                     .child(
                         div()
                             .id("about-version")
@@ -170,13 +170,14 @@ pub fn show(licences: Option<LicenceIndex>, window: &mut Window, cx: &mut App) {
                             Button::new("about-show-licences")
                                 .bar_size()
                                 .outline()
-                                .label("Show Licences")
+                                .quiet_edge(cx)
+                                .label("Show licences")
                                 .on_click(move |_, _, cx| cx.open_with_system(&folder)),
                         )
                     })
                     // The action fills what holds it, so it is held at a button's width.
                     .child(
-                        div().w(px(88.)).child(
+                        div().w(px(120.)).child(
                             DialogAction::new().child(
                                 Button::new("about-ok")
                                     .primary()

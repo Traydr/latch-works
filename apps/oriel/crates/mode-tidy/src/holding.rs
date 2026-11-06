@@ -21,11 +21,13 @@ use gpui_kit::{
     AnyElement, App, Bounds, Context, Entity, FocusHandle, Focusable, FontWeight,
     InteractiveElement as _, IntoElement, KeyDownEvent, MouseDownEvent, ObjectFit,
     ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _,
-    Styled as _, StyledImage as _, Subscription, TestSupportExt as _, Window, canvas, div,
+    Styled as _, Subscription, TestSupportExt as _, Window, canvas, div,
     prelude::FluentBuilder as _, px,
 };
 use oriel_core_domain::{MediaType, detect_media_type};
 use oriel_core_tidy::contract::RootId;
+use oriel_ui::TextRole as _;
+use oriel_ui::focus::FocusReveal;
 use oriel_ui::{ControlSize as _, Toast, TopBar};
 
 use crate::changes::{
@@ -44,7 +46,13 @@ use crate::windowed::{Piece, Windowed};
 const PAGE: usize = 300;
 
 /// A tile's width.
-const TILE: f32 = 176.;
+const TILE: f32 = 216.;
+
+/// A picture taller than this against its width shows whole on its tile.
+const TALL_PICTURE: f32 = 1.6;
+
+/// How much of the window's foot the selection bar takes while it shows.
+const SELECTION_FOOT: f32 = 84.;
 
 /// The change that put a run of files in holding, or none for files held on their own.
 struct Group {
@@ -122,6 +130,7 @@ fn file_name(path: &str) -> &str {
 }
 
 pub struct HoldingPage {
+    reveal: FocusReveal,
     state: Entity<TidyState>,
     thumbs: Entity<Thumbs>,
     focus: FocusHandle,
@@ -131,6 +140,8 @@ pub struct HoldingPage {
     plans: Loaded<Vec<PlanSummary>>,
     wanted: usize,
     selected: BTreeSet<HoldingId>,
+    /// `ORIEL_HOLDING_SELECT=<n>` selects the first files, for a check in a real window.
+    check_select: Option<usize>,
     anchor: Option<HoldingId>,
     /// The keyboard cursor: the tile the arrows move from, Space looks at, and the ring marks.
     cursor: Option<HoldingId>,
@@ -138,9 +149,9 @@ pub struct HoldingPage {
     reveal_cursor: bool,
     /// Tiles to a line as last laid out, which ↑ ↓ move across.
     columns: usize,
+    /// A tile's width: the columns share the page's whole width between them.
+    tile_width: f32,
     busy: bool,
-    /// Until when a press on the page does nothing: what is under the pointer has only just come
-    /// there, after a restore or a press on the selection bar.
     /// Where a press does nothing for a moment: where a restored tile or the selection bar was.
     guard: widgets::PressGuard,
     /// The selection bar and each tile where last drawn.
@@ -161,6 +172,7 @@ impl HoldingPage {
             cx.observe(thumbs, |_, _, cx| cx.notify()),
         ];
         Self {
+            reveal: FocusReveal::new(&gpui_kit::ScrollHandle::new(), px(0.)),
             state: state.clone(),
             thumbs: thumbs.clone(),
             focus: cx.focus_handle(),
@@ -169,10 +181,14 @@ impl HoldingPage {
             plans: Loaded::default(),
             wanted: PAGE,
             selected: BTreeSet::new(),
+            check_select: std::env::var("ORIEL_HOLDING_SELECT")
+                .ok()
+                .and_then(|count| count.parse().ok()),
             anchor: None,
             cursor: None,
             reveal_cursor: false,
             columns: 1,
+            tile_width: TILE,
             busy: false,
             guard: widgets::PressGuard::default(),
             bar_bounds: Rc::default(),
@@ -253,6 +269,15 @@ impl HoldingPage {
     /// Whether a press at `position` would do nothing yet.
     pub fn holds_press_at(&self, position: Point<Pixels>) -> bool {
         self.guard.holds(position)
+    }
+
+    /// How much of the window's foot the page keeps for the selection bar, while it shows.
+    pub fn foot_height(&self) -> f32 {
+        if self.selected.is_empty() {
+            0.
+        } else {
+            SELECTION_FOOT
+        }
     }
 
     /// ⌘A: every held file listed.
@@ -412,6 +437,12 @@ impl HoldingPage {
         if self.busy || list.total == 0 {
             return;
         }
+        if state.holding_may_be_needed() {
+            let toast = Toast::error("Holding stays for now")
+                .detail("A change is running or waiting. Let it finish or stop it first.");
+            crate::widgets::show_toast(window, toast, cx);
+            return;
+        }
         let bytes = list.total_bytes;
         self.busy = true;
         let Some(engine) = state.engine().cloned() else {
@@ -452,6 +483,9 @@ impl HoldingPage {
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         // It is the open menu's, or nothing's; the page must not act on it behind the menu.
         if oriel_ui::popups::popup_open(window, cx) {
+            return;
+        }
+        if oriel_ui::keys::control_has_key(event, None, window, cx) {
             return;
         }
         let keys = &event.keystroke;
@@ -496,17 +530,25 @@ impl HoldingPage {
         let name = file_name(&item.original_path).to_string();
         let video = detect_media_type(&name) == MediaType::Video;
         let thumb = self.thumbs.update(cx, |thumbs, cx| {
-            thumbs.path(Path::new(&item.hold_path), video, 320, cx)
+            thumbs.path(Path::new(&item.hold_path), video, 512, cx)
         });
         let theme = cx.theme();
         let selected = self.selected.contains(&item.id);
         // The keyboard cursor's tile carries the screen's one ring in the accent colour.
         let current = self.cursor == Some(item.id);
         let picture: AnyElement = match thumb {
-            Thumb::Ready(image) => gpui_kit::img(image)
-                .size_full()
-                .object_fit(ObjectFit::Contain)
-                .into_any_element(),
+            Thumb::Ready(image) => {
+                // A restore is decided on what shows: a tall picture is seen whole on the tile's
+                // ground, not by its middle.
+                let shape = image.size(0);
+                let tall = shape.height.0 as f32 > shape.width.0 as f32 * TALL_PICTURE;
+                let fit = if tall {
+                    ObjectFit::Contain
+                } else {
+                    ObjectFit::Cover
+                };
+                crate::thumbs::painted(image, fit, theme.radius)
+            }
             _ => div()
                 .size_full()
                 .flex()
@@ -531,7 +573,7 @@ impl HoldingPage {
             .test_support()
             .aria_label(SharedString::from(name.clone()))
             .aria_selected(selected)
-            .w(px(176.))
+            .w(px(self.tile_width))
             .flex()
             .flex_col()
             .p_1()
@@ -582,7 +624,8 @@ impl HoldingPage {
             })
             .child(
                 div()
-                    .h(px(132.))
+                    .relative()
+                    .h(px(168.))
                     .rounded(theme.radius)
                     .overflow_hidden()
                     .bg(theme.muted)
@@ -599,6 +642,7 @@ impl HoldingPage {
                         Button::new(("restore-held", id as u64))
                             .row_size()
                             .outline()
+                            .quiet_edge(cx)
                             .label("Restore")
                             .disabled(self.busy)
                             .on_click(cx.listener(
@@ -616,7 +660,7 @@ impl HoldingPage {
                 div()
                     .px_0p5()
                     .pt(px(6.))
-                    .child(div().truncate().text_size(px(13.)).child(name))
+                    .child(div().truncate().text_body().child(name))
                     .child(
                         widgets::caption(
                             format!(
@@ -678,6 +722,7 @@ impl HoldingPage {
         let (inner, gap) = (window_width - margin - 2.5 * rem, 0.75 * rem);
         let columns = (((inner + gap) / (TILE + gap)).floor() as usize).max(1);
         self.columns = columns;
+        self.tile_width = (inner - gap * (columns - 1) as f32) / columns as f32;
         let mut items = Vec::new();
         for (group, (_, files)) in held.groups.iter().enumerate() {
             items.push(Item::Title(group));
@@ -765,8 +810,8 @@ impl HoldingPage {
                             div()
                                 .flex()
                                 .items_center()
-                                .h(px(36.))
-                                .text_size(px(13.))
+                                .h(px(44.))
+                                .text_body()
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(title)
                                 .into_any_element(),
@@ -793,6 +838,7 @@ impl HoldingPage {
                         Button::new("holding-more")
                             .bar_size()
                             .outline()
+                            .quiet_edge(cx)
                             .label("Show more")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.wanted += PAGE;
@@ -806,7 +852,7 @@ impl HoldingPage {
                             .max_w(px(560.))
                             .pt_4()
                             .text_center()
-                            .text_xs()
+                            .text_caption()
                             .text_color(muted)
                             .child(
                                 "Files here stay recoverable until you empty them. To bring \
@@ -823,12 +869,21 @@ impl HoldingPage {
                 for item in ahead {
                     let video =
                         detect_media_type(file_name(&item.original_path)) == MediaType::Video;
-                    thumbs.path(Path::new(&item.hold_path), video, 320, cx);
+                    thumbs.path(Path::new(&item.hold_path), video, 512, cx);
                 }
             });
         }
+        // What Tab lands on stays in sight, as the arrows' tile does.
+        self.reveal = self.reveal.over(&scroll);
+        let reveal = self.reveal.clone();
+        let children: Vec<AnyElement> = children
+            .into_iter()
+            .enumerate()
+            .map(|(index, child)| reveal.keep(format!("holding-{index}"), child, window, cx))
+            .collect();
         div()
             .id("holding-scroll")
+            .test_support()
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
@@ -862,6 +917,15 @@ impl Focusable for HoldingPage {
 
 impl Render for HoldingPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.check_select.is_some() && !self.ordered().is_empty() {
+            let count = self.check_select.take().unwrap_or(0);
+            self.selected = self
+                .ordered()
+                .iter()
+                .take(count)
+                .map(|item| item.id)
+                .collect();
+        }
         let state = self.state.read(cx);
         let shell = state.shell.clone();
         let root = state
@@ -884,11 +948,14 @@ impl Render for HoldingPage {
             )
         });
         let top_bar = TopBar::new(&shell, "Holding")
-            .when_some(meta, |bar, meta| bar.trailing(widgets::caption(meta, cx)))
+            .when_some(meta, |bar, meta| {
+                bar.quiet(widgets::caption(meta, cx).min_w_0().truncate())
+            })
             .when(total > 0, |bar| {
                 bar.trailing(
                     Button::new("holding-empty")
                         .bar_size()
+                        .outline()
                         .danger()
                         .label("Empty to Trash")
                         .tooltip("Empty to Trash  ⇧⌘⌫")
@@ -980,6 +1047,7 @@ impl Render for HoldingPage {
                             Button::new("holding-reveal")
                                 .bar_size()
                                 .outline()
+                                .quiet_edge(cx)
                                 .label("Show in Finder")
                                 .on_click(move |_, _, cx| {
                                     if let Some(path) = &reveal {

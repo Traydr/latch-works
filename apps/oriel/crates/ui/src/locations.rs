@@ -19,12 +19,14 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
-    App, Bounds, Context, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement,
-    Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, ParentElement as _, Pixels,
-    PlatformInput, RenderOnce, SharedString, StatefulInteractiveElement as _, Styled as _,
-    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
+    App, Bounds, Context, ElementId, FocusHandle, FontWeight, Global, Hsla,
+    InteractiveElement as _, IntoElement, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent,
+    ParentElement as _, Pixels, PlatformInput, RenderOnce, SharedString,
+    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
+    prelude::FluentBuilder as _, px,
 };
 
+use crate::controls::TextRole as _;
 use crate::folders::{KnownFolder, describe_use};
 use crate::layout::SIDEBAR_WIDTH;
 use crate::shell::ModeId;
@@ -98,7 +100,7 @@ impl LocationSwitcher {
     }
 }
 
-/// The 32 px tile the folder icon sits on (36 px in the rail).
+/// The 40 px tile the folder icon sits on.
 fn tile(size: f32, icon: f32, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
     div()
@@ -114,8 +116,34 @@ fn tile(size: f32, icon: f32, cx: &App) -> impl IntoElement {
         .child(Icon::new(IconName::FolderOpen).size(px(icon)))
 }
 
+/// The switcher's focus, for a dialog its menu opened to give focus back to.
+struct SwitcherFocus(FocusHandle);
+
+impl Global for SwitcherFocus {}
+
+/// Gives focus to the location switcher, for its menu to call before it opens a dialog: a dialog
+/// gives focus back to what had it when it opened, and the menu will be gone by then.
+pub fn focus_switcher(window: &mut Window, cx: &mut App) {
+    let focus = cx
+        .try_global::<SwitcherFocus>()
+        .map(|focus| focus.0.clone());
+    if let Some(focus) = focus {
+        focus.focus(window, cx);
+    }
+}
+
 impl RenderOnce for LocationSwitcher {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let focus = window
+            .use_keyed_state(
+                "location-switcher-focus",
+                cx,
+                |_, cx: &mut Context<FocusHandle>| cx.focus_handle().tab_stop(true),
+            )
+            .read(cx)
+            .clone();
+        cx.set_global(SwitcherFocus(focus.clone()));
+        let short = crate::layout::is_short_rail(window);
         let theme = cx.theme();
         let rail = self.rail;
         let tooltip = self
@@ -123,12 +151,17 @@ impl RenderOnce for LocationSwitcher {
             .clone()
             .or_else(|| rail.then(|| self.name.clone()));
         let trigger = Button::new(SWITCHER_ID)
+            .track_focus(&focus)
             .ghost()
             .accessibility_label(self.name.clone())
             .when_some(tooltip, |button, tooltip| button.tooltip(tooltip))
             .map(|button| {
                 if rail {
-                    return button.w(px(48.)).h(px(48.)).child(tile(36., 18., cx));
+                    return if short {
+                        button.w(px(56.)).h(px(40.)).child(tile(32., 18., cx))
+                    } else {
+                        button.w(px(56.)).h(px(56.)).child(tile(40., 20., cx))
+                    };
                 }
                 let caption = self.caption.map(|caption| {
                     div()
@@ -142,11 +175,11 @@ impl RenderOnce for LocationSwitcher {
                                 this.text_ellipsis()
                             }
                         })
-                        .text_xs()
+                        .text_caption()
                         .text_color(theme.muted_foreground)
                         .child(caption)
                 });
-                button.w_full().h(px(52.)).justify_start().child(
+                button.w_full().h(px(60.)).justify_start().child(
                     div()
                         .flex()
                         .flex_row()
@@ -154,7 +187,7 @@ impl RenderOnce for LocationSwitcher {
                         .gap(px(10.))
                         .w_full()
                         .min_w_0()
-                        .child(tile(32., 16., cx))
+                        .child(tile(40., 20., cx))
                         .child(
                             div()
                                 .flex()
@@ -166,7 +199,7 @@ impl RenderOnce for LocationSwitcher {
                                     div()
                                         .w_full()
                                         .truncate()
-                                        .text_size(px(13.))
+                                        .text_body()
                                         .font_weight(FontWeight::SEMIBOLD)
                                         .child(self.name),
                                 )
@@ -174,7 +207,7 @@ impl RenderOnce for LocationSwitcher {
                         )
                         .child(
                             Icon::new(IconName::ChevronsUpDown)
-                                .size(px(14.))
+                                .size(px(16.))
                                 .text_color(theme.muted_foreground),
                         ),
                 )
@@ -300,6 +333,8 @@ impl LocationItem {
                 .gap_2()
                 .flex_1()
                 .min_w_0()
+                .h(crate::controls::MENU_ROW_HEIGHT)
+                .text_body()
                 .when_some(status.as_ref(), |this, (color, _)| {
                     this.child(div().size(px(8.)).flex_shrink_0().rounded_full().bg(*color))
                 })
@@ -314,7 +349,7 @@ impl LocationItem {
                         .children(
                             modes
                                 .iter()
-                                .map(|mode| Icon::new(mode.icon()).size(px(12.)).text_color(muted)),
+                                .map(|mode| Icon::new(mode.icon()).size(px(14.)).text_color(muted)),
                         ),
                 )
         })

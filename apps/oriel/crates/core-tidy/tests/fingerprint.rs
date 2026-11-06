@@ -78,3 +78,69 @@ fn copies_of_a_still_hash_close_and_other_pictures_apart() {
         first.distance(apart)
     );
 }
+
+/// Stills as Convert leaves them, from the hardware decoder and from libvips' own loader: the same
+/// bytes at every step, whichever route each takes.
+#[cfg(target_os = "macos")]
+#[test]
+fn the_hardware_route_makes_what_libvips_makes() {
+    use oriel_avif::{Channels, Libavif, Samples, Still};
+    use oriel_core_tidy::similarity::hardware_avif::Declined;
+
+    let (Ok((hardware, _, _)), Ok((software, _, _)), Ok(libavif)) =
+        (Vips::open_located(), Vips::open_located(), Libavif::get())
+    else {
+        eprintln!("no libvips or libavif: skipped");
+        return;
+    };
+    let software = software.without_hardware_decoder();
+    let folder = std::env::temp_dir().join(format!("oriel-hardware-avif-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let scratch = Scratch(folder);
+    let picture = variant_picture(0);
+    let (width, height) = picture.dimensions();
+    let opaque: Vec<u8> = picture
+        .as_raw()
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .flat_map(|pixel| [pixel[0], pixel[1], pixel[2]])
+        .collect();
+    let with_alpha: Vec<u8> = opaque
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .flat_map(|pixel| [pixel[0], pixel[1], pixel[2], 200])
+        .collect();
+    let encode = |name: &str, channels, samples| {
+        let path = scratch.0.join(name);
+        let still = Still {
+            width,
+            height,
+            channels,
+            samples: Samples::Eight(samples),
+        };
+        std::fs::write(&path, libavif.encode_archive(&still, 1).unwrap()).unwrap();
+        path
+    };
+    let plain = encode("plain.avif", Channels::Rgb, &opaque);
+    let alpha = encode("alpha.avif", Channels::Rgba, &with_alpha);
+
+    let route = hardware.hardware_route(&plain).unwrap();
+    assert!(
+        matches!(route, Ok(()) | Err(Declined::NoDecoder)),
+        "a plain still should take the route on a Mac with the decoder: {route:?}"
+    );
+    assert!(hardware.hardware_route(&alpha).unwrap().is_err());
+    for path in [&plain, &alpha] {
+        assert_eq!(
+            hardware.rgba_pixels(path).unwrap(),
+            software.rgba_pixels(path).unwrap()
+        );
+        assert_eq!(
+            hardware.grey_pixels(path, 32, None).unwrap(),
+            software.grey_pixels(path, 32, None).unwrap()
+        );
+        assert_eq!(hash(&hardware, path), hash(&software, path));
+    }
+}

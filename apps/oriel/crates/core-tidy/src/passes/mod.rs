@@ -26,6 +26,9 @@ pub trait Progress: Send + Sync {
     /// Starts a phase: names it and sets its total (0 when unknown), with nothing done yet.
     fn phase(&self, label: &str, total: u64);
     fn done(&self, done: u64);
+    /// Names what a long step works on and how far it has got, from 0 to 1, when it can say; or
+    /// that it has ended.
+    fn item(&self, _item: Option<(&str, Option<f32>)>) {}
     /// The token tool runs are killed by, when there is one.
     fn cancel_token(&self) -> Option<&CancelToken>;
 
@@ -73,6 +76,10 @@ impl Progress for JobReporter {
 
     fn done(&self, done: u64) {
         self.set_done(done);
+    }
+
+    fn item(&self, item: Option<(&str, Option<f32>)>) {
+        self.set_item(item);
     }
 
     fn cancel_token(&self) -> Option<&CancelToken> {

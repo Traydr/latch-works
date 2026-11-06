@@ -5,9 +5,12 @@
 //!   scans it;
 //! - `ORIEL_TIDY_PAGE=<page>` opens a page by its `oriel.tidy.view` name (`overview`,
 //!   `duplicates`, `convert`, `cleanup`, `shrink`, `library`, `history`, `holding`), and
-//!   `duplicates:identical` opens Duplicates on its identical copies;
+//!   `duplicates:identical` and `duplicates:variants` open Duplicates on those sets;
 //! - `ORIEL_QUICK_LOOK=<file>` shows the file in Quick Look once Tidy is up;
 //! - `ORIEL_TIDY_PICKER=1` opens the folder picker (Add Folder…) once Tidy is up;
+//! - `ORIEL_TIDY_SHORTCUTS=1` opens the keyboard shortcuts once Tidy is up;
+//! - `ORIEL_TIDY_MOVE=1` opens the folder picker a Move to… opens, once Tidy is up;
+//! - `ORIEL_TIDY_FORGET=1` asks whether to forget the folder on screen once Tidy is up;
 //! - `ORIEL_TIDY_RUN=convert,cleanup` starts those pages' changes, one after another as the
 //!   pages' buttons would, once the folder on screen is scanned: the second queues behind the
 //!   first, to see the activity panel with work running and waiting. It changes the folder's
@@ -25,6 +28,9 @@ pub const ROOT_VARIABLE: &str = "ORIEL_TIDY_ROOT";
 pub const PAGE_VARIABLE: &str = "ORIEL_TIDY_PAGE";
 pub const QUICK_LOOK_VARIABLE: &str = "ORIEL_QUICK_LOOK";
 pub const PICKER_VARIABLE: &str = "ORIEL_TIDY_PICKER";
+pub const SHORTCUTS_VARIABLE: &str = "ORIEL_TIDY_SHORTCUTS";
+pub const FORGET_VARIABLE: &str = "ORIEL_TIDY_FORGET";
+pub const MOVE_VARIABLE: &str = "ORIEL_TIDY_MOVE";
 pub const RUN_VARIABLE: &str = "ORIEL_TIDY_RUN";
 
 fn variable(name: &str) -> Option<String> {
@@ -38,19 +44,34 @@ pub fn apply_from_environment(
     cx: &mut Context<TidyMode>,
 ) -> Option<Subscription> {
     let asked = variable(PAGE_VARIABLE);
-    let identical = asked.as_deref() == Some("duplicates:identical");
+    let scope = match asked.as_deref() {
+        Some("duplicates:identical") => Some(oriel_core_tidy::contract::DuplicateScope::Exact),
+        Some("duplicates:variants") => Some(oriel_core_tidy::contract::DuplicateScope::Variants),
+        _ => None,
+    };
     let page = asked.and_then(|key| TidyPage::from_key(key.split(':').next().unwrap_or("")));
     let root = variable(ROOT_VARIABLE).map(PathBuf::from);
     let look = variable(QUICK_LOOK_VARIABLE).map(PathBuf::from);
     let picker = variable(PICKER_VARIABLE).is_some();
+    let shortcuts = variable(SHORTCUTS_VARIABLE).is_some();
+    let forget = variable(FORGET_VARIABLE).is_some();
+    let move_to = variable(MOVE_VARIABLE).is_some();
     let runs: Vec<String> = variable(RUN_VARIABLE)
         .map(|runs| runs.split(',').map(|run| run.trim().to_owned()).collect())
         .unwrap_or_default();
-    if page.is_none() && root.is_none() && look.is_none() && !picker && runs.is_empty() {
+    if page.is_none()
+        && root.is_none()
+        && look.is_none()
+        && !picker
+        && !shortcuts
+        && !forget
+        && !move_to
+        && runs.is_empty()
+    {
         return None;
     }
     let mut pending = Some((page, root));
-    let mut overlays = Some((look, picker));
+    let mut overlays = Some((look, picker, shortcuts, forget, move_to));
     let mut runs = Some(runs).filter(|runs| !runs.is_empty());
     Some(cx.observe_in(state, window, move |_, state, window, cx| {
         if !state.read(cx).is_ready() {
@@ -69,7 +90,7 @@ pub fn apply_from_environment(
             state.update(cx, |state, cx| start_runs(state, &runs, window, cx));
         }
         // Once the window has drawn, so the panel and the picker have something to sit over.
-        if let Some((look, picker)) = overlays.take() {
+        if let Some((look, picker, shortcuts, forget, move_to)) = overlays.take() {
             let state = state.clone();
             cx.defer_in(window, move |_, window, cx| {
                 if let Some(look) = look {
@@ -77,6 +98,23 @@ pub fn apply_from_environment(
                 }
                 if picker {
                     crate::open_add_folder(&state, window, cx);
+                }
+                if shortcuts {
+                    crate::shortcuts::open(window, cx);
+                }
+                if move_to && let Some(root) = state.read(cx).root().cloned() {
+                    let options = crate::folder_picker::PickOptions {
+                        title: "Move 3 files to".into(),
+                        action: "Move to".into(),
+                        start: None,
+                        select: None,
+                        within: Some((root.path.clone().into(), root.name.clone())),
+                        sandbox: None,
+                    };
+                    crate::folder_picker::open(options, window, cx, |_, _, _| {});
+                }
+                if forget && let Some(root) = state.read(cx).root().cloned() {
+                    crate::sidebar::confirm_forget(&state, root.id, root.name, window, cx);
                 }
             });
         }
@@ -102,8 +140,8 @@ pub fn apply_from_environment(
                     state.go(page, cx);
                 }
             }
-            if identical {
-                state.open_duplicates(oriel_core_tidy::contract::DuplicateScope::Exact, cx);
+            if let Some(scope) = scope {
+                state.open_duplicates(scope, cx);
             }
         });
     }))

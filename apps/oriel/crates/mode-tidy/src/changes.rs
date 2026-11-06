@@ -292,6 +292,7 @@ mod tests {
             groups: vec![ResolveGroup {
                 keep: vec![1],
                 remove: vec![2, 3],
+                seen: Vec::new(),
             }],
         };
         assert_eq!(

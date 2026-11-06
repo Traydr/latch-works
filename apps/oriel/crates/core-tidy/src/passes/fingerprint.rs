@@ -288,6 +288,7 @@ fn record_print(
     let (print, error) = match made {
         Ok(print) => (Some(print.to_string()), None),
         Err(FingerprintError::Cancelled) => return Err(Cancelled.into()),
+        Err(FingerprintError::Interrupted) => return Ok(()),
         Err(error) => (None, Some(error_text(&error.to_string()))),
     };
     let params = same_row_params(file)

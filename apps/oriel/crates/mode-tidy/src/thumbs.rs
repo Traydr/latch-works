@@ -344,16 +344,18 @@ fn video_frame(path: &Path) -> Option<Vec<u8>> {
 }
 
 /// A file's picture filling its box: the thumbnail fitted as `fit` says, or the file's icon on
-/// the tile's ground while there is none.
+/// the tile's ground while there is none. GPUI clips a child to its parent's rectangle, never to
+/// its rounded corners, so `radius` must be the box's own for the corners to show round.
 pub fn picture(
     thumbs: &gpui_kit::Entity<Thumbs>,
     row: &FileRow,
     size: u32,
     fit: gpui_kit::ObjectFit,
+    radius: gpui_kit::Pixels,
     cx: &mut App,
 ) -> gpui_kit::AnyElement {
     let thumb = thumbs.update(cx, |thumbs, cx| thumbs.get(row, size, cx));
-    draw(thumb, row, fit, cx)
+    draw(thumb, row, fit, radius, cx)
 }
 
 /// [`picture`] at `size`, showing the picture at `meanwhile` (decoded already, or asked for too)
@@ -370,27 +372,67 @@ pub fn picture_meanwhile(
         Thumb::Pending => thumbs.get(row, meanwhile, cx),
         thumb => thumb,
     });
-    draw(thumb, row, fit, cx)
+    draw(thumb, row, fit, gpui_kit::px(0.), cx)
+}
+
+/// A decoded picture filling a place, which must be positioned, as `fit` says, its corners rounded
+/// to `radius`. It is painted rather than left to `img()`, which takes the picture's own shape as
+/// its aspect ratio: in a place of no fixed height a tall picture comes out as tall as the width
+/// makes it, cut off at the place's edge rather than fitted.
+pub fn painted(
+    image: std::sync::Arc<gpui_kit::RenderImage>,
+    fit: gpui_kit::ObjectFit,
+    radius: gpui_kit::Pixels,
+) -> gpui_kit::AnyElement {
+    use gpui_kit::{IntoElement as _, Styled as _, canvas};
+
+    canvas(
+        |_, _, _| {},
+        move |bounds, (), window, _| {
+            let shown = fit.get_bounds(bounds, image.size(0));
+            window
+                .paint_image(
+                    bounds,
+                    shown,
+                    gpui_kit::Corners::all(radius),
+                    image.clone(),
+                    0,
+                    false,
+                )
+                .ok();
+        },
+    )
+    .absolute()
+    .size_full()
+    .into_any_element()
 }
 
 fn draw(
     thumb: Thumb,
     row: &FileRow,
     fit: gpui_kit::ObjectFit,
+    radius: gpui_kit::Pixels,
     cx: &mut App,
 ) -> gpui_kit::AnyElement {
     use gpui_kit::component::{ActiveTheme as _, Icon};
-    use gpui_kit::{IntoElement as _, ParentElement as _, Styled as _, StyledImage as _, div, img};
+    use gpui_kit::{IntoElement as _, ParentElement as _, Styled as _, div};
 
     let theme = cx.theme();
     match thumb {
-        Thumb::Ready(image) => img(image).size_full().object_fit(fit).into_any_element(),
-        Thumb::Pending => div().size_full().bg(theme.muted).into_any_element(),
+        Thumb::Ready(image) => painted(image, fit, radius),
+        Thumb::Pending => div()
+            .absolute()
+            .size_full()
+            .rounded(radius)
+            .bg(theme.muted)
+            .into_any_element(),
         Thumb::Unavailable => div()
+            .absolute()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
+            .rounded(radius)
             .bg(theme.muted)
             .text_color(theme.muted_foreground)
             .child(Icon::new(kind_icon(row.kind)))

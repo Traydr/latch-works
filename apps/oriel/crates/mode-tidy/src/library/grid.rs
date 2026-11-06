@@ -1,31 +1,32 @@
 //! The Library as a grid (`components/library/FileGrid.tsx`): Frame View's tiles, square pictures
-//! about 180 px wide with the name and size under each, paged in as the grid scrolls. Only the
+//! at least 220 px wide with the name and size under each, paged in as the grid scrolls. Only the
 //! lines in view are drawn, so a large archive scrolls as fast as a small one.
 
 use std::ops::Range;
 
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::Input;
-use gpui_kit::component::{ActiveTheme as _, Sizable as _};
 use gpui_kit::{
     AnyElement, ClickEvent, Context, FontWeight, InteractiveElement as _, IntoElement as _,
     MouseButton, MouseDownEvent, ObjectFit, ParentElement as _, SharedString,
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, canvas, div,
     prelude::FluentBuilder as _, px, uniform_list,
 };
-use oriel_ui::checkbox_target;
+use oriel_ui::TextRole as _;
+use oriel_ui::{ControlSize as _, checkbox_target};
 
 use super::{LibraryPage, PAGE};
 use crate::format;
 use crate::thumbs;
 
 /// The narrowest a tile gets before the grid drops a column.
-const MIN_TILE: f32 = 180.;
+const MIN_TILE: f32 = 220.;
 const GAP: f32 = 12.;
 const PAD_X: f32 = 20.;
 const PAD_TOP: f32 = 16.;
-/// The tile's padding (4 px each side) and the two 16 px lines under the picture.
-const TILE_CHROME: f32 = 8. + 44.;
+/// The tile's padding (4 px each side) and the two lines under the picture.
+const TILE_CHROME: f32 = 8. + 64.;
 
 /// How the grid lays out at a width: its columns, a tile's width and its height.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -66,15 +67,18 @@ impl LibraryPage {
             .size_full()
             .child(
                 canvas(
-                    move |bounds, _, cx| {
+                    move |bounds, window, cx| {
                         let width = f32::from(bounds.size.width);
-                        page.update(cx, |page, cx| {
-                            if (page.grid_width - width).abs() >= 0.5 {
+                        let changed = page.update(cx, |page, _| {
+                            let changed = (page.grid_width - width).abs() >= 0.5;
+                            if changed {
                                 page.grid_width = width;
-                                cx.notify();
                             }
-                        })
-                        .ok();
+                            changed
+                        });
+                        if changed.unwrap_or(false) {
+                            oriel_ui::redraw::notify_next_frame(page.clone(), window);
+                        }
                     },
                     |_, _, _, _| {},
                 )
@@ -172,7 +176,14 @@ impl LibraryPage {
                 .into_any_element();
         };
         let cursor = self.cursor(cx) == Some(index);
-        let picture = thumbs::picture(&self.thumbs, &row, 384, ObjectFit::Cover, cx);
+        let picture = thumbs::picture(
+            &self.thumbs,
+            &row,
+            384,
+            ObjectFit::Cover,
+            cx.theme().radius,
+            cx,
+        );
         let id = row.id;
         let name: SharedString = row.name.clone().into();
         div()
@@ -195,9 +206,9 @@ impl LibraryPage {
             })
             .border_2()
             .border_color(if cursor {
-                theme.primary
+                theme.ring
             } else if selected {
-                theme.muted_foreground.opacity(0.4)
+                theme.primary
             } else {
                 theme.transparent
             })
@@ -232,9 +243,10 @@ impl LibraryPage {
                                 this.opacity(0.)
                                     .group_hover("library-tile", |style| style.opacity(1.))
                             })
-                            // A 28 px target on a backdrop, so the box reads over any picture.
+                            // A 32 px target on a backdrop, so the box reads over any picture.
                             .child(
                                 checkbox_target(Checkbox::new(("library-tile-select", id as u64)))
+                                    .tab_stop(false)
                                     .rounded(theme.radius)
                                     .bg(theme.popover.opacity(0.8))
                                     .checked(selected)
@@ -251,10 +263,10 @@ impl LibraryPage {
                 div()
                     .px(px(6.))
                     .py(px(6.))
-                    .text_xs()
+                    .text_body()
                     .child(match renaming {
                         Some(input) => Input::new(&input)
-                            .small()
+                            .row_size()
                             .aria_label(format!("New name for {name}"))
                             .into_any_element(),
                         None => div()

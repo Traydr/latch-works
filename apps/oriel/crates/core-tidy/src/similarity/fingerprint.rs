@@ -4,7 +4,7 @@
 use std::{error::Error, fmt, path::Path, time::Duration};
 
 use oriel_runtime::CancelToken;
-use oriel_tools::ToolRun;
+use oriel_tools::{ToolError, ToolRun};
 
 use super::{
     phash::{Hash64, PHASH_INPUT_SIZE, perceptual_hash},
@@ -80,6 +80,8 @@ pub enum FingerprintError {
     Video(String),
     /// The pass was stopped while ffmpeg ran; nothing is recorded for the file.
     Cancelled,
+    /// Something outside the app stopped ffmpeg; nothing is recorded, and the pass goes on.
+    Interrupted,
 }
 
 impl fmt::Display for FingerprintError {
@@ -88,6 +90,7 @@ impl fmt::Display for FingerprintError {
             FingerprintError::Decode(error) => error.fmt(f),
             FingerprintError::Video(message) => f.write_str(message),
             FingerprintError::Cancelled => f.write_str("cancelled"),
+            FingerprintError::Interrupted => f.write_str("ffmpeg was stopped from outside the app"),
         }
     }
 }
@@ -222,6 +225,7 @@ pub fn video_frame_pixels(
     let output = match run.run() {
         Ok(output) => output,
         Err(error) if error.is_cancelled() => return Err(FingerprintError::Cancelled),
+        Err(ToolError::Killed) => return Err(FingerprintError::Interrupted),
         Err(error) => {
             return Err(FingerprintError::Video(format!(
                 "Could not run ffmpeg: {error}"

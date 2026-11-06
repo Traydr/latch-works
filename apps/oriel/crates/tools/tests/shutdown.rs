@@ -26,9 +26,11 @@ fn quitting_kills_the_tools_still_running() {
 
     kill_running_tools();
     for run in runs {
-        let output = run.join().unwrap().unwrap();
-        assert_eq!(output.code(), None, "killed, so no exit code");
-        assert!(!output.timed_out);
+        let error = run.join().unwrap().unwrap_err();
+        assert!(error.is_cancelled(), "not a failure of the file: {error}");
     }
+    assert!(started.elapsed() < Duration::from_secs(10));
+    // Whatever the app was working through starts nothing more.
+    assert!(long_tool().run().unwrap_err().is_cancelled());
     assert!(started.elapsed() < Duration::from_secs(10));
 }

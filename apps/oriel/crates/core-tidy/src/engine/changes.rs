@@ -17,6 +17,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context as _, bail};
 use gpui_kit::{App, Entity, Task};
@@ -37,13 +38,12 @@ use crate::contract::{
 };
 use crate::media::still::encode_still_to_avif;
 use crate::media::transcode::{TranscodeJob, encoder_capabilities, transcode_with_ffmpeg};
-use crate::optimize::CandidateHolds;
 use crate::passes::{Progress, Quiet};
 use crate::plans::encode_budget::EncodeBudget;
 pub use crate::plans::encode_budget::still_concurrency;
 use crate::plans::executor::{ExecutorDeps, apply_plan, undo_plan};
 use crate::plans::holding::{
-    HoldingStore, held_batch_paths, list_holding, mark_batches_emptied, move_to_trash, restore_held,
+    HoldingStore, held_batch_paths, list_holding, mark_batches_emptied, restore_held,
 };
 use crate::plans::journal::{
     discard_draft, get_plan, list_plan_steps, list_plans, plan_root_ids, plan_subject,
@@ -171,26 +171,11 @@ impl Inner {
         })
     }
 
-    /// What the planner reads for a request, holds included for the kinds Convert and Clean up
-    /// leave files alone in.
-    fn planner_context(
-        &self,
-        connection: &Connection,
-        request: &PlanRequest,
-    ) -> anyhow::Result<PlannerContext> {
-        let holds_root = match request {
-            PlanRequest::Optimize { root_id, .. }
-            | PlanRequest::Cleanup { root_id }
-            | PlanRequest::ShrinkVideos { root_id, .. } => Some(*root_id),
-            _ => None,
-        };
+    /// What the planner reads for a request.
+    fn planner_context(&self, connection: &Connection) -> anyhow::Result<PlannerContext> {
         Ok(PlannerContext {
             roots: list_roots(connection)?,
             settings: read_settings(connection)?,
-            candidate_holds: match holds_root {
-                Some(root_id) => self.candidate_holds(connection, root_id)?,
-                None => CandidateHolds::default(),
-            },
         })
     }
 
@@ -211,7 +196,7 @@ impl Inner {
                 )));
             }
         }
-        let context = self.planner_context(connection, request)?;
+        let context = self.planner_context(connection)?;
         let draft = draft_steps(connection, &context, request)?;
         let preview = save_plan(connection, &context, request.kind(), &draft)?;
         Ok(preview)
@@ -264,6 +249,7 @@ impl Inner {
             encode_budget: EncodeBudget::for_this_machine(),
             roots,
             progress,
+            generation: &self.generation,
         })
     }
 
@@ -284,10 +270,11 @@ impl Inner {
         release_free_memory();
         let stale_steps = match outcome {
             Ok(result) => result.stale_steps,
-            // A stopped apply settled its plan as cancelled; what it did is in the summary.
+            // A stopped apply settled its plan as cancelled; what it did is in the summary. What
+            // it skipped as stale before it stopped went with its count, so it may be any.
             Err(error) if progress.check().is_err() => {
                 log::info!("Tidy stopped a change: {error:#}");
-                0
+                1
             }
             Err(error) => return Err(error),
         };
@@ -337,11 +324,14 @@ impl Inner {
             });
             undone.plans.push(self.plan_summary(plan_id)?);
             if let Err(error) = outcome {
-                if progress.check().is_err() {
-                    return Err(error);
-                }
                 undone.complete = false;
-                undone.message = Some(format!("{error:#}"));
+                // Stopped, what came back stays back, and its scan is still to come.
+                undone.message = Some(if progress.check().is_err() {
+                    log::info!("Tidy stopped an undo: {error:#}");
+                    "Stopped. What came back stays back; Undo again to finish.".to_owned()
+                } else {
+                    format!("{error:#}")
+                });
                 break;
             }
         }
@@ -687,7 +677,7 @@ impl TidyEngine {
                     trashed.push(batch);
                     continue;
                 }
-                match move_to_trash(path) {
+                match inner.places.trash(path) {
                     Ok(()) => trashed.push(batch),
                     Err(error) => failed.push(format!("{batch}: {error}")),
                 }
@@ -913,12 +903,13 @@ impl TidyEngine {
             .into_iter()
             .map(|root| root.id)
             .collect();
+        let mut catch_up: Vec<RootId> = Vec::new();
         let mut analyze: Vec<RootId> = Vec::new();
         for &root_id in &follow_up.rescan {
             if roots.contains(&root_id) {
                 let scanned = self.scan_blocking(root_id, progress)?;
                 report.scanned.push(root_id);
-                analyze.extend(scanned.follow_up.analyze);
+                catch_up.extend(scanned.follow_up.analyze);
             }
         }
         for &root_id in &follow_up.analyze {
@@ -927,6 +918,12 @@ impl TidyEngine {
                 && self.inner.analysis_due(root_id)?
             {
                 analyze.push(root_id);
+            }
+        }
+        for root_id in catch_up {
+            if !report.analyzed.contains(&root_id) {
+                self.catch_up_blocking(root_id, progress)?;
+                report.analyzed.push(root_id);
             }
         }
         for root_id in analyze {
@@ -1007,13 +1004,20 @@ impl Inner {
         {
             return unchanged;
         }
+        // Each estimate has a folder of its own: several start at once, one per category, and the
+        // first to finish deletes its folder with whatever is in it.
+        static NEXT_FOLDER: AtomicU64 = AtomicU64::new(0);
         let folder = std::env::temp_dir().join(format!(
             "oriel-tidy-estimate-{}-{}",
             std::process::id(),
-            crate::catalog::now_ms()
+            NEXT_FOLDER.fetch_add(1, Ordering::Relaxed)
         ));
+        // Nothing can be measured without it, which says "unknown", not "no saving".
         if fs::create_dir_all(&folder).is_err() {
-            return unchanged;
+            return OptimizeEstimate {
+                sampled: 0,
+                ..unchanged
+            };
         }
         let quiet = Quiet::new();
         let ratio = |index: usize, candidate: &crate::optimize::OptimizeCandidate| {
@@ -1095,6 +1099,7 @@ impl Inner {
                     ffmpeg,
                     &TranscodeJob::Animation { src: source, out },
                     Some(quiet.token()),
+                    &|_| {},
                 )
                 .map_err(|failure| anyhow::anyhow!("{failure}"))?;
             }
@@ -1111,6 +1116,7 @@ impl Inner {
                         quality,
                     },
                     Some(quiet.token()),
+                    &|_| {},
                 )
                 .map_err(|failure| anyhow::anyhow!("{failure}"))?;
             }

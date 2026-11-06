@@ -9,7 +9,6 @@ use std::path::Path;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::radio::{Radio, RadioGroup};
-use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
     AnyElement, App, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -19,6 +18,7 @@ use gpui_kit::{
 use oriel_core_tidy::contract::{
     EncoderCapabilities, PreferredFolder, Settings, SimilarityLevel, VideoQuality,
 };
+use oriel_ui::TextRole as _;
 use oriel_ui::segmented::{Segmented, SegmentedItem};
 use oriel_ui::{ControlSize as _, SettingsGroup, SettingsRow, Toast};
 
@@ -94,6 +94,7 @@ pub fn prefer_folder(state: &Entity<TidyState>, dir: String, window: &mut Window
         let restore = before.clone();
         state.push_undo(move |state, window, cx| {
             state.update_settings(restore.clone(), window, cx);
+            crate::widgets::show_toast(window, Toast::info("Undid the preferred folder"), cx);
         });
     });
     let undo_state = state.clone();
@@ -171,7 +172,7 @@ pub fn matching_popover(
     let toggle = change_settings(state, |settings| {
         settings.spot_variants = !settings.spot_variants;
     });
-    let spot = Switch::new(SharedString::from(format!("{id}-spot-variants")))
+    let spot = oriel_ui::switch(SharedString::from(format!("{id}-spot-variants")))
         .checked(settings.spot_variants)
         .accessibility_label("Spot variants")
         .on_click(move |_, window, cx| toggle(window, cx));
@@ -260,7 +261,7 @@ pub fn matching_rows(state: &Entity<TidyState>, settings: &Settings, id: &str) -
     let toggle = change_settings(state, |settings| {
         settings.spot_variants = !settings.spot_variants;
     });
-    let spot = Switch::new(SharedString::from(format!("{id}-spot-variants")))
+    let spot = oriel_ui::switch(SharedString::from(format!("{id}-spot-variants")))
         .checked(settings.spot_variants)
         .accessibility_label("Spot variants")
         .on_click(move |_, window, cx| toggle(window, cx));
@@ -335,7 +336,7 @@ impl SettingsSection {
                 .flex_row()
                 .items_center()
                 .gap_3()
-                .min_h(px(52.))
+                .min_h(px(60.))
                 .px_4()
                 .py(px(10.))
                 .cursor_pointer()
@@ -344,16 +345,10 @@ impl SettingsSection {
                     this.encoders_open = Some(!open);
                     cx.notify();
                 }))
+                .child(div().flex_1().min_w_0().text_body().child("Encoders"))
                 .child(
                     div()
-                        .flex_1()
-                        .min_w_0()
-                        .text_size(px(13.))
-                        .child("Encoders"),
-                )
-                .child(
-                    div()
-                        .text_xs()
+                        .text_caption()
                         .text_color(if missing > 0 {
                             theme.warning
                         } else {
@@ -367,7 +362,7 @@ impl SettingsSection {
                     } else {
                         IconName::ChevronRight
                     })
-                    .size(px(16.))
+                    .size(px(20.))
                     .text_color(theme.muted_foreground),
                 ),
         );
@@ -385,9 +380,9 @@ impl SettingsSection {
                         .flex_row()
                         .items_center()
                         .gap_4()
-                        .h(px(40.))
+                        .h(px(48.))
                         .px_4()
-                        .text_size(px(13.))
+                        .text_body()
                         .text_color(if found {
                             theme.muted_foreground
                         } else {
@@ -395,7 +390,7 @@ impl SettingsSection {
                         })
                         .child(div().flex_1().min_w_0().truncate().child(label))
                         .child(if found {
-                            div().text_xs().child("Available")
+                            div().text_caption().child("Available")
                         } else {
                             div().child("Not found")
                         }),
@@ -506,6 +501,7 @@ impl SettingsSection {
                         Button::new("tidy-settings-add-preferred")
                             .bar_size()
                             .outline()
+                            .quiet_edge(cx)
                             .label("Add folder…")
                             .on_click(move |_, window, cx| {
                                 this.update(cx, |section, cx| section.add_preferred(window, cx))
@@ -529,12 +525,12 @@ impl SettingsSection {
                     .flex_row()
                     .items_center()
                     .gap_3()
-                    .h(px(44.))
+                    .h(px(52.))
                     .pl_4()
                     .pr(px(10.))
                     .child(
                         Icon::new(IconName::Folder)
-                            .size(px(16.))
+                            .size(px(20.))
                             .text_color(theme.muted_foreground),
                     )
                     .child(
@@ -542,7 +538,7 @@ impl SettingsSection {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(13.))
+                            .text_body()
                             .child(label.clone()),
                     )
                     .child(
@@ -585,7 +581,7 @@ impl SettingsSection {
             SettingsGroup::new("Background analysis").child(
                 SettingsRow::new("Find similar versions and measure soundtracks after each scan")
                     .child(
-                        Switch::new("tidy-settings-background-analysis")
+                        oriel_ui::switch("tidy-settings-background-analysis")
                             .checked(settings.auto_analyze)
                             .accessibility_label("Background analysis")
                             .on_click(move |_, window, cx| toggle(window, cx)),

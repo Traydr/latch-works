@@ -45,7 +45,7 @@ fn mode_menu(mode: ModeId) -> ModeMenu {
             ],
             edit: None,
             view: Vec::new(),
-            help: Vec::new(),
+            help: vec![MenuItem::action("Keyboard Shortcuts", ShowShortcuts)],
         },
         ModeId::Tidy => ModeMenu {
             file: vec![
@@ -75,12 +75,12 @@ fn mode_menu(mode: ModeId) -> ModeMenu {
             ],
             help: vec![MenuItem::action("Keyboard Shortcuts", ShowShortcuts)],
         },
-        // Sync adds nothing to the menu, as in Electron Oriel.
+        // Sync adds only its shortcut sheet to the menu.
         ModeId::Sync => ModeMenu {
             file: Vec::new(),
             edit: None,
             view: Vec::new(),
-            help: Vec::new(),
+            help: vec![MenuItem::action("Keyboard Shortcuts", ShowShortcuts)],
         },
     }
 }

@@ -104,6 +104,24 @@ mod macos {
     }
 }
 
+/// Whether this Enter or Space belongs to the control Tab has put focus on, so the page's own use
+/// of the key must leave it alone: the control presses on the key's way up, and the page acting on
+/// its way down would do two things with one press, one of them not asked for. A table, which
+/// `except` names, has the keys of its own that the page acts on.
+pub fn control_has_key(
+    event: &gpui_kit::KeyDownEvent,
+    except: Option<&gpui_kit::FocusHandle>,
+    window: &gpui_kit::Window,
+    cx: &gpui_kit::App,
+) -> bool {
+    let keys = &event.keystroke;
+    matches!(keys.key.as_str(), "enter" | "space")
+        && !keys.modifiers.modified()
+        && window
+            .focused(cx)
+            .is_some_and(|focused| focused.tab_stop && Some(&focused) != except)
+}
+
 #[cfg(test)]
 mod tests {
     use gpui_kit::Keystroke;

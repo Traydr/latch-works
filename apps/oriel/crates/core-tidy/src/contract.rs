@@ -154,6 +154,7 @@ string_enum! {
         HomeFolder = "home-folder",
         ArchiveFormat = "archive-format",
         RightExtension = "right-extension",
+        AlreadyReencoded = "already-reencoded",
         LargerFile = "larger-file",
         OriginalName = "original-name",
         Oldest = "oldest",
@@ -239,6 +240,7 @@ pub struct FileRow {
     pub ext: String,
     pub size: i64,
     pub mtime_ms: f64,
+    pub ctime_ms: f64,
     pub kind: FileKind,
     pub format: Option<FileFormat>,
     pub extension_mismatch: bool,
@@ -373,14 +375,15 @@ pub struct DuplicateVersion {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DuplicateSet {
-    /// Stable while the set's files stay the same: `exact:<sha256>` or `similar:<lowest id>`.
+    /// `set:<lowest id>`, stable while the set's files stay: a conversion gives files new bytes
+    /// and keeps their ids, so what the owner chose in a set outlives it.
     pub key: String,
     pub kind: DuplicateKind,
     /// Distinct contents, best first; each lists its byte-identical copies, best first.
     pub versions: Vec<DuplicateVersion>,
     /// With Spot variants on, the picture each version shows, by position: versions that are
-    /// copies of one picture share a number. `None` when Spot variants is off, for videos and
-    /// animations, and until every version has a detail print.
+    /// copies of one picture share a number. `None` when Spot variants is off, unless a version
+    /// could not be read, for videos and animations, and until every version has a detail print.
     pub pictures: Option<Vec<i64>>,
     /// What resolving keeps unless told otherwise.
     pub keep: Vec<FileId>,
@@ -468,6 +471,8 @@ pub struct DuplicateCounts {
     pub similar: i64,
     pub variants: i64,
     pub dismissed: i64,
+    /// Similar sets Spot variants has not finished comparing, held out of every queue.
+    pub checking: i64,
 }
 
 /// One page of duplicate sets, with counts that ignore the scope.
@@ -516,7 +521,11 @@ pub struct OptimizeSummary {
 pub struct CategoryCount {
     pub category: OptimizeCategory,
     pub files: i64,
+    /// Hard links of one file count once.
     pub bytes: i64,
+    /// Of those bytes, what the open duplicate sets' suggestions would remove anyway, which their
+    /// own totals already count.
+    pub duplicate_bytes: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -533,8 +542,11 @@ pub struct ShrinkItem {
     pub bytes: i64,
     pub estimated_bytes: i64,
     pub duration_ms: f64,
-    /// Roughly how long the encode takes, from its length and picture size.
+    /// Roughly how long the encode takes, from its length and picture size; nothing for an
+    /// identical copy, which takes the result of [`Self::copy_of`].
     pub encode_ms: f64,
+    /// The video before this one in the list with the same bytes, encoded once for both.
+    pub copy_of: Option<FileId>,
 }
 
 /// The videos under a root Shrink should re-encode, the most bytes saved first, and why the others
@@ -549,9 +561,10 @@ pub struct ShrinkSummary {
     pub speed_measured: bool,
 }
 
-/// The leading items whose originals add up to `limit_bytes` without going over, and always at
-/// least one; every item when `limit_bytes` is `None`. Shrink's button and its plan both count a
-/// batch this way, so they agree.
+/// The leading items whose encoded originals add up to `limit_bytes` without going over, and
+/// always at least one; every item when `limit_bytes` is `None`. An identical copy costs no encode
+/// and always comes with the video it copies, so a batch never leaves a set half changed. Shrink's
+/// button and its plan both count a batch this way, so they agree.
 pub fn shrink_batch(items: &[ShrinkItem], limit_bytes: Option<f64>) -> &[ShrinkItem] {
     let Some(limit) = limit_bytes else {
         return items;
@@ -559,11 +572,13 @@ pub fn shrink_batch(items: &[ShrinkItem], limit_bytes: Option<f64>) -> &[ShrinkI
     let mut total = 0.0;
     let mut taken = 0;
     for item in items {
-        if taken > 0 && total + item.bytes as f64 > limit {
-            break;
+        if item.copy_of.is_none() {
+            if taken > 0 && total + item.bytes as f64 > limit {
+                break;
+            }
+            total += item.bytes as f64;
         }
         taken += 1;
-        total += item.bytes as f64;
     }
     &items[..taken]
 }
@@ -573,8 +588,12 @@ pub fn shrink_batch(items: &[ShrinkItem], limit_bytes: Option<f64>) -> &[ShrinkI
 #[serde(rename_all = "camelCase")]
 pub struct ShrinkTotals {
     pub files: i64,
+    /// Hard links of one file count once.
     pub bytes: i64,
     pub estimated_bytes: i64,
+    /// Of the bytes expected to go, those on copies the open duplicate sets' suggestions would
+    /// remove anyway, which their own totals already count.
+    pub duplicate_saving: i64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -649,7 +668,7 @@ impl Default for Settings {
         Self {
             preferred_folders: Vec::new(),
             similarity: SimilarityLevel::Balanced,
-            spot_variants: false,
+            spot_variants: true,
             reencode_quality: VideoQuality::High,
             auto_analyze: true,
         }
@@ -709,10 +728,70 @@ pub struct Rename {
 }
 
 /// One duplicate decision: the files kept and the files moved to holding.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ResolveGroup {
     pub keep: Vec<FileId>,
     pub remove: Vec<FileId>,
+    /// Those files as the owner saw them when they decided. One that differs now was not what they
+    /// decided about, so the decision is not carried out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub seen: Vec<SeenFile>,
+}
+
+impl ResolveGroup {
+    /// A decision about a set as the page shows it.
+    pub fn of_set(set: &DuplicateSet, keep: Vec<FileId>, remove: Vec<FileId>) -> Self {
+        let seen = set
+            .versions
+            .iter()
+            .flat_map(|version| &version.files)
+            .filter(|file| keep.contains(&file.id) || remove.contains(&file.id))
+            .map(|file| SeenFile {
+                id: file.id,
+                size: file.size,
+                mtime_ms: file.mtime_ms,
+                ctime_ms: file.ctime_ms,
+                sha256: file.sha256.clone(),
+            })
+            .collect();
+        Self { keep, remove, seen }
+    }
+}
+
+/// What a page showed of a file: enough to tell it has changed since.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeenFile {
+    pub id: FileId,
+    pub size: i64,
+    pub mtime_ms: f64,
+    pub ctime_ms: f64,
+    /// Its hash then, for a file that had one: most stills are hashed only once something else is
+    /// the same size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+}
+
+impl SeenFile {
+    /// Whether a file now of this size, date, change time and hash can be what the page showed.
+    /// Replaced bytes of the same size and date differ by hash. A hash gone means a scan saw the
+    /// file change and has not read it again, so it counts as changed. Without a hash then, as
+    /// most stills are, the change time tells: a scan that saw it move read the file afresh, so a
+    /// hash that has only arrived or a new print agrees with the file and not with the page.
+    pub fn still_holds(
+        &self,
+        size: i64,
+        mtime_ms: f64,
+        ctime_ms: f64,
+        sha256: Option<&str>,
+    ) -> bool {
+        self.size == size
+            && self.mtime_ms.trunc() == mtime_ms.trunc()
+            && match self.sha256.as_deref() {
+                Some(seen) => sha256 == Some(seen),
+                None => self.ctime_ms.trunc() == ctime_ms.trunc(),
+            }
+    }
 }
 
 /// What the owner asked to change, before the planner turns it into steps.
@@ -893,6 +972,9 @@ pub struct PlanSummary {
     pub steps: i64,
     pub done: i64,
     pub skipped: i64,
+    /// Of those, the ones left because the file kept instead has changed or gone.
+    #[serde(default)]
+    pub skipped_for_kept_file: i64,
     pub failed: i64,
     pub undone: i64,
     pub bytes_before: i64,
@@ -1023,4 +1105,40 @@ pub struct OptimizeEstimate {
     pub ratio: f64,
     pub ratio_low: f64,
     pub ratio_high: f64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn item(file_id: FileId, bytes: i64, copy_of: Option<FileId>) -> ShrinkItem {
+        ShrinkItem {
+            file_id,
+            bytes,
+            estimated_bytes: bytes / 2,
+            duration_ms: 1000.0,
+            encode_ms: if copy_of.is_some() { 0.0 } else { 1000.0 },
+            copy_of,
+        }
+    }
+
+    fn ids(items: &[ShrinkItem]) -> Vec<FileId> {
+        items.iter().map(|item| item.file_id).collect()
+    }
+
+    #[test]
+    fn a_batch_counts_encodes_and_never_leaves_a_set_of_copies_behind() {
+        let items = [
+            item(1, 100, None),
+            item(2, 100, Some(1)),
+            item(3, 100, Some(1)),
+            item(4, 100, None),
+            item(5, 100, None),
+        ];
+        // The copies cost no encode, so they neither count nor get cut off.
+        assert_eq!(ids(shrink_batch(&items, Some(100.0))), [1, 2, 3]);
+        assert_eq!(ids(shrink_batch(&items, Some(200.0))), [1, 2, 3, 4]);
+        assert_eq!(ids(shrink_batch(&items, Some(1.0))), [1, 2, 3]);
+        assert_eq!(ids(shrink_batch(&items, None)), [1, 2, 3, 4, 5]);
+    }
 }

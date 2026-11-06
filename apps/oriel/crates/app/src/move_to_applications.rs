@@ -1,6 +1,6 @@
 //! On macOS, offers to move an Oriel started outside Applications (from the disk image, or
 //! Downloads) into it, as Electron Oriel's `offerMoveToApplications` does: once a launch, with
-//! "Don't Ask Again" remembered in the shell's folder (`move-to-applications-declined`, the file
+//! "Don't ask again" remembered in the shell's folder (`move-to-applications-declined`, the file
 //! Electron Oriel writes).
 //!
 //! Moving copies the bundle into `/Applications` (`~/Applications` when that is not writable),
@@ -15,7 +15,7 @@
 
 use std::path::{Path, PathBuf};
 
-/// The file whose presence says "Don't Ask Again", in the shell's folder.
+/// The file whose presence says "Don't ask again", in the shell's folder.
 pub const DECLINED_FILE: &str = "move-to-applications-declined";
 /// `1` offers the move in a run with `ORIEL_DATA_DIR` set, for a check; `move` takes the
 /// offer there without asking, as clicking Move to Applications (and Replace) would.
@@ -207,13 +207,15 @@ mod mac {
             return;
         }
         let declined = data.shell().join(DECLINED_FILE);
+        // A check's old copy goes to its own trash, never the owner's.
+        let sandbox = situation.test_run.then(|| data.clone());
         let unasked =
             situation.test_run && std::env::var(OFFER_VARIABLE).is_ok_and(|v| v == "move");
         window
             .update(cx, |_, window, cx| {
                 window
                     .spawn(cx, async move |cx| {
-                        ask(cx, bundle, folder, declined, unasked).await;
+                        ask(cx, bundle, folder, declined, unasked, sandbox).await;
                     })
                     .detach();
             })
@@ -226,6 +228,7 @@ mod mac {
         folder: PathBuf,
         declined: PathBuf,
         unasked: bool,
+        sandbox: Option<DataRoot>,
     ) {
         let answer = if unasked {
             Ok(0)
@@ -288,7 +291,7 @@ mod mac {
         // Never the copy just made: a bundle that is the target under another spelling is it.
         if !read_only(&bundle)
             && !super::same_place(&bundle, &target)
-            && let Err(error) = trash(&bundle)
+            && let Err(error) = trash(&bundle, sandbox.as_ref())
         {
             log::warn!("the old copy stays at {}: {error}", bundle.display());
         }
@@ -313,7 +316,7 @@ mod mac {
                 "It runs from where it is, but from Applications it stays when the disk image is \
                  ejected or Downloads is cleared out.",
             ),
-            &["Move to Applications", "Not Now", "Don't Ask Again"],
+            &["Move to Applications", "Not now", "Don't ask again"],
         )
         .await
     }
@@ -406,9 +409,15 @@ mod mac {
     }
 
     /// Moves the old copy to the Trash, as Electron's move does, so it can be taken back.
-    fn trash(path: &Path) -> Result<(), String> {
+    fn trash(path: &Path, sandbox: Option<&DataRoot>) -> Result<(), String> {
         use objc2_foundation::{NSFileManager, NSString, NSURL};
 
+        if let Some(sandbox) = sandbox {
+            return sandbox
+                .move_to_sandbox_trash(path)
+                .map(drop)
+                .map_err(|error| error.to_string());
+        }
         let text = path.to_str().ok_or("its path is not Unicode")?;
         let url = NSURL::fileURLWithPath(&NSString::from_str(text));
         NSFileManager::defaultManager()

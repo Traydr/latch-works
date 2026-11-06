@@ -3,15 +3,17 @@
 //! shell's (General). Each switch is named by its row's label, as Electron Oriel's are.
 
 use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
-use gpui_kit::component::{ActiveTheme as _, WindowExt as _, button::Button, switch::Switch};
+use gpui_kit::component::{ActiveTheme as _, WindowExt as _, button::Button};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, ElementId, Entity,
     InteractiveElement as _, IntoElement, ParentElement as _, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
-    prelude::FluentBuilder as _, px,
+    px,
 };
 use oriel_core_index::MediaIndexStats;
 use oriel_ui::ControlSize as _;
+use oriel_ui::TextRole as _;
+use oriel_ui::{SettingsGroup, SettingsRow};
 
 use crate::ViewMode;
 use crate::gallery::display_name;
@@ -77,111 +79,26 @@ impl SettingsPanel {
     }
 }
 
-/// A titled group of rows (`SettingsGroup`).
-fn group(title: &'static str, rows: Vec<AnyElement>, cx: &App) -> AnyElement {
-    let theme = cx.theme();
-    div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(
-            div()
-                .text_size(px(13.))
-                .font_weight(gpui_kit::FontWeight::SEMIBOLD)
-                .child(title),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .rounded(theme.radius_lg)
-                .bg(theme.background)
-                .border_1()
-                .border_color(theme.border)
-                .children(rows),
-        )
-        .into_any_element()
+/// A titled group of rows, in the card every section's groups have.
+fn group(title: &'static str, rows: Vec<AnyElement>, _: &App) -> AnyElement {
+    SettingsGroup::new(title).children(rows).into_any_element()
 }
 
-/// A row: the label and its description on the left, the control on the right (`SettingsRow`).
+/// A row: the label and its description on the left, the control on the right.
 fn row(
     label: impl Into<SharedString>,
     description: Option<SharedString>,
     control: impl IntoElement,
-    cx: &App,
+    _: &App,
 ) -> AnyElement {
-    let theme = cx.theme();
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .justify_between()
-        .gap_4()
-        .px_4()
-        .py_3()
-        .border_b_1()
-        .border_color(theme.border)
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .min_w_0()
-                .child(div().text_size(px(13.)).child(label.into()))
-                .when_some(description, |this, description| {
-                    this.child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.muted_foreground)
-                            .child(description),
-                    )
-                }),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .child(control),
-        )
-        .into_any_element()
+    let row = SettingsRow::new(label);
+    match description {
+        Some(description) => row.description(description),
+        None => row,
+    }
+    .child(control)
+    .into_any_element()
 }
-
-/// A keyboard shortcut, as `Kbd` shows one.
-fn keys(text: &'static str, cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
-    div()
-        .px_2()
-        .py(px(1.))
-        .rounded(theme.radius)
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.muted)
-        .text_xs()
-        .child(text)
-}
-
-/// The key lists (`SHORTCUTS`).
-const GALLERY_KEYS: [(&str, &str); 5] = [
-    ("Previous or next item", "← / → or A / D"),
-    ("Row up or down", "↑ / ↓ or W / S"),
-    ("Open the selected item", "Enter / f"),
-    ("Open the selected folder", "Shift+S"),
-    (
-        "Parent, previous or next folder",
-        "Shift+W / Shift+A / Shift+D",
-    ),
-];
-
-const VIEWER_KEYS: [(&str, &str); 7] = [
-    ("Close the viewer", "Escape"),
-    ("Previous page or item", "ArrowLeft / q"),
-    ("Next page or item", "ArrowRight / e"),
-    ("Play or pause", "Space / 2"),
-    ("Back or forward 5 seconds", "1 / 3"),
-    ("Mute", "m"),
-    ("Play at 2× while held", "4"),
-];
 
 impl ViewMode {
     /// A switch row whose switch is named by `label` and sets one setting.
@@ -195,7 +112,7 @@ impl ViewMode {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let view = cx.entity().downgrade();
-        let control = Switch::new(id)
+        let control = oriel_ui::switch(id)
             .checked(checked)
             .accessibility_label(label)
             .on_click(move |checked, window, cx| {
@@ -245,10 +162,26 @@ impl ViewMode {
             row(
                 "Thumbnail size",
                 Some(format!("{draft} px wide").into()),
-                div().w(px(160.)).child(
-                    Slider::new(&self.settings_panel.thumbnail_size)
-                        .accessibility_label("Thumbnail size"),
-                ),
+                div()
+                    .relative()
+                    .w(px(160.))
+                    // The kit's rest of the track is too faint to see where the scale ends: a
+                    // line in the input's colour shows through it.
+                    .child(
+                        div()
+                            .absolute()
+                            .left_0()
+                            .right_0()
+                            .top(px(14.))
+                            .h(px(4.))
+                            .rounded_full()
+                            .bg(cx.theme().input),
+                    )
+                    .child(
+                        Slider::new(&self.settings_panel.thumbnail_size)
+                            .accessibility_label("Thumbnail size")
+                            .h_8(),
+                    ),
                 cx,
             ),
             self.switch_row(
@@ -332,6 +265,7 @@ impl ViewMode {
                 Button::new("clear-thumbnail-cache")
                     .bar_size()
                     .outline()
+                    .quiet_edge(cx)
                     .label("Clear thumbnail cache")
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.gallery.update(cx, |gallery, cx| {
@@ -350,6 +284,7 @@ impl ViewMode {
                 Button::new("clear-media-index")
                     .bar_size()
                     .outline()
+                    .quiet_edge(cx)
                     .label("Clear media index")
                     .on_click(
                         cx.listener(|this, _, window, cx| this.clear_media_index(window, cx)),
@@ -367,7 +302,7 @@ impl ViewMode {
                         .into(),
                 ),
                 div()
-                    .text_xs()
+                    .text_caption()
                     .text_color(cx.theme().muted_foreground)
                     .child(if tools.available() {
                         "Available"
@@ -378,25 +313,28 @@ impl ViewMode {
             ),
         ];
 
-        let gallery_keys = GALLERY_KEYS
-            .iter()
-            .map(|(action, shortcut)| row(*action, None, keys(shortcut, cx), cx))
-            .collect();
-        let viewer_keys = VIEWER_KEYS
-            .iter()
-            .map(|(action, shortcut)| row(*action, None, keys(shortcut, cx), cx))
-            .collect();
+        // The keys are in View's shortcut sheet, so they are written once.
+        let shortcuts = vec![row(
+            "Keyboard shortcuts",
+            Some("Press ? anywhere in View".into()),
+            Button::new("view-shortcuts")
+                .row_size()
+                .outline()
+                .quiet_edge(cx)
+                .label("Show")
+                .on_click(|_, window, cx| crate::shortcuts::open(window, cx))
+                .into_any_element(),
+            cx,
+        )];
 
         div()
             .id("view-settings")
             .flex()
             .flex_col()
-            .gap_6()
             .child(group("Gallery", gallery, cx))
             .child(group("Viewer", viewer, cx))
             .child(group("Storage", storage, cx))
-            .child(group("Gallery keys", gallery_keys, cx))
-            .child(group("Viewer keys", viewer_keys, cx))
+            .child(group("Keys", shortcuts, cx))
             .child(self.render_diagnostics(&settings, cx))
             .into_any_element()
     }
@@ -598,7 +536,8 @@ impl ViewMode {
             .unwrap_or_else(|| {
                 "Worker, cache and runtime details, to paste into a bug report.".into()
             });
-        let mut rows = vec![
+        let mut rows =
+            vec![
             self.switch_row(
                 "debug-logging",
                 "Enable debug logging",
@@ -627,7 +566,7 @@ impl ViewMode {
                     .child(
                         Button::new("diagnostics-show")
                             .bar_size()
-                            .outline()
+                            .outline().quiet_edge(cx)
                             .label(if shown { "Hide" } else { "Show" })
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.settings_panel.diagnostics_shown =
@@ -638,7 +577,7 @@ impl ViewMode {
                     .child(
                         Button::new("diagnostics-refresh")
                             .bar_size()
-                            .outline()
+                            .outline().quiet_edge(cx)
                             .label("Refresh")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.refresh_index_stats(cx);
@@ -650,7 +589,7 @@ impl ViewMode {
                     .child(
                         Button::new("diagnostics-copy")
                             .bar_size()
-                            .outline()
+                            .outline().quiet_edge(cx)
                             .label("Copy diagnostics")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let report = this.diagnostics_report(cx);
@@ -670,7 +609,7 @@ impl ViewMode {
             let heading = |title: &'static str| {
                 div()
                     .mb(px(6.))
-                    .text_size(px(13.))
+                    .text_body()
                     .font_weight(gpui_kit::FontWeight::MEDIUM)
                     .child(title)
             };
@@ -682,7 +621,7 @@ impl ViewMode {
                 .aria_label("Diagnostics details")
                 .flex()
                 .flex_col()
-                .text_xs();
+                .text_caption();
             for group in diagnostics.facts {
                 details = details.child(section().child(heading(group.title)).children(
                     group.facts.into_iter().map(|(label, value)| {

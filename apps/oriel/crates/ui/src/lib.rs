@@ -5,18 +5,23 @@
 //! the jobs they run, which the shell shows in one place.
 
 pub mod activity;
+pub mod app_mark;
 pub mod assets;
 pub mod commands;
 pub mod controls;
+pub mod dialogs;
 pub mod drag;
+pub mod focus;
 pub mod folders;
 pub mod keys;
 pub mod layout;
 pub mod locations;
 pub mod popups;
+pub mod redraw;
 pub mod segmented;
 pub mod settings;
 pub mod shell;
+pub mod shortcuts;
 pub mod storage;
 pub mod theme;
 pub mod toast;
@@ -24,7 +29,10 @@ pub mod top_bar;
 
 pub use activity::{Activity, ActivityIndicator, ActivityJob, JobCommand, JobControl, JobState};
 pub use assets::OrielAssets;
-pub use controls::{ControlSize, MENU_ROW_HEIGHT, MIN_TARGET, checkbox_target};
+pub use controls::{
+    ControlSize, MENU_ROW_HEIGHT, MIN_TARGET, STAGE_RING, TextRole, checkbox_target, menu_row,
+    on_dark_stage, switch,
+};
 pub use folders::{HandOff, KnownFolder, OfferedFolders};
 pub use layout::{KeepsFocus, ModeLayout};
 pub use locations::{LocationItem, LocationSwitcher};

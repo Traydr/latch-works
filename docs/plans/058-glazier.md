@@ -126,6 +126,8 @@ It supersedes items 1, 2, 3 and 6 above.
 7. **Convert waits for review.** Members of open similar sets, and files not yet checked for
    similar versions while analysis is on, are not converted, so review never compares a
    re-encoded copy.
+   Later: removed. Files in open sets convert and shrink, and the keeper rules account for a
+   re-encoded copy (see "Duplicates and Convert or Shrink" in `docs/runbooks/oriel.md`).
 8. **After using it (same branch).** Every version and copy shows its whole folder path, wrapped,
    since a cut path could not tell two copies apart; the reason line, the "goes to holding" line
    and the top bar's counts are gone. A decision toasts with Undo, because a stray click had to

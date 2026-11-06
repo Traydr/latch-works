@@ -124,6 +124,15 @@ fn pixels_of(file: &FileRow) -> Option<i64> {
     Some(file.width? * file.height?)
 }
 
+/// A share below the keeper's in the fewest letters, as [`ratio_label`] words it: "1/4", "92%".
+fn ratio_share(ratio: f64) -> String {
+    if ratio <= 0.55 {
+        format!("1/{}", (1. / ratio).round())
+    } else {
+        format!("{}%", (ratio * 100.).round())
+    }
+}
+
 fn ratio_label(ratio: f64, noun: &str) -> Option<String> {
     if ratio > 0.97 && ratio < 1.03 {
         return None;
@@ -160,6 +169,9 @@ pub struct Lane {
     pub label: &'static str,
     pub value: String,
     pub standing: Standing,
+    /// The value with its comparison cut down, where a narrow tile would cut the whole off:
+    /// "1152×3456 · 92%".
+    compact: Option<String>,
 }
 
 impl Lane {
@@ -168,6 +180,42 @@ impl Lane {
             label,
             value,
             standing,
+            compact: None,
+        }
+    }
+
+    fn compact(mut self, compact: String) -> Self {
+        self.compact = Some(compact);
+        self
+    }
+
+    /// The value where its label does not show: "Yes" says nothing without "Sound" before it.
+    pub fn said_alone(&self) -> String {
+        match (self.label, self.value.as_str()) {
+            ("Sound", "Yes") => "Sound".to_owned(),
+            ("Sound", "Not checked") => "Sound not checked".to_owned(),
+            _ => self.value.clone(),
+        }
+    }
+
+    fn whole(&self, labelled: bool) -> String {
+        if labelled {
+            self.value.clone()
+        } else {
+            self.said_alone()
+        }
+    }
+
+    /// Whether `room` letters would cut this value off when it has a shorter form to take instead.
+    pub fn overflows(&self, room: usize, labelled: bool) -> bool {
+        self.compact.is_some() && self.whole(labelled).chars().count() > room
+    }
+
+    /// What a tile shows, with its label beside it or not: the whole value, or its compact form.
+    pub fn shown(&self, compact: bool, labelled: bool) -> String {
+        match &self.compact {
+            Some(short) if compact => short.clone(),
+            _ => self.whole(labelled),
         }
     }
 
@@ -190,7 +238,7 @@ fn audio_label(audio: AudioState) -> &'static str {
     match audio {
         AudioState::None => "No sound track",
         AudioState::Silent => "Silent",
-        AudioState::Sound => "Sound",
+        AudioState::Sound => "Yes",
         AudioState::Unmeasured => "Not checked",
     }
 }
@@ -223,7 +271,8 @@ pub fn facts_of(file: &FileRow, keeper: &FileRow, video: bool) -> Vec<Lane> {
                     "Dimensions",
                     format!("{dimensions} ({label})"),
                     Standing::Worse,
-                ),
+                )
+                .compact(format!("{dimensions} · {}", ratio_share(ratio))),
                 None => Lane::new(
                     "Dimensions",
                     dimensions.clone(),
@@ -284,20 +333,23 @@ pub fn facts_of(file: &FileRow, keeper: &FileRow, video: bool) -> Vec<Lane> {
         );
     }
     let difference = file.size - keeper.size;
-    lanes.push(Lane::new(
-        "Size",
-        if same || difference == 0 {
-            format::bytes(file.size as f64)
+    let size = format::bytes(file.size as f64);
+    let apart = format::bytes(difference.unsigned_abs() as f64);
+    lanes.push(if same || difference == 0 {
+        Lane::new("Size", size, compare(difference == 0))
+    } else {
+        let (words, sign) = if difference < 0 {
+            ("smaller", "−")
         } else {
-            format!(
-                "{} ({} {})",
-                format::bytes(file.size as f64),
-                format::bytes(difference.unsigned_abs() as f64),
-                if difference < 0 { "smaller" } else { "larger" }
-            )
-        },
-        compare(difference == 0),
-    ));
+            ("larger", "+")
+        };
+        Lane::new(
+            "Size",
+            format!("{size} ({apart} {words})"),
+            compare(difference == 0),
+        )
+        .compact(format!("{size} · {sign}{apart}"))
+    });
     lanes.push(Lane::new(
         "Format",
         format::format_label(file.format).into(),
@@ -306,7 +358,8 @@ pub fn facts_of(file: &FileRow, keeper: &FileRow, video: bool) -> Vec<Lane> {
     lanes
 }
 
-fn version_numbers(numbers: &[usize]) -> String {
+/// "1", "1 and 3", "1, 2 and 3".
+pub fn version_numbers(numbers: &[usize]) -> String {
     match numbers {
         [] => String::new(),
         [one] => one.to_string(),
@@ -441,6 +494,10 @@ pub fn reason_of(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId], overridde
             "Keeping {n}: {} looks like a copy",
             runner.map_or_else(|| m.to_string(), |runner| runner.name.clone())
         ),
+        KeepReason::AlreadyReencoded => format!(
+            "Keeping {n}: Tidy already shrank it, {} smaller than {m}",
+            format::bytes((runner.map_or(0, |runner| runner.size) - keeper.size).max(0) as f64)
+        ),
         KeepReason::LargerFile if close_call => format!(
             "Close call: {n} is only {} larger",
             format::bytes((keeper.size - runner.map_or(0, |runner| runner.size)).max(0) as f64)
@@ -483,5 +540,7 @@ mod tests {
             Some("75% of the pixels")
         );
         assert_eq!(ratio_label(1.0, "pixels"), None);
+        assert_eq!(ratio_share(0.25), "1/4");
+        assert_eq!(ratio_share(0.92), "92%");
     }
 }

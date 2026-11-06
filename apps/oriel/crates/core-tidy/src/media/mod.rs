@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use oriel_runtime::CancelToken;
-use oriel_tools::ToolRun;
+use oriel_tools::{ToolError, ToolRun};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -42,6 +42,8 @@ pub enum ToolFailure {
     /// The tool ran and said why; the pass records the message.
     Failed(String),
     Cancelled,
+    /// Something outside the app stopped the tool; the file is left for a later scan.
+    Interrupted,
 }
 
 impl std::fmt::Display for ToolFailure {
@@ -49,6 +51,7 @@ impl std::fmt::Display for ToolFailure {
         match self {
             Self::Failed(message) => f.write_str(message),
             Self::Cancelled => f.write_str("cancelled"),
+            Self::Interrupted => f.write_str("the tool was stopped from outside the app"),
         }
     }
 }
@@ -75,6 +78,7 @@ pub fn probe_video(
     let output = match run.run() {
         Ok(output) => output,
         Err(error) if error.is_cancelled() => return Err(ToolFailure::Cancelled),
+        Err(ToolError::Killed) => return Err(ToolFailure::Interrupted),
         Err(error) => return Err(ToolFailure::Failed(format!("{error}"))),
     };
     if !output.success() {
@@ -207,6 +211,7 @@ pub fn measure_peak_volume(
     let output = match run.run() {
         Ok(output) => output,
         Err(error) if error.is_cancelled() => return Err(ToolFailure::Cancelled),
+        Err(ToolError::Killed) => return Err(ToolFailure::Interrupted),
         Err(error) => return Err(ToolFailure::Failed(format!("{error}"))),
     };
     match parse_max_volume(&output.stderr) {

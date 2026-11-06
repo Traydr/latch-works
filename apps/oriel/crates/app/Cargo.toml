@@ -30,6 +30,7 @@ oriel-mode-sync.workspace = true
 # `paths::canonicalize`, Node's `realpath` without Windows' verbatim prefix, for the shell's
 # known folders.
 oriel-runtime.workspace = true
+oriel-tools.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The shell spike's CPU and memory readings (`proc_pid_rusage`), as View's spike reads them.

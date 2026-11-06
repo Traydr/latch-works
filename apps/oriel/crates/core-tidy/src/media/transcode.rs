@@ -230,17 +230,36 @@ pub fn encoder_capabilities(
     }
 }
 
-/// Runs one conversion with ffmpeg, killed when `cancel` is.
+/// The position `pipe:1` of ffmpeg's `-progress` has reached, in seconds, from one piece of its
+/// output, which holds lines such as `out_time_us=1500000`, or `N/A` before the first frame.
+fn progress_seconds(text: &str) -> Option<f64> {
+    text.lines()
+        .rev()
+        .find_map(|line| line.strip_prefix("out_time_us="))
+        .and_then(|micros| micros.trim().parse::<f64>().ok())
+        .map(|micros| micros / 1_000_000.)
+}
+
+/// Runs one conversion with ffmpeg, killed when `cancel` is; `on_seconds` hears how far through
+/// the source it has got as it goes.
 pub fn transcode_with_ffmpeg(
     ffmpeg: &Path,
     job: &TranscodeJob<'_>,
     cancel: Option<&CancelToken>,
+    on_seconds: &(dyn Fn(f64) + Send + Sync),
 ) -> Result<(), ToolFailure> {
-    let mut run = ToolRun::new(ffmpeg, TRANSCODE_TIMEOUT).args(ffmpeg_args(job));
+    let mut run = ToolRun::new(ffmpeg, TRANSCODE_TIMEOUT)
+        .args(["-nostats", "-progress", "pipe:1"])
+        .args(ffmpeg_args(job));
     if let Some(token) = cancel {
         run = run.cancel_on(token);
     }
-    let output = match run.run() {
+    let on_stdout = |piece: &[u8]| {
+        if let Some(seconds) = progress_seconds(&String::from_utf8_lossy(piece)) {
+            on_seconds(seconds);
+        }
+    };
+    let output = match run.run_streaming(&on_stdout) {
         Ok(output) => output,
         Err(error) if error.is_cancelled() => return Err(ToolFailure::Cancelled),
         Err(error) => return Err(ToolFailure::Failed(format!("{error}"))),
@@ -259,6 +278,14 @@ pub fn transcode_with_ffmpeg(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_the_last_position_from_ffmpegs_progress() {
+        let piece = "frame=10\nout_time_us=1500000\nprogress=continue\nout_time_us=2500000\n";
+        assert_eq!(progress_seconds(piece), Some(2.5));
+        assert_eq!(progress_seconds("out_time_us=N/A\n"), None);
+        assert_eq!(progress_seconds("frame=10\n"), None);
+    }
 
     fn text(args: Vec<std::ffi::OsString>) -> String {
         args.iter()

@@ -4,8 +4,7 @@
 
 use std::path::Path;
 
-use gpui_kit::component::button::ButtonVariant;
-use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
+use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::component::{ActiveTheme as _, Icon, WindowExt as _};
 use gpui_kit::{
     AnyElement, App, Entity, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -14,6 +13,7 @@ use gpui_kit::{
 };
 use oriel_core_tidy::contract::{OptimizeCategory, Root, Tidy};
 use oriel_ui::ModeId;
+use oriel_ui::TextRole as _;
 use oriel_ui::layout::NavItem;
 use oriel_ui::locations::{LocationItem, LocationSwitcher, location_id, shared_locations};
 
@@ -77,7 +77,7 @@ fn nav_item(
                 .test_support()
                 .aria_label(SharedString::from(count.clone()))
                 .flex_shrink_0()
-                .text_xs()
+                .text_caption()
                 .text_color(cx.theme().muted_foreground)
                 .child(count),
         ),
@@ -85,11 +85,12 @@ fn nav_item(
     }
 }
 
-fn group_label(label: &'static str, rail: bool, cx: &App) -> AnyElement {
+fn group_label(label: &'static str, rail: bool, window: &Window, cx: &App) -> AnyElement {
     let theme = cx.theme();
     if rail {
         return div()
-            .my_3()
+            .when(oriel_ui::layout::is_short_rail(window), |this| this.my_1())
+            .when(!oriel_ui::layout::is_short_rail(window), |this| this.my_3())
             .h(px(1.))
             .w(px(32.))
             .bg(theme.sidebar_border)
@@ -99,7 +100,7 @@ fn group_label(label: &'static str, rail: bool, cx: &App) -> AnyElement {
         .px(px(10.))
         .pt_5()
         .pb(px(6.))
-        .text_xs()
+        .text_caption()
         .font_weight(FontWeight::MEDIUM)
         .text_color(theme.muted_foreground)
         .child(label)
@@ -167,7 +168,7 @@ fn folder_menu(state: &Entity<TidyState>, mut menu: PopupMenu, cx: &App) -> Popu
     menu = menu
         .separator()
         .item(
-            PopupMenuItem::new("Add Folder…  ⌘O").on_click(move |_, window, cx| {
+            oriel_ui::menu_row("Add folder…  ⌘O").on_click(move |_, window, cx| {
                 crate::open_add_folder(&add, window, cx);
             }),
         );
@@ -178,7 +179,7 @@ fn folder_menu(state: &Entity<TidyState>, mut menu: PopupMenu, cx: &App) -> Popu
     let forget = state.clone();
     let (name, root_id) = (root.name.clone(), root.id);
     menu.item(
-        PopupMenuItem::new("Rescan  ⌘R").on_click(move |_, window, cx| {
+        oriel_ui::menu_row("Rescan  ⌘R").on_click(move |_, window, cx| {
             rescan.update(cx, |state, cx| {
                 if let Some(root_id) = state.root_id() {
                     state.start_scan(root_id, window, cx);
@@ -187,20 +188,21 @@ fn folder_menu(state: &Entity<TidyState>, mut menu: PopupMenu, cx: &App) -> Popu
         }),
     )
     .item(
-        PopupMenuItem::new("Show in Finder").on_click(move |_, _, cx| {
+        oriel_ui::menu_row("Show in Finder").on_click(move |_, _, cx| {
             cx.reveal_path(Path::new(&path));
         }),
     )
     .separator()
     .item(
-        PopupMenuItem::new(format!("Forget “{name}”…")).on_click(move |_, window, cx| {
+        oriel_ui::menu_row(format!("Forget “{name}”…")).on_click(move |_, window, cx| {
+            oriel_ui::locations::focus_switcher(window, cx);
             confirm_forget(&forget, root_id, name.clone(), window, cx);
         }),
     )
 }
 
 /// Forgetting a folder loses its catalog and undo history, so a sheet says so first.
-fn confirm_forget(
+pub(crate) fn confirm_forget(
     state: &Entity<TidyState>,
     root_id: i64,
     name: String,
@@ -208,32 +210,34 @@ fn confirm_forget(
     cx: &mut App,
 ) {
     let state = state.clone();
-    window.open_alert_dialog(cx, move |alert, _, _| {
+    window.open_alert_dialog(cx, move |alert, _, cx| {
         let state = state.clone();
-        alert
-            .title(format!("Forget “{name}”?"))
-            .description(
-                "Tidy forgets this folder's catalog and undo history, and moves what it holds \
-                 for this folder to the Trash. The folder itself is not touched.",
-            )
-            .confirm()
-            .ok_text("Forget")
-            .ok_variant(ButtonVariant::Danger)
-            .cancel_text("Cancel")
-            .on_ok(move |_, window, cx| {
-                state.update(cx, |state, cx| state.forget_root(root_id, window, cx));
-                true
-            })
+        oriel_ui::dialogs::confirmation(
+            alert,
+            format!("Forget “{name}”?"),
+            "Tidy forgets this folder's catalog and undo history, and moves what it holds for \
+             this folder to the Trash. The folder itself is not touched.",
+            "Forget",
+            true,
+            cx,
+        )
+        .on_ok(move |_, window, cx| {
+            state.update(cx, |state, cx| state.forget_root(root_id, window, cx));
+            true
+        })
     });
 }
 
 /// The folder's switcher and the pages, below the mode switcher.
-pub fn navigation(state: &Entity<TidyState>, rail: bool, cx: &App) -> AnyElement {
+pub fn navigation(state: &Entity<TidyState>, rail: bool, window: &Window, cx: &App) -> AnyElement {
     let current = state.read(cx);
     let tidy = current.overview.data();
     let root = current.root().cloned();
-    let duplicates =
-        tidy.and_then(|tidy| counted(tidy.duplicates.similar.sets + tidy.duplicates.exact.sets));
+    let duplicates = tidy.and_then(|tidy| {
+        counted(
+            current.duplicate_sets_shown(tidy.duplicates.similar.sets + tidy.duplicates.exact.sets),
+        )
+    });
     let convert = tidy.and_then(|tidy| counted(convert_count(tidy)));
     let cleanup = tidy.and_then(|tidy| counted(cleanup_count(tidy)));
     // What AV1 would save, not a count: shrinking is optional, and Tidy up leaves it out.
@@ -255,15 +259,20 @@ pub fn navigation(state: &Entity<TidyState>, rail: bool, cx: &App) -> AnyElement
                 .w_full()
                 .gap_0p5()
                 .px_2()
-                .pt_3()
+                .when(rail && oriel_ui::layout::is_short_rail(window), |this| {
+                    this.pt_1()
+                })
+                .when(!(rail && oriel_ui::layout::is_short_rail(window)), |this| {
+                    this.pt_3()
+                })
                 .when(rail, |this| this.items_center())
                 .child(nav_item(state, TidyPage::Overview, None, rail, cx))
-                .child(group_label("To do", rail, cx))
+                .child(group_label("To do", rail, window, cx))
                 .child(nav_item(state, TidyPage::Duplicates, duplicates, rail, cx))
                 .child(nav_item(state, TidyPage::Convert, convert, rail, cx))
                 .child(nav_item(state, TidyPage::CleanUp, cleanup, rail, cx))
                 .child(nav_item(state, TidyPage::Shrink, shrink, rail, cx))
-                .child(group_label("Archive", rail, cx))
+                .child(group_label("Archive", rail, window, cx))
                 .child(nav_item(state, TidyPage::Library, None, rail, cx))
                 .child(nav_item(state, TidyPage::History, None, rail, cx)),
         )

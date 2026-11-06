@@ -71,12 +71,6 @@ pub struct SimilarCluster {
     pub ids: Vec<FileId>,
 }
 
-struct StillEntry {
-    id: FileId,
-    log_aspect: f64,
-    hash: Hash64,
-}
-
 struct MotionEntry {
     id: FileId,
     log_aspect: f64,
@@ -87,16 +81,6 @@ struct MotionEntry {
 trait Entry {
     fn id(&self) -> FileId;
     fn log_aspect(&self) -> f64;
-}
-
-impl Entry for StillEntry {
-    fn id(&self) -> FileId {
-        self.id
-    }
-
-    fn log_aspect(&self) -> f64 {
-        self.log_aspect
-    }
 }
 
 impl Entry for MotionEntry {
@@ -116,7 +100,7 @@ pub fn group_similar_files(
     files: &[FingerprintedFile],
     level: SimilarityLevel,
 ) -> Vec<SimilarCluster> {
-    let mut stills = Vec::new();
+    let mut stills = Stills::default();
     let mut motions = Vec::new();
     for file in files {
         // `!(aspect > 0)` in glazier-core, which NaN also fails.
@@ -127,11 +111,7 @@ pub fn group_similar_files(
         }
         let log_aspect = v8_log(file.aspect);
         match &file.fingerprint {
-            Fingerprint::Still(hash) => stills.push(StillEntry {
-                id: file.id,
-                log_aspect,
-                hash: *hash,
-            }),
+            Fingerprint::Still(hash) => stills.push(file.id, log_aspect, *hash),
             Fingerprint::Motion {
                 duration_ms,
                 frames,
@@ -145,11 +125,7 @@ pub fn group_similar_files(
         }
     }
 
-    let still_limit = still_threshold(level);
-    let still_clusters = cluster_within_aspect_bins(&stills, |left, right| {
-        let distance = left.hash.distance(right.hash);
-        (distance <= still_limit).then_some(distance)
-    });
+    let still_clusters = stills.clusters(still_threshold(level));
     let motion_limit = motion_threshold(level);
     let motion_clusters = cluster_within_aspect_bins(&motions, |left, right| {
         motion_distance(left, right, motion_limit)
@@ -190,6 +166,76 @@ fn motion_distance(left: &MotionEntry, right: &MotionEntry, threshold: u32) -> O
     distances.sort_unstable();
     let median = distances.get(distances.len() / 2).copied()?;
     (median <= threshold).then_some(median)
+}
+
+/// How many hashes one still is compared with at a time.
+const SCAN_BLOCK: usize = 32;
+
+/// Stills by aspect bin, in the order each bin was first seen. A bin's hashes lie side by side, for
+/// the scan that takes nearly all of this: a library's stills share a few shapes, so most of them
+/// meet most of a bin.
+#[derive(Default)]
+struct Stills {
+    bins: IndexMap<i64, StillBin>,
+}
+
+#[derive(Default)]
+struct StillBin {
+    hashes: Vec<u64>,
+    log_aspects: Vec<f64>,
+    ids: Vec<FileId>,
+}
+
+impl Stills {
+    fn push(&mut self, id: FileId, log_aspect: f64, hash: Hash64) {
+        let bin = self
+            .bins
+            .entry(js_round(log_aspect / ASPECT_TOLERANCE) as i64)
+            .or_default();
+        bin.hashes.push(hash.0);
+        bin.log_aspects.push(log_aspect);
+        bin.ids.push(id);
+    }
+
+    /// Each still meets the rest of its bin and all of the next one up, in that order, so links
+    /// are made in the order a walk over pairs would make them.
+    fn clusters(&self, limit: u32) -> Vec<(u32, Vec<FileId>)> {
+        let mut sets = DisjointSets::default();
+        for (bin_key, bin) in &self.bins {
+            let neighbours = self.bins.get(&(bin_key + 1));
+            for left in 0..bin.hashes.len() {
+                let (hash, log_aspect, id) =
+                    (bin.hashes[left], bin.log_aspects[left], bin.ids[left]);
+                let mut meet = |others: &StillBin, from: usize| {
+                    // A match is rare, so a whole block is asked at once, which vectorizes; a
+                    // block with one goes through in order, so links keep their order.
+                    for (block, hashes) in others.hashes[from..].chunks(SCAN_BLOCK).enumerate() {
+                        let mut closest = u32::MAX;
+                        for &other in hashes {
+                            closest = closest.min((hash ^ other).count_ones());
+                        }
+                        if closest > limit {
+                            continue;
+                        }
+                        for (offset, &other) in hashes.iter().enumerate() {
+                            let at = from + block * SCAN_BLOCK + offset;
+                            let distance = (hash ^ other).count_ones();
+                            if distance <= limit
+                                && (log_aspect - others.log_aspects[at]).abs() <= ASPECT_TOLERANCE
+                            {
+                                sets.union(id, others.ids[at], distance);
+                            }
+                        }
+                    }
+                };
+                meet(bin, left + 1);
+                if let Some(neighbours) = neighbours {
+                    meet(neighbours, 0);
+                }
+            }
+        }
+        sets.clusters()
+    }
 }
 
 fn cluster_within_aspect_bins<T: Entry>(
@@ -437,5 +483,59 @@ mod tests {
         let clip = motion(6, 4_000.0, [0; 5]);
         let longer = motion(7, 5_500.0, [0; 5]);
         assert_eq!(groups(&[clip, longer], Strict), [(0, vec![6, 7])]);
+    }
+
+    #[test]
+    fn a_block_scan_links_as_a_walk_over_pairs_does() {
+        struct Plain {
+            id: FileId,
+            log_aspect: f64,
+            hash: u64,
+        }
+        impl Entry for Plain {
+            fn id(&self) -> FileId {
+                self.id
+            }
+            fn log_aspect(&self) -> f64 {
+                self.log_aspect
+            }
+        }
+        let mut state = 0x1234_5678_9abc_def0u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for round in 0..400 {
+            let count = (next() % 300 + 1) as usize;
+            let shapes = (next() % 6 + 1) as usize;
+            let families = (next() % 20 + 1) as usize;
+            let limit = [4, 8, 12, 0, 64][round % 5];
+            let bases: Vec<u64> = (0..families).map(|_| next()).collect();
+            let mut stills = Stills::default();
+            let mut plain = Vec::new();
+            for index in 0..count {
+                let mut hash = bases[(next() as usize) % families];
+                for _ in 0..(next() % 16) {
+                    hash ^= 1 << (next() % 64);
+                }
+                // Aspects near bin edges, so neighbours and the tolerance both matter.
+                let aspect =
+                    0.5 + (next() as usize % shapes) as f64 * 0.031 + (next() % 7) as f64 * 0.004;
+                let log_aspect = v8_log(aspect);
+                stills.push(index as FileId + 1, log_aspect, Hash64(hash));
+                plain.push(Plain {
+                    id: index as FileId + 1,
+                    log_aspect,
+                    hash,
+                });
+            }
+            let old = cluster_within_aspect_bins(&plain, |left, right| {
+                let distance = (left.hash ^ right.hash).count_ones();
+                (distance <= limit).then_some(distance)
+            });
+            assert_eq!(stills.clusters(limit), old, "round {round}");
+        }
     }
 }

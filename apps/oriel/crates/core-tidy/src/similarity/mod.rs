@@ -1,19 +1,22 @@
 //! The prints Tidy's similarity pass makes, as glazier-core's `similarity/` makes them: the
 //! 64-bit fingerprint that finds similar sets (`group.rs` compares it to its thresholds) and the
-//! detail print Spot variants splits those sets with (`detail.rs`). The thresholds were tuned on
+//! detail print and closer look Spot variants splits those sets with (`detail.rs`). The thresholds were tuned on
 //! the owner's library with glazier-core's prints, so the arithmetic keeps its steps; a change to
 //! how a print is made bumps its version, and the catalog makes the old ones again.
 
 pub mod detail;
 pub mod fingerprint;
 pub mod group;
+#[cfg(target_os = "macos")]
+pub mod hardware_avif;
 pub mod phash;
 pub mod video_frames;
 pub mod vips;
 
 pub use detail::{
-    DETAIL_SIZE, DETAIL_VERSION, DetailDifference, detail_difference, detail_from_grey,
-    detail_of_still, is_variant, normalize_detail,
+    DETAIL_SIZE, DETAIL_VERSION, DetailDifference, LOOK_SIZE, LookMeasures, StillLook,
+    detail_difference, detail_of_still, frames_show_variant, is_variant, look_at_still,
+    look_measures, look_shows_variant, normalize_detail,
 };
 pub use fingerprint::{
     Fingerprint, FingerprintError, SAMPLE_POSITIONS, animation_frame_times, fingerprint_animation,

@@ -26,6 +26,7 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px,
 };
 use oriel_ui::ControlSize as _;
+use oriel_ui::TextRole as _;
 
 use crate::browser::Comic;
 use crate::viewer::{CHROME_IDLE, on_any_key};
@@ -385,9 +386,11 @@ impl Render for ComicReader {
                         .pb_10()
                         .pr_3()
                         .pl(px(88.))
+                        // Black held behind both lines of text, so they read over a white page,
+                        // and only then fading out.
                         .bg(linear_gradient(
                             180.,
-                            linear_color_stop(gpui_kit::black().opacity(0.7), 0.),
+                            linear_color_stop(gpui_kit::black().opacity(0.65), 0.66),
                             linear_color_stop(gpui_kit::black().opacity(0.), 1.),
                         ))
                         .child(
@@ -396,20 +399,25 @@ impl Render for ComicReader {
                                 .flex_col()
                                 .flex_1()
                                 .min_w_0()
-                                .child(div().truncate().text_sm().child(self.comic.name().clone()))
+                                .child(
+                                    div()
+                                        .truncate()
+                                        .text_body()
+                                        .child(self.comic.name().clone()),
+                                )
                                 .child(
                                     div()
                                         .id("comic-page-count")
                                         .role(Role::Status)
                                         .test_support()
                                         .aria_label(format!("{}/{count} pages", self.current + 1))
-                                        .text_xs()
-                                        .text_color(gpui_kit::white().opacity(0.7))
+                                        .text_caption()
+                                        .text_color(gpui_kit::white().opacity(0.85))
                                         .child(format!("{}/{count} pages", self.current + 1)),
                                 ),
                         )
                         .child(
-                            Button::new("comic-scroll-top")
+                            oriel_ui::on_dark_stage(Button::new("comic-scroll-top"))
                                 .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::ArrowUp))
@@ -420,7 +428,7 @@ impl Render for ComicReader {
                                 ),
                         )
                         .child(
-                            Button::new("comic-reveal")
+                            oriel_ui::on_dark_stage(Button::new("comic-reveal"))
                                 .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::FolderOpen))
@@ -429,7 +437,7 @@ impl Render for ComicReader {
                                 .on_click(move |_, _, cx| cx.reveal_path(&cover)),
                         )
                         .child(
-                            Button::new("comic-close")
+                            oriel_ui::on_dark_stage(Button::new("comic-close"))
                                 .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::Close))

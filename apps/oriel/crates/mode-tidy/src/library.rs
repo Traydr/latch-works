@@ -44,6 +44,7 @@ use oriel_core_tidy::contract::{
     AudioState, FileFacets, FileFilter, FileFlag, FileFormat, FileId, FileKind, FileQuery, FileRow,
     FileSortColumn, MAX_BULK_FILES, OptimizeCategory, RootId, SelectionSummary, VideoQuality,
 };
+use oriel_ui::TextRole as _;
 use oriel_ui::{ControlSize as _, LocalStorage, MENU_ROW_HEIGHT, Toast, TopBar, checkbox_target};
 
 use crate::actions::PerformOptions;
@@ -67,6 +68,43 @@ const MODE_KEY: &str = "glazier.library.mode";
 
 /// Room the selection bar covers at the bottom of the files, so the last ones scroll clear of it.
 const BAR_INSET: f32 = 80.;
+
+gpui_kit::actions!(
+    tidy_library,
+    [
+        /// Tab from the table goes on to the next control.
+        TabOut,
+        /// ⇧Tab from the table goes back to the one before.
+        TabBack
+    ]
+);
+
+/// What `ORIEL_LIBRARY_SELECT`, `ORIEL_LIBRARY_VIEW` and `ORIEL_LIBRARY_INSPECTOR` ask of the page.
+struct LibraryCheck {
+    select: Option<usize>,
+    view: Option<String>,
+    inspector: Option<bool>,
+}
+
+impl LibraryCheck {
+    fn from_environment() -> Option<Self> {
+        let select = std::env::var("ORIEL_LIBRARY_SELECT")
+            .ok()
+            .and_then(|count| count.parse().ok());
+        let view = std::env::var("ORIEL_LIBRARY_VIEW").ok();
+        let inspector = std::env::var("ORIEL_LIBRARY_INSPECTOR")
+            .ok()
+            .map(|open| open == "1");
+        (select.is_some() || view.is_some() || inspector.is_some()).then_some(Self {
+            select,
+            view,
+            inspector,
+        })
+    }
+}
+
+/// How much of the window's foot the selection bar takes while it shows.
+const BAR_FOOT: f32 = 84.;
 
 fn is_command(modifiers: &Modifiers) -> bool {
     oriel_ui::keys::command_held(modifiers)
@@ -154,11 +192,11 @@ const SCROLLBAR: f32 = 16.;
 /// whatever the others leave.
 fn columns_for(width: f32) -> (Vec<Col>, f32) {
     let mut columns = vec![Col::Select, Col::Name, Col::Format];
-    if width >= 620. {
+    if width >= 640. {
         columns.push(Col::Dimensions);
     }
     columns.push(Col::Size);
-    if width >= 760. {
+    if width >= 780. {
         columns.push(Col::Modified);
     }
     let fixed: f32 = columns.iter().map(|column| column.width()).sum();
@@ -169,12 +207,12 @@ impl Col {
     /// The column's width; the name's is whatever the others leave.
     fn width(self) -> f32 {
         match self {
-            Col::Select => 44.,
+            Col::Select => 52.,
             Col::Name => 0.,
-            Col::Format => 110.,
-            Col::Dimensions => 120.,
-            Col::Size => 96.,
-            Col::Modified => 130.,
+            Col::Format => 124.,
+            Col::Dimensions => 136.,
+            Col::Size => 108.,
+            Col::Modified => 148.,
         }
     }
 
@@ -491,16 +529,18 @@ impl CatalogRows {
         } else {
             row.dir.clone()
         };
-        let picture = thumbs::picture(&self.thumbs, row, 64, ObjectFit::Cover, cx);
+        let picture = thumbs::picture(&self.thumbs, row, 64, ObjectFit::Cover, radius, cx);
         div()
             .flex()
             .flex_row()
             .items_center()
             .gap_3()
+            .w_full()
             .min_w_0()
             .child(
                 div()
-                    .size(px(32.))
+                    .relative()
+                    .size(px(40.))
                     .flex_shrink_0()
                     .rounded(radius)
                     .overflow_hidden()
@@ -516,6 +556,7 @@ impl CatalogRows {
                         // Return renames, Esc or clicking away keeps the name (`RenameField`).
                         Some(input) => Input::new(&input)
                             .row_size()
+                            .w_full()
                             .aria_label(format!("New name for {}", row.name))
                             .into_any_element(),
                         None => div()
@@ -527,12 +568,18 @@ impl CatalogRows {
                             .child(div().truncate().child(row.name.clone()))
                             .when(mute, |this| {
                                 this.child(
-                                    Icon::new(IconName::VolumeX).size(px(14.)).text_color(muted),
+                                    Icon::new(IconName::VolumeX).size(px(16.)).text_color(muted),
                                 )
                             })
                             .into_any_element(),
                     })
-                    .child(div().truncate().text_xs().text_color(muted).child(folder)),
+                    .child(
+                        div()
+                            .truncate()
+                            .text_caption()
+                            .text_color(muted)
+                            .child(folder),
+                    ),
             )
             .into_any_element()
     }
@@ -583,9 +630,22 @@ impl TableDelegate for CatalogRows {
         cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         if self.cols[col_ix] != Col::Select {
+            // The whole header sorts, not just the kit's small arrow beside it.
             return div()
-                .size_full()
+                .id(("library-header", col_ix))
+                .test_support()
+                .role(gpui_kit::Role::Button)
+                .aria_label(self.columns[col_ix].name.clone())
+                .w_full()
+                .min_h(px(32.))
+                .flex()
+                .items_center()
+                .cursor_pointer()
                 .child(self.columns[col_ix].name.clone())
+                .on_click(cx.listener(move |table, _, window, cx| {
+                    let sort = ColumnSort::Default;
+                    table.delegate_mut().perform_sort(col_ix, sort, window, cx);
+                }))
                 .into_any_element();
         }
         let total = self.total.unwrap_or(0);
@@ -672,7 +732,7 @@ impl TableDelegate for CatalogRows {
         cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         let col = self.cols[col_ix];
-        // Each cell sits in the middle of its 44 px row, as the Electron list's grid centres
+        // Each cell sits in the middle of its 56 px row, as the Electron list's grid centres
         // them, the size and the date against the right edge.
         let cell = div()
             .size_full()
@@ -699,7 +759,9 @@ impl TableDelegate for CatalogRows {
                 let id = row.id;
                 let checked = self.selected.contains(&id);
                 let table = cx.entity().downgrade();
+                // Arrows and ⇧ move through the rows: Tab goes past them, not down every one.
                 checkbox_target(Checkbox::new(("library-select", id as u64)))
+                    .tab_stop(false)
                     .checked(checked)
                     .accessibility_label(SharedString::from(format!("Select {}", row.name)))
                     .on_click(move |checked, _, cx| {
@@ -792,6 +854,8 @@ pub struct LibraryPage {
     menu: Option<(Vec<FileId>, Option<FileRow>)>,
     /// The list's width when last drawn, which its columns fit.
     list_width: f32,
+    /// What check variables still have to do.
+    check: Option<LibraryCheck>,
     /// The grid's width when last drawn, and the columns it had.
     grid_width: f32,
     grid_columns: usize,
@@ -809,12 +873,63 @@ pub struct LibraryPage {
 }
 
 impl LibraryPage {
+    /// How much of the window's foot the page keeps for the selection bar, while it shows.
+    /// `ORIEL_LIBRARY_SELECT=<n>`, `ORIEL_LIBRARY_VIEW=list|grid` and `ORIEL_LIBRARY_INSPECTOR=0|1`
+    /// set the page up for a check in a real window.
+    fn apply_check_variables(&mut self, cx: &mut Context<Self>) {
+        let Some(check) = self.check.as_mut() else {
+            return;
+        };
+        if let Some(view) = check.view.take() {
+            let mode = if view == "grid" {
+                LibraryMode::Grid
+            } else {
+                LibraryMode::List
+            };
+            self.set_mode(mode, cx);
+        }
+        let check = self.check.as_mut().expect("just read");
+        if let Some(open) = check.inspector.take() {
+            self.inspector = open;
+        }
+        let check = self.check.as_mut().expect("just read");
+        if let Some(count) = check.select {
+            let ids: BTreeSet<FileId> = {
+                let rows = self.table.read(cx).delegate();
+                (0..count)
+                    .filter_map(|index| rows.row(index).map(|row| row.id))
+                    .collect()
+            };
+            if ids.len() == count {
+                self.table.update(cx, |table, cx| {
+                    table.delegate_mut().set_selected(ids, cx);
+                });
+                self.check = None;
+            }
+        }
+    }
+
+    pub fn foot_height(&self, cx: &App) -> f32 {
+        let selected = self.selected(cx).len();
+        if selected > 0 && (!self.inspector || selected >= 2) {
+            BAR_FOOT
+        } else {
+            0.
+        }
+    }
+
     pub fn new(
         state: &Entity<TidyState>,
         thumbs: &Entity<Thumbs>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        // The kit's table takes Tab to move between cells, which rows selected whole have no use
+        // for, and which would keep the keyboard in the table for good. The arrows still move it.
+        cx.bind_keys([
+            gpui_kit::KeyBinding::new("tab", TabOut, Some("DataTable")),
+            gpui_kit::KeyBinding::new("shift-tab", TabBack, Some("DataTable")),
+        ]);
         let mut rows = CatalogRows::new(thumbs);
         let page = cx.entity().downgrade();
         rows.select_all = Some(Rc::new(move |window, cx| {
@@ -880,6 +995,7 @@ impl LibraryPage {
             renaming: None,
             menu: None,
             list_width: 0.,
+            check: LibraryCheck::from_environment(),
             grid_width: 0.,
             grid_columns: 1,
             grid_scroll: UniformListScrollHandle::new(),
@@ -1461,6 +1577,7 @@ impl LibraryPage {
         .detach();
     }
 
+    /// Runs a command on the files it was shown. Whatever takes their place is not chosen by that.
     fn perform(&mut self, request: PlanRequest, window: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
             state.perform(request, PerformOptions::default(), window, cx);
@@ -1530,7 +1647,7 @@ impl LibraryPage {
         }
         let options = crate::folder_picker::PickOptions {
             title: format!("Move {} to", format::plural(ids.len() as i64, "file")).into(),
-            action: "Move here".into(),
+            action: "Move to".into(),
             start: None,
             select: None,
             within: Some((root.path.clone().into(), root.name.clone())),
@@ -1648,8 +1765,18 @@ impl LibraryPage {
         if self.renaming.is_some() {
             return;
         }
+        // Esc leaves the search, so the letter keys are the page's again; what it found stays.
+        if keys.key == "escape" && self.search.focus_handle(cx).is_focused(window) {
+            self.focus.focus(window, cx);
+            cx.stop_propagation();
+            return;
+        }
         // Keys typed into a field belong to the field.
         if window.has_focused_input(cx) {
+            return;
+        }
+        let table = self.table.read(cx).focus_handle(cx);
+        if oriel_ui::keys::control_has_key(event, Some(&table), window, cx) {
             return;
         }
         let selected = self.selected(cx);
@@ -1705,7 +1832,7 @@ impl LibraryPage {
     }
 
     /// The list, its columns fitted to the width it was last drawn at.
-    fn render_list(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_list(&mut self, bar_visible: bool, cx: &mut Context<Self>) -> AnyElement {
         let width = self.list_width;
         if width > 0. {
             self.table.update(cx, |table, cx| {
@@ -1722,31 +1849,64 @@ impl LibraryPage {
             .flex_1()
             .min_h_0()
             .size_full()
+            // The last row scrolls clear of the bar that floats over the list's foot.
+            .when(bar_visible, |this| this.pb(px(BAR_INSET)))
             .child(
                 canvas(
-                    move |bounds, _, cx| {
+                    move |bounds, window, cx| {
                         let width = f32::from(bounds.size.width);
-                        page.update(cx, |page, cx| {
-                            if (page.list_width - width).abs() >= 0.5 {
+                        let changed = page.update(cx, |page, _| {
+                            let changed = (page.list_width - width).abs() >= 0.5;
+                            if changed {
                                 page.list_width = width;
-                                cx.notify();
                             }
-                        })
-                        .ok();
+                            changed
+                        });
+                        if changed.unwrap_or(false) {
+                            oriel_ui::redraw::notify_next_frame(page.clone(), window);
+                        }
                     },
                     |_, _, _, _| {},
                 )
                 .absolute()
                 .size_full(),
             )
-            // 44 px rows, as Electron Oriel's list has them, for the name over its folder.
+            // 56 px rows, for the name over its folder.
             .child(
                 DataTable::new(&self.table)
                     .stripe(false)
                     .bordered(false)
-                    .with_size(px(44.))
-                    .header_row_height(px(32.)),
+                    .with_size(px(56.))
+                    .header_row_height(px(40.)),
             )
+            // The bar floats over the room kept for it, outside the table: the wheel there, and
+            // over the bar, still scrolls the rows.
+            .when(bar_visible, |this| {
+                let rows = self
+                    .table
+                    .read(cx)
+                    .vertical_scroll_handle
+                    .0
+                    .borrow()
+                    .base_handle
+                    .clone();
+                this.child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .bottom_0()
+                        .h(px(BAR_INSET))
+                        .on_scroll(move |event, window, _| {
+                            let moved = event.delta.pixel_delta(window.line_height());
+                            let at = rows.offset();
+                            let last = -rows.max_offset().y;
+                            let y = (at.y + moved.y).max(last).min(px(0.));
+                            rows.set_offset(gpui_kit::point(at.x, y));
+                            window.refresh();
+                        }),
+                )
+            })
             .into_any_element()
     }
 
@@ -1754,11 +1914,11 @@ impl LibraryPage {
     fn render_mode_switch(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let item = |id: &'static str, icon: IconName, label: &'static str, mode: LibraryMode| {
-            // The bar's type and icon in 28 px, on a track as high as the bar's other controls.
+            // The bar's type and icon in 32 px, on a track as high as the bar's other controls.
             Button::new(id)
                 .ghost()
                 .bar_size()
-                .size(px(28.))
+                .size(px(32.))
                 .icon(Icon::new(icon))
                 .accessibility_label(label)
                 .tooltip(label)
@@ -1851,7 +2011,7 @@ impl LibraryPage {
                 .h(MENU_ROW_HEIGHT)
                 .px_2()
                 .rounded(theme.radius)
-                .text_size(px(13.))
+                .text_body()
                 .cursor_pointer()
                 .hover(|style| style.bg(theme.accent))
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -1861,14 +2021,14 @@ impl LibraryPage {
                     }
                 }))
                 .child(div().w(px(16.)).flex_shrink_0().when(checked, |this| {
-                    this.child(Icon::new(IconName::Check).size(px(14.)))
+                    this.child(Icon::new(IconName::Check).size(px(16.)))
                 }))
                 .child(div().flex_1().min_w_0().truncate().child(label))
                 .when_some(count, |this, count| {
                     this.child(
                         div()
                             .flex_shrink_0()
-                            .text_xs()
+                            .text_caption()
                             .text_color(theme.muted_foreground)
                             .child(count_of(count)),
                     )
@@ -1886,7 +2046,7 @@ impl LibraryPage {
                         div()
                             .px_2()
                             .py_1()
-                            .text_xs()
+                            .text_caption()
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(cx.theme().muted_foreground)
                             .child(label),
@@ -2061,17 +2221,18 @@ impl LibraryPage {
                 this.filter_open = *open;
                 cx.notify();
             }))
-            .trigger(
+            .trigger(oriel_ui::controls::OutlineTrigger::new(
                 Button::new("library-filter")
                     .bar_size()
                     .outline()
+                    .quiet_edge(cx)
                     .icon(Icon::new(IconName::ListFilter))
                     .label(if active > 0 {
                         format!("Filter {}", format::count(active as i64))
                     } else {
                         "Filter".into()
                     }),
-            )
+            ))
             .w(px(520.))
             .max_h(px(640.))
             .child(
@@ -2087,13 +2248,18 @@ impl LibraryPage {
                         div()
                             .px_2()
                             .py_1()
-                            .text_xs()
+                            .text_caption()
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(muted)
                             .child("Folder"),
                     )
                     .when(many_folders, |this| {
-                        this.child(div().px_1().pb_1().child(Input::new(&self.folder_search)))
+                        this.child(
+                            div()
+                                .px_1()
+                                .pb_1()
+                                .child(Input::new(&self.folder_search).bar_size()),
+                        )
                     })
                     .child(div().flex().flex_col().children(folders)),
             )
@@ -2116,7 +2282,21 @@ impl LibraryPage {
                 },
             ));
         }
-        for format_value in &filters.formats {
+        // A filter a shortcut set can name formats the folder does not have: those say nothing.
+        let found = |format: &FileFormat| {
+            self.facets.data().is_none_or(|facets| {
+                facets
+                    .formats
+                    .iter()
+                    .any(|entry| entry.value == Some(*format) && entry.files > 0)
+            })
+        };
+        let any_found = filters.formats.iter().any(found);
+        for format_value in filters
+            .formats
+            .iter()
+            .filter(|format| !any_found || found(format))
+        {
             chips.push((
                 format!("chip-format-{format_value}"),
                 format::format_label(Some(*format_value)).into(),
@@ -2163,7 +2343,7 @@ impl LibraryPage {
                 .flex_shrink_0()
                 .items_center()
                 .gap(px(6.))
-                .h(px(40.))
+                .h(px(48.))
                 .px_5()
                 .border_b_1()
                 .border_color(theme.border)
@@ -2173,12 +2353,12 @@ impl LibraryPage {
                         .flex_row()
                         .items_center()
                         .gap_1()
-                        .h(px(30.))
+                        .h(px(36.))
                         .pl_2()
                         .pr(px(2.))
                         .rounded_full()
                         .bg(theme.muted)
-                        .text_xs()
+                        .text_caption()
                         .child(div().max_w(px(280.)).truncate().child(label.clone()))
                         .child(
                             // The smallest target in the house scale, inside the chip.
@@ -2274,6 +2454,7 @@ impl LibraryPage {
                         Button::new("selection-hold")
                             .bar_size()
                             .outline()
+                            .quiet_edge(cx)
                             .label("Move to holding")
                             .tooltip("Move to holding  ⌘⌫")
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -2284,6 +2465,7 @@ impl LibraryPage {
                         Button::new("selection-move")
                             .bar_size()
                             .outline()
+                            .quiet_edge(cx)
                             .label("Move to…")
                             .tooltip("⇧⌘M")
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -2304,7 +2486,7 @@ impl LibraryPage {
             .into_any_element()
     }
 
-    fn render_inspector(&self, primary: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn render_inspector(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let targets = self.targets(cx);
         let summary = self.summary.data().cloned();
@@ -2313,7 +2495,7 @@ impl LibraryPage {
             .id("library-inspector")
             .flex()
             .flex_col()
-            .w(px(320.))
+            .w(px(384.))
             .flex_shrink_0()
             .h_full()
             .overflow_y_scroll()
@@ -2359,6 +2541,7 @@ impl LibraryPage {
             panel = panel.child(
                 div().flex().justify_center().child(
                     div()
+                        .relative()
                         .w(px((width * scale).round()))
                         .h(px((height * scale).round()))
                         .rounded(theme.radius_lg)
@@ -2369,6 +2552,7 @@ impl LibraryPage {
                             &row,
                             640,
                             ObjectFit::Contain,
+                            cx.theme().radius_lg,
                             cx,
                         )),
                 ),
@@ -2378,7 +2562,7 @@ impl LibraryPage {
                 div()
                     .mt_3()
                     .text_center()
-                    .text_size(px(13.))
+                    .text_body()
                     .font_weight(FontWeight::MEDIUM)
                     .child(format!(
                         "{}{}",
@@ -2399,6 +2583,8 @@ impl LibraryPage {
             .or_else(|| self.sample.data().and_then(|rows| rows.first().cloned()));
         let shown = reveal.clone();
         let several = targets.len() > 1;
+        let has_selection = !self.selected(cx).is_empty();
+        let more = self.more_button(cx);
         panel = panel.child(
             div()
                 .mt_4()
@@ -2409,13 +2595,7 @@ impl LibraryPage {
                     this.child(
                         Button::new("inspector-convert")
                             .bar_size()
-                            .map(|button| {
-                                if primary {
-                                    button.primary()
-                                } else {
-                                    button.outline()
-                                }
-                            })
+                            .primary()
                             .w_full()
                             .label(convert_label)
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -2432,6 +2612,7 @@ impl LibraryPage {
                             Button::new("inspector-hold")
                                 .bar_size()
                                 .outline()
+                                .quiet_edge(cx)
                                 .flex_1()
                                 .label("Move to holding")
                                 .tooltip("Move to holding  ⌘⌫")
@@ -2443,19 +2624,27 @@ impl LibraryPage {
                             Button::new("inspector-move")
                                 .bar_size()
                                 .outline()
+                                .quiet_edge(cx)
                                 .flex_1()
                                 .label("Move to…")
                                 .tooltip("Move to…  ⇧⌘M")
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.move_to(move_ids.clone(), window, cx);
                                 })),
-                        )
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap_2()
                         .child(
                             Button::new("inspector-reveal")
                                 .bar_size()
                                 .outline()
-                                .icon(Icon::new(IconName::FolderOpen))
-                                .accessibility_label("Show in Finder")
+                                .quiet_edge(cx)
+                                .flex_1()
+                                .label("Show in Finder")
                                 .tooltip(if several {
                                     "Show the first file in Finder  ⇧⌘R"
                                 } else {
@@ -2471,8 +2660,9 @@ impl LibraryPage {
                             Button::new("inspector-open-in-view")
                                 .bar_size()
                                 .outline()
-                                .icon(Icon::new(IconName::Images))
-                                .accessibility_label("Open in View")
+                                .quiet_edge(cx)
+                                .flex_1()
+                                .label("Open in View")
                                 .tooltip(if several {
                                     "Open the first file in View"
                                 } else {
@@ -2484,7 +2674,30 @@ impl LibraryPage {
                                     }
                                 })),
                         ),
-                ),
+                )
+                // A selection's other commands, and the way out of it, which the bar has when
+                // the inspector is closed.
+                .when(has_selection, |this| {
+                    this.child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_2()
+                            .child(
+                                Button::new("inspector-clear")
+                                    .bar_size()
+                                    .outline()
+                                    .quiet_edge(cx)
+                                    .flex_1()
+                                    .label("Clear selection")
+                                    .tooltip("Clear selection  Esc")
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.clear_selection(cx)),
+                                    ),
+                            )
+                            .child(more),
+                    )
+                }),
         );
         if targets.len() == 1
             && let Some(row) = single
@@ -2503,7 +2716,7 @@ fn details(row: &FileRow, cx: &App) -> AnyElement {
             .flex()
             .flex_col()
             .child(widgets::caption(label, cx))
-            .child(div().mt_0p5().text_size(px(13.)).child(value))
+            .child(div().mt_0p5().text_body().child(value))
     };
     let mut issues = Vec::new();
     if row.probe_error.is_some() {
@@ -2565,7 +2778,7 @@ fn details(row: &FileRow, cx: &App) -> AnyElement {
                     .child(
                         div()
                             .mt_0p5()
-                            .text_size(px(13.))
+                            .text_body()
                             .text_color(theme.warning)
                             .child(issues.join(" · ")),
                     ),
@@ -2582,6 +2795,7 @@ impl Focusable for LibraryPage {
 
 impl Render for LibraryPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.apply_check_variables(cx);
         // ⌘F from another page: the search, focused.
         if self.state.read(cx).page() == TidyPage::Library
             && self
@@ -2627,23 +2841,33 @@ impl Render for LibraryPage {
                 format::bytes(total_bytes as f64)
             ),
         });
-        let bar_visible = selected > 0 && (!self.inspector || selected >= 2);
+        // The inspector has the bar's commands, and the bar would not fit beside it in a narrow window.
+        let bar_visible = selected > 0 && !self.inspector;
 
         let top_bar = TopBar::new(&shell, "Library")
             .when_some(caption, |bar, caption| {
-                bar.trailing(
+                bar.quiet(
                     div()
                         .id("library-meta")
                         .test_support()
                         .aria_label(SharedString::from(caption.clone()))
-                        .text_xs()
+                        .min_w_0()
+                        .truncate()
+                        .text_caption()
                         .text_color(theme.muted_foreground)
                         .child(caption),
                 )
             })
             .trailing(
                 div()
-                    .w(px(260.))
+                    .w(px(
+                        if oriel_ui::top_bar::narrow_top_bar(window, &shell, cx) {
+                            240.
+                        } else {
+                            320.
+                        },
+                    ))
+                    .flex_shrink_0()
                     .child(Input::new(&self.search).bar_size().cleanable(true)),
             )
             .trailing(filter)
@@ -2669,6 +2893,7 @@ impl Render for LibraryPage {
                     Button::new("library-clear-filters")
                         .bar_size()
                         .outline()
+                        .quiet_edge(cx)
                         .label("Clear filters")
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.search
@@ -2694,18 +2919,18 @@ impl Render for LibraryPage {
             _ if self.mode == LibraryMode::Grid => {
                 self.render_grid(if bar_visible { BAR_INSET } else { 0. }, cx)
             }
-            _ => self.render_list(cx),
+            _ => self.render_list(bar_visible, cx),
         };
         let selection_bar = bar_visible.then(|| self.render_selection_bar(cx));
-        let inspector = self
-            .inspector
-            .then(|| self.render_inspector(!bar_visible, cx));
+        let inspector = self.inspector.then(|| self.render_inspector(cx));
 
         div()
             .id("library")
             .track_focus(&self.focus)
             .key_context("TidyLibrary")
             .on_key_down(cx.listener(Self::on_key_down))
+            .on_action(|_: &TabOut, window, cx| window.focus_next(cx))
+            .on_action(|_: &TabBack, window, cx| window.focus_prev(cx))
             .capture_action(cx.listener(|this, _: &SelectDown, window, cx| {
                 this.wake_cursor(window, cx);
             }))
@@ -2794,7 +3019,7 @@ mod tests {
             [Col::Select, Col::Name, Col::Format, Col::Size]
         );
         // The name takes what the others leave, and never less than it needs to read.
-        assert_eq!(columns_for(900.).1, 900. - 500. - 16.);
+        assert_eq!(columns_for(900.).1, 900. - 568. - 16.);
         assert_eq!(columns_for(300.).1, 200.);
     }
 }

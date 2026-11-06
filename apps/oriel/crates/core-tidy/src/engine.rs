@@ -22,7 +22,7 @@ pub use changes::{
 
 use schedule::{Priority, Scheduler};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
@@ -54,16 +54,19 @@ use crate::contract::{
     ShrinkSummary, SimilarityLevel, Tidy,
 };
 use crate::duplicates::{
-    ComputedSet, Dismissals, PageRequest, add_dismissal, build_duplicate_sets,
+    ComputedSet, Dismissals, PageRequest, add_dismissal, build_duplicate_sets, checking_sets,
     compute_similar_clusters, duplicate_totals, fingerprint_coverage, list_dismissals, open_sets,
-    page_duplicate_sets, remove_dismissal,
+    page_duplicate_sets, pairs_to_compare, remove_dismissal, stills_to_print,
 };
 use crate::optimize::candidates::skip_counts;
 use crate::optimize::{
-    CandidateHolds, CandidateScan, ShrinkScan, extension_fixes, find_optimize_candidates,
-    find_shrink_candidates, summarize_candidates,
+    CandidateScan, ShrinkScan, extension_fixes, find_optimize_candidates, find_shrink_candidates,
+    summarize_candidates,
 };
-use crate::passes::detail::run_detail_pass;
+use crate::passes::detail::{
+    answers_wait_to_be_read, forget_outdated_details, forget_unread, prints_wait_for_libvips,
+    run_comparison_pass, run_detail_pass,
+};
 use crate::passes::fingerprint::{pending_fingerprints, run_fingerprint_pass};
 use crate::passes::hash::run_hash_pass;
 use crate::passes::loudness::{pending_loudness, run_loudness_pass};
@@ -89,8 +92,8 @@ pub struct ScanReport {
     /// The background analysis that followed, when [`TidyEngine::start_scan`] ran it.
     pub analysis: Option<AnalysisReport>,
     /// The background analysis glazier-core queues after a scan (background analysis on, and
-    /// files that need fingerprints or loudness), for the caller to start with
-    /// [`TidyEngine::start_background_analysis`]; empty when the job ran it.
+    /// files that need fingerprints or loudness, or pairs it could not read), for the caller to
+    /// start with [`TidyEngine::start_catch_up_analysis`]; empty when the job ran it.
     pub follow_up: FollowUp,
 }
 
@@ -158,10 +161,11 @@ struct Inner {
     generation: AtomicU64,
     sets: Mutex<Option<SetCache>>,
     /// Bumped whenever fingerprints may have changed: a walk drops those of changed files, the
-    /// fingerprint pass writes them. Comparing fingerprints is the slow part of duplicate sets
-    /// (38 of 45 ms on the 21k fixture), and only fingerprints change the clusters, so they
-    /// survive every other change, as glazier-core's `clusterCache` does: a file resolved away
-    /// since simply drops out of its cluster when sets are built.
+    /// fingerprint pass writes them. Only fingerprints change the clusters, so they survive every
+    /// other change, as glazier-core's `clusterCache` does: a file resolved away since simply
+    /// drops out of its cluster when sets are built. This is not only speed: a set a Convert is
+    /// rewriting stays one set through the change, its files' prints being gone until the analysis
+    /// after it, where clusters made afresh would break it up under the owner.
     fingerprints: AtomicU64,
     clusters: Mutex<HashMap<(Option<RootId>, SimilarityLevel), ClusterCache>>,
     /// Where each root's held files go.
@@ -170,13 +174,12 @@ struct Inner {
     capabilities: OnceLock<crate::contract::EncoderCapabilities>,
     /// Convert's estimates per root and category, kept while the category holds the same files.
     estimates: Mutex<HashMap<(RootId, crate::contract::OptimizeCategory), changes::CachedEstimate>>,
-    /// What finding Convert's candidates gives, per root: Overview's numbers, Convert's summary,
-    /// and that the Library's convertible files are recorded. Finding them took 60 to 110 ms on
-    /// the 21k fixture, asked for again and again while nothing changed. Any change to the
-    /// catalog, an analysis writing its prints or a change applied, makes them be found again.
-    /// The candidates themselves, 10,000 files' rows there, are not kept.
+    /// What finding Convert's candidates gives, per root: Overview's numbers, and that the
+    /// Library's convertible files are recorded. Overview is asked for about three times a
+    /// decision, each read 37 ms on 40,000 files without this. Any change to the catalog, an
+    /// analysis writing its prints or a change applied, makes them be found again. The candidates
+    /// themselves are not kept.
     overviews: Mutex<HashMap<RootId, Kept<Tidy>>>,
-    summaries: Mutex<HashMap<RootId, Kept<OptimizeSummary>>>,
     convertible: Mutex<HashMap<RootId, Kept<()>>>,
 }
 
@@ -279,8 +282,9 @@ impl TidyEngine {
             .await?;
         // The owner's run holds a root on another volume on that volume, as glazier-core does; a
         // sandboxed one keeps every held file in its own data folder.
-        let places =
-            crate::plans::holding::HoldingPlaces::new(data_dir).on_volumes(!data.is_sandboxed());
+        let places = crate::plans::holding::HoldingPlaces::new(data_dir)
+            .on_volumes(!data.is_sandboxed())
+            .sandboxed_in(data.is_sandboxed().then(|| data.clone()));
         Ok(Self {
             inner: Arc::new(Inner {
                 catalog,
@@ -296,7 +300,6 @@ impl TidyEngine {
                 capabilities: OnceLock::new(),
                 estimates: Mutex::new(HashMap::new()),
                 overviews: Mutex::new(HashMap::new()),
-                summaries: Mutex::new(HashMap::new()),
                 convertible: Mutex::new(HashMap::new()),
             }),
         })
@@ -346,9 +349,15 @@ impl TidyEngine {
         })
     }
 
+    /// Says whether [`Self::remove_root`] would refuse a root now, for a caller with something to
+    /// do first that cannot be taken back, as Forget's emptying of holding. It waits for nothing.
+    pub fn check_root_removable(&self, root_id: RootId) -> anyhow::Result<()> {
+        Ok(self.inner.scheduler.check_removable(root_id)?)
+    }
+
     /// Forgets a root and its catalog rows. Files on disk are untouched. As glazier-core's
     /// `removeRoot`, it is refused while a scan, a change or an asked-for analysis of the root
-    /// waits or runs ("Wait for this root's jobs to finish before removing it."); background
+    /// waits or runs; background
     /// analysis of it is stopped first, since it is only worth finishing for a root that stays.
     pub fn remove_root(
         &self,
@@ -384,14 +393,24 @@ impl TidyEngine {
             let before = read_settings(connection)?;
             write_settings(connection, &settings)?;
             inner.changed();
-            let new_sets = !before.spot_variants || before.similarity != settings.similarity;
-            let analyze = (settings.auto_analyze && !before.auto_analyze)
-                || (settings.spot_variants && new_sets);
+            // With Spot variants off too, new sets may have AVIFs to read before they offer anything.
+            let new_sets = before.spot_variants != settings.spot_variants
+                || before.similarity != settings.similarity;
+            let analyze = (settings.auto_analyze && !before.auto_analyze) || new_sets;
             Ok(SettingsUpdate { settings, analyze })
         })
     }
 
     // Overview, the Library and Duplicates.
+
+    /// Whether a root has analysis to catch up on when Tidy starts, such as prints an older
+    /// version made, which sets cannot compare until they are made again.
+    pub fn analysis_due(
+        &self,
+        root_id: RootId,
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send + 'static {
+        self.query(move |inner, connection| inner.analysis_due_in(connection, root_id))
+    }
 
     /// Overview's numbers for a root: duplicates, conversions, Shrink, silent soundtracks,
     /// clean-up, what needs a look, and how far analysis has come (glazier-core's `tidy`).
@@ -554,11 +573,11 @@ impl TidyEngine {
         root_id: RootId,
     ) -> impl Future<Output = anyhow::Result<OptimizeSummary>> + Send + 'static {
         self.query(move |inner, connection| {
-            inner.kept(&inner.summaries, root_id, connection, |connection| {
-                Ok(summarize_candidates(
-                    &inner.candidates(connection, root_id)?,
-                ))
-            })
+            let removable = inner.removable_copies(connection, root_id)?;
+            Ok(summarize_candidates(
+                &inner.candidates(connection, root_id)?,
+                &removable,
+            ))
         })
     }
 
@@ -610,8 +629,7 @@ impl TidyEngine {
             on_thread("tidy scan", move || {
                 let mut report = engine.scan_blocking(root_id, &reporter)?;
                 for root_id in std::mem::take(&mut report.follow_up).analyze {
-                    report.analysis =
-                        Some(engine.analyze_in_background_blocking(root_id, &reporter)?);
+                    report.analysis = Some(engine.catch_up_blocking(root_id, &reporter)?);
                 }
                 Ok(report)
             })
@@ -622,7 +640,7 @@ impl TidyEngine {
     /// similar and sound jobs do: fingerprints, the detail prints Spot variants needs, and
     /// loudness. Results are kept per file, so a stopped analysis goes on where it left off.
     pub fn start_analysis(&self, root_id: RootId, cx: &mut App) -> Entity<Job<AnalysisReport>> {
-        self.start_analysis_with(root_id, Priority::AskedFor, cx)
+        self.start_analysis_with(root_id, AnalysisStart::AskedFor, cx)
     }
 
     /// [`TidyEngine::start_analysis`] in the background, as glazier-core queues it after a scan,
@@ -633,13 +651,23 @@ impl TidyEngine {
         root_id: RootId,
         cx: &mut App,
     ) -> Entity<Job<AnalysisReport>> {
-        self.start_analysis_with(root_id, Priority::Background, cx)
+        self.start_analysis_with(root_id, AnalysisStart::AfterChange, cx)
+    }
+
+    /// [`TidyEngine::start_background_analysis`] when Tidy starts or a scan ends, the times it asks
+    /// again about pairs it could not read. After every decision a damaged file would ask each time.
+    pub fn start_catch_up_analysis(
+        &self,
+        root_id: RootId,
+        cx: &mut App,
+    ) -> Entity<Job<AnalysisReport>> {
+        self.start_analysis_with(root_id, AnalysisStart::CatchingUp, cx)
     }
 
     fn start_analysis_with(
         &self,
         root_id: RootId,
-        priority: Priority,
+        start: AnalysisStart,
         cx: &mut App,
     ) -> Entity<Job<AnalysisReport>> {
         let engine = self.clone();
@@ -648,7 +676,7 @@ impl TidyEngine {
             cx,
             move |reporter: JobReporter| {
                 on_thread("tidy analysis", move || {
-                    engine.analyze_with(root_id, priority, &reporter)
+                    engine.analyze_with(root_id, start, &reporter)
                 })
             },
         )
@@ -759,7 +787,7 @@ impl TidyEngine {
         root_id: RootId,
         progress: &dyn Progress,
     ) -> anyhow::Result<AnalysisReport> {
-        self.analyze_with(root_id, Priority::AskedFor, progress)
+        self.analyze_with(root_id, AnalysisStart::AskedFor, progress)
     }
 
     /// [`TidyEngine::start_background_analysis`]'s work, on the calling thread.
@@ -768,21 +796,44 @@ impl TidyEngine {
         root_id: RootId,
         progress: &dyn Progress,
     ) -> anyhow::Result<AnalysisReport> {
-        self.analyze_with(root_id, Priority::Background, progress)
+        self.analyze_with(root_id, AnalysisStart::AfterChange, progress)
+    }
+
+    /// [`TidyEngine::start_catch_up_analysis`]'s work, on the calling thread.
+    pub fn catch_up_blocking(
+        &self,
+        root_id: RootId,
+        progress: &dyn Progress,
+    ) -> anyhow::Result<AnalysisReport> {
+        self.analyze_with(root_id, AnalysisStart::CatchingUp, progress)
     }
 
     fn analyze_with(
         &self,
         root_id: RootId,
-        priority: Priority,
+        start: AnalysisStart,
         progress: &dyn Progress,
     ) -> anyhow::Result<AnalysisReport> {
+        let priority = match start {
+            AnalysisStart::AskedFor => Priority::AskedFor,
+            AnalysisStart::AfterChange | AnalysisStart::CatchingUp => Priority::Background,
+        };
         let turn = self
             .inner
             .scheduler
             .take_turn(priority, vec![root_id], progress)?;
         // Paused while it waited for its turn, it waits before it starts.
         turn.checkpoint()?;
+        if start != AnalysisStart::AskedFor {
+            let inner = self.inner.clone();
+            let due = self.inner.catalog.blocking(move |connection| match start {
+                AnalysisStart::CatchingUp => inner.analysis_due_in(connection, root_id),
+                _ => inner.analysis_left_in(connection, root_id),
+            })?;
+            if !due {
+                return Ok(AnalysisReport::default());
+            }
+        }
         self.analyze_locked(root_id, &turn)
     }
 
@@ -807,21 +858,25 @@ impl TidyEngine {
             let this = self.inner.clone();
             let stills: Vec<FileId> = inner.catalog.blocking(move |connection| {
                 let settings = read_settings(connection)?;
+                // Before the stills are worked out: sets whose prints all failed count as variants,
+                // whose stills are not offered for prints, so they would never be asked again.
+                if this.media.loaded_vips().is_some() {
+                    forget_unread(connection, root_id)?;
+                }
+                this.changed();
                 if !settings.spot_variants {
                     return Ok(Vec::new());
                 }
+                forget_outdated_details(connection, root_id)?;
+                this.changed();
                 let sets = this.duplicate_sets(connection, Some(root_id), settings.similarity)?;
-                let dismissals = Dismissals::load(connection)?;
-                Ok(open_sets(&sets, &dismissals, DuplicateScope::All)
-                    .into_iter()
-                    .filter(|entry| entry.set.kind == DuplicateKind::Similar)
-                    .flat_map(|entry| entry.file_ids.iter().copied())
-                    .collect())
+                Ok(stills_to_print(&sets, &Dismissals::load(connection)?))
             })?;
             if !stills.is_empty() {
                 run_detail_pass(&pass, &stills)?;
             }
             inner.changed();
+            self.compare_closer(root_id, &pass)?;
             run_loudness_pass(&pass)?;
             Ok(stills.len())
         })();
@@ -837,6 +892,41 @@ impl TidyEngine {
             soundtracks,
         })
     }
+
+    /// Takes a closer look at the pairs that are waiting for one. Each answer can make a version
+    /// join a picture rather than head one, which changes what the versions after it meet, so
+    /// this goes round until nothing waits. Every read stores an answer, even one that fails, so
+    /// the same pairs asked twice can only mean their files keep changing, and those wait for the
+    /// analysis the change calls for.
+    fn compare_closer(&self, root_id: RootId, pass: &PassContext<'_>) -> anyhow::Result<()> {
+        let mut asked = Vec::new();
+        loop {
+            let this = self.inner.clone();
+            let pairs: Vec<(FileId, FileId)> = self.inner.catalog.blocking(move |connection| {
+                let settings = read_settings(connection)?;
+                let sets = this.duplicate_sets(connection, Some(root_id), settings.similarity)?;
+                Ok(pairs_to_compare(&sets, &Dismissals::load(connection)?))
+            })?;
+            if pairs.is_empty() || pairs == asked {
+                return Ok(());
+            }
+            run_comparison_pass(pass, &pairs)?;
+            self.inner.changed();
+            asked = pairs;
+        }
+    }
+}
+
+/// Why an analysis is starting, which says whether it has anything to do.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AnalysisStart {
+    /// The owner asked: it runs.
+    AskedFor,
+    /// A change or a setting: in the background, when work is left.
+    AfterChange,
+    /// Tidy started or a scan ended: in the background, when analysis is due, which also asks again
+    /// about pairs it could not read.
+    CatchingUp,
 }
 
 /// Marks the catalog changed when dropped, so a scan stopped halfway leaves nothing stale cached.
@@ -858,14 +948,44 @@ impl Inner {
     }
 
     /// Whether glazier-core's `queueAnalysis` would queue analysis of a root: background analysis
-    /// is on, and files need fingerprints, or loudness when ffmpeg is there to measure it.
-    fn analysis_due(&self, root_id: RootId) -> anyhow::Result<bool> {
+    /// is on, and files need fingerprints, or loudness when ffmpeg is there to measure it, or sets
+    /// are held until Spot variants has compared them, since an older version made their prints
+    /// or the analysis that was comparing them stopped.
+    fn analysis_due_in(&self, connection: &Connection, root_id: RootId) -> anyhow::Result<bool> {
+        if !read_settings(connection)?.auto_analyze {
+            return Ok(false);
+        }
+        // Answers a pair got only because it could not be read count here, when Tidy starts or a
+        // scan ends, but not after each decision, where a damaged file would ask every time.
+        Ok(self.analysis_left_in(connection, root_id)?
+            || (answers_wait_to_be_read(connection, root_id)?
+                && self.media.loaded_vips().is_some()))
+    }
+
+    /// Whether an analysis of a root would find anything to do: every decision starts one in the
+    /// background, and one with nothing to do would still have every page read the catalog again.
+    fn analysis_left_in(&self, connection: &Connection, root_id: RootId) -> anyhow::Result<bool> {
+        let settings = read_settings(connection)?;
         let has_ffmpeg = self.media.ffmpeg.is_some();
-        self.catalog.blocking(move |connection| {
-            Ok(read_settings(connection)?.auto_analyze
-                && (pending_fingerprints(connection, root_id)? > 0
-                    || (has_ffmpeg && pending_loudness(connection, root_id)? > 0)))
-        })
+        if pending_fingerprints(connection, root_id)? > 0
+            || (has_ffmpeg && pending_loudness(connection, root_id)? > 0)
+        {
+            return Ok(true);
+        }
+        if settings.spot_variants
+            && prints_wait_for_libvips(connection)?
+            && self.media.loaded_vips().is_some()
+        {
+            return Ok(true);
+        }
+        let sets = self.duplicate_sets(connection, Some(root_id), settings.similarity)?;
+        Ok(checking_sets(&sets, &Dismissals::load(connection)?))
+    }
+
+    fn analysis_due(self: &Arc<Self>, root_id: RootId) -> anyhow::Result<bool> {
+        let this = self.clone();
+        self.catalog
+            .blocking(move |connection| this.analysis_due_in(connection, root_id))
     }
 
     /// The similar clusters under a root at a level, cached while no fingerprint changed.
@@ -951,27 +1071,21 @@ impl Inner {
         Ok(sets)
     }
 
-    /// What Convert and Shrink leave alone for now: members of open similar sets at the current
-    /// level, and, while background analysis will check them, files not yet fingerprinted.
-    fn candidate_holds(
+    /// The files the open duplicate sets' suggestions would remove. Convert and Shrink would save
+    /// on these too, but the duplicates' totals count them whole, so savings shown beside those
+    /// totals must not count them again.
+    fn removable_copies(
         &self,
         connection: &Connection,
         root_id: RootId,
-    ) -> anyhow::Result<CandidateHolds> {
+    ) -> anyhow::Result<HashSet<FileId>> {
         let settings = read_settings(connection)?;
         let sets = self.duplicate_sets(connection, Some(root_id), settings.similarity)?;
-        let similar = open_sets(
-            &sets,
-            &Dismissals::load(connection)?,
-            DuplicateScope::Similar,
-        );
-        Ok(CandidateHolds {
-            reviewing: similar
-                .iter()
-                .flat_map(|entry| entry.file_ids.iter().copied())
-                .collect(),
-            wait_for_fingerprints: settings.auto_analyze,
-        })
+        let dismissals = Dismissals::load(connection)?;
+        Ok(open_sets(&sets, &dismissals, DuplicateScope::All)
+            .into_iter()
+            .flat_map(|entry| entry.removable.iter().copied())
+            .collect())
     }
 
     /// Where the catalog stands now, for [`Kept`] results.
@@ -1024,8 +1138,7 @@ impl Inner {
         connection: &mut Connection,
         root_id: RootId,
     ) -> anyhow::Result<CandidateScan> {
-        let holds = self.candidate_holds(connection, root_id)?;
-        let scan = find_optimize_candidates(connection, root_id, &holds)?;
+        let scan = find_optimize_candidates(connection, root_id)?;
         let ids: Vec<FileId> = scan.candidates.iter().map(|c| c.record.id).collect();
         record_convertible(connection, root_id, &ids)?;
         // The Library's convertible files are these until the catalog changes.
@@ -1038,8 +1151,7 @@ impl Inner {
     }
 
     fn shrink_scan(&self, connection: &Connection, root_id: RootId) -> anyhow::Result<ShrinkScan> {
-        let holds = self.candidate_holds(connection, root_id)?;
-        find_shrink_candidates(connection, root_id, &holds)
+        find_shrink_candidates(connection, root_id)
     }
 
     /// Records the convertible files of a root (or every root) for Library queries.
@@ -1070,6 +1182,7 @@ impl Inner {
         let settings = read_settings(connection)?;
         let sets = self.duplicate_sets(connection, Some(root_id), settings.similarity)?;
         let open = open_sets(&sets, &Dismissals::load(connection)?, DuplicateScope::All);
+        let removable = self.removable_copies(connection, root_id)?;
         let scan = self.candidates(connection, root_id)?;
         let catalog = catalog_tidy(connection, root_id)?;
         let shrink = self.shrink_scan(connection, root_id)?;
@@ -1090,8 +1203,8 @@ impl Inner {
                         .filter(|entry| entry.set.kind == DuplicateKind::Similar),
                 ),
             },
-            convert: summarize_candidates(&scan),
-            shrink: shrink.totals(),
+            convert: summarize_candidates(&scan, &removable),
+            shrink: shrink.totals(&removable),
             silent_tracks: catalog.silent_tracks,
             cleanup: CleanupCounts {
                 junk: catalog.junk,

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{ActiveTheme as _, Icon, button::Button};
 use gpui_kit::{App, IntoElement, ParentElement as _, RenderOnce, Styled as _, Window, div};
+use oriel_ui::TextRole as _;
 use oriel_ui::segmented::{Segmented, SegmentedItem};
 use oriel_ui::theme::ThemeChoice;
 use oriel_ui::{ControlSize as _, SettingsGroup, SettingsRow};
@@ -70,7 +71,7 @@ impl RenderOnce for GeneralSettings {
             .child(
                 div()
                     .px_1()
-                    .text_xs()
+                    .text_caption()
                     .text_color(cx.theme().muted_foreground)
                     .child(format!("{} {}", crate::APP_NAME, env!("CARGO_PKG_VERSION"))),
             )

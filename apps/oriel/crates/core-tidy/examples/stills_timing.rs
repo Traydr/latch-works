@@ -5,14 +5,15 @@
 //!   PNG, WebP, TIFF and AVIF;
 //! - `probe`: the probe pass's header read (`Vips::probe`), for the same;
 //! - `convert`: Convert's decode and AVIF encode (`encode_still_to_avif`) of every JPEG, PNG,
-//!   WebP and TIFF, into a scratch folder.
+//!   WebP and TIFF, into a scratch folder;
+//! - `look`: a closer look's decode and averaging (`look_at_still`), its result hashed to the bit.
 //!
 //! Each round prints its wall time, CPU time, stills a second and the highest footprint it
 //! reached, and checks that every round made the same prints or bytes as the first.
 //!
 //! ```sh
 //! cargo run --release -p oriel-core-tidy --example stills_timing -- \
-//!   fingerprint|probe|convert <folder> <scratch> 1,4,8,16
+//!   fingerprint|probe|convert|look <folder> <scratch> 1,4,8,16
 //! ```
 
 use std::collections::HashMap;
@@ -22,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use oriel_avif::Libavif;
 use oriel_core_tidy::media::still::encode_still_to_avif;
-use oriel_core_tidy::similarity::{Vips, fingerprint_still};
+use oriel_core_tidy::similarity::{Vips, fingerprint_still, look_at_still};
 use sha2::{Digest as _, Sha256};
 
 #[cfg(unix)]
@@ -94,14 +95,15 @@ fn main() {
         (args.next(), args.next(), args.next(), args.next())
     else {
         eprintln!(
-            "usage: stills_timing fingerprint|probe|convert <folder> <scratch> <jobs,jobs,...>"
+            "usage: stills_timing fingerprint|probe|convert|look <folder> <scratch> <jobs,jobs,...>"
         );
         std::process::exit(2);
     };
-    let (fingerprint, probe) = match mode.as_str() {
-        "fingerprint" => (true, false),
-        "probe" => (false, true),
-        "convert" => (false, false),
+    let (fingerprint, probe, look) = match mode.as_str() {
+        "fingerprint" => (true, false, false),
+        "probe" => (false, true, false),
+        "convert" => (false, false, false),
+        "look" => (false, false, true),
         other => panic!("unknown mode {other}"),
     };
     let rounds: Vec<usize> = rounds.split(',').map(|n| n.parse().unwrap()).collect();
@@ -113,7 +115,11 @@ fn main() {
     let (vips, _, _) = Vips::open_located().unwrap();
     let libavif = Libavif::get().unwrap();
     let mut stills = Vec::new();
-    stills_under(Path::new(&folder), fingerprint || probe, &mut stills);
+    stills_under(
+        Path::new(&folder),
+        fingerprint || probe || look,
+        &mut stills,
+    );
     println!(
         "{} stills; libvips {}, libavif {}",
         stills.len(),
@@ -148,7 +154,11 @@ fn main() {
                             let Some(source) = stills.get(index) else {
                                 return;
                             };
-                            let made = if probe {
+                            let made = if look {
+                                let look = look_at_still(&vips, source).unwrap();
+                                let hash = Sha256::digest(format!("{look:?}"));
+                                hash.iter().map(|b| format!("{b:02x}")).collect()
+                            } else if probe {
                                 format!("{:?}", vips.probe(source))
                             } else if fingerprint {
                                 fingerprint_still(&vips, source)

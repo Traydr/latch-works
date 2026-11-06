@@ -90,6 +90,8 @@ pub fn run_loudness_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
             let peak = match measure_peak_volume(&ffmpeg, &path, context.progress.cancel_token()) {
                 Ok(peak) => Some(peak),
                 Err(ToolFailure::Cancelled) => return Err(Cancelled.into()),
+                // Left for a later analysis: it says nothing about the sound.
+                Err(ToolFailure::Interrupted) => return Ok(()),
                 Err(ToolFailure::Failed(_)) => None,
             };
             let params = same_row_params(file)

@@ -19,6 +19,8 @@ use oriel_core_tidy::contract::{
     DuplicateScope, DuplicateSetPage, DuplicateSetRequest, FileFlag, FileFormat, FindingKind,
     RootId, SimilarityLevel, Tidy,
 };
+use oriel_ui::TextRole as _;
+use oriel_ui::focus::FocusReveal;
 use oriel_ui::{ControlSize as _, TopBar};
 
 use crate::actions::{PerformOptions, TidyStep};
@@ -30,7 +32,7 @@ use crate::state::{LibraryPreset, TidyState};
 use crate::thumbs::{self, Thumbs};
 use crate::widgets;
 
-const TIDY_SOURCE: &str = "overview:tidy";
+pub(crate) const TIDY_SOURCE: &str = "overview:tidy";
 
 /// Up to this many keepers stand for the similar sets on the "needs your eye" card.
 const STACK: usize = 5;
@@ -105,7 +107,6 @@ pub struct OverviewPage {
     /// Rows started this visit stay listed, as done once their work is.
     started: (Option<RootId>, BTreeSet<StepId>),
     /// What the last Tidy up this visit took out of the folder, for the done card.
-    saved: Option<(RootId, f64)>,
     keepers: Loaded<DuplicateSetPage>,
     seen: (Option<RootId>, u64),
     /// The hero card's rows as last drawn, which ↑ ↓ move between, and the one they rest on: its
@@ -126,7 +127,6 @@ impl OverviewPage {
             thumbs: thumbs.clone(),
             focus: cx.focus_handle(),
             started: (None, BTreeSet::new()),
-            saved: None,
             keepers: Loaded::default(),
             seen: (None, 0),
             shown_steps: Vec::new(),
@@ -337,6 +337,9 @@ impl OverviewPage {
         if oriel_ui::popups::popup_open(window, cx) {
             return;
         }
+        if oriel_ui::keys::control_has_key(event, None, window, cx) {
+            return;
+        }
         let keys = &event.keystroke;
         if oriel_ui::keys::command_held(&keys.modifiers) && keys.key == "enter" {
             self.tidy_up(window, cx);
@@ -457,12 +460,14 @@ impl OverviewPage {
         });
         TopBar::new(&state.shell, "Overview")
             .when_some(meta, |bar, meta| {
-                bar.trailing(
+                bar.quiet(
                     div()
                         .id("overview-meta")
                         .test_support()
                         .aria_label(SharedString::from(meta.clone()))
-                        .text_xs()
+                        .min_w_0()
+                        .truncate()
+                        .text_caption()
                         .text_color(theme.muted_foreground)
                         .child(meta),
                 )
@@ -493,12 +498,12 @@ impl OverviewPage {
             .pb(px(100.))
             .child(
                 div()
-                    .text_size(px(15.))
+                    .text_heading()
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(format!("Scanning {name}")),
             )
             .child(
-                div().w(px(320.)).child(
+                div().w(px(400.)).child(
                     Progress::new("overview-scan-progress")
                         .value(if total > 0 {
                             done as f32 / total as f32 * 100.
@@ -529,15 +534,26 @@ impl OverviewPage {
             .unwrap_or_default();
 
         if !work {
-            let saved = self
-                .saved
-                .filter(|(root_id, _)| Some(*root_id) == state.root_id())
-                .map_or(0., |(_, bytes)| bytes);
-            let line = if saved > 0. {
+            let saved = state
+                .tidied()
+                .filter(|tidied| Some(tidied.root_id) == state.root_id())
+                .map_or(0, |tidied| tidied.saved);
+            // What the page lists below still waits for the owner, so "nothing left" would not be
+            // true of it.
+            let waiting = data.duplicates.similar.sets + data.duplicates.exact.sets > 0
+                || data.shrink.files > 0;
+            let heading = if saved > 0 || waiting {
+                "Tidy up is done"
+            } else {
+                "All tidy"
+            };
+            let line = if saved > 0 {
                 format!(
-                    "{} out of {root_name} · in holding until you empty it",
-                    format::bytes(saved)
+                    "{} out of {root_name} · originals wait in holding until you empty it",
+                    format::bytes(saved as f64)
                 )
+            } else if waiting {
+                "What's below needs your eye".to_string()
             } else {
                 "Nothing left to tidy".to_string()
             };
@@ -558,9 +574,9 @@ impl OverviewPage {
                         .min_w_0()
                         .child(
                             div()
-                                .text_size(px(13.))
+                                .text_body()
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .child("Tidy"),
+                                .child(heading),
                         )
                         .child(widgets::caption(line, cx).truncate()),
                 )
@@ -573,39 +589,45 @@ impl OverviewPage {
             .iter()
             .map(|group| group.totals(data).0)
             .sum();
-        let estimate = state.estimate(&categories);
+        // What Tidy up saves: it converts every file on the list, as the row below says, whether or
+        // not a duplicate set would remove it. No conversion to do leaves nothing to estimate.
+        use crate::state::Estimate;
+        let estimate = (convert_files > 0).then(|| state.estimate(&categories));
         let saving = match estimate {
-            crate::state::Estimate::Known { before, after } if convert_files > 0 => {
-                (before - after).max(0.)
-            }
+            Some(Estimate::Known { before, after }) => (before - after).max(0.),
             _ => 0.,
         };
-        let estimating = convert_files > 0 && estimate == crate::state::Estimate::Pending;
+        let estimating = estimate == Some(Estimate::Pending);
+        // How much of that is on copies a duplicate set would remove, whose whole size Duplicates'
+        // own totals count, so that reading the two together counts nothing twice.
+        let on_copies = match (estimate, state.estimate_beside_duplicates(&categories)) {
+            (
+                Some(Estimate::Known { before, after }),
+                Estimate::Known {
+                    before: b,
+                    after: a,
+                },
+            ) => ((before - after) - (b - a)).max(0.),
+            _ => 0.,
+        };
         let states: Vec<StepState> = steps.iter().map(|step| self.state_of(step, cx)).collect();
         let done = states
             .iter()
             .filter(|state| **state == StepState::Done)
             .count() as i64;
         let todo = steps.iter().filter(|step| step.todo).count() as i64;
-        // Tidy up leaves duplicates to the owner, so what it saves leaves them out, and says so.
-        let duplicates = data.duplicates.similar.sets + data.duplicates.exact.sets > 0;
-        let heading = if tidying {
-            "Tidying up"
-        } else if saving > 0. && duplicates {
-            "Tidying up saves, not counting duplicates"
-        } else if saving > 0. {
-            "Tidying up saves"
-        } else {
-            "Ready to tidy"
+        let heading = match estimate {
+            _ if tidying => "Tidying up",
+            Some(Estimate::Pending) => "Estimating the saving…",
+            Some(Estimate::Unknown) => "Saving unknown",
+            Some(Estimate::Known { .. }) if saving <= 0. => "Nothing to save",
+            Some(Estimate::Known { .. }) => "Tidying up saves",
+            None => "Ready to tidy",
         };
         let display = if tidying {
             format!("{} of {} done", format::plural(done, "step"), steps.len())
         } else if saving > 0. {
-            format!(
-                "{} {}",
-                if estimating { "At least" } else { "About" },
-                format::bytes(saving)
-            )
+            format!("About {}", format::bytes(saving))
         } else {
             format!("{} to do", format::plural(todo, "thing"))
         };
@@ -649,7 +671,7 @@ impl OverviewPage {
                             .min_w_0()
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_caption()
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(muted)
                                     .child(heading),
@@ -664,13 +686,26 @@ impl OverviewPage {
                                     .flex_row()
                                     .items_center()
                                     .gap(px(10.))
-                                    .text_size(px(24.))
+                                    .text_size(px(32.))
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .child(display)
-                                    .when(!tidying && saving > 0. && estimating, |this| {
+                                    .when(!tidying && estimating, |this| {
                                         this.child(Spinner::new().small())
                                     }),
                             )
+                            .when(!tidying && saving > 0. && on_copies > 0., |this| {
+                                this.child(
+                                    widgets::caption(
+                                        format!(
+                                            "About {} of this is on copies Duplicates would \
+                                             remove.",
+                                            format::bytes(on_copies)
+                                        ),
+                                        cx,
+                                    )
+                                    .mt(px(6.)),
+                                )
+                            })
                             .child(
                                 widgets::caption(
                                     "Everything goes to holding first and can be undone.",
@@ -681,7 +716,8 @@ impl OverviewPage {
                     )
                     .child(action),
             )
-            .child(div().mt_5().flex().flex_col().children(rows))
+            // The rows' icons level with the heading above, their hover ground reaching past it.
+            .child(div().mt_5().mx(px(-8.)).flex().flex_col().children(rows))
             .into_any_element()
     }
 
@@ -716,7 +752,7 @@ impl OverviewPage {
             .flex_row()
             .items_center()
             .gap_3()
-            .h(px(52.))
+            .h(px(60.))
             .px_2()
             .rounded(theme.radius)
             .when(index > 0, |this| {
@@ -742,7 +778,7 @@ impl OverviewPage {
                     .min_w_0()
                     .child(
                         div()
-                            .text_size(px(13.))
+                            .text_body()
                             .font_weight(FontWeight::MEDIUM)
                             .when(done, |this| this.text_color(theme.muted_foreground))
                             .child(step.title),
@@ -768,7 +804,7 @@ impl OverviewPage {
                 Spinner::new().small().into_any_element()
             } else {
                 Icon::new(IconName::ChevronRight)
-                    .size(px(16.))
+                    .size(px(20.))
                     .text_color(theme.muted_foreground)
                     .into_any_element()
             })
@@ -805,10 +841,19 @@ impl OverviewPage {
                 ),
                 (similar.sets > 0).then(|| format!("{sets_line} so far · {bytes_line}")),
             )
+        } else if similar.sets > 0 && similar_job {
+            // The number moves until the comparing ends, so it says so.
+            (
+                format!("{sets_line} so far"),
+                Some(format!("{bytes_line} · still checking")),
+            )
         } else if similar.sets > 0 {
             (
-                format!("{sets_line} · {bytes_line}"),
-                unchecked.then(|| "Some files are not checked yet.".to_string()),
+                sets_line,
+                Some(match unchecked {
+                    true => format!("{bytes_line} · some files are not checked yet"),
+                    false => bytes_line,
+                }),
             )
         } else if looking {
             (
@@ -853,6 +898,7 @@ impl OverviewPage {
             .enumerate()
             .map(|(index, file)| {
                 div()
+                    .relative()
                     .size(px(48.))
                     .when(index > 0, |this| this.ml(px(-12.)))
                     .rounded(radius)
@@ -864,6 +910,7 @@ impl OverviewPage {
                         file,
                         96,
                         ObjectFit::Cover,
+                        radius,
                         cx,
                     ))
                     .into_any_element()
@@ -877,8 +924,9 @@ impl OverviewPage {
                 .aria_label(SharedString::from(title.clone()))
                 .flex_row()
                 .items_center()
-                .gap_4()
-                .p_4()
+                .gap_3()
+                .px_5()
+                .py_4()
                 // The same leading tile as the identical copies' card, so both titles start on
                 // one spine; the keepers' pictures sit before the actions.
                 .child(widgets::row_icon(IconName::Images, cx))
@@ -894,12 +942,12 @@ impl OverviewPage {
                                 .flex_row()
                                 .items_center()
                                 .gap_2()
-                                .text_size(px(13.))
+                                .text_body()
                                 .font_weight(FontWeight::MEDIUM)
                                 .when(looking && similar_job, |this| {
                                     this.child(Spinner::new().small())
                                 })
-                                .child(title),
+                                .child(div().min_w_0().line_clamp(2).child(title)),
                         )
                         .when_some(caption, |this, caption| {
                             this.child(widgets::caption(caption, cx).mt_0p5())
@@ -920,6 +968,7 @@ impl OverviewPage {
                         Button::new("overview-check-now")
                             .bar_size()
                             .outline()
+                            .quiet_edge(cx)
                             .label("Check now")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.state.update(cx, |state, cx| {
@@ -935,6 +984,7 @@ impl OverviewPage {
                         Button::new("overview-review-similar")
                             .bar_size()
                             .outline()
+                            .quiet_edge(cx)
                             .label("Review")
                             .tooltip("Review  D")
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -968,8 +1018,9 @@ impl OverviewPage {
                 .aria_label(SharedString::from(title.clone()))
                 .flex_row()
                 .items_center()
-                .gap_4()
-                .p_4()
+                .gap_3()
+                .px_5()
+                .py_4()
                 .child(widgets::row_icon(IconName::Copy, cx))
                 .child(
                     div()
@@ -979,7 +1030,7 @@ impl OverviewPage {
                         .min_w_0()
                         .child(
                             div()
-                                .text_size(px(13.))
+                                .text_body()
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(title),
                         )
@@ -989,6 +1040,7 @@ impl OverviewPage {
                     Button::new("overview-review-identical")
                         .bar_size()
                         .outline()
+                        .quiet_edge(cx)
                         .label("Review")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.state.update(cx, |state, cx| {
@@ -1024,7 +1076,7 @@ impl OverviewPage {
                     .flex_row()
                     .items_center()
                     .gap_3()
-                    .h(px(52.))
+                    .h(px(60.))
                     .px_2()
                     .rounded(theme.radius)
                     .cursor_pointer()
@@ -1042,7 +1094,7 @@ impl OverviewPage {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(13.))
+                                    .text_body()
                                     .font_weight(FontWeight::MEDIUM)
                                     .child(title),
                             )
@@ -1050,7 +1102,7 @@ impl OverviewPage {
                     )
                     .child(
                         Icon::new(IconName::ChevronRight)
-                            .size(px(16.))
+                            .size(px(20.))
                             .text_color(theme.muted_foreground),
                     ),
             )
@@ -1076,7 +1128,7 @@ impl OverviewPage {
             .items_center()
             .gap_1()
             .px_1()
-            .text_size(px(13.))
+            .text_body()
             .text_color(theme.muted_foreground)
             .child("Also found:");
         for (index, finding) in findings.into_iter().enumerate() {
@@ -1127,14 +1179,11 @@ fn attention(kind: FindingKind, count: i64) -> (String, LibraryPreset) {
             flags(FileFlag::Unsupported),
         ),
         FindingKind::PresignedDelivery => (
-            format!(
-                "{} Pane serves without resizing (MKV, BMP)",
-                format::count(count)
-            ),
+            format!("{} Pane View can't resize", format::plural(count, "file")),
             formats(&[FileFormat::Matroska, FileFormat::Bmp]),
         ),
         FindingKind::UnconvertibleVideo => (
-            format!("{} can't become MP4 (AVI, FLV, WMV)", format::count(count)),
+            format!("{} can't become MP4", format::plural(count, "file")),
             formats(&[FileFormat::Avi, FileFormat::Flv, FileFormat::Asf]),
         ),
     }
@@ -1147,7 +1196,7 @@ impl Focusable for OverviewPage {
 }
 
 impl Render for OverviewPage {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let top_bar = self.render_top_bar(cx);
         let state = self.state.read(cx);
         let root = state.root().cloned();
@@ -1182,17 +1231,28 @@ impl Render for OverviewPage {
                 let look = self.render_look_card(&data, cx);
                 let identical = self.render_identical_card(&data, cx);
                 let shrink = (data.shrink.files > 0).then(|| {
+                    // The same figure as the sidebar's, and what a run would do: it takes every
+                    // video on the list, whether or not a duplicate set would remove it.
+                    let saving = data.shrink.bytes - data.shrink.estimated_bytes;
                     self.link_row(
                         "overview-shrink",
                         IconName::Shrink,
                         format!(
                             "Shrink videos with AV1 · about {} smaller",
-                            format::bytes((data.shrink.bytes - data.shrink.estimated_bytes) as f64)
+                            format::bytes(saving as f64),
                         ),
                         format!(
-                            "{} · {}, in runs you can stop at any time",
+                            "{} · {}{}",
                             format::plural(data.shrink.files, "video"),
-                            format::bytes(data.shrink.bytes as f64)
+                            format::bytes(data.shrink.bytes as f64),
+                            if data.shrink.duplicate_saving > 0 {
+                                format!(
+                                    " · about {} of this on copies Duplicates would remove",
+                                    format::bytes(data.shrink.duplicate_saving as f64)
+                                )
+                            } else {
+                                ", in runs you can stop at any time".to_owned()
+                            }
                         ),
                         TidyPage::Shrink,
                         cx,
@@ -1220,28 +1280,36 @@ impl Render for OverviewPage {
                     )
                 });
                 let attention = self.render_attention(&data, cx);
+                // What Tab lands on stays in sight, however far down the page it is.
+                let reveal = FocusReveal::of("overview-reveal", px(0.), window, cx);
+                let cards: Vec<AnyElement> =
+                    [Some(hero), look, identical, shrink, holding, attention]
+                        .into_iter()
+                        .flatten()
+                        .enumerate()
+                        .map(|(index, card)| {
+                            reveal.keep(format!("overview-{index}"), card, window, cx)
+                        })
+                        .collect();
                 div()
                     .id("overview-scroll")
+                    .test_support()
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
+                    .track_scroll(reveal.scroll())
                     .child(
                         div()
                             .mx_auto()
                             .w_full()
-                            .max_w(px(760.))
+                            .max_w(widgets::PAGE_COLUMN)
                             .flex()
                             .flex_col()
                             .gap_4()
                             .px_6()
                             .pt_6()
                             .pb(px(112.))
-                            .child(hero)
-                            .children(look)
-                            .children(identical)
-                            .children(shrink)
-                            .children(holding)
-                            .children(attention),
+                            .children(cards),
                     )
                     .into_any_element()
             }

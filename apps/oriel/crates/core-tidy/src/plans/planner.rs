@@ -26,7 +26,7 @@ use crate::contract::{
 use crate::duplicates::{add_dismissal, removals_for};
 use crate::optimize::candidates::video_source_of;
 use crate::optimize::shrink::find_shrink_candidates;
-use crate::optimize::{CandidateHolds, extension_fixes, find_optimize_candidates};
+use crate::optimize::{extension_fixes, find_optimize_candidates};
 use crate::scan::preferred_extension;
 
 /// What a step does, stored as JSON beside it in glazier-core's form: the `kind` matches the
@@ -103,6 +103,8 @@ pub struct DraftStep {
     /// The absolute path a move, rename or conversion writes to.
     pub to_abs: Option<String>,
     pub expected: Expected,
+    /// A conversion's source as the catalog hashed it, so identical copies can share one encode.
+    pub source_sha256: Option<String>,
 }
 
 /// A request the planner refuses, with the reason the owner sees.
@@ -117,6 +119,10 @@ impl std::fmt::Display for PlanRequestError {
 
 impl std::error::Error for PlanRequestError {}
 
+/// Why a duplicate decision is not carried out.
+pub const CHANGED_SINCE_SEEN: &str =
+    "These files have changed since you saw them, so nothing was moved. Look at them again.";
+
 /// The message a plan with no steps fails with; Tidy up skips such a step rather than report it.
 pub const NOTHING_TO_DO: &str = "There is nothing to do for this selection.";
 
@@ -125,8 +131,6 @@ pub const NOTHING_TO_DO: &str = "There is nothing to do for this selection.";
 pub struct PlannerContext {
     pub roots: Vec<Root>,
     pub settings: Settings,
-    /// Files Convert and Clean up leave alone for now, worked out by the engine before planning.
-    pub candidate_holds: CandidateHolds,
 }
 
 /// A request expanded into steps, with what the owner should know before applying it.
@@ -141,7 +145,14 @@ pub struct PlanDraft {
 }
 
 fn file_step(record: &FileRecord, spec: StepSpec, to_abs: Option<PathBuf>) -> DraftStep {
+    let converts = matches!(
+        spec.action(),
+        PlanStepAction::ConvertAvif
+            | PlanStepAction::ConvertAnimation
+            | PlanStepAction::ConvertVideo
+    );
     DraftStep {
+        source_sha256: converts.then(|| record.sha256.clone()).flatten(),
         spec,
         root_id: record.root_id,
         from_rel: record.rel_path.clone(),
@@ -228,8 +239,25 @@ fn draft_resolution(
         .collect();
     let mut removed = HashSet::new();
     let mut resolved = 0;
+    let mut changed_since_seen = 0;
 
     for group in groups {
+        // A scan may have caught the catalog up since the page was read, so the steps' own checks
+        // would pass: what is decided about is what the page showed, not what is there now.
+        let as_seen = group.seen.iter().all(|seen| {
+            by_id.get(&seen.id).is_some_and(|record| {
+                seen.still_holds(
+                    record.size,
+                    record.mtime_ms,
+                    record.ctime_ms,
+                    record.sha256.as_deref(),
+                )
+            })
+        });
+        if !as_seen {
+            changed_since_seen += 1;
+            continue;
+        }
         let keepers: Vec<&FileRecord> = group.keep.iter().filter_map(|id| by_id.get(id)).collect();
         let Some(keeper) = keepers.first().copied() else {
             bail!(PlanRequestError(
@@ -283,6 +311,19 @@ fn draft_resolution(
             resolved += 1;
         }
     }
+    if changed_since_seen == groups.len() {
+        bail!(PlanRequestError(CHANGED_SINCE_SEEN.into()));
+    }
+    if changed_since_seen > 0 {
+        draft.warnings.push(if changed_since_seen == 1 {
+            "1 set has changed since you saw it and stays as it is. Look at it again.".to_owned()
+        } else {
+            format!(
+                "{changed_since_seen} sets have changed since you saw them and stay as they are. \
+                 Look at them again."
+            )
+        });
+    }
     // Keepers already favour preferred folders, so removing a copy from one is a deliberate pick
     // (or every copy is in one) and is not warned about.
     Ok(resolved)
@@ -307,6 +348,7 @@ fn draft_folder_removals(
             from_rel: folder.clone(),
             to_abs: None,
             expected: Expected::default(),
+            source_sha256: None,
         });
     }
     Ok(folders.len() as i64)
@@ -495,7 +537,7 @@ pub fn draft_steps(
             }
             let wanted: Option<HashSet<FileId>> =
                 file_ids.as_ref().map(|ids| ids.iter().copied().collect());
-            let scan = find_optimize_candidates(connection, *root_id, &context.candidate_holds)?;
+            let scan = find_optimize_candidates(connection, *root_id)?;
             for candidate in &scan.candidates {
                 if !categories.contains(&candidate.category) {
                     continue;
@@ -603,10 +645,10 @@ pub fn draft_steps(
             root_id,
             limit_bytes,
         } => {
-            let scan = find_shrink_candidates(connection, *root_id, &context.candidate_holds)?;
+            let scan = find_shrink_candidates(connection, *root_id)?;
             let items: Vec<_> = scan.candidates.iter().map(|c| c.item.clone()).collect();
             let batch = shrink_batch(&items, *limit_bytes).len();
-            // Most bytes saved first, so a run stopped partway has done the best of its batch.
+            // As the scan listed them, so a run stopped partway has done the best of its batch.
             for candidate in &scan.candidates[..batch] {
                 let Some(source) = video_source_of(&candidate.record) else {
                     continue;
@@ -622,7 +664,7 @@ pub fn draft_steps(
             }
         }
         PlanRequest::Cleanup { root_id } => {
-            let scan = find_optimize_candidates(connection, *root_id, &context.candidate_holds)?;
+            let scan = find_optimize_candidates(connection, *root_id)?;
             // Renames and junk first, so folders that held only junk are empty when their turn
             // comes.
             for (record, name) in extension_fixes(connection, *root_id, &scan.candidates)? {
@@ -640,7 +682,23 @@ pub fn draft_steps(
     }
 
     draft.count = count.unwrap_or(draft.steps.len() as i64);
+    keep_copies_together(&mut draft.steps);
     Ok(draft)
+}
+
+/// Moves each conversion up beside the first with the same bytes and the same change, so the time
+/// between the first of a set of copies changing and the last is one encode, not a whole run.
+/// Everything else keeps its order.
+fn keep_copies_together(steps: &mut Vec<DraftStep>) {
+    let mut together: IndexMap<String, Vec<DraftStep>> = IndexMap::new();
+    for (index, step) in std::mem::take(steps).into_iter().enumerate() {
+        let key = match &step.source_sha256 {
+            Some(sha256) => format!("{sha256} {:?}", step.spec),
+            None => index.to_string(),
+        };
+        together.entry(key).or_default().push(step);
+    }
+    *steps = together.into_values().flatten().collect();
 }
 
 /// Whether a step puts a file in holding: a hold outright, a conversion the original it replaces.
@@ -672,8 +730,8 @@ pub fn save_plan(
         let id = transaction.last_insert_rowid();
         let mut insert = transaction.prepare_cached(
             "INSERT INTO plan_steps (plan_id, action, root_id, from_rel, to_abs, spec,
-          expected_size, expected_mtime_ms, expected_ctime_ms, bytes_before)
-          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?7)",
+          expected_size, expected_mtime_ms, expected_ctime_ms, bytes_before, source_sha256)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?7, ?10)",
         )?;
         for step in &draft.steps {
             insert.execute(params![
@@ -686,6 +744,7 @@ pub fn save_plan(
                 step.expected.size,
                 step.expected.mtime_ms,
                 step.expected.ctime_ms,
+                step.source_sha256,
             ])?;
         }
         for file_ids in &draft.dismissals {

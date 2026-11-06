@@ -13,6 +13,8 @@ struct Wording {
     many: &'static str,
     /// What follows the count, such as " to holding".
     tail: &'static str,
+    /// What a plan that finished none of its steps says it did not do: "Nothing shrunk".
+    none: &'static str,
 }
 
 const fn wording(
@@ -21,6 +23,7 @@ const fn wording(
     one: &'static str,
     many: &'static str,
     tail: &'static str,
+    none: &'static str,
 ) -> Wording {
     Wording {
         done,
@@ -28,31 +31,68 @@ const fn wording(
         one,
         many,
         tail,
+        none,
     }
 }
 
 fn wording_of(kind: PlanKind) -> Wording {
     match kind {
-        PlanKind::Hold => wording("Moved", "Moving", "file", "files", " to holding"),
-        PlanKind::Move => wording("Moved", "Moving", "file", "files", ""),
-        PlanKind::Rename => wording("Renamed", "Renaming", "file", "files", ""),
-        PlanKind::FixExtension => wording("Fixed", "Fixing", "extension", "extensions", ""),
-        PlanKind::Optimize => wording("Converted", "Converting", "file", "files", ""),
-        PlanKind::Reencode => wording("Re-encoded", "Re-encoding", "video", "videos", ""),
-        PlanKind::StripAudio => wording("Removed", "Removing", "audio track", "audio tracks", ""),
+        PlanKind::Hold => wording("Moved", "Moving", "file", "files", " to holding", "moved"),
+        PlanKind::Move => wording("Moved", "Moving", "file", "files", "", "moved"),
+        PlanKind::Rename => wording("Renamed", "Renaming", "file", "files", "", "renamed"),
+        PlanKind::FixExtension => {
+            wording("Fixed", "Fixing", "extension", "extensions", "", "fixed")
+        }
+        PlanKind::Optimize => wording("Converted", "Converting", "file", "files", "", "converted"),
+        PlanKind::Reencode => wording(
+            "Re-encoded",
+            "Re-encoding",
+            "video",
+            "videos",
+            "",
+            "re-encoded",
+        ),
+        PlanKind::StripAudio => wording(
+            "Removed",
+            "Removing",
+            "audio track",
+            "audio tracks",
+            "",
+            "removed",
+        ),
         PlanKind::ResolveDuplicates => wording(
             "Resolved",
             "Resolving",
             "duplicate set",
             "duplicate sets",
             "",
+            "resolved",
         ),
-        PlanKind::CleanJunk => wording("Moved", "Moving", "junk file", "junk files", " to holding"),
-        PlanKind::RemoveEmptyFolders => {
-            wording("Removed", "Removing", "empty folder", "empty folders", "")
-        }
-        PlanKind::Cleanup => wording("Cleaned up", "Cleaning up", "item", "items", ""),
-        PlanKind::ShrinkVideos => wording("Shrank", "Shrinking", "video", "videos", ""),
+        PlanKind::CleanJunk => wording(
+            "Moved",
+            "Moving",
+            "junk file",
+            "junk files",
+            " to holding",
+            "moved",
+        ),
+        PlanKind::RemoveEmptyFolders => wording(
+            "Removed",
+            "Removing",
+            "empty folder",
+            "empty folders",
+            "",
+            "removed",
+        ),
+        PlanKind::Cleanup => wording(
+            "Cleaned up",
+            "Cleaning up",
+            "item",
+            "items",
+            "",
+            "cleaned up",
+        ),
+        PlanKind::ShrinkVideos => wording("Shrank", "Shrinking", "video", "videos", "", "shrunk"),
     }
 }
 
@@ -63,12 +103,16 @@ pub struct PlanSubject {
     pub count: i64,
     /// The file a single rename renamed, which the wording names instead of counting.
     pub single_name: Option<String>,
-    /// For a plan that stopped or failed partway, how many of `count` finished.
+    /// For a plan that did not finish all of `count`, because it stopped, failed or skipped some,
+    /// how many it did finish.
     pub finished: Option<i64>,
 }
 
 fn phrase(subject: &PlanSubject, doing: bool) -> String {
     let wording = wording_of(subject.kind);
+    if subject.finished == Some(0) && !doing {
+        return format!("Nothing {}", wording.none);
+    }
     let verb = if doing { wording.doing } else { wording.done };
     if subject.kind == PlanKind::Rename
         && subject.count == 1
@@ -147,6 +191,11 @@ mod tests {
             ..subject(PlanKind::Optimize, 19)
         };
         assert_eq!(plan_title(&cut_short), "Converted 5 of 19 files");
+        let none = PlanSubject {
+            finished: Some(0),
+            ..subject(PlanKind::ShrinkVideos, 6)
+        };
+        assert_eq!(plan_title(&none), "Nothing shrunk");
         assert_eq!(
             apply_label(&subject(PlanKind::ShrinkVideos, 2)),
             "Shrinking 2 videos"

@@ -181,6 +181,43 @@ pub const MIGRATIONS: &[&str] = &[
     at INTEGER NOT NULL
   );
   ",
+    r#"
+  ALTER TABLE files ADD COLUMN reencoded INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE plan_steps ADD COLUMN source_sha256 TEXT;
+  ALTER TABLE plan_steps ADD COLUMN output_sha256 TEXT;
+  CREATE INDEX plan_steps_by_source ON plan_steps (source_sha256)
+    WHERE source_sha256 IS NOT NULL;
+  UPDATE files SET reencoded = 1 WHERE id IN (
+    SELECT f.id FROM plan_steps s
+      JOIN roots r ON r.id = s.root_id
+      JOIN files f ON f.root_id = s.root_id
+        AND f.rel_path = substr(s.to_abs, length(r.path) + 2)
+        AND f.size = s.bytes_after
+      WHERE s.status = 'done' AND s.action = 'convert-video'
+        AND s.spec LIKE '%"requireSmaller":true%');
+  "#,
+    "
+  CREATE TABLE file_comparisons (
+    left_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    right_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL,
+    left_size INTEGER NOT NULL,
+    left_mtime_ms REAL NOT NULL,
+    right_size INTEGER NOT NULL,
+    right_mtime_ms REAL NOT NULL,
+    variant INTEGER NOT NULL,
+    PRIMARY KEY (left_id, right_id)
+  ) WITHOUT ROWID;
+  CREATE INDEX file_comparisons_right ON file_comparisons (right_id);
+  CREATE TRIGGER file_changed_forget_details
+    AFTER UPDATE OF fingerprint, ctime_ms ON files
+    WHEN (OLD.fingerprint IS NOT NULL AND NEW.fingerprint IS NULL)
+      OR (OLD.ctime_ms != 0 AND NEW.ctime_ms = 0)
+  BEGIN
+    DELETE FROM file_details WHERE file_id = NEW.id;
+    DELETE FROM file_comparisons WHERE left_id = NEW.id OR right_id = NEW.id;
+  END;
+  ",
 ];
 
 /// The catalog's version once every migration ran.
