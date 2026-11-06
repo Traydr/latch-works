@@ -2,15 +2,13 @@
 //! closes it, keys belong to the menu while it is open, an Undo that did not finish is still the
 //! next Undo, and a decision with a failed step says so.
 
-mod support;
-
 use std::time::Duration;
 
+use crate::support::*;
 use gpui_kit::base::GlobalState;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AppContext as _, TestAppContext};
 use oriel_mode_tidy::{TidyPage, last_toast};
-use support::*;
 
 /// Past the moment after a new set arrives in which a click on it does nothing.
 fn past_the_arming_delay() {

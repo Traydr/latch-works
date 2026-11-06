@@ -1,14 +1,12 @@
 //! Checks `paths.ts`'s port against `conformance/media-domain/paths.json`.
 
-mod support;
-
+use crate::support::{GeneratedWith, check, describe, fail_with, read_vectors};
 use oriel_core_domain::{
     canonicalize_extension, display_name_from_path, format_bytes, get_base_name, get_parent_path,
     join_archive_path, normalize_path_for_compare, normalize_path_for_compare_keeping_extensions,
     pair_sync_paths, to_archive_path, trim_trailing_slash,
 };
 use serde::Deserialize;
-use support::{GeneratedWith, check, describe, fail_with, read_vectors};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

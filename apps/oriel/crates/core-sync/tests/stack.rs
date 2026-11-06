@@ -11,7 +11,7 @@
 //! HOME=$(mktemp -d) LOCKSTEP_API_TOKEN=e2e-sync-token-0123456789abcdef \
 //!   pnpm --filter @latch-works/lockstep start push --source "$PWD/e2e/.fixtures/archive" \
 //!   --api-url http://127.0.0.1:3100 --yes
-//! cd apps/oriel && cargo test -p oriel-core-sync --test stack -- --ignored
+//! cd apps/oriel && cargo test -p oriel-core-sync --test main stack:: -- --ignored
 //! ```
 //!
 //! `ORIEL_SYNC_STACK_URL` and `ORIEL_SYNC_STACK_TOKEN` point them elsewhere; the defaults are

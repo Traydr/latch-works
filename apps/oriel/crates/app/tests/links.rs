@@ -5,8 +5,6 @@
 //! offers only folders inside its sandbox, and says why it cannot take one outside; and every
 //! mode's location switcher offers one shared list of folders, each opened in that mode alone.
 
-mod support;
-
 use std::path::Path;
 
 use gpui_kit::test::TestWindowExt as _;
@@ -18,7 +16,7 @@ use oriel_ui::folders::offered_folder_id;
 use oriel_ui::locations::{SWITCHER_ID, location_id};
 use oriel_ui::{HandOff, ModeId};
 
-use support::*;
+use crate::support::*;
 
 /// Tidy's folder, once the engine has it and its scan is done.
 fn tidies(opened: &Opened, folder: &Path, cx: &mut TestAppContext) -> bool {

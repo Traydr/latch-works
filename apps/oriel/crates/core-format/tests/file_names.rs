@@ -1,10 +1,8 @@
 //! Checks `file-names.ts`'s port against `conformance/media-format/file-names.json`.
 
-mod support;
-
+use crate::support::{check, fail_with, read_vectors};
 use oriel_core_format::{get_file_extension, replace_file_extension};
 use serde::Deserialize;
-use support::{check, fail_with, read_vectors};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

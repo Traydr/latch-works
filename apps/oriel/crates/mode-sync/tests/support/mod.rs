@@ -3,9 +3,6 @@
 //! in Pane View's snapshot and on disk. `sync.rs` runs them against a small Pane View on a local
 //! port; `stack.rs` against the local compose stack.
 
-// Each test binary uses part of this.
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 

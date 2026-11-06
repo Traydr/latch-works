@@ -1,10 +1,9 @@
 //! A command moves the files it was shown and no others: the file that slides into their place is
 //! not a target until the owner chooses it, and in the Library the arrows still go on from there.
 
-mod support;
-
 use std::time::Duration;
 
+use crate::support::*;
 use gpui_kit::base::test_support::snapshots;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
@@ -12,7 +11,6 @@ use gpui_kit::{
 };
 use oriel_core_tidy::contract::FileId;
 use oriel_mode_tidy::{LibraryPage, TidyPage, last_quick_look, last_toast};
-use support::*;
 
 fn library(cx: &mut TestAppContext, session: &Session) -> Entity<LibraryPage> {
     cx.read(|cx| session.tidy.read(cx).library().clone())

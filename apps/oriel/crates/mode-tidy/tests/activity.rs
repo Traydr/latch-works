@@ -2,12 +2,10 @@
 //! waits behind it, a change started while another runs joining the queue, Pause, Resume and Stop
 //! from the panel, and nothing shown once Tidy is idle.
 
-mod support;
-
+use crate::support::*;
 use gpui_kit::{AppContext as _, TestAppContext};
 use oriel_mode_tidy::{TidyPage, last_toast};
 use oriel_ui::{JobState, ModeId};
-use support::*;
 
 /// Where Tidy's job `key` is, as it published it to the panel.
 fn job_state(cx: &mut TestAppContext, session: &Session, key: &str) -> Option<JobState> {

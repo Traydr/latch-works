@@ -3,14 +3,12 @@
 //! names and checks each signed upload as S3 does. `stack.rs` runs the same cases against the
 //! local compose stack.
 
-mod support;
-
 use std::fs;
 
 use gpui_kit::TestAppContext;
 use oriel_core_sync::testing::FakePaneView;
 
-use support::{Target, run_sync_spec};
+use crate::support::{Target, run_sync_spec};
 
 const TOKEN: &str = "fake-sync-token-0123456789";
 

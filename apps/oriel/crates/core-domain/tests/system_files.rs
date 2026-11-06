@@ -1,13 +1,11 @@
 //! Checks `system-files.ts`'s port against `conformance/media-domain/system-files.json`.
 
-mod support;
-
+use crate::support::{GeneratedWith, check, describe, fail_with, read_vectors};
 use oriel_core_domain::{
     GLAZIER_HOLDING_DIRECTORY_NAME, LATCH_WORKS_DIRECTORY_NAME, is_system_junk_directory,
     is_system_junk_file,
 };
 use serde::Deserialize;
-use support::{GeneratedWith, check, describe, fail_with, read_vectors};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

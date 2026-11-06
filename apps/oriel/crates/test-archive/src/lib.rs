@@ -14,6 +14,7 @@ use std::fs;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 
 pub use image;
@@ -77,7 +78,27 @@ pub fn ffmpeg() -> Option<PathBuf> {
 ///
 /// Twenty-six files with the clips, fifteen without, when there is no `clips/` either
 /// ([`Built::files`]).
+///
+/// The first build in a process draws and encodes the archive; every later one writes out the
+/// same bytes again, which takes a moment where drawing and encoding took seconds. Each build is
+/// a folder of its own all the same, and its dates are set afresh.
 pub fn build_archive(archive: &Path) -> Built {
+    static MADE: OnceLock<(Contents, Built)> = OnceLock::new();
+    let mut made_here = false;
+    let (contents, built) = MADE.get_or_init(|| {
+        made_here = true;
+        let built = make_archive(archive);
+        (Contents::read(archive), built)
+    });
+    if !made_here {
+        contents.write(archive);
+    }
+    date_archive(archive, built.videos);
+    *built
+}
+
+/// Draws and encodes the archive into `archive`, undated.
+fn make_archive(archive: &Path) -> Built {
     let at = |rel: &str| archive.join(rel);
     for folder in [
         "photos",
@@ -166,7 +187,12 @@ pub fn build_archive(archive: &Path) -> Built {
             avif.join().expect("the cover"),
         )
     });
+    Built { videos, avif }
+}
 
+/// Dates the originals and their copies in a built archive.
+fn date_archive(archive: &Path, videos: bool) {
+    let at = |rel: &str| archive.join(rel);
     let mut originals = vec!["photos/sunset.png", "photos/forest.png"];
     let mut copies = vec!["dup/forest (1).png", "photos/forest copy.png"];
     if videos {
@@ -186,7 +212,53 @@ pub fn build_archive(archive: &Path) -> Built {
     for rel in copies {
         set_mtime(&at(rel), copied_mtime());
     }
-    Built { videos, avif }
+}
+
+/// What a built archive holds: its folders, the empty ones too, and its files' bytes, by their
+/// paths inside it.
+struct Contents {
+    folders: Vec<PathBuf>,
+    files: Vec<(PathBuf, Vec<u8>)>,
+}
+
+impl Contents {
+    fn read(archive: &Path) -> Contents {
+        let mut contents = Contents {
+            folders: Vec::new(),
+            files: Vec::new(),
+        };
+        let mut stack = vec![PathBuf::new()];
+        while let Some(folder) = stack.pop() {
+            let entries = fs::read_dir(archive.join(&folder))
+                .unwrap_or_else(|error| panic!("Could not list {}: {error}", folder.display()));
+            for entry in entries {
+                let rel = folder.join(entry.expect("an archive entry").file_name());
+                let path = archive.join(&rel);
+                if path.is_dir() {
+                    contents.folders.push(rel.clone());
+                    stack.push(rel);
+                } else {
+                    let bytes = fs::read(&path).unwrap_or_else(|error| {
+                        panic!("Could not read {}: {error}", path.display())
+                    });
+                    contents.files.push((rel, bytes));
+                }
+            }
+        }
+        contents
+    }
+
+    fn write(&self, archive: &Path) {
+        fs::create_dir_all(archive).expect("the archive's folder");
+        for folder in &self.folders {
+            fs::create_dir_all(archive.join(folder)).expect("the archive's folders");
+        }
+        for (rel, bytes) in &self.files {
+            let path = archive.join(rel);
+            fs::write(&path, bytes)
+                .unwrap_or_else(|error| panic!("Could not write {}: {error}", path.display()));
+        }
+    }
 }
 
 /// Builds the clips Shrink's cases change into `archive/clips`: `busy.mp4`, noisy and at a high

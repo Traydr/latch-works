@@ -1,14 +1,12 @@
 //! Checks `still-policy.ts`'s port against `conformance/media-format/still-policy.json`.
 
-mod support;
-
+use crate::support::{check, fail_with, json, read_vectors};
 use oriel_core_format::{
     ArchiveImageFormat, ArchiveImageSource, get_expected_archive_target, plan_archive_image,
     plan_archive_media,
 };
 use serde::Deserialize;
 use serde_json::Value;
-use support::{check, fail_with, json, read_vectors};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -3,8 +3,6 @@
 //! its sandbox, so the case first chooses a folder outside it, where "Tidy it" is off and says
 //! why, then changes to one inside.
 
-mod support;
-
 use std::path::Path;
 
 use gpui_kit::test::TestWindowExt as _;
@@ -12,7 +10,7 @@ use gpui_kit::{AppContext as _, TestAppContext};
 use oriel_core_paths::DataRoot;
 use oriel_ui::ModeId;
 
-use support::*;
+use crate::support::*;
 
 /// Answers the system's folder picker with `folder`, as the owner would.
 fn choose(cx: &mut TestAppContext, opened: &Opened, folder: &Path) {

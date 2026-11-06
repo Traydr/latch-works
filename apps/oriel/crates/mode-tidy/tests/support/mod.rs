@@ -2,8 +2,6 @@
 //! beside a data folder of its own under the temp folder, Tidy alone in a window over it, and
 //! the steps a case takes.
 
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -178,6 +176,16 @@ pub fn render(cx: &mut TestAppContext, session: &Session) {
         .unwrap();
 }
 
+/// Lets 10 ms pass on the wall's clock, for the engine's threads, and as much on the executor's,
+/// for the app's timers. Not a timer on the executor: with parking allowed, the test scheduler
+/// parks a tenth of a second at a time whatever the timer asks, so a 10 ms timer lasted ten times
+/// as long, and every wait and settle with it.
+pub fn tick(cx: &mut TestAppContext) {
+    let started = Instant::now();
+    std::thread::sleep(Duration::from_millis(10));
+    cx.executor().advance_clock(started.elapsed());
+}
+
 /// How long any one wait may take, however busy the machine. A press that is lost leaves a wait
 /// that never ends, and counting frames instead took 39 minutes to say so.
 const WAIT_LIMIT: Duration = Duration::from_secs(180);
@@ -203,9 +211,7 @@ pub async fn wait_for(
         if cx.read(|cx| done(cx)) {
             return;
         }
-        cx.background_executor
-            .timer(Duration::from_millis(10))
-            .await;
+        tick(cx);
     }
     panic!("timed out waiting for {what}");
 }
@@ -235,13 +241,14 @@ pub async fn settle(cx: &mut TestAppContext, session: &Session) {
             && (state.root().is_none() || state.overview().is_some())
     })
     .await;
-    // The pages' own reads land after the state's.
+    // The pages' own reads land after the state's, some behind a debounce: 200 ms on the
+    // executor's clock, which waits for nothing else. Each read runs on the executor's
+    // background, which the test thread drives, so it has landed by the time run_until_parked
+    // returns, and the wall's clock need not move.
     for _ in 0..20 {
         cx.run_until_parked();
         render(cx, session);
-        cx.background_executor
-            .timer(Duration::from_millis(10))
-            .await;
+        cx.executor().advance_clock(Duration::from_millis(10));
     }
 }
 
@@ -271,9 +278,7 @@ pub async fn click_when_drawn(cx: &mut TestAppContext, session: &Session, id: &'
             click(cx, session, id);
             return;
         }
-        cx.background_executor
-            .timer(Duration::from_millis(10))
-            .await;
+        tick(cx);
     }
     panic!("{id} was never drawn");
 }

@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+# The integration tests are modules of one binary, tests/main.rs, but quit.rs, which
+# stops every tool in the process, has one of its own.
+autotests = false
 
 [dependencies]
 anyhow.workspace = true
@@ -49,6 +52,14 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 gpui-kit = { workspace = true, features = ["test-support"] }
 # The archive the engine's tests scan, made at test time.
 oriel-test-archive.workspace = true
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
+
+[[test]]
+name = "quit"
+path = "tests/quit.rs"
 
 [lints]
 workspace = true

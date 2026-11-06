@@ -10,20 +10,18 @@
 //! HOME=$(mktemp -d) LOCKSTEP_API_TOKEN=e2e-sync-token-0123456789abcdef \
 //!   pnpm --filter @latch-works/lockstep start push --source "$PWD/e2e/.fixtures/archive" \
 //!   --api-url http://127.0.0.1:3100 --yes
-//! cd apps/oriel && cargo test -p oriel-mode-sync --test stack -- --ignored
+//! cd apps/oriel && cargo test -p oriel-mode-sync --test main stack:: -- --ignored
 //! ```
 //!
 //! The server recreates its database when it starts, so restart it (and seed again) before the
 //! next run. The URL and token are the e2e suite's own (`e2e/src/env.ts`); only that local
 //! server is ever written to.
 
-mod support;
-
 use std::path::Path;
 
 use gpui_kit::TestAppContext;
 
-use support::{Target, remote_paths, run_sync_spec};
+use crate::support::{Target, remote_paths, run_sync_spec};
 
 const E2E_URL: &str = "http://127.0.0.1:3100";
 const E2E_TOKEN: &str = "e2e-sync-token-0123456789abcdef";

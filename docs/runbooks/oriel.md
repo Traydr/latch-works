@@ -67,6 +67,19 @@ pnpm --filter @latch-works/oriel dev   # cargo run: a debug build of the app
 pnpm oriel:check                       # cargo fmt --check, clippy -D warnings, cargo test
 ```
 
+Each crate's integration tests are modules of one test binary, `tests/main.rs`: every binary
+links on its own, and cargo runs one binary at a time, so one per crate links less and runs a
+crate's files side by side. A file whose test changes the whole process keeps a binary of its
+own: `crates/core-tidy/tests/quit.rs`, `crates/tools/tests/shutdown.rs` and
+`crates/app/tests/sync_targets.rs`. In `apps/oriel`, `cargo test -p oriel-mode-tidy --test main
+glazier::` runs one file's tests, and a test's name after `glazier::` runs that test.
+`ORIEL_TEST_WAIT_SECS=<seconds>` makes Tidy's UI tests give up a wait after that long instead of
+three minutes, for a run that only needs to see a test fail.
+
+Dependencies, and `oriel-core-tidy`, whose pixel work runs on every still a test scans, build at
+`opt-level = 1` even in debug builds (`[profile.dev.package]` in `apps/oriel/Cargo.toml`): a
+clean build takes longer, and the tests run several times faster.
+
 `ORIEL_DATA_DIR=<absolute folder>` moves the data root, as `--user-data-dir` did for
 Electron Oriel. View opens a folder through its Open button,
 or at start with `ORIEL_OPEN=<folder>`.

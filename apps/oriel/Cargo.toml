@@ -62,3 +62,15 @@ all = { level = "warn", priority = -1 }
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+# Debug builds, the tests' too, optimise every dependency a little: GPUI's layout and drawing, the
+# image crate and SQLite unoptimised took Tidy's UI tests 138 s rather than 87, and a UI test
+# draws hundreds of frames. A clean build takes 73 s rather than 45, once; an edit to Oriel's own
+# code rebuilds none of them. Level 2 ran the tests no faster.
+[profile.dev.package."*"]
+opt-level = 1
+
+# Tidy's engine as well: the tests run its pixel work on every still they scan, which took a
+# damaged-AVIF case 15 s unoptimised and takes 2.5. An edit here rebuilds a second slower.
+[profile.dev.package.oriel-core-tidy]
+opt-level = 1

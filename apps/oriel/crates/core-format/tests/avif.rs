@@ -1,7 +1,6 @@
 //! Checks `avif.ts`'s settings and fallback against `conformance/media-format/avif.json`.
 
-mod support;
-
+use crate::support::{check, fail_with, json, read_vectors};
 use oriel_core_format::{
     ARCHIVE_AVIF_LOW_MEMORY_SPEED, ARCHIVE_AVIF_OPTIONS, ARCHIVE_AVIF_QUALITY,
     ARCHIVE_AVIF_SHARP_OPTIONS, ARCHIVE_AVIF_SPEED, ARCHIVE_AVIF_WASM_PIXEL_LIMIT,
@@ -9,7 +8,6 @@ use oriel_core_format::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use support::{check, fail_with, json, read_vectors};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

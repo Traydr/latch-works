@@ -3,14 +3,12 @@
 //! click on a video's picture pauses or plays it without keeping the version; "Keep all" is
 //! listed in History, read from the catalog, and its Undo there brings the set back to review.
 
-mod support;
-
 use std::time::Duration;
 
+use crate::support::*;
 use gpui_kit::TestAppContext;
 use oriel_core_tidy::contract::DuplicateDismissal;
 use oriel_mode_tidy::{TidyPage, last_toast};
-use support::*;
 
 fn playing_tiles(cx: &mut TestAppContext, session: &Session) -> Vec<u64> {
     cx.read(|cx| {

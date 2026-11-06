@@ -3,12 +3,11 @@
 //! the decision bar's free room, over nothing at all, and one that reports a fault stands above the
 //! bar. Measured from the real layout, in the shell.
 
-mod support;
-
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
+use crate::support::{Opened, click, frame, open_shell, scratch, start, wait_until, write_still};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
     AnyWindowHandle, AppContext as _, Bounds, ElementId, Pixels, TestAppContext, px, size,
@@ -16,7 +15,6 @@ use gpui_kit::{
 use oriel_core_paths::DataRoot;
 use oriel_mode_tidy::TidyPage;
 use oriel_ui::{ActivityJob, ModeId, Toast, ToastExt as _};
-use support::{Opened, click, frame, open_shell, scratch, start, wait_until, write_still};
 
 /// A one-line toast's padding around its own body, and its rule; then a fault's.
 const ONE_LINE_PADDING: (f32, f32) = (13., 7.);
