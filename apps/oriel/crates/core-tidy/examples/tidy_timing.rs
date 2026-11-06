@@ -578,11 +578,10 @@ fn main() {
     .unwrap();
     println!("{:?}", engine.media());
     let root = block_on(engine.add_root(std::path::Path::new(&root))).unwrap();
-    if spot_variants {
-        let mut settings = block_on(engine.settings()).unwrap();
-        settings.spot_variants = true;
-        block_on(engine.update_settings(settings)).unwrap();
-    }
+    // Spot variants is on by default; off unless asked for here, so runs compare with earlier ones.
+    let mut settings = block_on(engine.settings()).unwrap();
+    settings.spot_variants = spot_variants;
+    block_on(engine.update_settings(settings)).unwrap();
 
     let timed = Timed::new();
     let probe = Probe::default();

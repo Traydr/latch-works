@@ -6,12 +6,15 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
-    AnyElement, App, Entity, FontWeight, InteractiveElement as _, IntoElement, ParentElement,
-    RenderOnce, Role, SharedString, StatefulInteractiveElement as _, Styled, TestSupportExt as _,
-    Window, div, prelude::FluentBuilder as _, px,
+    AnyElement, App, Entity, FontWeight, Global, InteractiveElement as _, IntoElement,
+    ParentElement, RenderOnce, Role, SharedString, StatefulInteractiveElement as _, Styled,
+    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
 
+use crate::app_mark::AppMark;
+use crate::controls::TextRole as _;
 use crate::drag::DragStrip;
+use crate::focus::FocusReveal;
 use crate::layout::{NavItem, SIDEBAR_STRIP_HEIGHT, SIDEBAR_WIDTH};
 use crate::shell::{SettingsSection, ShellState};
 use crate::top_bar::TOP_BAR_HEIGHT;
@@ -38,8 +41,15 @@ impl SettingsFrame {
     }
 }
 
+/// The scroller Settings' rows keep focus in sight in, as the frame last drew it.
+struct SettingsReveal(FocusReveal);
+
+impl Global for SettingsReveal {}
+
 impl RenderOnce for SettingsFrame {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let reveal = FocusReveal::of("settings-reveal", px(0.), window, cx);
+        cx.set_global(SettingsReveal(reveal.clone()));
         let state = self.shell.read(cx);
         let current = state.settings().unwrap_or(SettingsSection::General);
         let mode = state.mode();
@@ -91,7 +101,8 @@ impl RenderOnce for SettingsFrame {
                         DragStrip::new("settings-strip")
                             .w_full()
                             .flex_shrink_0()
-                            .h(px(SIDEBAR_STRIP_HEIGHT)),
+                            .h(px(SIDEBAR_STRIP_HEIGHT))
+                            .children(AppMark::for_sidebar(false)),
                     )
                     .child(
                         div()
@@ -135,7 +146,7 @@ impl RenderOnce for SettingsFrame {
                                     .aria_level(1)
                                     .aria_label(current.label())
                                     .truncate()
-                                    .text_size(px(17.))
+                                    .text_title()
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .child(current.label()),
                             ),
@@ -150,11 +161,12 @@ impl RenderOnce for SettingsFrame {
                             .flex_1()
                             .min_h_0()
                             .overflow_y_scroll()
+                            .track_scroll(reveal.scroll())
                             .child(
                                 div()
                                     .mx_auto()
                                     .w_full()
-                                    .max_w(px(640.))
+                                    .max_w(px(880.))
                                     .px_6()
                                     .pt_6()
                                     .pb(px(112.))
@@ -252,14 +264,18 @@ impl ParentElement for SettingsRow {
 }
 
 impl RenderOnce for SettingsRow {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        div()
+        let reveal = cx
+            .try_global::<SettingsReveal>()
+            .map(|reveal| reveal.0.clone());
+        let key = self.label.clone();
+        let row = div()
             .flex()
             .flex_row()
             .items_center()
             .gap_4()
-            .min_h(px(52.))
+            .min_h(px(60.))
             .px_4()
             .py(px(10.))
             .child(
@@ -268,12 +284,12 @@ impl RenderOnce for SettingsRow {
                     .flex_col()
                     .flex_1()
                     .min_w_0()
-                    .child(div().text_size(px(13.)).child(self.label))
+                    .child(div().text_body().child(self.label))
                     .when_some(self.description, |this, description| {
                         this.child(
                             div()
                                 .mt_0p5()
-                                .text_xs()
+                                .text_caption()
                                 .text_color(theme.muted_foreground)
                                 .child(description),
                         )
@@ -289,6 +305,10 @@ impl RenderOnce for SettingsRow {
                         .gap_2()
                         .children(self.controls),
                 )
-            })
+            });
+        match reveal {
+            Some(reveal) => reveal.keep(key, row, window, cx),
+            None => row.into_any_element(),
+        }
     }
 }

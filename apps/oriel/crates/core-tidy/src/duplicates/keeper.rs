@@ -33,6 +33,10 @@ pub struct KeeperCandidate {
     /// With Spot variants, inside the folder that holds the most of the set's pictures, so a
     /// picture's copies stay together with the rest of the set.
     pub in_home_folder: bool,
+    pub sha256: Option<String>,
+    /// The hash of the original of a re-encode Tidy made to save space, while that original is
+    /// still in holding.
+    pub reencoded_from: Option<String>,
 }
 
 /// Hearing something beats not knowing, which beats a silent track, which beats no track.
@@ -138,13 +142,15 @@ fn by<T: PartialOrd>(left: T, right: T) -> Ordering {
 /// The keeper rules, in order: anything in a preferred folder; for video, the copy you can hear;
 /// more pixels; a longer video (to half a second, so a trimmed re-upload loses); with Spot
 /// variants, the copy in the set's home folder; the archive format; the extension the format is
-/// named with; more bytes, which at equal pixels is more detail; the name without a copy suffix;
-/// the oldest file; the shortest path; and finally natural name order, so the choice never
-/// depends on scan order. `Greater` means `left` is the better copy to keep.
+/// named with; the copy Tidy already re-encoded, since the owner asked for it and its original is
+/// in holding, where more bytes would only undo the saving; more bytes, which at equal pixels is
+/// otherwise more detail; the name without a copy suffix; the oldest file; the shortest path; and
+/// finally natural name order, so the choice never depends on scan order. `Greater` means `left`
+/// is the better copy to keep.
 /// One keeper rule: `Greater` when the first copy is the better one to keep.
 type KeeperRule = fn(&KeeperCandidate, &KeeperCandidate) -> Ordering;
 
-const KEEPER_RULES: [(KeepReason, KeeperRule); 12] = [
+const KEEPER_RULES: [(KeepReason, KeeperRule); 13] = [
     (KeepReason::PreferredFolder, |left, right| {
         by(left.is_preferred, right.is_preferred)
     }),
@@ -169,6 +175,11 @@ const KEEPER_RULES: [(KeepReason, KeeperRule); 12] = [
     (KeepReason::RightExtension, |left, right| {
         by(extension_rank(left), extension_rank(right))
     }),
+    // Only against the very bytes it was made from, with those still in holding: the saving is
+    // worth nothing against the last full-quality copy.
+    (KeepReason::AlreadyReencoded, |left, right| {
+        by(is_reencode_of(left, right), is_reencode_of(right, left))
+    }),
     (KeepReason::LargerFile, |left, right| {
         by(left.size, right.size)
     }),
@@ -185,6 +196,10 @@ const KEEPER_RULES: [(KeepReason, KeeperRule); 12] = [
         natural_order(&right.rel_path, &left.rel_path)
     }),
 ];
+
+fn is_reencode_of(file: &KeeperCandidate, source: &KeeperCandidate) -> bool {
+    file.reencoded_from.is_some() && file.reencoded_from == source.sha256
+}
 
 /// `Greater` when `left` is the better copy to keep; each rule only breaks ties of the one
 /// before.
@@ -210,8 +225,40 @@ pub fn keep_reason(winner: &KeeperCandidate, loser: &KeeperCandidate) -> KeepRea
 pub fn rank_keepers<T: AsRef<KeeperCandidate> + Clone>(
     candidates: &[T],
 ) -> (Vec<T>, Option<KeepReason>) {
+    // "A re-encode beats its source" holds only between those two, so it cannot be part of a sort,
+    // which needs one consistent order over every pair: each goes ahead of its source afterwards,
+    // past copies of the source only. Any other file between them beats the re-encode, which would
+    // otherwise stay while that file went.
+    let compare_but_reencode = |left: &KeeperCandidate, right: &KeeperCandidate| {
+        KEEPER_RULES
+            .iter()
+            .filter(|(reason, _)| *reason != KeepReason::AlreadyReencoded)
+            .map(|(_, compare)| compare(left, right))
+            .find(|order| order.is_ne())
+            .unwrap_or(Ordering::Equal)
+    };
     let mut ranked = candidates.to_vec();
-    ranked.sort_by(|left, right| compare_keepers(right.as_ref(), left.as_ref()));
+    ranked.sort_by(|left, right| compare_but_reencode(right.as_ref(), left.as_ref()));
+    let ties_until_reencode = |left: &KeeperCandidate, right: &KeeperCandidate| {
+        KEEPER_RULES
+            .iter()
+            .take_while(|(reason, _)| *reason != KeepReason::AlreadyReencoded)
+            .all(|(_, compare)| compare(left, right).is_eq())
+    };
+    for index in 0..ranked.len() {
+        let file = ranked[index].as_ref();
+        let source = ranked[..index].iter().position(|source| {
+            is_reencode_of(file, source.as_ref()) && ties_until_reencode(file, source.as_ref())
+        });
+        if let Some(source) = source
+            && ranked[source..index]
+                .iter()
+                .all(|between| between.as_ref().sha256 == ranked[source].as_ref().sha256)
+        {
+            let file = ranked.remove(index);
+            ranked.insert(source, file);
+        }
+    }
     let reason = match ranked.as_slice() {
         [first, second, ..] => Some(keep_reason(first.as_ref(), second.as_ref())),
         _ => None,
@@ -247,6 +294,8 @@ mod tests {
             mtime_ms: 1_700_000_000_000.0,
             is_preferred: false,
             in_home_folder: false,
+            sha256: None,
+            reencoded_from: None,
         }
     }
 
@@ -403,6 +452,187 @@ mod tests {
             ranked(&[copy(1, "a/photo.png"), larger]),
             (vec![2, 1], Some(KeepReason::LargerFile))
         );
+    }
+
+    #[test]
+    fn a_re_encode_beats_only_the_bytes_it_was_made_from_while_they_are_held() {
+        let source = KeeperCandidate {
+            sha256: Some("source".into()),
+            ..video(2, "a/clip.mp4")
+        };
+        let shrunk = KeeperCandidate {
+            video_codec: Some("av1".into()),
+            size: 400_000,
+            sha256: Some("result".into()),
+            reencoded_from: Some("source".into()),
+            ..video(1, "b/clip.mp4")
+        };
+        assert_eq!(
+            ranked(&[source.clone(), shrunk.clone()]),
+            (vec![1, 2], Some(KeepReason::AlreadyReencoded))
+        );
+        // Its original gone from holding, or never known: the larger file stays.
+        let unbacked = KeeperCandidate {
+            reencoded_from: None,
+            ..shrunk.clone()
+        };
+        assert_eq!(
+            ranked(&[source.clone(), unbacked]),
+            (vec![2, 1], Some(KeepReason::LargerFile))
+        );
+        // Another file of those pixels, not its source: judged by its bytes.
+        let unrelated = KeeperCandidate {
+            sha256: Some("other".into()),
+            ..video(3, "c/clip.mp4")
+        };
+        assert_eq!(
+            ranked(&[unrelated.clone(), shrunk.clone()]),
+            (vec![3, 1], Some(KeepReason::LargerFile))
+        );
+        // It never wins over what the owner would miss: more pixels, or sound.
+        let sharper = KeeperCandidate {
+            width: Some(2000),
+            ..source.clone()
+        };
+        assert_eq!(
+            ranked(&[sharper, shrunk.clone()]),
+            (vec![2, 1], Some(KeepReason::MorePixels))
+        );
+        // A file as large as the source, not it, stands between them: it beats the re-encode.
+        let (order, _) = ranked(&[unrelated, source, shrunk]);
+        let at = |id| order.iter().position(|found| *found == id).unwrap();
+        assert!(at(3) < at(1), "{order:?}");
+    }
+
+    /// Every order of `files`, by swapping.
+    fn every_order(files: &[KeeperCandidate]) -> Vec<Vec<KeeperCandidate>> {
+        let mut orders = vec![files.to_vec()];
+        for index in 1..files.len() {
+            orders = orders
+                .into_iter()
+                .flat_map(|order| {
+                    (0..=index).map(move |at| {
+                        let mut swapped = order.clone();
+                        swapped.swap(at, index);
+                        swapped
+                    })
+                })
+                .collect();
+        }
+        orders
+    }
+
+    /// A re-encode goes ahead of its source only when nothing that beats it stands between them:
+    /// S beats T by size, T beats R by size, and R beats S as its re-encode, so one has to give,
+    /// and it is the re-encode, which loses nothing while its original is in holding.
+    #[test]
+    fn a_re_encode_never_beats_a_larger_file_that_is_not_its_source() {
+        let source = KeeperCandidate {
+            size: 100,
+            sha256: Some("source".into()),
+            ..video(1, "a/clip.mp4")
+        };
+        let other = KeeperCandidate {
+            size: 80,
+            sha256: Some("other".into()),
+            ..video(2, "b/clip.mp4")
+        };
+        let shrunk = KeeperCandidate {
+            size: 50,
+            sha256: Some("result".into()),
+            reencoded_from: Some("source".into()),
+            ..video(3, "c/clip.mp4")
+        };
+        assert_eq!(compare_keepers(&other, &shrunk), Ordering::Greater);
+        let files = [source.clone(), other, shrunk.clone()];
+        for order in every_order(&files) {
+            assert_eq!(
+                ranked(&order),
+                (vec![1, 2, 3], Some(KeepReason::LargerFile))
+            );
+        }
+
+        // A copy of the source between them is the source: the re-encode goes ahead of both.
+        let copy = KeeperCandidate {
+            size: 100,
+            sha256: Some("source".into()),
+            ..video(4, "d/clip.mp4")
+        };
+        for order in every_order(&[source, copy, shrunk]) {
+            assert_eq!(
+                ranked(&order),
+                (vec![3, 1, 4], Some(KeepReason::AlreadyReencoded))
+            );
+        }
+    }
+
+    /// Over made-up sets of copies, re-encodes and unrelated files: the order does not depend on
+    /// the order they came in, and each file beats those after it, but for a re-encode that had
+    /// to stay behind its source.
+    #[test]
+    fn ranks_are_one_order_whatever_order_the_files_come_in() {
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = move |below: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % below
+        };
+        let mut jumps = 0;
+        for _ in 0..300 {
+            let count = 2 + next(4) as usize;
+            let files: Vec<KeeperCandidate> = (0..count)
+                .map(|index| {
+                    let content = next(4);
+                    let id = index as FileId + 1;
+                    KeeperCandidate {
+                        // Copies of a content share their size, as they must.
+                        size: 100 + (content as i64) * if next(2) == 0 { 10 } else { 0 },
+                        sha256: Some(format!("content {content} of {id}")),
+                        reencoded_from: None,
+                        ..video(id, &format!("{}/clip.mp4", (b'a' + index as u8) as char))
+                    }
+                })
+                .collect();
+            let mut files = files;
+            // Some share a hash, and some are re-encodes of another's, smaller or not.
+            for index in 1..count {
+                match next(3) {
+                    0 => {
+                        files[index].sha256 = files[0].sha256.clone();
+                        files[index].size = files[0].size;
+                    }
+                    1 => {
+                        files[index].reencoded_from =
+                            files[next(index as u64) as usize].sha256.clone();
+                        files[index].size = 40 + next(80) as i64;
+                    }
+                    _ => {}
+                }
+            }
+            let first = ranked(&files);
+            for order in every_order(&files) {
+                assert_eq!(ranked(&order), first, "{files:#?}");
+            }
+            let (order, _) = rank_keepers(&files);
+            for (index, file) in order.iter().enumerate() {
+                for later in &order[index + 1..] {
+                    if is_reencode_of(file, later) {
+                        jumps += 1;
+                    }
+                    if !is_reencode_of(later, file) {
+                        assert_ne!(
+                            compare_keepers(file, later),
+                            Ordering::Less,
+                            "{} before {} in {order:#?}",
+                            file.id,
+                            later.id
+                        );
+                    }
+                }
+            }
+        }
+        assert!(jumps > 0, "no re-encode ever went ahead of its source");
     }
 
     #[test]

@@ -22,6 +22,7 @@ pub mod media_tools;
 mod player;
 pub mod settings;
 mod settings_section;
+mod shortcuts;
 mod sidebar;
 mod spike;
 pub mod thumbnails;
@@ -33,6 +34,7 @@ pub use folder_overlay::{FolderOverlay, FolderOverlayEvent};
 pub use gallery::{Activation, FolderStep, Gallery, GalleryEvent, Listing, PreviewSettings};
 pub use player::{CapsulePanel, CapsulePlayer, CapsulePlayerEvent, PlayerOptions};
 pub use settings_section::{Diagnostics, FactGroup, LineGroup};
+pub use shortcuts::open as show_shortcuts;
 pub use viewer::{Viewer, ViewerEvent};
 
 use std::collections::hash_map::RandomState;
@@ -44,8 +46,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, ExternalPaths, FocusHandle,
     Focusable as _, Global, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton,
-    ParentElement as _, PathPromptOptions, Render, SharedString, Styled as _, Subscription, Task,
-    Window, div, prelude::FluentBuilder as _,
+    ParentElement as _, PathPromptOptions, Render, SharedString, Styled as _, Subscription, Window,
+    div, prelude::FluentBuilder as _,
 };
 use oriel_core_domain::GallerySortMode;
 use oriel_core_paths::DataRoot;
@@ -108,6 +110,8 @@ pub struct ViewMode {
     viewer_subscription: Option<Subscription>,
     /// Where focus was before an overlay took it, to give it back on close.
     focus_before_overlay: Option<FocusHandle>,
+    /// The Folders button's, for focus to come back to when its overlay closes.
+    folders_button: FocusHandle,
     comic_reader: Option<(Entity<ComicReader>, Subscription)>,
     folder_overlay: Option<(Entity<FolderOverlay>, Subscription)>,
     sort_menu_open: bool,
@@ -121,11 +125,16 @@ pub struct ViewMode {
     pending_focus: Option<PendingFocus>,
     /// The media item to open the viewer on at the next frame, once a handed-over file lists.
     pending_open_viewer: Option<usize>,
+    /// The tile `ORIEL_VIEW_VIEWER` asks to open, and whether `ORIEL_VIEW_FOLDERS` asks for the
+    /// folder overlay, once the folder lists: checks in a real window, which allows no clicks.
+    check_viewer: Option<usize>,
+    check_folders: bool,
+    /// `ORIEL_VIEW_COMIC=1` asks for the first comic in the reader, once the folder lists.
+    check_comic: bool,
     /// The folder the thumbnails were last asked for, so a new folder starts their queue over.
     thumbnails_root: Option<Arc<Path>>,
     sorted: SortedMedia,
     /// The ready status's timer, which redraws the header when it lapses.
-    _status_timer: Option<Task<()>>,
     pub(crate) settings_panel: settings_section::SettingsPanel,
     pub(crate) spike: Option<spike::Spike>,
     _subscriptions: Vec<Subscription>,
@@ -133,7 +142,16 @@ pub struct ViewMode {
 
 impl EventEmitter<ViewEvent> for ViewMode {}
 
+/// How much of the window's foot the gallery's toolbar and the player's capsule take, which the
+/// activity panel and toasts stand on.
+const FOOT_HEIGHT: f32 = 84.;
+
 impl ViewMode {
+    /// How much of the window's foot View keeps for its toolbar or its player.
+    pub fn foot_height(&self, _: &App) -> gpui_kit::Pixels {
+        gpui_kit::px(FOOT_HEIGHT)
+    }
+
     /// View for the shell, keeping its data in this run's data folder. Opens the folder
     /// [`OPEN_VARIABLE`] names, if it names one, and the remembered folder otherwise.
     pub fn new(shell: &Entity<ShellState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -224,6 +242,7 @@ impl ViewMode {
             viewer: None,
             viewer_subscription: None,
             focus_before_overlay: None,
+            folders_button: cx.focus_handle().tab_stop(true),
             comic_reader: None,
             folder_overlay: None,
             sort_menu_open: false,
@@ -232,9 +251,13 @@ impl ViewMode {
             pending_selection: None,
             pending_focus: None,
             pending_open_viewer: None,
+            check_viewer: std::env::var("ORIEL_VIEW_VIEWER")
+                .ok()
+                .and_then(|tile| tile.parse().ok()),
+            check_folders: std::env::var_os("ORIEL_VIEW_FOLDERS").is_some(),
+            check_comic: std::env::var_os("ORIEL_VIEW_COMIC").is_some(),
             thumbnails_root: None,
             sorted: SortedMedia::default(),
-            _status_timer: None,
             settings_panel: settings_section::SettingsPanel::new(window, cx),
             spike: None,
             _subscriptions: subscriptions,
@@ -565,13 +588,6 @@ impl ViewMode {
             CatalogUpdate::Done => {
                 self.rebuild_tiles(cx);
                 self.open_pending_focus(cx);
-                // The ready status lapses after a while; redraw the header then.
-                self._status_timer = Some(cx.spawn(async move |this, cx| {
-                    cx.background_executor()
-                        .timer(catalog::READY_STATUS_FOR)
-                        .await;
-                    this.update(cx, |_, cx| cx.notify()).ok();
-                }));
             }
         }
     }
@@ -731,6 +747,7 @@ impl ViewMode {
             GalleryEvent::FolderStep(FolderStep::Next) => self.open_sibling_folder(1, cx),
             GalleryEvent::Selected => cx.notify(),
             GalleryEvent::OpenOffered(folder) => self.open_folder(folder.clone(), cx),
+            GalleryEvent::OpenChosen => self.choose_folder(cx),
         }
     }
 
@@ -1052,9 +1069,8 @@ impl ViewMode {
             this.restore_focus(window, cx);
             cx.notify();
         });
-        if self.focus_before_overlay.is_none() {
-            self.focus_before_overlay = window.focused(cx);
-        }
+        // Back to the button that opens it, whatever a click on that button left focused.
+        self.focus_before_overlay = Some(self.folders_button.clone());
         overlay.focus_handle(cx).focus(window, cx);
         self.folder_overlay = Some((overlay, subscription));
         cx.notify();
@@ -1106,6 +1122,33 @@ impl Render for ViewMode {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if let Some(spike) = &mut self.spike {
             spike.on_frame(&self.gallery, self.viewer.as_ref(), window, cx);
+        }
+        if !self.gallery.read(cx).tiles().is_empty() {
+            if std::mem::take(&mut self.check_folders) {
+                self.open_folder_overlay(window, cx);
+            }
+            if let Some(tile) = self.check_viewer.take() {
+                self.pending_open_viewer = Some(tile);
+            }
+        }
+        if self.check_comic && self.catalog.read(cx).root().is_some() {
+            if !self.comic_mode(cx) {
+                self.set_comic_mode(true, cx);
+            } else {
+                let comic = self
+                    .gallery
+                    .read(cx)
+                    .tiles()
+                    .iter()
+                    .find_map(|tile| match tile {
+                        Tile::Comic { comic, .. } => Some(comic.clone()),
+                        _ => None,
+                    });
+                if let Some(comic) = comic {
+                    self.check_comic = false;
+                    self.open_comic(comic, window, cx);
+                }
+            }
         }
         if let Some(ix) = self.pending_open_viewer.take() {
             self.open_viewer(ix, window, cx);
@@ -1167,7 +1210,7 @@ impl Render for ViewMode {
                         ),
                 )
             })
-            .child(self.render_toolbar(cx));
+            .child(self.render_toolbar(window, cx));
         if let Some((overlay, _)) = &self.folder_overlay {
             content = content.child(overlay.clone());
         }
@@ -1184,7 +1227,7 @@ impl Render for ViewMode {
             .child(
                 ModeLayout::new(&self.shell)
                     .navigation(navigation)
-                    .child(self.render_top_bar(cx))
+                    .child(self.render_top_bar(window, cx))
                     .child(content),
             )
             .into_any_element()

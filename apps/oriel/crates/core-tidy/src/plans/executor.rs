@@ -12,13 +12,20 @@
 //!   the remaining steps pending;
 //! - every finished step can be undone, and an undo never overwrites anything.
 //!
+//! Identical copies stay identical through a conversion, whichever plan changes them: a step whose
+//! source hashes as an earlier step's did, changed the same way, takes that step's result rather
+//! than encode again, once its own source and the result both check out. It still has its own
+//! original in holding and its own Undo, and clones the result where the disk can, so it depends on
+//! the other step for nothing afterwards.
+//!
 //! The engine runs it on a worker thread; catalog calls go to the catalog's thread one by one.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Instant, SystemTime};
 
 use anyhow::{Context as _, anyhow, bail};
@@ -30,10 +37,12 @@ use rusqlite::{OptionalExtension as _, params};
 
 use super::encode_budget::EncodeBudget;
 use super::holding::{
-    HoldRequest, HoldingPlaces, HoldingStore, copy_times, hold_file, holding_batch_name, move_file,
-    path_exists, restorable, restore_held,
+    HoldRequest, HoldingPlaces, HoldingStore, copy_times, hold_file, holding_batch_name,
+    holding_record_by_id, move_file, path_exists, restorable, restore_held,
 };
-use super::journal::{StepRecord, load_steps, plan_subject, temp_path_of};
+use super::journal::{
+    StepRecord, forget_dismissals_of_idle_plan, load_steps, plan_subject, temp_path_of,
+};
 use super::planner::{Keeper, StepSpec, is_within};
 use crate::catalog::rows::{PROBE_VERSION, to_absolute_path};
 use crate::catalog::{Catalog, now_ms};
@@ -44,7 +53,7 @@ use crate::media::still::encode_still_to_avif;
 use crate::media::transcode::{TranscodeJob, transcode_with_ffmpeg};
 use crate::media::{ToolFailure, probe_video};
 use crate::number::format_bytes;
-use crate::passes::hash::{HashError, hash_whole_file};
+use crate::passes::hash::{HashError, hash_edges, hash_whole_file};
 use crate::passes::{Media, Progress, run_concurrently};
 use crate::scan::{extension_of, is_extension_mismatch, is_folder_system_file, whole_ms};
 
@@ -60,9 +69,16 @@ const FINDER_SETTINGS_REASON: &str = "Finder's settings for an empty folder";
 
 const CHANGED_SINCE_SCAN: &str = "The file changed since the scan; rescan before changing it.";
 
+// The summary counts these by how they start (`journal::PLAN_SUMMARY_SQL`).
 const KEPT_FILE_CHANGED: &str = "The file kept instead has changed since the scan.";
 
 const KEPT_FILE_GONE: &str = "The file kept instead is no longer there.";
+
+/// What a step taking an earlier step's result says instead of how it encoded.
+pub const SAME_RESULT: &str = "Same result as its identical copy";
+
+/// How a step that kept its original because of the result's size starts saying so.
+const KEPT_THE_ORIGINAL: &str = "Kept the original: ";
 
 /// How the plan kinds that keep only a smaller result remember a file that did not shrink, so
 /// they stop offering it: Convert and Shrink each keep their own mark.
@@ -93,6 +109,9 @@ pub struct ExecutorDeps<'a> {
     pub encode_budget: EncodeBudget,
     pub roots: Vec<Root>,
     pub progress: &'a dyn Progress,
+    /// Moved after every file a step changes, so what is read during a run sees it: duplicate sets
+    /// cached against it would otherwise keep showing paths that have gone.
+    pub generation: &'a AtomicU64,
 }
 
 impl ExecutorDeps<'_> {
@@ -115,6 +134,8 @@ pub enum StepOutcome {
         bytes_after: i64,
         holding_id: Option<HoldingId>,
         message: Option<String>,
+        /// The result's SHA-256, for a conversion whose source's bytes were confirmed.
+        output_sha256: Option<String>,
     },
     Skipped(String),
     Failed(String),
@@ -196,6 +217,16 @@ fn locate(roots: &[Root], abs_path: &Path) -> Option<(RootId, String)> {
             .collect::<Vec<_>>()
             .join("/"),
     ))
+}
+
+/// Whether `path` still has the size and dates it had when `before` and its change time were read.
+/// On Windows the change time is only read from the path, so it cannot come from `before` now.
+fn same_file_state(path: &Path, before: &fs::Metadata, change_time_before: i64) -> bool {
+    fs::metadata(path).is_ok_and(|now| {
+        now.size() == before.size()
+            && whole_mtime(&now) == whole_mtime(before)
+            && whole_ctime(path, &now) == change_time_before
+    })
 }
 
 fn whole_mtime(metadata: &fs::Metadata) -> i64 {
@@ -300,8 +331,13 @@ fn hashes_to(
 
 /// Points a catalog row at a file's new path when the bytes did not change (move, rename). A
 /// file moved out of every root leaves the catalog.
-fn relocate_row(deps: &ExecutorDeps<'_>, step: &StepRecord, target: &Path) -> anyhow::Result<()> {
-    let (root_id, from) = (step.root_id, step.from_rel.clone());
+fn relocate_row(
+    deps: &ExecutorDeps<'_>,
+    root_id: RootId,
+    from: &str,
+    target: &Path,
+) -> anyhow::Result<()> {
+    let from = from.to_owned();
     let Some((new_root, rel_path)) = locate(&deps.roots, target) else {
         return deps.catalog.blocking(move |connection| {
             connection.execute(
@@ -372,15 +408,39 @@ struct OutputFacts {
     bitrate: Option<f64>,
 }
 
-/// Rewrites a catalog row for a converted file: new path, new bytes, the facts just checked. A
-/// conversion that copied the audio track keeps the track's loudness measurement.
+/// The hashes of a conversion's result, written when its source was one of a possible set of
+/// copies. The hash pass only runs in a scan, and the set must not wait for one to hold together.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct OutputHashes {
+    head_hash: String,
+    sha256: String,
+}
+
+/// What rewriting a converted file's row records besides the file itself.
+struct ReplacedRow {
+    facts: OutputFacts,
+    /// The conversion carried the audio track over, so the track's loudness measurement stands.
+    keep_loudness: bool,
+    hashes: Option<OutputHashes>,
+    /// The result was kept for being smaller, so it counts as re-encoded to save space.
+    reencoded: bool,
+}
+
+/// Rewrites a catalog row for a converted file, which keeps its id: new path, new bytes, the facts
+/// just checked. Other rows of the same inode, which a hard link of the result has just touched,
+/// take its change time.
 fn replace_row(
     deps: &ExecutorDeps<'_>,
     step: &StepRecord,
     target: &Path,
-    facts: OutputFacts,
-    keep_loudness: bool,
+    replaced: ReplacedRow,
 ) -> anyhow::Result<()> {
+    let ReplacedRow {
+        facts,
+        keep_loudness,
+        hashes,
+        reencoded,
+    } = replaced;
     let Some((_, rel_path)) = locate(&deps.roots, target) else {
         return Ok(());
     };
@@ -403,12 +463,12 @@ fn replace_row(
           mtime_ms = ?6, ctime_ms = ?7, dev = ?8, ino = ?9, kind = ?10, format = ?11,
           ext_mismatch = 0, probe_version = ?12, probe_error = NULL, width = ?13,
           height = ?14, frames = ?15, duration_ms = ?16, video_codec = ?17,
-          audio_codec = ?18, audio_streams = ?19, bitrate = ?20, head_hash = NULL,
-          sha256 = NULL, fingerprint_version = 0, fingerprint = NULL, fingerprint_error = NULL,
-          loudness_version = CASE WHEN ?21 = 1 THEN loudness_version ELSE 0 END,
-          loudness_max_db = CASE WHEN ?21 = 1 THEN loudness_max_db ELSE NULL END,
-          optimize_not_smaller = 0, shrink_not_smaller = 0
-          WHERE root_id = ?22 AND rel_path = ?23",
+          audio_codec = ?18, audio_streams = ?19, bitrate = ?20, head_hash = ?21,
+          sha256 = ?22, fingerprint_version = 0, fingerprint = NULL, fingerprint_error = NULL,
+          loudness_version = CASE WHEN ?23 = 1 THEN loudness_version ELSE 0 END,
+          loudness_max_db = CASE WHEN ?23 = 1 THEN loudness_max_db ELSE NULL END,
+          optimize_not_smaller = 0, shrink_not_smaller = 0, reencoded = ?24
+          WHERE root_id = ?25 AND rel_path = ?26",
             params![
                 rel_path,
                 row.0,
@@ -430,10 +490,41 @@ fn replace_row(
                 facts.audio_codec,
                 facts.audio_streams,
                 facts.bitrate,
+                hashes.as_ref().map(|hashes| hashes.head_hash.as_str()),
+                hashes.as_ref().map(|hashes| hashes.sha256.as_str()),
                 i64::from(keep_loudness),
+                i64::from(reencoded),
                 root_id,
                 from
             ],
+        )?;
+        connection.execute(
+            "UPDATE files SET ctime_ms = ?1 WHERE dev = ?2 AND ino = ?3",
+            params![row.4, row.5, row.6],
+        )?;
+        Ok(())
+    })
+}
+
+/// After a conversion's undo, points its row back at the original, so the file keeps its id and
+/// what the owner said about it. The row's change time goes, so the scan an undo asks for takes it
+/// as changed and reads the original afresh.
+fn point_row_at_original(
+    deps: &ExecutorDeps<'_>,
+    step: &StepRecord,
+    target: &Path,
+) -> anyhow::Result<()> {
+    let Some((_, rel_path)) = locate(&deps.roots, target) else {
+        return Ok(());
+    };
+    let (root_id, from) = (step.root_id, step.from_rel.clone());
+    let (dir, name) = (dir_of(&from).to_owned(), base_name(&from).to_owned());
+    let ext = extension_of(&name);
+    deps.catalog.blocking(move |connection| {
+        connection.execute(
+            "UPDATE OR IGNORE files SET rel_path = ?1, dir = ?2, name = ?3, ext = ?4, ctime_ms = 0
+          WHERE root_id = ?5 AND rel_path = ?6",
+            params![from, dir, name, ext, root_id, rel_path],
         )?;
         Ok(())
     })
@@ -499,20 +590,161 @@ impl Drop for TempFile {
     }
 }
 
+/// A file's size and dates, as a hash checks it did not change while being read.
+fn expected_of(path: &Path, metadata: &fs::Metadata) -> (i64, f64, f64) {
+    (
+        metadata.size() as i64,
+        whole_mtime(metadata) as f64,
+        whole_ctime(path, metadata) as f64,
+    )
+}
+
+/// The file's SHA-256 as it is now, or `None` if it cannot be read through.
+fn hash_of(deps: &ExecutorDeps<'_>, path: &Path) -> anyhow::Result<Option<String>> {
+    let metadata = fs::metadata(path)?;
+    match hash_whole_file(path, expected_of(path, &metadata), deps.progress) {
+        Ok(sha256) => Ok(Some(sha256)),
+        Err(HashError::Cancelled) => Err(Cancelled.into()),
+        Err(HashError::Unreadable) => Ok(None),
+    }
+}
+
+/// A result an earlier step made from the same bytes, the same way.
+struct EarlierResult {
+    output: PathBuf,
+    sha256: String,
+    bytes: i64,
+    /// Where that step's original went.
+    held: Option<PathBuf>,
+}
+
+/// The results of steps, in any plan, that made this conversion from the same bytes, newest first.
+/// A step that was undone, or whose file has since changed, offers nothing.
+fn earlier_results(
+    deps: &ExecutorDeps<'_>,
+    sha256: &str,
+    spec: &str,
+) -> anyhow::Result<Vec<EarlierResult>> {
+    let (sha256, spec) = (sha256.to_owned(), spec.to_owned());
+    deps.catalog.blocking(move |connection| {
+        let mut statement = connection.prepare_cached(
+            "SELECT s.to_abs, s.output_sha256, s.bytes_after, h.hold_path FROM plan_steps s
+          LEFT JOIN holding h ON h.id = s.holding_id AND h.state = 'held'
+          WHERE s.source_sha256 = ?1 AND s.spec = ?2 AND s.status = 'done'
+            AND s.output_sha256 IS NOT NULL AND s.to_abs IS NOT NULL
+          ORDER BY s.id DESC",
+        )?;
+        let rows = statement.query_map(params![sha256, spec], |row| {
+            Ok(EarlierResult {
+                output: PathBuf::from(row.get::<_, String>(0)?),
+                sha256: row.get(1)?,
+                bytes: row.get(2)?,
+                held: row.get::<_, Option<String>>(3)?.map(PathBuf::from),
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    })
+}
+
+/// Whether two paths are one file on disk.
+fn same_inode(left: &Path, right: &Path) -> bool {
+    let of = |path: &Path| {
+        fs::metadata(path).map(|metadata| {
+            let identity = identity(path, &metadata);
+            (identity.dev, identity.ino)
+        })
+    };
+    matches!((of(left), of(right)), (Ok(left), Ok(right)) if left == right)
+}
+
+/// Takes an earlier step's result into `temp` and checks it as an encode's is checked, or says none
+/// would do. The disk's cheapest copy: a hard link when the two sources were hard links of one
+/// file, so the results are too and no new duplicate appears, otherwise `fs::copy`, which clones
+/// where the system and the volume can (APFS, ReFS, btrfs) and copies where not.
+fn take_earlier_result(
+    deps: &ExecutorDeps<'_>,
+    source: &Path,
+    earlier: &EarlierResult,
+    temp: &Path,
+    verify: &impl Fn(&Path) -> anyhow::Result<OutputFacts>,
+) -> anyhow::Result<Option<OutputFacts>> {
+    let unusable = || {
+        let _ = fs::remove_file(temp);
+        Ok(None)
+    };
+    if !fs::metadata(&earlier.output).is_ok_and(|output| output.size() as i64 == earlier.bytes) {
+        return Ok(None);
+    }
+    let _ = fs::remove_file(temp);
+    let linked = earlier
+        .held
+        .as_deref()
+        .is_some_and(|held| same_inode(held, source))
+        && fs::hard_link(&earlier.output, temp).is_ok();
+    if !linked && fs::copy(&earlier.output, temp).is_err() {
+        return unusable();
+    }
+    if hash_of(deps, temp)?.as_deref() != Some(earlier.sha256.as_str()) {
+        return unusable();
+    }
+    match verify(temp) {
+        Ok(facts) => Ok(Some(facts)),
+        Err(error) if error.is::<Cancelled>() || deps.stopped() => Err(error),
+        Err(_) => unusable(),
+    }
+}
+
+/// How an earlier step of the same bytes ended in keeping its original, if one did: the same
+/// bytes the same way would not come out any smaller.
+fn earlier_not_smaller(
+    deps: &ExecutorDeps<'_>,
+    sha256: &str,
+    spec: &str,
+) -> anyhow::Result<Option<String>> {
+    let (sha256, spec) = (sha256.to_owned(), spec.to_owned());
+    deps.catalog.blocking(move |connection| {
+        Ok(connection
+            .query_row(
+                "SELECT message FROM plan_steps WHERE source_sha256 = ?1 AND spec = ?2
+              AND status = 'skipped' AND message LIKE ?3 ORDER BY id DESC LIMIT 1",
+                params![sha256, spec, format!("{KEPT_THE_ORIGINAL}%")],
+                |row| row.get(0),
+            )
+            .optional()?)
+    })
+}
+
+fn mark_not_smaller(
+    deps: &ExecutorDeps<'_>,
+    step: &StepRecord,
+    not_smaller: Option<&'static str>,
+) -> anyhow::Result<()> {
+    if let Some(sql) = not_smaller {
+        let (root_id, rel_path) = (step.root_id, step.from_rel.clone());
+        deps.catalog.blocking(move |connection| {
+            connection.execute(sql, params![root_id, rel_path])?;
+            Ok(())
+        })?;
+    }
+    Ok(())
+}
+
 /// Writes a conversion to a temp file, checks it with `verify`, gives it the original's dates,
 /// puts it in place and moves the original to holding. When the target is the original's own
-/// path (re-encoding an MP4), the original leaves first.
+/// path (re-encoding an MP4), the original leaves first. A step whose source has identical copies
+/// takes the result an earlier one made, if it passes the checks, and otherwise runs `produce`.
 fn convert(
     deps: &ExecutorDeps<'_>,
     step: &StepRecord,
     context: ConvertContext<'_>,
     produce: impl FnOnce(&Path) -> anyhow::Result<Option<String>>,
-    verify: impl FnOnce(&Path) -> anyhow::Result<OutputFacts>,
+    verify: impl Fn(&Path) -> anyhow::Result<OutputFacts>,
 ) -> anyhow::Result<StepOutcome> {
     let Some(target) = step.to_abs.as_deref().map(PathBuf::from) else {
         return Ok(StepOutcome::Failed("The step has no target.".into()));
     };
     let source = step.from_abs();
+    let source_change_time = whole_ctime(&source, context.source);
     let same_path = std::path::absolute(&target)? == std::path::absolute(&source)?;
     if !same_path && path_exists(&target) {
         return Ok(StepOutcome::Skipped(format!(
@@ -521,34 +753,73 @@ fn convert(
         )));
     }
     let temp = TempFile(PathBuf::from(temp_path_of(&target.to_string_lossy())));
+    let spec = serde_json::to_string(&step.spec)?;
+    // Copies are told by the catalog's hash, which is checked against the bytes before they are
+    // given another file's result, or offer theirs to another.
+    let confirmed = match step.source_sha256.as_deref() {
+        Some(sha256) if hash_of(deps, &source)?.as_deref() == Some(sha256) => Some(sha256),
+        _ => None,
+    };
 
-    let note = produce(&temp.0)?;
-    let facts = verify(&temp.0)?;
+    if context.require_smaller
+        && let Some(sha256) = confirmed
+        && let Some(message) = earlier_not_smaller(deps, sha256, &spec)?
+    {
+        mark_not_smaller(deps, step, context.not_smaller)?;
+        return Ok(StepOutcome::Skipped(message));
+    }
+    let mut reused = None;
+    if let Some(sha256) = confirmed {
+        for earlier in earlier_results(deps, sha256, &spec)? {
+            if let Some(facts) = take_earlier_result(deps, &source, &earlier, &temp.0, &verify)? {
+                reused = Some((facts, earlier.sha256));
+                break;
+            }
+        }
+    }
+    let (note, facts, output_sha256) = match reused {
+        Some((facts, sha256)) => (Some(SAME_RESULT.to_owned()), facts, Some(sha256)),
+        None => {
+            let note = produce(&temp.0)?;
+            let facts = verify(&temp.0)?;
+            let sha256 = match confirmed {
+                Some(_) => hash_of(deps, &temp.0)?,
+                None => None,
+            };
+            (note, facts, sha256)
+        }
+    };
+    // A source another program changed meanwhile: the result is not of the bytes that were read, so
+    // it neither replaces them nor is offered to their other copies. A scan catches up.
+    if !same_file_state(&source, context.source, source_change_time) {
+        return Err(StepSkip::stale(CHANGED_SINCE_SCAN));
+    }
     let written = fs::metadata(&temp.0)?.size();
     let original = context.source.size();
 
     if context.require_smaller && written as f64 > original as f64 * (1.0 - MINIMUM_SAVING) {
         fs::remove_file(&temp.0)?;
-        if let Some(sql) = context.not_smaller {
-            let (root_id, rel_path) = (step.root_id, step.from_rel.clone());
-            deps.catalog.blocking(move |connection| {
-                connection.execute(sql, params![root_id, rel_path])?;
-                Ok(())
-            })?;
-        }
+        mark_not_smaller(deps, step, context.not_smaller)?;
         let why = if written > original {
             "the result was larger"
         } else {
             "it saved less than 5%"
         };
         return Ok(StepOutcome::Skipped(format!(
-            "Kept the original: {why} ({} → {})",
+            "{KEPT_THE_ORIGINAL}{why} ({} → {})",
             format_bytes(original as f64),
             format_bytes(written as f64)
         )));
     }
 
     copy_times(&temp.0, context.source)?;
+    let hashes = match &output_sha256 {
+        Some(sha256) => Some(OutputHashes {
+            head_hash: hash_edges(&temp.0, written)?,
+            sha256: sha256.clone(),
+        }),
+        None => None,
+    };
 
     let reason = format!("Replaced by {}", base_name(&target.to_string_lossy()));
     let hold = || {
@@ -589,11 +860,22 @@ fn convert(
         }
     };
 
-    replace_row(deps, step, &target, facts, context.keep_loudness)?;
+    replace_row(
+        deps,
+        step,
+        &target,
+        ReplacedRow {
+            facts,
+            keep_loudness: context.keep_loudness,
+            hashes,
+            reencoded: context.require_smaller,
+        },
+    )?;
     Ok(StepOutcome::Done {
         bytes_after: written as i64,
         holding_id: Some(holding_id),
         message: note,
+        output_sha256,
     })
 }
 
@@ -601,6 +883,7 @@ fn tool_error(failure: ToolFailure) -> anyhow::Error {
     match failure {
         ToolFailure::Cancelled => Cancelled.into(),
         ToolFailure::Failed(message) => anyhow!(message),
+        failure @ ToolFailure::Interrupted => anyhow!("{failure}"),
     }
 }
 
@@ -657,6 +940,7 @@ fn remove_folder(
         bytes_after: 0,
         holding_id: None,
         message: None,
+        output_sha256: None,
     })
 }
 
@@ -747,6 +1031,7 @@ fn execute_step(
                 bytes_after: 0,
                 holding_id: Some(holding_id),
                 message: None,
+                output_sha256: None,
             })
         }
         StepSpec::Move | StepSpec::Rename => {
@@ -762,11 +1047,12 @@ fn execute_step(
                 )));
             }
             move_file(&step.from_abs(), &target)?;
-            relocate_row(deps, step, &target)?;
+            relocate_row(deps, step.root_id, &step.from_rel, &target)?;
             Ok(StepOutcome::Done {
                 bytes_after: source.size() as i64,
                 holding_id: None,
                 message: None,
+                output_sha256: None,
             })
         }
         StepSpec::ConvertAvif => {
@@ -863,6 +1149,7 @@ fn execute_step(
                 );
             let source_path = step.from_abs();
             let cancel = deps.progress.cancel_token();
+            let known_length = expected.duration_ms.is_some_and(|length| length > 0.);
             let verify =
                 |temp: &Path| verify_video(ffprobe, temp, expected, animation, audio, cancel);
             let context = ConvertContext {
@@ -896,7 +1183,17 @@ fn execute_step(
                         },
                     };
                     let started = Instant::now();
-                    transcode_with_ffmpeg(ffmpeg, &job, cancel).map_err(tool_error)?;
+                    // Encoding a video can take minutes, so it says which and how far along.
+                    let name = step.from_rel.as_str();
+                    deps.progress.item(Some((name, known_length.then_some(0.))));
+                    let on_seconds = |seconds: f64| {
+                        let share = expected
+                            .duration_ms
+                            .filter(|length| *length > 0.)
+                            .map(|length| (seconds * 1000. / length).clamp(0., 1.) as f32);
+                        deps.progress.item(Some((name, share)));
+                    };
+                    transcode_with_ffmpeg(ffmpeg, &job, cancel, &on_seconds).map_err(tool_error)?;
                     if !svt {
                         return Ok(None);
                     }
@@ -1017,10 +1314,18 @@ fn record_outcome(catalog: &Catalog, step_id: i64, outcome: StepOutcome) -> anyh
                 bytes_after,
                 holding_id,
                 message,
+                output_sha256,
             } => connection.execute(
                 "UPDATE plan_steps SET status = 'done', message = ?1, bytes_after = ?2,
-            holding_id = ?3, done_at = ?4 WHERE id = ?5",
-                params![message, bytes_after, holding_id, now_ms(), step_id],
+            holding_id = ?3, done_at = ?4, output_sha256 = ?5 WHERE id = ?6",
+                params![
+                    message,
+                    bytes_after,
+                    holding_id,
+                    now_ms(),
+                    output_sha256,
+                    step_id
+                ],
             )?,
             StepOutcome::Skipped(message) => connection.execute(
                 "UPDATE plan_steps SET status = 'skipped', message = ?1 WHERE id = ?2",
@@ -1056,18 +1361,20 @@ fn settle_plan(catalog: &Catalog, plan_id: PlanId, cancelled: bool) -> anyhow::R
             "UPDATE plans SET status = ?1 WHERE id = ?2",
             params![status, plan_id],
         )?;
-        Ok(())
+        forget_dismissals_of_idle_plan(connection, plan_id)
     })
 }
 
-/// What the progress of an apply says while a step of this action runs.
-pub fn describe_action(action: PlanStepAction) -> &'static str {
+/// What the progress of an apply says while a step of this action runs. Shrink runs the step
+/// Convert's videos do, but to make AV1 and save space.
+pub fn describe_action(action: PlanStepAction, kind: Option<PlanKind>) -> &'static str {
     match action {
         PlanStepAction::Hold => "Moving files to holding",
         PlanStepAction::Move => "Moving files",
         PlanStepAction::Rename => "Renaming files",
         PlanStepAction::ConvertAvif => "Converting stills to AVIF",
         PlanStepAction::ConvertAnimation => "Converting animations to MP4",
+        PlanStepAction::ConvertVideo if kind == Some(PlanKind::ShrinkVideos) => "Shrinking videos",
         PlanStepAction::ConvertVideo => "Converting videos to MP4",
         PlanStepAction::RemoveFolder => "Removing empty folders",
     }
@@ -1113,7 +1420,7 @@ pub fn apply_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<Ap
     deps.progress.phase(
         steps
             .first()
-            .map_or("Changing files", |step| describe_action(step.action)),
+            .map_or("Changing files", |step| describe_action(step.action, kind)),
         steps.len() as u64,
     );
 
@@ -1136,21 +1443,33 @@ pub fn apply_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<Ap
             },
         };
         record_outcome(deps.catalog, step.id, outcome)?;
-        count.finished(describe_action(step.action));
+        deps.generation.fetch_add(1, Ordering::AcqRel);
+        if step.action != PlanStepAction::ConvertAvif {
+            deps.progress.item(None);
+        }
+        count.finished(describe_action(step.action, kind));
         Ok(())
     };
 
     let outcome = (|| -> anyhow::Result<()> {
-        let stills: Vec<&StepRecord> = steps
+        // The first still of each set of copies encodes; the rest then take its result.
+        let mut seen = HashSet::new();
+        let (firsts, copies): (Vec<&StepRecord>, Vec<&StepRecord>) = steps
             .iter()
             .filter(|step| step.action == PlanStepAction::ConvertAvif)
-            .collect();
-        run_concurrently(
-            &stills,
-            deps.still_concurrency,
-            deps.progress,
-            |step: &&StepRecord| run(step),
-        )?;
+            .partition(|step| {
+                step.source_sha256
+                    .as_deref()
+                    .is_none_or(|sha256| seen.insert(sha256))
+            });
+        for stills in [&firsts, &copies] {
+            run_concurrently(
+                stills,
+                deps.still_concurrency,
+                deps.progress,
+                |step: &&StepRecord| run(step),
+            )?;
+        }
         for step in steps
             .iter()
             .filter(|step| step.action != PlanStepAction::ConvertAvif)
@@ -1185,24 +1504,33 @@ pub fn undo_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<()>
         .blocking(move |connection| load_steps(connection, plan_id, StepStatus::Done, true))?;
     let batch = holding_batch_name(Some(plan_id), SystemTime::now());
     let mut in_use: Vec<String> = Vec::new();
+    let mut failed: Vec<String> = Vec::new();
     deps.progress.phase("Undoing", steps.len() as u64);
 
     for (index, step) in steps.iter().enumerate() {
         deps.progress.checkpoint()?;
         let id = step.id;
-        match undo_step(deps, step, &batch) {
-            Ok(()) => deps.catalog.blocking(move |connection| {
+        let undone = || {
+            deps.catalog.blocking(move |connection| {
                 connection.execute(
-                    "UPDATE plan_steps SET status = 'undone', undone_at = ?1 WHERE id = ?2",
+                    "UPDATE plan_steps SET status = 'undone', undone_at = ?1,
+                       message = CASE WHEN message LIKE 'Undo failed%' THEN NULL ELSE message END
+                     WHERE id = ?2",
                     params![now_ms(), id],
                 )?;
                 Ok(())
-            })?,
+            })
+        };
+        match undo_step(deps, step, &batch) {
+            Ok(()) => undone()?,
             Err(error) if error.is::<Cancelled>() => return Err(error),
+            // The owner has put it back already, which is what this would have done.
+            Err(_) if already_restored(deps, step)? => undone()?,
             Err(error) if is_file_in_use(&error) => {
                 in_use.push(base_name(step.to_abs.as_deref().unwrap_or(&step.from_rel)).to_owned());
             }
             Err(error) => {
+                failed.push(base_name(step.to_abs.as_deref().unwrap_or(&step.from_rel)).to_owned());
                 let message = format!("Undo failed: {error:#}");
                 deps.catalog.blocking(move |connection| {
                     connection.execute(
@@ -1224,6 +1552,15 @@ pub fn undo_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<()>
         };
         bail!("Another program has {first}{others} open. Close it, then Undo again.");
     }
+    // Steps that could not be undone stay done, and so does the plan: History must not say undone.
+    if let Some(first) = failed.first() {
+        let others = if failed.len() > 1 {
+            format!(" and {} more", failed.len() - 1)
+        } else {
+            String::new()
+        };
+        bail!("{first}{others} could not be put back, and stay as they are.");
+    }
 
     deps.catalog.blocking(move |connection| {
         connection.execute(
@@ -1236,6 +1573,21 @@ pub fn undo_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<()>
         )?;
         Ok(())
     })
+}
+
+/// Whether a step that held a file cannot be undone only because the owner has restored the file
+/// already, which is what its Undo would have done.
+fn already_restored(deps: &ExecutorDeps<'_>, step: &StepRecord) -> anyhow::Result<bool> {
+    let Some(holding_id) = step
+        .holding_id
+        .filter(|_| step.action == PlanStepAction::Hold)
+    else {
+        return Ok(false);
+    };
+    let record = deps
+        .catalog
+        .blocking(move |connection| holding_record_by_id(connection, holding_id))?;
+    Ok(record.is_some_and(|record| record.state == "restored"))
 }
 
 fn undo_step(deps: &ExecutorDeps<'_>, step: &StepRecord, batch: &str) -> anyhow::Result<()> {
@@ -1258,6 +1610,9 @@ fn undo_step(deps: &ExecutorDeps<'_>, step: &StepRecord, batch: &str) -> anyhow:
                 bail!("Something now exists at the original path.");
             }
             move_file(Path::new(target), &step.from_abs())?;
+            if let Some((root_id, rel_path)) = locate(&deps.roots, Path::new(target)) {
+                relocate_row(deps, root_id, &rel_path, &step.from_abs())?;
+            }
             Ok(())
         }
         PlanStepAction::ConvertAvif
@@ -1289,6 +1644,7 @@ fn undo_step(deps: &ExecutorDeps<'_>, step: &StepRecord, batch: &str) -> anyhow:
                 )?;
             }
             restore_held(deps.store(), holding_id)?;
+            point_row_at_original(deps, step, Path::new(target))?;
             Ok(())
         }
         PlanStepAction::RemoveFolder => {

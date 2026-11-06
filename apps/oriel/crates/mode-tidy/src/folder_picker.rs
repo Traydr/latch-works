@@ -26,6 +26,7 @@ use gpui_kit::{
 use oriel_core_domain::{NamedPath, compare_by_name, is_system_junk_directory};
 use oriel_core_paths::DataRoot;
 use oriel_ui::ControlSize as _;
+use oriel_ui::TextRole as _;
 
 /// What a picker is for.
 pub struct PickOptions {
@@ -551,10 +552,10 @@ impl FolderPicker {
             .flex_row()
             .items_center()
             .gap(px(10.))
-            .h(px(32.))
+            .h(px(44.))
             .px(px(10.))
             .rounded(theme.radius)
-            .text_size(px(13.))
+            .text_body()
             .tooltip(move |window, cx| {
                 gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(window, cx)
             })
@@ -566,9 +567,7 @@ impl FolderPicker {
                         this.open(path.clone(), true, None, window, cx);
                     }))
             })
-            .when(!available, |this| {
-                this.text_color(theme.muted_foreground).opacity(0.6)
-            })
+            .when(!available, |this| this.text_color(theme.muted_foreground))
             .child(
                 Icon::new(place.icon)
                     .size(px(16.))
@@ -599,7 +598,7 @@ impl Focusable for FolderPicker {
 }
 
 impl Render for FolderPicker {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let matches: Vec<FolderEntry> = self.matches().into_iter().cloned().collect();
         let active = self.active();
@@ -654,7 +653,7 @@ impl Render for FolderPicker {
                 .id("picker-places")
                 .flex()
                 .flex_col()
-                .w(px(176.))
+                .w(px(248.))
                 .flex_shrink_0()
                 .overflow_y_scroll()
                 .pr_3()
@@ -673,7 +672,7 @@ impl Render for FolderPicker {
                             div()
                                 .px(px(10.))
                                 .pb(px(6.))
-                                .text_xs()
+                                .text_caption()
                                 .font_weight(gpui_kit::FontWeight::MEDIUM)
                                 .text_color(theme.muted_foreground)
                                 .child(heading.clone()),
@@ -685,7 +684,7 @@ impl Render for FolderPicker {
                                     .test_support()
                                     .px(px(10.))
                                     .pb(px(6.))
-                                    .text_xs()
+                                    .text_caption()
                                     .text_color(theme.muted_foreground)
                                     .child(
                                         "With ORIEL_DATA_DIR set, Tidy works only in the \
@@ -719,7 +718,7 @@ impl Render for FolderPicker {
                         .items_center()
                         .justify_center()
                         .p_6()
-                        .text_xs()
+                        .text_caption()
                         .text_color(theme.muted_foreground)
                         .child(message.clone()),
                 ),
@@ -735,10 +734,10 @@ impl Render for FolderPicker {
                         .flex_row()
                         .items_center()
                         .gap(px(10.))
-                        .h(px(32.))
+                        .h(px(44.))
                         .px(px(10.))
                         .rounded(theme.radius)
-                        .text_size(px(13.))
+                        .text_body()
                         .cursor_pointer()
                         .when(highlighted, |this| this.bg(theme.list_active))
                         .when(!highlighted, |this| {
@@ -806,7 +805,7 @@ impl Render for FolderPicker {
                 div()
                     .flex()
                     .flex_row()
-                    .h(px(400.))
+                    .h(oriel_ui::dialogs::task_body_height(window))
                     .min_h_0()
                     .children(places)
                     .child(
@@ -826,6 +825,7 @@ impl Render for FolderPicker {
                                         Button::new("picker-up")
                                             .bar_size()
                                             .outline()
+                                            .quiet_edge(cx)
                                             .icon(Icon::new(IconName::ArrowUp))
                                             .accessibility_label("Enclosing folder")
                                             .tooltip("Enclosing folder  ⌘↑")
@@ -845,7 +845,7 @@ impl Render for FolderPicker {
                                         .test_support()
                                         .aria_label(SharedString::from(note.clone()))
                                         .px_1()
-                                        .text_xs()
+                                        .text_caption()
                                         .text_color(theme.warning)
                                         .child(note),
                                 )
@@ -864,7 +864,7 @@ impl Render for FolderPicker {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_xs()
+                            .text_caption()
                             .text_color(theme.muted_foreground)
                             .child(
                                 chosen
@@ -877,6 +877,7 @@ impl Render for FolderPicker {
                         Button::new("picker-cancel")
                             .bar_size()
                             .outline()
+                            .quiet_edge(cx)
                             .label("Cancel")
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
@@ -906,13 +907,23 @@ pub fn open(
         return;
     }
     let title = options.title.clone();
-    let width = if options.within.is_some() { 560. } else { 760. };
+    // The narrower for a move, which shows no places beside the folders.
+    let width = if options.within.is_some() {
+        oriel_ui::dialogs::TEXT_WIDTH
+    } else {
+        oriel_ui::dialogs::task_width(window)
+    };
+    // The dialog gives focus back to what has it as it opens, which must be what opened it, and
+    // not the picker's own field.
+    let before = window.focused(cx);
     let picker = cx.new(|cx| FolderPicker::new(options, Rc::new(on_choose), window, cx));
     let focus = picker.read(cx).focus_handle(cx);
-    window.open_dialog(cx, move |dialog, _, _| {
-        dialog
-            .title(title.clone())
-            .w(px(width))
+    if let Some(before) = before {
+        before.focus(window, cx);
+    }
+    window.open_dialog(cx, move |dialog, _, cx| {
+        oriel_ui::dialogs::titled(dialog, title.clone(), cx)
+            .w(width)
             .child(picker.clone())
     });
     focus.focus(window, cx);

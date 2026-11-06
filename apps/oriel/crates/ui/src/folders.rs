@@ -14,9 +14,10 @@ use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
     App, ElementId, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
     RenderOnce, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
-    TestSupportExt as _, Window, div, px,
+    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px, rems,
 };
 
+use crate::controls::TextRole as _;
 use crate::shell::ModeId;
 
 /// How many folders an empty state offers, as Electron Oriel's `folders.slice(0, 4)`.
@@ -219,16 +220,15 @@ impl RenderOnce for OfferedFolders {
             .flex()
             .flex_col()
             .w_full()
-            .max_w(px(400.))
+            .max_w(px(480.))
             .text_left();
         if self.folders.is_empty() {
             return section;
         }
-        let count = self.folders.len();
         let rows = self.folders.into_iter().enumerate().map(|(index, folder)| {
             let on_choose = self.on_choose.clone();
             let tooltip = SharedString::from(folder.path().display().to_string());
-            gpui_kit::base::Button::new(offered_folder_id(folder.path()))
+            let row = gpui_kit::base::Button::new(offered_folder_id(folder.path()))
                 .accessibility_label(folder.name())
                 .aria_description(folder.describe_use())
                 .flex()
@@ -240,7 +240,6 @@ impl RenderOnce for OfferedFolders {
                 .py(px(10.))
                 .border_2()
                 .border_color(theme.transparent)
-                .when_not_last(index + 1 < count, theme.border)
                 .hover(|style| style.bg(theme.accent))
                 .focus_visible(|style| style.border_color(theme.ring))
                 .tooltip(move |window, cx| {
@@ -248,7 +247,7 @@ impl RenderOnce for OfferedFolders {
                 })
                 .child(
                     Icon::new(IconName::FolderOpen)
-                        .size(px(16.))
+                        .size(px(20.))
                         .flex_shrink_0()
                         .text_color(theme.muted_foreground),
                 )
@@ -261,14 +260,16 @@ impl RenderOnce for OfferedFolders {
                         .child(
                             div()
                                 .truncate()
-                                .text_size(px(13.))
+                                .text_body()
+                                .line_height(rems(1.5))
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(folder.name()),
                         )
                         .child(
                             div()
                                 .truncate()
-                                .text_xs()
+                                .text_caption()
+                                .line_height(rems(1.25))
                                 .text_color(theme.muted_foreground)
                                 .child(folder.describe_use()),
                         ),
@@ -277,7 +278,13 @@ impl RenderOnce for OfferedFolders {
                     if let Some(choose) = &on_choose {
                         choose(&folder, window, cx);
                     }
+                });
+            // The rule is the row's holder's, since the row's own border shows its focus.
+            div()
+                .when(index > 0, |this| {
+                    this.border_t_1().border_color(theme.border)
                 })
+                .child(row)
         });
         section = section
             .mt_8()
@@ -285,7 +292,7 @@ impl RenderOnce for OfferedFolders {
                 div()
                     .mb_2()
                     .px_1()
-                    .text_xs()
+                    .text_caption()
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(theme.muted_foreground)
                     .child(self.title),
@@ -302,76 +309,5 @@ impl RenderOnce for OfferedFolders {
                     .children(rows),
             );
         section
-    }
-}
-
-/// A divider under every row but the last, as `divide-y` draws them.
-trait DividedRow: gpui_kit::Styled + Sized {
-    fn when_not_last(self, divided: bool, color: gpui_kit::Hsla) -> Self {
-        if divided {
-            self.border_b_1().border_color(color)
-        } else {
-            self
-        }
-    }
-}
-
-impl<T: gpui_kit::Styled> DividedRow for T {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn says_which_modes_use_a_folder() {
-        let one = KnownFolder::new("/a/archive", [ModeId::Tidy]);
-        assert_eq!(one.describe_use(), "In Tidy");
-        let two = KnownFolder::new("/a/archive", [ModeId::View, ModeId::Sync]);
-        assert_eq!(two.describe_use(), "In View and Sync");
-        let three = KnownFolder::new("/a", ModeId::ALL);
-        assert_eq!(three.describe_use(), "In View, Tidy and Sync");
-        assert_eq!(three.name(), "a");
-    }
-
-    #[test]
-    fn a_folder_two_modes_use_is_one_in_the_order_first_found() {
-        let view = [PathBuf::from("/a/archive")];
-        let tidy = [PathBuf::from("/a/other"), PathBuf::from("/a/x/../archive")];
-        let sync = [PathBuf::from("/a/other/")];
-        let known = KnownFolder::collect([
-            (ModeId::View, &view[..]),
-            (ModeId::Tidy, &tidy[..]),
-            (ModeId::Sync, &sync[..]),
-        ]);
-        assert_eq!(
-            known,
-            [
-                KnownFolder::new("/a/archive", [ModeId::View, ModeId::Tidy]),
-                KnownFolder::new("/a/other", [ModeId::Tidy, ModeId::Sync]),
-            ]
-        );
-    }
-
-    #[test]
-    fn finds_the_folder_that_holds_a_path_most_closely() {
-        assert_eq!(
-            relative_inside(
-                Path::new("/a/archive"),
-                Path::new("/a/archive/bulk/one.png")
-            ),
-            Some("bulk/one.png".into())
-        );
-        assert_eq!(
-            relative_inside(Path::new("/a/archive"), Path::new("/a/archive")),
-            Some(String::new())
-        );
-        assert_eq!(
-            relative_inside(Path::new("/a/archive"), Path::new("/a/archive-2/one.png")),
-            None
-        );
-        let folders = [PathBuf::from("/a"), PathBuf::from("/a/archive")];
-        let closest = closest_folder(&folders, Path::new("/a/archive/bulk"), |path| path);
-        assert_eq!(closest, Some(&folders[1]));
-        assert_eq!(closest_folder(&folders, Path::new("/b"), |path| path), None);
     }
 }

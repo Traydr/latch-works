@@ -4,7 +4,7 @@
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_kit::component::menu::DropdownMenu as _;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon};
 use gpui_kit::{
     AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement as _,
@@ -16,6 +16,8 @@ use oriel_core_tidy::contract::{
     FileFilter, FileFlag, FileFormat, FileKind, FilePage, FileQuery, FileRow, FileSortColumn,
     RootId, Tidy,
 };
+use oriel_ui::TextRole as _;
+use oriel_ui::focus::FocusReveal;
 use oriel_ui::{ControlSize as _, TopBar};
 
 use crate::actions::PerformOptions;
@@ -35,28 +37,9 @@ const TILE_LIMIT: usize = 60;
 /// Rows read per section to find its tiles among files of other categories.
 const SECTION_PAGE: u32 = 300;
 
-/// The reasons a file waits for duplicate review rather than being left out for good.
-const WAITING: [&str; 3] = [
-    "Identical copies (resolve duplicates first)",
-    "Similar versions (review them first)",
-    "Not checked for similar versions yet",
-];
-
 /// Why the engine left files out, said the way the owner would say it (`SKIP_WORDS`).
 fn skip_words(reason: &str) -> Option<(&'static str, &'static str)> {
     Some(match reason {
-        "Identical copies (resolve duplicates first)" => (
-            "is an identical copy and waits for duplicate review",
-            "are identical copies and wait for duplicate review",
-        ),
-        "Similar versions (review them first)" => (
-            "is in a similar set and waits for review",
-            "are in similar sets and wait for review",
-        ),
-        "Not checked for similar versions yet" => (
-            "is still being checked for similar versions",
-            "are still being checked for similar versions",
-        ),
         "Already as small as they get" => ("came out no smaller", "came out no smaller"),
         "Won't decode" => ("won't open", "won't open"),
         "A file with the target name already exists" => (
@@ -248,6 +231,8 @@ impl ConvertPage {
         &mut self,
         group: ConvertGroup,
         tidy: &Tidy,
+        reveal: &FocusReveal,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let state = self.state.read(cx);
@@ -275,15 +260,46 @@ impl ConvertPage {
         let more = files - rows.len() as i64;
         let loaded = self.slot(group).data().is_some();
         let repeated = widgets::repeated_names(&rows.iter().collect::<Vec<_>>());
+        let running = self.state.read(cx).running_file(cx);
+        // Estimates wait behind a running change, so while one runs there is nothing to wait for.
+        let changing = self.state.read(cx).has_change();
         let tiles: Vec<AnyElement> = rows
             .iter()
             .map(|row| {
                 let folder = repeated.contains(&row.name);
-                widgets::media_tile(&self.thumbs, row, ratio, folder, cx)
+                let badge = running
+                    .as_ref()
+                    .filter(|file| file.rel_path == row.rel_path)
+                    .map(|file| widgets::running_badge("Converting", file, cx));
+                widgets::media_tile(&self.thumbs, row, ratio, folder, badge, cx)
             })
             .collect();
         let (one, many) = group.nouns();
         let kind = section_query(group).0;
+        let more_button = (more > 0 && loaded).then(|| {
+            let button = Button::new(SharedString::from(format!("convert-more-{}", group.key())))
+                .row_size()
+                .text()
+                .label(format!("and {} more", format::count(more)))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.state.update(cx, |state, cx| {
+                        state.open_library(
+                            LibraryPreset {
+                                flags: vec![FileFlag::Convertible],
+                                kinds: vec![kind],
+                                ..LibraryPreset::default()
+                            },
+                            cx,
+                        );
+                    });
+                }));
+            reveal.keep(
+                format!("convert-more-{}", group.key()),
+                div().mt(px(-12.)).mb_6().child(button),
+                window,
+                cx,
+            )
+        });
         div()
             .id(SharedString::from(format!(
                 "convert-section-{}",
@@ -303,10 +319,10 @@ impl ConvertPage {
                     .flex_row()
                     .items_center()
                     .gap_3()
-                    .h(px(36.))
+                    .h(px(44.))
                     .child(
                         div()
-                            .text_size(px(13.))
+                            .text_body()
                             .font_weight(FontWeight::MEDIUM)
                             .child(format!(
                                 "{} → {}",
@@ -317,37 +333,24 @@ impl ConvertPage {
                     .when(no_video_encoder, |this| {
                         this.child(
                             div()
-                                .text_xs()
+                                .text_caption()
                                 .text_color(warning)
                                 .child("No H.264 encoder on this machine"),
                         )
                     })
                     .child(div().flex_1())
-                    .child(widgets::caption(estimate.describe(bytes as f64), cx)),
+                    .child(widgets::caption(
+                        match estimate {
+                            crate::state::Estimate::Pending if changing => {
+                                format::bytes(bytes as f64)
+                            }
+                            _ => estimate.describe(bytes as f64),
+                        },
+                        cx,
+                    )),
             )
             .child(widgets::tile_grid(tiles))
-            .when(more > 0 && loaded, |this| {
-                this.child(
-                    div().mt(px(-12.)).mb_6().child(
-                        Button::new(SharedString::from(format!("convert-more-{}", group.key())))
-                            .row_size()
-                            .text()
-                            .label(format!("and {} more", format::count(more)))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.state.update(cx, |state, cx| {
-                                    state.open_library(
-                                        LibraryPreset {
-                                            flags: vec![FileFlag::Convertible],
-                                            kinds: vec![kind],
-                                            ..LibraryPreset::default()
-                                        },
-                                        cx,
-                                    );
-                                });
-                            })),
-                    ),
-                )
-            })
+            .children(more_button)
             .into_any_element()
     }
 
@@ -364,9 +367,9 @@ impl ConvertPage {
                     .flex_row()
                     .items_center()
                     .gap(px(6.))
-                    .h(px(36.))
+                    .h(px(44.))
                     .cursor_pointer()
-                    .text_size(px(13.))
+                    .text_body()
                     .font_weight(FontWeight::MEDIUM)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.left_open = !this.left_open;
@@ -378,7 +381,7 @@ impl ConvertPage {
                         } else {
                             IconName::ChevronRight
                         })
-                        .size(px(14.))
+                        .size(px(16.))
                         .text_color(theme.muted_foreground),
                     )
                     .child(format!("{} left as they are", format::count(left))),
@@ -397,7 +400,7 @@ impl Focusable for ConvertPage {
 }
 
 impl Render for ConvertPage {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The videos' section says when this machine has no encoder for them.
         self.state
             .update(cx, |state, cx| state.ask_capabilities(cx));
@@ -454,13 +457,6 @@ impl Render for ConvertPage {
             .map(|entry| entry.files)
             .sum::<i64>()
             + off.iter().map(|group| group.totals(&tidy).0).sum::<i64>();
-        let waiting: i64 = tidy
-            .convert
-            .skipped
-            .iter()
-            .filter(|entry| WAITING.contains(&entry.reason.as_str()))
-            .map(|entry| entry.files)
-            .sum();
         let theme = cx.theme();
         let meta = (files > 0).then(|| {
             format!(
@@ -469,22 +465,6 @@ impl Render for ConvertPage {
                 format::bytes(bytes as f64)
             )
         });
-        // Files duplicates hold back: a way to the review that frees them.
-        let waiting_link = (files > 0 && waiting > 0).then(|| {
-            Button::new("convert-waiting")
-                .bar_size()
-                .ghost()
-                .label(format!(
-                    "{} wait for duplicate review",
-                    format::count(waiting)
-                ))
-                .tooltip("Review duplicates")
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.state
-                        .update(cx, |state, cx| state.go(TidyPage::Duplicates, cx));
-                }))
-        });
-
         let options_state = self.state.clone();
         let counts: Vec<(ConvertGroup, i64, bool)> = ConvertGroup::ALL
             .into_iter()
@@ -492,14 +472,14 @@ impl Render for ConvertPage {
             .collect();
         let options = Button::new("convert-options")
             .bar_size()
-            .outline()
+            .outline().quiet_edge(cx)
             .label("Options")
             .dropdown_menu(move |menu, _, _| {
                 let mut menu = menu;
                 for (group, files, on) in counts.clone() {
                     let state = options_state.clone();
                     menu = menu.item(
-                        PopupMenuItem::new(format!("{}  {}", group.label(), format::count(files)))
+                        oriel_ui::menu_row(format!("{}  {}", group.label(), format::count(files)))
                             .checked(on)
                             .on_click(move |_, _, cx| {
                                 state.update(cx, |state, cx| state.set_convert_group(group, !on, cx));
@@ -511,38 +491,42 @@ impl Render for ConvertPage {
                 )
             });
         // Another page's change running, this one queues behind it.
-        let action: AnyElement = widgets::while_changing(
-            widgets::primary_action(
-                "convert-run",
-                format!("Convert {}", format::count(files)),
-                "⌘↩",
+        // With nothing that can run there is no command to offer, only a run still finishing.
+        let action = (files > 0 || status.is_some()).then(|| {
+            widgets::while_changing(
+                widgets::primary_action(
+                    "convert-run",
+                    format!("Convert {}", format::count(files)),
+                    "⌘↩",
+                )
+                .disabled(files == 0)
+                .on_click(cx.listener(|this, _, window, cx| this.convert(window, cx))),
+                status,
             )
-            .disabled(files == 0)
-            .on_click(cx.listener(|this, _, window, cx| this.convert(window, cx))),
-            status,
-        )
-        .into_any_element();
+            .into_any_element()
+        });
         let top_bar = TopBar::new(&shell, "Convert")
             .when_some(meta, |bar, meta| {
-                bar.trailing(
+                bar.quiet(
                     div()
                         .id("convert-meta")
                         .test_support()
                         .aria_label(SharedString::from(meta.clone()))
-                        .text_xs()
+                        .min_w_0()
+                        .truncate()
+                        .text_caption()
                         .text_color(theme.muted_foreground)
                         .child(meta),
                 )
             })
-            .when_some(waiting_link, |bar, link| bar.trailing(link))
             .trailing(options)
-            .trailing(action);
+            .when_some(action, |bar, action| bar.trailing(action));
 
         let body: AnyElement = if files == 0 && !changing {
             let title = if enabled.is_empty() {
                 "Nothing chosen to convert"
             } else {
-                "Everything is AVIF or MP4"
+                "Nothing left to convert"
             };
             let note: Option<AnyElement> = if enabled.is_empty() {
                 Some("Turn a kind of file on in Options.".into_any_element())
@@ -565,13 +549,14 @@ impl Render for ConvertPage {
                 div()
                     .mx_auto()
                     .w_full()
-                    .max_w(px(760.))
+                    .max_w(widgets::PAGE_COLUMN)
                     .px_6()
                     .pb_10()
                     .child(widgets::left_list(&reasons, cx))
             });
             div()
                 .id("convert-scroll")
+                .test_support()
                 .flex()
                 .flex_col()
                 .flex_1()
@@ -592,16 +577,19 @@ impl Render for ConvertPage {
                 .children(list)
                 .into_any_element()
         } else {
+            let reveal = FocusReveal::of("convert-reveal", px(0.), window, cx);
             let sections: Vec<AnyElement> = sections
                 .into_iter()
-                .map(|group| self.render_section(group, &tidy, cx))
+                .map(|group| self.render_section(group, &tidy, &reveal, window, cx))
                 .collect();
             let left_section = (left > 0).then(|| self.render_left(&reasons, left, cx));
             div()
                 .id("convert-scroll")
+                .test_support()
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
+                .track_scroll(reveal.scroll())
                 .px_5()
                 .pt_4()
                 .pb(px(112.))

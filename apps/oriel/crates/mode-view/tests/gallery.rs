@@ -649,11 +649,11 @@ fn every_image_tile_renders_a_thumbnail(cx: &mut TestAppContext) {
         );
     });
     cx.update_window(session.handle, |_, window, _| {
-        // Four 256 × 144 tiles to a row at this width.
+        // Four 254 × 142 tiles to a row at this width.
         let first = window
             .find(tile_id(&fixture.absolute("comics/alpha/1.jpg")))
             .bounds();
-        assert_eq!((first.size.width, first.size.height), (px(256.), px(144.)));
+        assert_eq!((first.size.width, first.size.height), (px(254.), px(142.)));
     })
     .unwrap();
 }
@@ -998,8 +998,8 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
             window.find("volume-panel").bounds()
         })
         .unwrap();
-    // The track starts below the border, the top padding and half the thumb: 1 + 12 + 7 px.
-    let quarter = point(panel.size.width / 2., px(20. + 112. * 0.75));
+    // The track starts below the border, the top padding and half the thumb: 1 + 12 + 9 px.
+    let quarter = point(panel.size.width / 2., px(22. + 136. * 0.75));
     cx.update_window(session.handle, |_, window, cx| {
         window.click_at("volume-panel", quarter, cx);
     })
@@ -1812,9 +1812,9 @@ fn a_row_half_in_view_at_either_edge_is_drawn_with_its_thumbnails(cx: &mut TestA
         })
         .unwrap();
 
-    // Four 256 × 144 tiles to a row, 154 px apart, under the grid's 16 px top inset. Row 8 is
+    // Four 254 × 142 tiles to a row, 152 px apart, under the grid's 16 px top inset. Row 8 is
     // scrolled to show its top half at the gallery's bottom edge.
-    let (stride, inset, row) = (154., 16., 8);
+    let (stride, inset, row) = (152., 16., 8);
     let height = f32::from(area.size.height);
     let scroll_top = inset + row as f32 * stride - (height - 77.);
     assert!(

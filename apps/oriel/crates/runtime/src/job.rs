@@ -29,9 +29,22 @@ pub struct JobProgress {
     paused: bool,
     waiting: bool,
     background: bool,
+    item: Option<SharedString>,
+    /// In thousandths, which also keeps a redraw from following every frame.
+    item_thousandths: Option<u16>,
 }
 
 impl JobProgress {
+    /// What one long step works on now, such as the video being encoded.
+    pub fn item(&self) -> Option<&SharedString> {
+        self.item.as_ref()
+    }
+
+    /// How far that step has got, from 0 to 1, when it can say.
+    pub fn item_share(&self) -> Option<f32> {
+        self.item_thousandths.map(|share| f32::from(share) / 1000.)
+    }
+
     pub fn phase(&self) -> &SharedString {
         &self.phase
     }
@@ -144,6 +157,7 @@ pub struct Job<T> {
     status: JobStatus<T>,
     token: CancelToken,
     pause: PauseToken,
+    tools: Arc<ToolHold>,
     _task: Task<()>,
 }
 
@@ -160,11 +174,13 @@ impl<T: Send + 'static> Job<T> {
         let token = CancelToken::new();
         let pause = PauseToken::new();
         let slot = Arc::new(ProgressSlot::default());
+        let tools = Arc::new(ToolHold::default());
         let (wake, mut wakes) = mpsc::unbounded();
         let reporter = JobReporter {
             token: token.clone(),
             pause: pause.clone(),
             slot: slot.clone(),
+            tools: tools.clone(),
             wake,
         };
         let run = AssertUnwindSafe(async move { work(reporter).await }).catch_unwind();
@@ -210,6 +226,7 @@ impl<T: Send + 'static> Job<T> {
                 status: JobStatus::Running,
                 token,
                 pause,
+                tools,
                 _task: task,
             }
         })
@@ -309,6 +326,7 @@ impl<T: 'static> Job<T> {
     /// Pauses or resumes a running job; a finished or stopping one stays as it is.
     pub fn set_paused(&mut self, paused: bool, cx: &mut Context<Self>) {
         if self.is_running() && !self.token.is_cancelled() && self.pause.set_paused(paused) {
+            self.tools.set_paused(paused, &self.token);
             self.progress.paused = paused;
             cx.notify();
         }
@@ -330,6 +348,7 @@ pub struct JobReporter {
     token: CancelToken,
     pause: PauseToken,
     slot: Arc<ProgressSlot>,
+    tools: Arc<ToolHold>,
     wake: mpsc::UnboundedSender<()>,
 }
 
@@ -341,6 +360,18 @@ impl JobReporter {
             progress.phase = phase;
             progress.done = 0;
             progress.total = total;
+        });
+    }
+
+    /// Names what a long step works on, and how far it has got when it can say.
+    pub fn set_item(&self, item: Option<(&str, Option<f32>)>) {
+        let (name, share) = match item {
+            Some((name, share)) => (Some(SharedString::from(name.to_owned())), share),
+            None => (None, None),
+        };
+        self.report(|progress| {
+            progress.item = name;
+            progress.item_thousandths = share.map(|share| (share.clamp(0., 1.) * 1000.) as u16);
         });
     }
 
@@ -401,6 +432,7 @@ impl JobReporter {
     /// Says the job is background work (true) or work the owner asked for (false); see
     /// [`JobProgress::is_background`].
     pub fn set_background(&self, background: bool) {
+        self.tools.set_background(background, &self.token);
         self.report(|progress| progress.background = background);
     }
 
@@ -418,6 +450,36 @@ impl JobReporter {
         if !self.slot.pending.swap(true, Ordering::AcqRel) {
             let _ = self.wake.unbounded_send(());
         }
+    }
+}
+
+/// Whether a paused job's tools hold still. A tool in the middle of a file cannot wait at a
+/// checkpoint as the job's own code does, so asked-for work, whose turn is its own while it is
+/// paused, suspends it. Background work does not: it must reach a checkpoint to step aside for what
+/// the owner asks for, and a suspended tool never would, so its item finishes and it pauses there.
+/// Both sides change this, so it is worked out in one place, under one lock.
+#[derive(Default)]
+struct ToolHold(Mutex<ToolHoldState>);
+
+#[derive(Default)]
+struct ToolHoldState {
+    paused: bool,
+    background: bool,
+}
+
+impl ToolHold {
+    fn set_paused(&self, paused: bool, token: &CancelToken) {
+        self.update(token, |state| state.paused = paused);
+    }
+
+    fn set_background(&self, background: bool, token: &CancelToken) {
+        self.update(token, |state| state.background = background);
+    }
+
+    fn update(&self, token: &CancelToken, change: impl FnOnce(&mut ToolHoldState)) {
+        let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        change(&mut state);
+        token.hold(state.paused && !state.background);
     }
 }
 

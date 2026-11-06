@@ -145,11 +145,19 @@ impl SettingsSection {
     }
 }
 
+/// A window narrower than this shows the sidebar as the rail, unless the owner expands it.
+pub const NARROW_WINDOW: f32 = 1120.;
+
 /// The shell's state, one per window. Modes observe it; a hidden mode's own state simply lives
 /// on in its entity.
 pub struct ShellState {
     mode: ModeId,
+    /// The owner's choice of sidebar, which is what is remembered.
     rail: bool,
+    /// Whether the window is too narrow to give a full sidebar its width, and whether the owner
+    /// expanded it all the same.
+    narrow_window: bool,
+    expanded_while_narrow: bool,
     activity: [Option<ModeActivity>; 3],
     jobs: Entity<Activity>,
     settings: Option<SettingsSection>,
@@ -161,6 +169,8 @@ impl ShellState {
         Self {
             mode,
             rail,
+            narrow_window: false,
+            expanded_while_narrow: false,
             activity: [None; 3],
             jobs: cx.new(|_| Activity::default()),
             settings: None,
@@ -254,10 +264,26 @@ impl ShellState {
         self.mode
     }
 
-    /// Whether the sidebar is compact, the rail of icons: the owner's choice alone, the same in
-    /// every mode and at any window size.
+    /// Whether the sidebar is compact, the rail of icons, the same in every mode: the owner's
+    /// choice, and always below [`NARROW_WINDOW`] unless they expand it there, since a full sidebar
+    /// and Tidy's queue would take half such a window from the pictures.
     pub fn rail(&self) -> bool {
+        self.rail || (self.narrow_window && !self.expanded_while_narrow)
+    }
+
+    /// The owner's choice of sidebar, whatever the window's width does to it for now.
+    pub fn rail_choice(&self) -> bool {
         self.rail
+    }
+
+    /// The shell says how wide the window is as it draws.
+    pub fn set_window_width(&mut self, width: f32, cx: &mut Context<Self>) {
+        let narrow = width < NARROW_WINDOW;
+        if narrow != self.narrow_window {
+            self.narrow_window = narrow;
+            self.expanded_while_narrow = false;
+            cx.notify();
+        }
     }
 
     /// The section of Settings on screen, or `None` while Settings is closed.
@@ -274,8 +300,14 @@ impl ShellState {
         }
     }
 
+    /// The sidebar's toggle: in a narrow window it only changes the form for now, and the owner's
+    /// choice waits for a wider one.
     pub fn toggle_rail(&mut self, cx: &mut Context<Self>) {
-        self.rail = !self.rail;
+        if self.narrow_window && !self.rail {
+            self.expanded_while_narrow = !self.expanded_while_narrow;
+        } else {
+            self.rail = !self.rail;
+        }
         cx.notify();
     }
 

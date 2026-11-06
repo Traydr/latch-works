@@ -11,7 +11,6 @@
 use std::path::{Path, PathBuf};
 
 use gpui_kit::component::WindowExt as _;
-use gpui_kit::component::button::ButtonVariant;
 use gpui_kit::{App, Entity, Window};
 use oriel_core_paths::DataRoot;
 use oriel_ui::folders::{closest_folder, relative_inside};
@@ -163,20 +162,21 @@ fn confirm_adding(
         why.map(|why| format!("{why} ")).unwrap_or_default(),
         folder.display()
     );
-    window.open_alert_dialog(cx, move |alert, _, _| {
+    window.open_alert_dialog(cx, move |alert, _, cx| {
         let (state, folder) = (state.clone(), folder.clone());
-        alert
-            .title(title.clone())
-            .description(description.clone())
-            .confirm()
-            .ok_text("Tidy It")
-            .ok_variant(ButtonVariant::Primary)
-            .cancel_text("Cancel")
-            .on_ok(move |_, window, cx| {
-                let folder = folder.clone();
-                state.update(cx, |state, cx| state.add_folder(folder, window, cx));
-                true
-            })
+        oriel_ui::dialogs::confirmation(
+            alert,
+            title.clone(),
+            description.clone(),
+            "Tidy it",
+            false,
+            cx,
+        )
+        .on_ok(move |_, window, cx| {
+            let folder = folder.clone();
+            state.update(cx, |state, cx| state.add_folder(folder, window, cx));
+            true
+        })
     });
 }
 

@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
-    Disableable as _, Icon, Sizable as _,
+    Disableable as _, Icon, Sizable as _, Size,
     button::{Button, ButtonVariants as _},
 };
 use gpui_kit::{
@@ -32,19 +32,23 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px,
 };
 use oriel_core_domain::format_bytes;
+use oriel_ui::TextRole as _;
 use oriel_ui::{ControlSize as _, LocalStorage};
 
 use crate::CapsulePlayer;
 use crate::listing::{MediaEntry, MediaKind};
 use crate::media_tools::{VideoProbe, ViewMediaTools};
 use crate::player::{
-    self, CapsulePlayerEvent, HoldSpeed, PlayerOptions, SkipBack, SkipForward, ToggleMute,
-    TogglePlayback,
+    self, CapsulePanel, CapsulePlayerEvent, HoldSpeed, PlayerOptions, SkipBack, SkipForward,
+    ToggleMute, TogglePlayback,
 };
 
 /// Where the viewer's volume and mute are kept: `localStorage`'s keys in Electron Oriel.
 pub const VOLUME_KEY: &str = "frameview.viewer.volume";
 pub const MUTED_KEY: &str = "frameview.viewer.muted";
+
+/// Opens the player's volume or speed panel, for a check in a real window.
+const PANEL_VARIABLE: &str = "ORIEL_VIEW_PANEL";
 
 /// How long the controls stay without the pointer moving or a key (`CHROME_IDLE_MS`).
 pub const CHROME_IDLE: Duration = Duration::from_millis(2500);
@@ -362,8 +366,24 @@ impl Viewer {
     /// what the owner changes in it for the next.
     fn open_player(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         let path = self.entries[ix].path().to_path_buf();
-        let options = self.player_options;
-        let player = cx.new(|cx| CapsulePlayer::open(path, options, window, cx));
+        let mut options = self.player_options;
+        // `ORIEL_VIEW_PANEL=volume|speed` shows that panel over a paused video, whose controls
+        // stay: a check in a real window, which allows no clicks.
+        let panel = match std::env::var(PANEL_VARIABLE).as_deref() {
+            Ok("volume") => Some(CapsulePanel::Volume),
+            Ok("speed") => Some(CapsulePanel::Speed),
+            _ => None,
+        };
+        if panel.is_some() {
+            options.autoplay = false;
+        }
+        let player = cx.new(|cx| {
+            let mut player = CapsulePlayer::open(path, options, window, cx);
+            if let Some(panel) = panel {
+                player.toggle_panel(panel, cx);
+            }
+            player
+        });
         player.update(cx, |player, cx| {
             player.set_chrome_visible(self.chrome_visible, cx)
         });
@@ -606,16 +626,50 @@ impl Viewer {
                 None => div().into_any_element(),
             },
             // GPUI's decoder plays a GIF on an `img` with an id.
-            MediaKind::Gif => img(entry.path().clone())
-                .id("viewer-gif")
+            // Positioned in a place of its own, so its share of that place is definite: `img()`
+            // otherwise takes the picture's own shape, and a tall one is cut off.
+            MediaKind::Gif => div()
+                .relative()
                 .size_full()
-                .object_fit(ObjectFit::Contain)
+                .child(
+                    img(entry.path().clone())
+                        .id("viewer-gif")
+                        .absolute()
+                        .size_full()
+                        .object_fit(ObjectFit::Contain),
+                )
                 .into_any_element(),
             MediaKind::Image => match self.stills.get(&self.index) {
-                Some(Decoded::Ready(image)) => img(image.clone())
-                    .size_full()
-                    .object_fit(ObjectFit::Contain)
-                    .into_any_element(),
+                // Painted rather than left to `img()`, which takes the picture's own shape as its
+                // aspect ratio, and would cut a tall still off rather than fit it.
+                Some(Decoded::Ready(image)) => {
+                    let image = image.clone();
+                    div()
+                        .relative()
+                        .size_full()
+                        .child(
+                            gpui_kit::canvas(
+                                |_, _, _| {},
+                                move |bounds, (), window, _| {
+                                    let shown =
+                                        ObjectFit::Contain.get_bounds(bounds, image.size(0));
+                                    window
+                                        .paint_image(
+                                            bounds,
+                                            shown,
+                                            gpui_kit::Corners::default(),
+                                            image.clone(),
+                                            0,
+                                            false,
+                                        )
+                                        .ok();
+                                },
+                            )
+                            .absolute()
+                            .size_full(),
+                        )
+                        .into_any_element()
+                }
                 Some(Decoded::Failed) => div()
                     .text_color(gpui_kit::white().opacity(0.7))
                     .child(format!("{} cannot be shown here.", entry.name()))
@@ -660,6 +714,10 @@ impl Render for Viewer {
         // its ground and its text are black and white rather than the theme's surfaces.
         let viewer = cx.entity().downgrade();
         let shown_file = entry.path().to_path_buf();
+        let panel_open = self
+            .player
+            .as_ref()
+            .is_some_and(|(_, player)| player.read(cx).panel().is_some());
         div()
             .id("viewer")
             .role(Role::Dialog)
@@ -750,11 +808,11 @@ impl Render for Viewer {
                         .pb_10()
                         .pr_3()
                         .pl(px(if fullscreen { 12. } else { 88. }))
-                        // `.viewer-scrim-top`: black at 70% fading out, so the title reads over
-                        // a light picture.
+                        // Black held behind both lines of text, so they read over a white page,
+                        // and only then fading out.
                         .bg(linear_gradient(
                             180.,
-                            linear_color_stop(gpui_kit::black().opacity(0.7), 0.),
+                            linear_color_stop(gpui_kit::black().opacity(0.65), 0.66),
                             linear_color_stop(gpui_kit::black().opacity(0.), 1.),
                         ))
                         .child(
@@ -763,17 +821,17 @@ impl Render for Viewer {
                                 .flex_col()
                                 .flex_1()
                                 .min_w_0()
-                                .child(div().truncate().text_sm().child(entry.name().clone()))
+                                .child(div().truncate().text_body().child(entry.name().clone()))
                                 .child(
                                     div()
                                         .truncate()
-                                        .text_xs()
-                                        .text_color(gpui_kit::white().opacity(0.7))
+                                        .text_caption()
+                                        .text_color(gpui_kit::white().opacity(0.85))
                                         .child(details),
                                 ),
                         )
                         .child(
-                            Button::new("viewer-copy-path")
+                            oriel_ui::on_dark_stage(Button::new("viewer-copy-path"))
                                 .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::Copy))
@@ -786,7 +844,7 @@ impl Render for Viewer {
                                 }),
                         )
                         .child(
-                            Button::new("viewer-reveal")
+                            oriel_ui::on_dark_stage(Button::new("viewer-reveal"))
                                 .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::FolderOpen))
@@ -795,7 +853,7 @@ impl Render for Viewer {
                                 .on_click(move |_, _, cx| cx.reveal_path(&revealed)),
                         )
                         .child(
-                            Button::new("viewer-show-in-tidy")
+                            oriel_ui::on_dark_stage(Button::new("viewer-show-in-tidy"))
                                 .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::WandSparkles))
@@ -806,7 +864,7 @@ impl Render for Viewer {
                                 })),
                         )
                         .child(
-                            Button::new("viewer-fullscreen")
+                            oriel_ui::on_dark_stage(Button::new("viewer-fullscreen"))
                                 .bar_size()
                                 .ghost()
                                 .icon(Icon::new(if fullscreen {
@@ -827,7 +885,7 @@ impl Render for Viewer {
                                 .on_click(|_, window, _| window.toggle_fullscreen()),
                         )
                         .child(
-                            Button::new("viewer-close")
+                            oriel_ui::on_dark_stage(Button::new("viewer-close"))
                                 .bar_size()
                                 .ghost()
                                 .icon(Icon::new(IconName::Close))
@@ -843,13 +901,17 @@ impl Render for Viewer {
                     self.can_step(-1),
                     cx.listener(|this, _, window, cx| this.step(-1, window, cx)),
                 ))
-                .child(step_button(
-                    "viewer-next",
-                    IconName::ChevronRight,
-                    "Next item",
-                    self.can_step(1),
-                    cx.listener(|this, _, window, cx| this.step(1, window, cx)),
-                ))
+                // The player's speed and volume panels rise along the right edge, over this arrow's
+                // place, so it gives way while one is open.
+                .when(!panel_open, |this| {
+                    this.child(step_button(
+                        "viewer-next",
+                        IconName::ChevronRight,
+                        "Next item",
+                        self.can_step(1),
+                        cx.listener(|this, _, window, cx| this.step(1, window, cx)),
+                    ))
+                })
             })
     }
 }
@@ -872,16 +934,25 @@ fn step_button(
         .flex()
         .items_center()
         .child(
-            // GPUI Kit's large arrow in a 44 px target: the step the viewer is used for.
-            Button::new(id)
-                .ghost()
-                .large()
-                .size(px(44.))
-                .icon(Icon::new(icon))
-                .tooltip(label)
-                .accessibility_label(label)
-                .disabled(!enabled)
-                .on_click(on_click),
+            // A 28 px arrow on a dark round plate in a 52 px target: the step the viewer is used
+            // for, and it must read over any picture, even a bright one. The plate is its own, as
+            // a ghost button draws no ground at rest.
+            div()
+                .rounded_full()
+                .bg(gpui_kit::black().opacity(0.45))
+                .child(
+                    oriel_ui::on_dark_stage(Button::new(id))
+                        .ghost()
+                        .with_size(Size::Size(px(37.)))
+                        .size(px(52.))
+                        .rounded_full()
+                        .text_color(gpui_kit::white())
+                        .icon(Icon::new(icon))
+                        .tooltip(label)
+                        .accessibility_label(label)
+                        .disabled(!enabled)
+                        .on_click(on_click),
+                ),
         )
 }
 

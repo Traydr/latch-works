@@ -20,6 +20,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 #[cfg(target_os = "macos")]
 use anyhow::Context as _;
 use anyhow::bail;
+use oriel_core_paths::DataRoot;
 use oriel_runtime::fs_meta::MetadataExt as _;
 use rusqlite::{Connection, OptionalExtension as _, params};
 
@@ -66,6 +67,8 @@ pub fn root_folder_name(root_id: RootId, root_path: &str) -> String {
 pub struct HoldingPlaces {
     data_dir: PathBuf,
     on_volumes: bool,
+    /// A sandboxed run's data folder, whose own trash stands in for the system's.
+    sandbox: Option<DataRoot>,
     folders: Mutex<HashMap<RootId, PathBuf>>,
 }
 
@@ -74,6 +77,7 @@ impl HoldingPlaces {
         Self {
             data_dir: data_dir.into(),
             on_volumes: false,
+            sandbox: None,
             folders: Mutex::new(HashMap::new()),
         }
     }
@@ -83,6 +87,30 @@ impl HoldingPlaces {
     pub fn on_volumes(mut self, on_volumes: bool) -> Self {
         self.on_volumes = on_volumes;
         self
+    }
+
+    /// Sends what leaves holding to `sandbox`'s own trash. A sandboxed run never touches the owner's
+    /// Trash, where its files would mix with theirs.
+    pub fn sandboxed_in(mut self, sandbox: Option<DataRoot>) -> Self {
+        self.sandbox = sandbox;
+        self
+    }
+
+    /// Moves a batch out of holding: to the system's Trash, or a sandboxed run's own. The only way
+    /// to the system's Trash, so no route can forget the sandbox.
+    pub fn trash(&self, path: &Path) -> anyhow::Result<()> {
+        match &self.sandbox {
+            Some(sandbox) => sandbox
+                .move_to_sandbox_trash(path)
+                .map(drop)
+                .map_err(|error| {
+                    anyhow::anyhow!(
+                        "Moving {} to the sandbox's trash failed: {error}",
+                        path.display()
+                    )
+                }),
+            None => move_to_system_trash(path),
+        }
     }
 
     pub fn data_dir(&self) -> &Path {
@@ -716,7 +744,7 @@ pub fn follow_data_folder(connection: &Connection, data_dir: &Path) -> anyhow::R
 /// does on macOS. Emptying holding goes through here, so the owner can still take a batch back
 /// out of the Trash.
 #[cfg(target_os = "macos")]
-pub fn move_to_trash(path: &Path) -> anyhow::Result<()> {
+fn move_to_system_trash(path: &Path) -> anyhow::Result<()> {
     use objc2_foundation::{NSFileManager, NSString, NSURL};
 
     let text = path
@@ -735,7 +763,7 @@ pub fn move_to_trash(path: &Path) -> anyhow::Result<()> {
 /// a drive without one) stops the operation rather than being deleted outright, as Chromium's
 /// progress sink stops it, so emptying holding never deletes what the owner cannot take back.
 #[cfg(windows)]
-pub fn move_to_trash(path: &Path) -> anyhow::Result<()> {
+fn move_to_system_trash(path: &Path) -> anyhow::Result<()> {
     let owned = path.to_path_buf();
     // `IFileOperation` runs only in a single-threaded apartment, so it gets a thread of its own
     // whatever apartment the caller's thread is in.
@@ -753,7 +781,7 @@ pub fn move_to_trash(path: &Path) -> anyhow::Result<()> {
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
-pub fn move_to_trash(path: &Path) -> anyhow::Result<()> {
+fn move_to_system_trash(path: &Path) -> anyhow::Result<()> {
     bail!(
         "Moving {} to the Trash is not ported to this platform yet.",
         path.display()
@@ -949,6 +977,16 @@ mod recycle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The owner's run has no sandbox, so what leaves holding goes to the system's Trash.
+    #[test]
+    fn only_a_sandboxed_run_has_a_trash_of_its_own() {
+        let places = HoldingPlaces::new("/data");
+        assert!(places.sandbox.is_none());
+        let data = DataRoot::at(PathBuf::from("/data")).unwrap();
+        let places = places.sandboxed_in(Some(data));
+        assert!(places.sandbox.is_some());
+    }
 
     #[test]
     fn a_roots_holding_folder_is_named_after_it() {

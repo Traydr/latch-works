@@ -5162,6 +5162,7 @@ dependencies = [
  "oriel-mode-tidy",
  "oriel-mode-view",
  "oriel-runtime",
+ "oriel-tools",
  "oriel-ui",
  "serde",
  "serde_json",
@@ -5402,6 +5403,7 @@ name = "oriel-tools"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "libc",
  "oriel-runtime",
  "serde",
  "serde_json",

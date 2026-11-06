@@ -41,6 +41,18 @@ impl Dismissals {
         Ok(dismissals)
     }
 
+    /// Whether the owner said these two files are not duplicates of each other.
+    pub fn apart(&self, left: FileId, right: FileId) -> bool {
+        left != right
+            && self.ids_by_file.get(&left).is_some_and(|ids| {
+                ids.iter().any(|id| {
+                    self.files_by_id
+                        .get(id)
+                        .is_some_and(|files| files.contains(&right))
+                })
+            })
+    }
+
     /// The dismissal that covers every one of these files, if any.
     pub fn covering(&self, file_ids: &[FileId]) -> Option<i64> {
         let first = file_ids.first()?;

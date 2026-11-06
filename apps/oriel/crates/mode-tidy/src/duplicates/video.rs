@@ -25,6 +25,7 @@ use gpui_kit::{
 };
 use oriel_media::mpv::{AnyPlayer, pump_frames};
 use oriel_media::video::{SeekMode, VideoError};
+use oriel_ui::TextRole as _;
 
 /// The scrubber's resolution, as a share of the video.
 const SCRUB_STEP: f32 = 0.0005;
@@ -176,7 +177,8 @@ impl TileVideo {
                     .flex()
                     .items_center()
                     .w_full()
-                    .h(px(20.))
+                    // A 32 pt target around the 4 pt line, as View's player has.
+                    .h(px(32.))
                     .child(
                         SliderIndicator::new(&self.scrubber)
                             .relative()
@@ -230,7 +232,7 @@ impl TileVideo {
             .child(
                 div()
                     .flex_shrink_0()
-                    .text_xs()
+                    .text_caption()
                     .child(SharedString::from(format!(
                         "{} / {}",
                         clock(position),
@@ -254,7 +256,7 @@ impl TileVideo {
     }
 }
 
-/// One of the controls' 28 px buttons, with its name as its tooltip.
+/// One of the controls' 32 px buttons, with its name as its tooltip.
 fn control_button(
     id: &'static str,
     icon: IconName,
@@ -264,7 +266,7 @@ fn control_button(
     div()
         .id(id)
         .flex_shrink_0()
-        .size(px(28.))
+        .size(px(32.))
         .flex()
         .items_center()
         .justify_center()
@@ -314,7 +316,7 @@ impl Render for TileVideo {
                 Some(
                     div()
                         .px_4()
-                        .text_size(px(12.))
+                        .text_caption()
                         .text_color(gpui_kit::white().opacity(0.7))
                         .child(error.to_string())
                         .into_any_element(),

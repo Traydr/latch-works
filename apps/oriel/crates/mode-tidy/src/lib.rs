@@ -1,7 +1,7 @@
-//! Tidy: Overview is home. Duplicates, Convert and Clean up are the work, in the order it is best
-//! done, and Shrink is the optional AV1 re-encode after them; Library and History are the
-//! archive; Holding sits at the foot of the sidebar. As Electron Oriel's Tidy mode draws them
-//! (its `modes/tidy/renderer`), on `oriel-core-tidy`'s engine.
+//! Tidy: Overview is home. Duplicates, Convert and Clean up are the work, in any order, and Shrink
+//! is the optional AV1 re-encode beside them; Library and History are the archive; Holding sits at
+//! the foot of the sidebar. As Electron Oriel's Tidy mode draws them (its `modes/tidy/renderer`),
+//! on `oriel-core-tidy`'s engine.
 //!
 //! [`TidyMode`] is the mode's root: the sidebar, the page on screen, the shell's Tidy commands
 //! (Add Folder…, Rescan, Undo, Select All, Find, the pages on ⌥⌘1–7, the shortcut sheet) and the
@@ -52,6 +52,7 @@ pub use links::TidyEvent;
 pub use overview::OverviewPage;
 pub use pages::TidyPage;
 pub use quick_look::{QUICK_LOOK_LABEL, last_quick_look};
+pub use shortcuts::open as show_shortcuts;
 pub use state::{LibraryPreset, TidyState};
 pub use synthetic::{LibraryColumn, LibraryDelegate, LibraryRow, SyntheticLibrary, synthetic_rows};
 pub use widgets::last_toast;
@@ -69,6 +70,7 @@ use gpui_kit::{
     ParentElement as _, Render, Styled as _, Subscription, Window, div, px,
 };
 use oriel_core_paths::DataRoot;
+use oriel_ui::TextRole as _;
 use oriel_ui::{
     ControlSize as _, HandOff, ModeId, ModeLayout, OfferedFolders, ShellState, TopBar, commands,
 };
@@ -181,6 +183,7 @@ impl TidyMode {
                 {
                     links::take(&state, target, window, cx);
                 }
+                state.update(cx, |state, cx| state.catch_up_analysis(window, cx));
             }),
             // Tidy takes the keys when it comes on screen, so its commands and page keys reach it.
             // Leaving the screen, it pauses Duplicates' video, as Electron Oriel pauses a hidden
@@ -255,6 +258,34 @@ impl TidyMode {
 
     pub fn overview(&self) -> &Entity<OverviewPage> {
         &self.overview
+    }
+
+    /// How much of the window's foot the page on screen keeps for its own commands, which the
+    /// activity panel and toasts stand on.
+    pub fn foot_height(&self, cx: &gpui_kit::App) -> gpui_kit::Pixels {
+        let height = match self.state.read(cx).page() {
+            TidyPage::Duplicates => self.duplicates.read(cx).foot_height(),
+            TidyPage::Library => self.library.read(cx).foot_height(cx),
+            TidyPage::Holding => self.holding.read(cx).foot_height(),
+            _ => 0.,
+        };
+        gpui_kit::px(height)
+    }
+
+    /// The room the page on screen keeps free among its commands, where a toast covers nothing.
+    pub fn toast_slot(&self, cx: &gpui_kit::App) -> Option<gpui_kit::Bounds<gpui_kit::Pixels>> {
+        match self.state.read(cx).page() {
+            TidyPage::Duplicates => self.duplicates.read(cx).toast_slot(),
+            _ => None,
+        }
+    }
+
+    /// The room the page on screen keeps free among its commands for the activity indicator.
+    pub fn activity_room(&self, cx: &gpui_kit::App) -> Option<gpui_kit::Bounds<gpui_kit::Pixels>> {
+        match self.state.read(cx).page() {
+            TidyPage::Duplicates => self.duplicates.read(cx).activity_room(),
+            _ => None,
+        }
     }
 
     pub fn duplicates(&self) -> &Entity<DuplicatesPage> {
@@ -335,10 +366,20 @@ impl TidyMode {
         if oriel_ui::popups::popup_open(window, cx) {
             return;
         }
-        // ? opens the shortcut sheet from anywhere but a text field.
-        if event.keystroke.key_char.as_deref() == Some("?") && !window.has_focused_input(cx) {
-            shortcuts::open(window, cx);
-            cx.stop_propagation();
+        // Tab can leave focus on a sidebar row, outside the page, whose number keys still mean
+        // what they say on the page.
+        if oriel_ui::keys::digit_key(&event.keystroke).is_some()
+            && self.state.read(cx).page() == pages::TidyPage::Duplicates
+            && window.focused(cx).is_some_and(|focused| focused.tab_stop)
+            && !window.has_focused_input(cx)
+            && !self
+                .duplicates
+                .read(cx)
+                .focus_handle(cx)
+                .contains_focused(window, cx)
+        {
+            self.duplicates
+                .update(cx, |page, cx| page.on_key_down(event, window, cx));
         }
     }
 
@@ -419,9 +460,9 @@ impl TidyMode {
                             .items_start()
                             .gap_2()
                             .text_left()
-                            .text_xs()
+                            .text_caption()
                             .text_color(theme.muted_foreground)
-                            .child(Icon::new(IconName::Lock).size(px(14.)).flex_shrink_0())
+                            .child(Icon::new(IconName::Lock).size(px(16.)).flex_shrink_0())
                             .child(div().flex_1().min_w_0().child(rule))
                     })),
             )
@@ -510,7 +551,7 @@ impl Render for TidyMode {
             self.focus_page(window, cx);
         }
         let rail = self.shell.read(cx).rail();
-        let navigation = sidebar::navigation(&self.state, rail, cx);
+        let navigation = sidebar::navigation(&self.state, rail, window, cx);
         let footer = sidebar::footer(&self.state, rail, window, cx);
         let content = self.render_content(cx);
         let _ = &self.thumbs;
@@ -564,9 +605,6 @@ impl Render for TidyMode {
             )
             .on_action(cx.listener(|this, _: &commands::Find, _, cx| {
                 this.state.update(cx, |state, cx| state.request_search(cx));
-            }))
-            .on_action(cx.listener(|_, _: &commands::ShowShortcuts, window, cx| {
-                shortcuts::open(window, cx);
             }))
             .on_action(cx.listener(|this, _: &commands::ShowOverview, _, cx| {
                 this.go(TidyPage::Overview, cx);

@@ -6,15 +6,17 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui_kit::{
-    AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement as _,
-    IntoElement, KeyDownEvent, ObjectFit, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
-    prelude::FluentBuilder as _, px,
+    AnyElement, App, ClickEvent, Context, Entity, FocusHandle, Focusable, FontWeight,
+    InteractiveElement as _, IntoElement, KeyDownEvent, ObjectFit, ParentElement as _, Render,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _,
+    Window, div, prelude::FluentBuilder as _, px,
 };
 use oriel_core_tidy::contract::{
     AudioState, FileFilter, FileFlag, FileFormat, FileKind, FilePage, FileQuery, FileRow,
     FileSortColumn, RootId,
 };
+use oriel_ui::TextRole as _;
+use oriel_ui::focus::FocusReveal;
 use oriel_ui::{ControlSize as _, TopBar};
 
 use crate::actions::{PerformOptions, TidyStep};
@@ -365,11 +367,11 @@ impl CleanupPage {
             div()
                 .flex()
                 .items_center()
-                .h(px(44.))
+                .h(px(52.))
                 .px_4()
                 .border_t_1()
                 .border_color(border)
-                .text_size(px(13.))
+                .text_body()
                 .text_color(muted)
                 .child(content)
         });
@@ -384,11 +386,11 @@ impl CleanupPage {
                         .flex_row()
                         .items_center()
                         .gap_2()
-                        .h(px(48.))
+                        .h(px(56.))
                         .px_4()
                         .child(
                             div()
-                                .text_size(px(13.))
+                                .text_body()
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .child(title),
                         )
@@ -398,10 +400,17 @@ impl CleanupPage {
                             Button::new(SharedString::from(format!("cleanup-{id}-run")))
                                 .bar_size()
                                 .outline()
+                                .quiet_edge(cx)
                                 .label(action)
-                                .on_click(
-                                    cx.listener(move |this, _, window, cx| run(this, window, cx)),
-                                ),
+                                // The section that moves up as this one empties has its own
+                                // button under the second click of a double-click.
+                                .on_click(cx.listener(
+                                    move |this, event: &ClickEvent, window, cx| {
+                                        if event.click_count() == 1 {
+                                            run(this, window, cx);
+                                        }
+                                    },
+                                )),
                             status,
                         )),
                 )
@@ -428,7 +437,7 @@ impl CleanupPage {
             .flex_col()
             .flex_1()
             .min_w_0()
-            .child(div().truncate().text_size(px(13.)).child(name.to_string()))
+            .child(div().truncate().text_body().child(name.to_string()))
             .when(!dir.is_empty(), |this| {
                 this.child(widgets::caption(dir.to_string(), cx).truncate())
             })
@@ -443,7 +452,7 @@ impl Focusable for CleanupPage {
 }
 
 impl Render for CleanupPage {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let shell = state.shell.clone();
         let tidy = state.overview.data().cloned();
@@ -493,7 +502,11 @@ impl Render for CleanupPage {
         });
         let top_bar = TopBar::new(&shell, "Clean up")
             .when(total > 0, |bar| {
-                bar.trailing(widgets::caption(format::plural(total, "item"), cx))
+                bar.trailing(
+                    widgets::caption(format::plural(total, "item"), cx)
+                        .min_w_0()
+                        .truncate(),
+                )
             })
             .when_some(action, |bar, action| bar.trailing(action));
 
@@ -532,7 +545,8 @@ impl Render for CleanupPage {
                 .unwrap_or_default()
                 .iter()
                 .map(|row| {
-                    let picture = thumbs::picture(&self.thumbs, row, 160, ObjectFit::Cover, cx);
+                    let picture =
+                        thumbs::picture(&self.thumbs, row, 160, ObjectFit::Cover, px(6.), cx);
                     let id = row.id;
                     let source: SharedString = format!("cleanup:silent:{id}").into();
                     let busy = self.state.read(cx).change_status(&source);
@@ -541,12 +555,13 @@ impl Render for CleanupPage {
                         .flex_row()
                         .items_center()
                         .gap_3()
-                        .h(px(56.))
+                        .h(px(64.))
                         .px_4()
                         .child(
                             div()
+                                .relative()
                                 .w(px(72.))
-                                .h(px(40.))
+                                .h(px(48.))
                                 .flex_shrink_0()
                                 .rounded(px(6.))
                                 .overflow_hidden()
@@ -576,10 +591,10 @@ impl Render for CleanupPage {
                         ))
                         .child(
                             div()
-                                .w(px(48.))
+                                .w(px(56.))
                                 .flex_shrink_0()
                                 .text_right()
-                                .text_xs()
+                                .text_caption()
                                 .text_color(muted)
                                 .child(format::duration(row.duration_ms)),
                         )
@@ -598,7 +613,7 @@ impl Render for CleanupPage {
                         .flex_row()
                         .items_center()
                         .gap_3()
-                        .h(px(44.))
+                        .h(px(52.))
                         .px_4()
                         .child(Self::name_and_folder(&row.name, &row.dir, cx))
                         .child(widgets::caption(format::bytes(row.size as f64), cx))
@@ -618,15 +633,15 @@ impl Render for CleanupPage {
                         .flex_row()
                         .items_center()
                         .gap_3()
-                        .h(px(44.))
+                        .h(px(52.))
                         .px_4()
-                        .child(Icon::new(IconName::Folder).size(px(16.)).text_color(muted))
+                        .child(Icon::new(IconName::Folder).size(px(20.)).text_color(muted))
                         .child(
                             div()
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(px(13.))
+                                .text_body()
                                 .child(folder),
                         )
                         .into_any_element()
@@ -642,14 +657,14 @@ impl Render for CleanupPage {
                         .flex()
                         .flex_col()
                         .justify_center()
-                        .h(px(44.))
+                        .h(px(52.))
                         .px_4()
                         .child(
                             div()
                                 .flex()
                                 .flex_row()
                                 .gap_1()
-                                .text_size(px(13.))
+                                .text_body()
                                 .child(row.name.clone())
                                 .child(div().text_color(muted).child("→"))
                                 .child(div().text_color(warning).child(name)),
@@ -740,23 +755,58 @@ impl Render for CleanupPage {
                     cx,
                 ),
             ];
+            // A single small card sits in the middle of the page, as the empty state does, rather
+            // than at the top of all that room.
+            let reveal = FocusReveal::of("cleanup-reveal", px(0.), window, cx);
+            let sections: Vec<AnyElement> = sections
+                .into_iter()
+                .flatten()
+                .enumerate()
+                .map(|(index, section)| {
+                    reveal.keep(format!("cleanup-{index}"), section, window, cx)
+                })
+                .collect();
             div()
                 .id("cleanup-scroll")
+                .test_support()
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
+                .track_scroll(reveal.scroll())
                 .child(
                     div()
                         .mx_auto()
                         .w_full()
-                        .max_w(px(760.))
+                        .max_w(widgets::PAGE_COLUMN)
                         .flex()
                         .flex_col()
                         .gap_4()
                         .px_6()
                         .pt_6()
                         .pb(px(112.))
-                        .children(sections.into_iter().flatten()),
+                        // What the page is for, so a card or two do not sit alone under the bar.
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .pb_1()
+                                .child(
+                                    div()
+                                        .text_heading()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .child(format!(
+                                            "{} to clean up",
+                                            format::plural(total, "item")
+                                        )),
+                                )
+                                .child(widgets::caption(
+                                    "Junk goes to holding, empty folders are removed and wrong \
+                                     extensions are put right. Each has an Undo in History.",
+                                    cx,
+                                )),
+                        )
+                        .children(sections),
                 )
                 .into_any_element()
         };

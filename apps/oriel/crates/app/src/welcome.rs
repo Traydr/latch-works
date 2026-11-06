@@ -12,7 +12,6 @@ use std::time::{Duration, Instant, SystemTime};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FontWeight,
@@ -24,6 +23,7 @@ use oriel_core_paths::DataRoot;
 use oriel_mode_sync::{ProfileInput, SyncMode};
 use oriel_mode_tidy::TidyMode;
 use oriel_mode_view::ViewMode;
+use oriel_ui::TextRole as _;
 use oriel_ui::{ControlSize as _, ModeId, ShellState};
 
 /// `ORIEL_WELCOME=1` shows the welcome under `ORIEL_DATA_DIR`, which otherwise never shows
@@ -282,7 +282,7 @@ impl Welcome {
                 .flex_row()
                 .items_center()
                 .gap_4()
-                .min_h(px(48.))
+                .min_h(px(56.))
                 .px_4()
                 .py(px(10.))
         };
@@ -292,11 +292,11 @@ impl Welcome {
                 .flex_col()
                 .flex_1()
                 .min_w_0()
-                .text_size(px(13.))
+                .text_body()
                 .child(title)
                 .child(
                     div()
-                        .text_xs()
+                        .text_caption()
                         .text_color(theme.muted_foreground)
                         .child(caption),
                 )
@@ -316,12 +316,12 @@ impl Welcome {
                     .flex_row()
                     .items_center()
                     .gap_3()
-                    .min_h(px(52.))
+                    .min_h(px(60.))
                     .px_4()
                     .py(px(10.))
                     .child(
                         Icon::new(IconName::FolderOpen)
-                            .size(px(16.))
+                            .size(px(20.))
                             .flex_shrink_0()
                             .text_color(theme.muted_foreground),
                     )
@@ -336,7 +336,7 @@ impl Welcome {
                                     .id("welcome-folder-name")
                                     .test_support()
                                     .truncate()
-                                    .text_size(px(13.))
+                                    .text_body()
                                     .font_weight(FontWeight::MEDIUM)
                                     .child(
                                         chosen
@@ -352,7 +352,7 @@ impl Welcome {
                                         .test_support()
                                         .aria_label(path.clone())
                                         .truncate()
-                                        .text_xs()
+                                        .text_caption()
                                         .text_color(theme.muted_foreground)
                                         .child(path),
                                 )
@@ -362,10 +362,11 @@ impl Welcome {
                         Button::new("welcome-choose-folder")
                             .bar_size()
                             .outline()
+                            .quiet_edge(cx)
                             .label(if chosen.is_some() {
                                 "Change…"
                             } else {
-                                "Choose Folder…"
+                                "Choose folder…"
                             })
                             .on_click(cx.listener(|this, _, _, cx| this.choose_folder(cx))),
                     ),
@@ -385,7 +386,7 @@ impl Welcome {
                 .border_color(theme.border)
                 .child(text("Tidy it", tidy_caption))
                 .child(
-                    Switch::new("welcome-tidy-it")
+                    oriel_ui::switch("welcome-tidy-it")
                         .accessibility_label("Tidy it")
                         .checked(self.tidies())
                         .disabled(!admitted)
@@ -409,7 +410,7 @@ impl Welcome {
                                 "Push it to your Pane View server.".into(),
                             ))
                             .child(
-                                Switch::new("welcome-sync-it")
+                                oriel_ui::switch("welcome-sync-it")
                                     .accessibility_label("Sync it to Pane View")
                                     .checked(self.sync_it)
                                     .on_click(cx.listener(|this, checked: &bool, _, cx| {
@@ -426,8 +427,16 @@ impl Welcome {
                                 .gap_2()
                                 .px_4()
                                 .pb_3()
-                                .child(Input::new(&self.api_url).aria_label("Pane View API URL"))
-                                .child(Input::new(&self.token).aria_label("Sync API token")),
+                                .child(
+                                    Input::new(&self.api_url)
+                                        .bar_size()
+                                        .aria_label("Pane View API URL"),
+                                )
+                                .child(
+                                    Input::new(&self.token)
+                                        .bar_size()
+                                        .aria_label("Sync API token"),
+                                ),
                         )
                     }),
             );
@@ -477,7 +486,7 @@ impl Render for Welcome {
                 div()
                     .mt_2()
                     .text_center()
-                    .text_size(px(13.))
+                    .text_body()
                     .text_color(theme.muted_foreground)
                     .child("View, tidy and sync your archive, in one window."),
             )
@@ -489,14 +498,14 @@ impl Render for Welcome {
                         .flex_col()
                         .child(
                             div()
-                                .text_size(px(15.))
+                                .text_heading()
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .child("Choose your archive folder"),
                         )
                         .child(
                             div()
                                 .mt_0p5()
-                                .text_xs()
+                                .text_caption()
                                 .text_color(theme.muted_foreground)
                                 .child(
                                     "View opens it now; Tidy and Sync can take it too. Nothing \
@@ -517,7 +526,7 @@ impl Render for Welcome {
                         .flex()
                         .flex_col()
                         .gap_1()
-                        .text_size(px(13.))
+                        .text_body()
                         .text_color(theme.danger)
                         .children(self.problems.iter().cloned()),
                 )
@@ -533,7 +542,7 @@ impl Render for Welcome {
                         this.child(
                             Button::new("welcome-skip")
                                 .ghost()
-                                .bar_size()
+                                .page_size()
                                 .label("Skip")
                                 .on_click(cx.listener(|_, _, _, cx| {
                                     cx.emit(WelcomeEvent::Finished);

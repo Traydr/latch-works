@@ -32,7 +32,7 @@ pub const FILE_COLUMNS: &str = "f.id, f.root_id, r.path AS root_path, f.rel_path
   f.ext_mismatch, f.probe_version, f.probe_error, f.width, f.height, f.frames, f.has_alpha, \
   f.duration_ms, f.video_codec, f.audio_codec, f.audio_streams, f.bitrate, f.sha256, \
   f.fingerprint, f.loudness_version, f.loudness_max_db, f.optimize_not_smaller, \
-  f.shrink_not_smaller";
+  f.shrink_not_smaller, f.reencoded, f.fingerprint_version";
 
 pub const FILES_FROM: &str = "files f JOIN roots r ON r.id = f.root_id";
 
@@ -78,6 +78,9 @@ pub struct FileRecord {
     /// Set once a Convert of these bytes came out no smaller and was not kept.
     pub optimize_not_smaller: bool,
     pub shrink_not_smaller: bool,
+    /// These bytes are a re-encode Tidy made to save space, until they change.
+    pub reencoded: bool,
+    pub fingerprint_version: i64,
 }
 
 impl FileRecord {
@@ -117,7 +120,25 @@ impl FileRecord {
             loudness_max_db: row.get(30)?,
             optimize_not_smaller: row.get::<_, i64>(31)? == 1,
             shrink_not_smaller: row.get::<_, i64>(32)? == 1,
+            reencoded: row.get::<_, i64>(33)? == 1,
+            fingerprint_version: row.get(34)?,
         })
+    }
+
+    /// Whether this file has no print but the analysis will make one, by the same test as
+    /// [`FINGERPRINTABLE_SQL`]: a file not probed yet may yet qualify, and one whose print failed or
+    /// that can never have one (a junk file, one that will not open) is not waited for.
+    pub fn awaits_print(&self) -> bool {
+        let qualifies = self.probe_version == 0
+            || (self.probe_error.is_none()
+                && self.width.is_some()
+                && self.height.is_some()
+                && (self.kind == FileKind::Image
+                    || (self.kind == FileKind::Video && self.duration_ms.unwrap_or(0.0) > 0.0)));
+        self.fingerprint.is_none()
+            && self.fingerprint_version < FINGERPRINT_VERSION
+            && !self.is_junk
+            && qualifies
     }
 
     /// Whether the video can be heard; `None` for anything else, or a video not probed yet.
@@ -152,6 +173,7 @@ impl FileRecord {
             ext: self.ext.clone(),
             size: self.size,
             mtime_ms: self.mtime_ms,
+            ctime_ms: self.ctime_ms,
             kind: self.kind,
             format: self.format,
             extension_mismatch: self.ext_mismatch,

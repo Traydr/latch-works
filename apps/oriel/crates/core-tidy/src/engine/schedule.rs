@@ -77,6 +77,16 @@ impl Queue {
             .count()
     }
 
+    /// Refuses a root while asked-for work on it waits or runs.
+    fn check_removable(&self, root_id: RootId) -> Result<(), RootBusy> {
+        let busy = self
+            .entries
+            .iter()
+            .filter(|entry| entry.roots.contains(&root_id))
+            .any(|entry| !entry.is_background() || entry.cancel.is_none());
+        if busy { Err(RootBusy) } else { Ok(()) }
+    }
+
     /// Whether `id` may take the turn now.
     fn may_run(&self, id: u64) -> bool {
         if self
@@ -160,7 +170,10 @@ pub(crate) struct RootBusy;
 
 impl std::fmt::Display for RootBusy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Wait for this root's jobs to finish before removing it.")
+        f.write_str(
+            "Work on this folder is still going, or paused, and a paused job waits until it is \
+             resumed. Let it finish or stop it, then forget the folder.",
+        )
     }
 }
 
@@ -229,17 +242,12 @@ impl Scheduler {
     pub(crate) fn stop_work_on(&self, root_id: RootId) -> Result<(), RootBusy> {
         let stopping: Vec<(u64, CancelToken)> = {
             let queue = self.shared.lock();
+            queue.check_removable(root_id)?;
             let on_root: Vec<&Entry> = queue
                 .entries
                 .iter()
                 .filter(|entry| entry.roots.contains(&root_id))
                 .collect();
-            if on_root
-                .iter()
-                .any(|entry| !entry.is_background() || entry.cancel.is_none())
-            {
-                return Err(RootBusy);
-            }
             on_root
                 .iter()
                 .filter_map(|entry| Some((entry.id, entry.cancel.clone()?)))
@@ -254,6 +262,11 @@ impl Scheduler {
             queue = self.shared.wait(queue);
         }
         Ok(())
+    }
+
+    /// Whether [`Self::stop_work_on`] would refuse `root_id` now, without stopping anything.
+    pub(crate) fn check_removable(&self, root_id: RootId) -> Result<(), RootBusy> {
+        self.shared.lock().check_removable(root_id)
     }
 
     /// Makes background analysis of `root_id` asked-for, as "Check now" does in glazier-core when
@@ -385,6 +398,10 @@ impl Progress for Turn<'_> {
 
     fn done(&self, done: u64) {
         self.progress.done(done);
+    }
+
+    fn item(&self, item: Option<(&str, Option<f32>)>) {
+        self.progress.item(item);
     }
 
     fn cancel_token(&self) -> Option<&CancelToken> {

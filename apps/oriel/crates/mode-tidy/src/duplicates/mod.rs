@@ -12,10 +12,13 @@
 //! N keeps every version and marks the set as not duplicates, which its Undo (the toast's, ⌘Z,
 //! or History's, which lists such sets in place of Electron Oriel's list of them) brings back;
 //! S skips; ↑ ↓
-//! (J K) move through the queue and ← → (H L) through the versions; Space or C looks closer, Z
-//! shows actual size, M turns sound on or off, P prefers the version's folder, ⌘Y shows it in
-//! Quick Look and ⇧⌘R in Finder. Each decision says what it did in a toast with its own Undo.
+//! (J K) move through the queue and ← → (H L) through the versions; Page Down goes to the next
+//! line of versions and Page Up back to the first; Space or C looks closer, Z shows actual size, M
+//! turns sound on or off, P prefers the version's folder, ⌘Y shows it in Quick Look and ⇧⌘R in
+//! Finder. Each decision says what it did in a toast with its own Undo.
 
+mod checking;
+mod grid;
 pub mod model;
 mod video;
 
@@ -30,20 +33,23 @@ use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::kbd::Kbd;
 use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::popover::Popover;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
+use gpui_kit::component::scroll::{Scrollbar, ScrollbarMode};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon};
 use gpui_kit::{
-    Anchor, AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable, FontWeight,
-    Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, Keystroke, MouseButton, ObjectFit,
-    ParentElement as _, Pixels, Render, Role, ScrollHandle, SharedString,
-    StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription,
-    TestSupportExt as _, UniformListScrollHandle, WeakEntity, Window, div, img,
-    prelude::FluentBuilder as _, px, rems, uniform_list,
+    Anchor, AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable,
+    FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, Keystroke, MouseButton,
+    ObjectFit, ParentElement as _, Pixels, Render, Role, ScrollHandle, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _,
+    UniformListScrollHandle, WeakEntity, Window, canvas, div, prelude::FluentBuilder as _, px,
+    rems, uniform_list,
 };
 use oriel_core_tidy::contract::{
     DuplicateKind, DuplicateScope, DuplicateSet, DuplicateSetPage, DuplicateSetRequest, FileId,
     FileKind, FileRow, RootId, SimilarityLevel, is_close_call,
 };
-use oriel_ui::layout::NavItem;
+use oriel_ui::TextRole as _;
+use oriel_ui::focus::FocusReveal;
+use oriel_ui::layout::{NavItem, RAIL_WIDTH, SIDEBAR_WIDTH};
 use oriel_ui::{ControlSize as _, Toast, TopBar, checkbox_target};
 
 use crate::actions::PerformOptions;
@@ -56,6 +62,7 @@ use crate::state::TidyState;
 use crate::thumbs::{self, Thumb, Thumbs};
 use crate::widgets;
 
+use grid::{GridInput, GridPlan, in_view};
 pub use model::SetRow;
 use model::{
     Lane, Standing, copy_of_number, decision_label, facts_of, files_of, freed_bytes, has_video,
@@ -69,18 +76,79 @@ const PAGE: usize = 100;
 /// How long a click on a new set waits, so a double-click never decides two sets.
 const ARM_DELAY: Duration = Duration::from_millis(400);
 
-/// A set of more versions than this scrolls, a line of four at a time.
-const FITS: usize = 6;
-
-/// The height of a line of versions once the grid scrolls, which the grid's own arithmetic
-/// (`lines_to_draw`) needs in pixels. The space between lines, above the first and below the
-/// last is a rem (`gap_4`, `pt_4`, `pb_4`). It holds the tallest facts a tile shows (a video's
-/// lanes, its name and a note: about 210 px) above a picture of [`PICTURE_LEAST`].
-const LINE: f32 = 320.;
-
 /// The least height of a version's picture, in rems: a stage too short to give every tile that
 /// much over its facts scrolls, rather than letting the facts cover the picture.
 const PICTURE_LEAST: f32 = 6.;
+
+/// The narrowest a version's tile may be, in rems.
+const TILE_LEAST: f32 = 11.;
+
+/// A tile narrower than this, in rems, drops its facts' labels, which leave their values too
+/// little room.
+const FACTS_LABELLED: f32 = 17.;
+
+/// A picture's longer side, in rems, at which a landscape version can be judged at a glance: the
+/// lines scroll rather than draw them smaller.
+const PICTURE_GOOD: f32 = 14.;
+
+/// The same for a portrait version, whose longer side is what a small difference is found along.
+const PORTRAIT_GOOD: f32 = 20.;
+
+/// How much of the line below always shows when the lines scroll, in rems: the tile's top, with
+/// its checkbox and number.
+const NEXT_LINE_PEEK: f32 = 6.25;
+
+/// A stage narrower than this, in rems, gives its decision bar's commands less padding, and its
+/// count of versions out of sight fewer words.
+const NARROW_STAGE: f32 = 42.;
+/// The least a narrow bar's count of versions out of sight takes, in rem: "6 above" is no wider
+/// than "4 more", so the room left for a toast does not change as the grid scrolls.
+const OUT_OF_SIGHT_LEAST: f32 = 6.75;
+/// What the grid and the copy list keep clear at their foot for the fade over what is below.
+const FOCUS_FOOT: Pixels = px(48.);
+/// How long the pointer stays on a folder line before its hover text shows.
+const FOLDER_TIP_AFTER: std::time::Duration = std::time::Duration::from_millis(500);
+/// The letters a narrow queue's row holds on its second line.
+const NARROW_QUEUE_LETTERS: usize = 19;
+/// A stage narrower than this, in rems, has no room for "below" and a kept version's number too.
+const WIDE_OUT_OF_SIGHT: f32 = 58.;
+/// A stage narrower than this, in rems, says "4 more" for "4 more below" whatever it keeps.
+const ROOMY_OUT_OF_SIGHT: f32 = 46.;
+
+/// A stage shorter than this, in rems, gives the next line less, for the pictures on it: its top,
+/// with the chip that numbers it.
+const SHORT_STAGE: f32 = 34.;
+const NEXT_LINE_SHORT_PEEK: f32 = 4.;
+
+/// The space between lines of versions, in rems (`gap_4`).
+const GRID_GAP_REMS: f32 = 1.;
+
+/// What a tile takes around its picture, across and down: its 2 px ring and 4 px padding.
+const TILE_INSET: f32 = 12.;
+
+/// About how wide a character of a folder's name is, in the tile's 14 px text.
+const FOLDER_CHARACTER: f32 = 7.2;
+/// An average letter's width in the 13 px facts, and in the 15 px decision line: enough to tell
+/// what fits on a line before it is drawn.
+const FACT_CHARACTER: f32 = 6.8;
+const REASON_CHARACTER: f32 = 7.6;
+/// A fact's label's width and the space after it.
+const FACT_LABEL: f32 = 88.;
+/// A facts line's height, at 13 px text.
+const FACT_LINE: f32 = 18.;
+/// The least the Keep button takes, in rem, and with a narrow bar's closer padding.
+const DECIDE_LEAST: f32 = 8.;
+const DECIDE_LEAST_NARROW: f32 = 7.;
+/// A tile's chip: its width with a number of one digit and of two, its height, its space from the
+/// picture's corner, and from the place's when it sits in the room beside the picture.
+const CHIP_WIDTH: f32 = 47.;
+const CHIP_WIDTH_TWO_DIGITS: f32 = 56.;
+const CHIP_HEIGHT: f32 = 32.;
+const CHIP_INSET: f32 = 6.;
+const CHIP_INSET_BESIDE: f32 = 2.;
+
+/// How much of the window's foot the decision bar takes: its commands, its padding and its rule.
+pub const DECISION_FOOT: f32 = 73.;
 
 /// The loupe's surround: always this near-black, with light text, so a picture is judged on a
 /// neutral ground in either theme; and the amber its losses read in on it.
@@ -95,8 +163,78 @@ const TILE_VIDEO_SIDE: u32 = 1024;
 /// since this Mac allows no scripted clicks.
 const MATCHING_VARIABLE: &str = "ORIEL_DUPLICATES_MATCHING";
 
+/// Opens the set at this place in the queue (from 1), or the first with a file whose path holds
+/// these words, once the queue is read, for the same reason.
+const SET_VARIABLE: &str = "ORIEL_DUPLICATES_SET";
+
+/// Keeps only this version (from 1) of the set on screen at start, for the same reason.
+const KEEP_VARIABLE: &str = "ORIEL_DUPLICATES_KEEP";
+
+/// Opens the loupe on the set on screen at start, for the same reason.
+const LOUPE_VARIABLE: &str = "ORIEL_DUPLICATES_LOUPE";
+
+/// Plays the video the loupe opens on at start, to show its controls, for the same reason.
+const PLAY_VARIABLE: &str = "ORIEL_DUPLICATES_PLAY";
+
+/// Scrolls the version grid to this line (from 0) at start, for the same reason.
+const SCROLL_VARIABLE: &str = "ORIEL_DUPLICATES_SCROLL";
+
+/// The versions a scrolling grid leaves out of sight.
+#[derive(Clone, Debug)]
+struct OutOfSight {
+    /// Whether they are below the stage, or back above it.
+    below: bool,
+    count: usize,
+    /// The numbers of those the decision would keep.
+    kept: Vec<usize>,
+    /// The line a press goes to.
+    go_to: usize,
+}
+
+/// What the check variables above still have to do, once the queue is read.
+#[derive(Default)]
+struct AtStart {
+    set: Option<usize>,
+    set_named: Option<String>,
+    /// The name asked for when no set on the page has it, said in the top bar.
+    set_missing: Option<String>,
+    keep: Option<usize>,
+    loupe: bool,
+    play: bool,
+    scroll: Option<usize>,
+}
+
+impl AtStart {
+    fn from_environment() -> Self {
+        let number = |name: &str| {
+            std::env::var(name)
+                .ok()
+                .and_then(|value| value.parse().ok())
+        };
+        Self {
+            set: number(SET_VARIABLE),
+            set_named: std::env::var(SET_VARIABLE)
+                .ok()
+                .filter(|value| value.parse::<usize>().is_err()),
+            set_missing: None,
+            keep: number(KEEP_VARIABLE),
+            loupe: std::env::var_os(LOUPE_VARIABLE).is_some_and(|value| !value.is_empty()),
+            play: std::env::var_os(PLAY_VARIABLE).is_some_and(|value| !value.is_empty()),
+            scroll: number(SCROLL_VARIABLE),
+        }
+    }
+}
+
 /// Lines above and below the screen whose pictures are decoded ahead of a scroll, but not drawn.
 const NEAR_LINES: usize = 1;
+
+/// The longest side a version's tile and an identical set's one picture are decoded at.
+const TILE_PICTURE: u32 = 768;
+const COPIES_PICTURE: u32 = 1024;
+const LOUPE_PICTURE: u32 = 2048;
+
+/// The next set's versions whose pictures are decoded ahead: as many as a grid shows at first.
+const NEXT_SET_TILES: usize = 8;
 
 /// The longest side the loupe decodes a picture at for actual size: GPUI's sprite atlas holds no
 /// texture larger (Metal's and Direct3D's 16384), and one larger comes out blank. A panorama or a
@@ -156,8 +294,35 @@ pub struct DuplicatesPage {
     tile_videos: HashMap<FileId, Entity<TileVideo>>,
     /// The tiles of the set on screen whose video the owner paused, which stay paused.
     paused_tiles: HashSet<FileId>,
-    /// The scroll of the version grid drawn last, for the pages spike.
+    /// The scroll of the version grid drawn last, while its lines scroll, and how it is laid
+    /// out, for moves to a line.
     grid_scroll: Option<ScrollHandle>,
+    grid_plan: Option<GridPlan>,
+    /// The space between the lines of what scrolls, and the height it shows them in.
+    grid_gap: f32,
+    grid_height: f32,
+    /// The height the identical copies' rows have to show in, as last drawn.
+    copies_height: f32,
+    /// The stage the version grid fills, as last drawn; the plan is worked out from it.
+    stage_size: (f32, f32),
+    /// The window's rem, as last drawn.
+    rem: f32,
+    /// The free room in the decision bar, as last drawn.
+    bar_slot: Option<gpui_kit::Bounds<Pixels>>,
+    /// What the version grid drawn last leaves out of sight, for the decision bar.
+    out_of_sight: Option<OutOfSight>,
+    at_start: AtStart,
+    /// The tile whose folder line has been under the pointer long enough to show its whole path,
+    /// and the wait until it does.
+    folder_tip: Option<FileId>,
+    folder_tip_wait: Option<Task<()>>,
+    /// The video tile's picture under the pointer, where a click pauses rather than keeps.
+    hover_picture: Option<FileId>,
+    /// Each tile's chip takes the keyboard as one target, with its ring round all of it.
+    chip_focus: HashMap<FileId, FocusHandle>,
+    /// Each tile's or copy's row, whose controls bring it into view as they take focus.
+    tile_focus: HashMap<FileId, FocusHandle>,
+    grid_reveal: FocusReveal,
     seen: (
         Option<RootId>,
         u64,
@@ -203,6 +368,21 @@ impl DuplicatesPage {
             tile_videos: HashMap::new(),
             paused_tiles: HashSet::new(),
             grid_scroll: None,
+            grid_plan: None,
+            grid_gap: 0.,
+            grid_height: 0.,
+            copies_height: 0.,
+            stage_size: (0., 0.),
+            rem: 16.,
+            bar_slot: None,
+            out_of_sight: None,
+            at_start: AtStart::from_environment(),
+            folder_tip: None,
+            folder_tip_wait: None,
+            hover_picture: None,
+            chip_focus: HashMap::new(),
+            tile_focus: HashMap::new(),
+            grid_reveal: FocusReveal::new(&ScrollHandle::new(), FOCUS_FOOT),
             seen: (None, 0, None, None),
             queue_scroll: UniformListScrollHandle::new(),
             _subscriptions: subscriptions,
@@ -398,8 +578,72 @@ impl DuplicatesPage {
         {
             self.active_index = position;
             self.return_to = None;
+        } else if let Some(key) = self.active_key.clone()
+            && let Some(position) = self.sets().iter().position(|set| set.key == key)
+        {
+            // Sets sort by what they would free, which a change running moves under the owner.
+            self.active_index = position;
+        } else if self.page().is_some_and(|page| page.counts.checking > 0)
+            && self.return_to.is_none()
+        {
+            // The set on screen may only be being checked, so it comes back into focus.
+            self.return_to = self.active_key.clone();
+        }
+        if let Some(set) = self.at_start.set.take() {
+            self.active_index = set
+                .saturating_sub(1)
+                .min(self.sets().len().saturating_sub(1));
+        }
+        // Asked for by name, it is found or it says so, and never silently shows another set. An
+        // empty queue may still be filling, so it goes on looking for as long as it is not found.
+        if let Some(named) = self.at_start.set_named.clone() {
+            let sets = self.sets();
+            let found = sets.iter().position(|set| {
+                files_of(set)
+                    .iter()
+                    .any(|file| file.rel_path.contains(&named))
+            });
+            let count = sets.len();
+            if let Some(found) = found {
+                self.active_index = found;
+                self.at_start.set_named = None;
+                self.at_start.set_missing = None;
+            } else if count > 0 && self.at_start.set_missing.is_none() {
+                eprintln!(
+                    "{SET_VARIABLE}: none of the {count} sets here has a file matching {named}"
+                );
+                self.at_start.set_missing = Some(named);
+            }
         }
         self.follow_active(cx);
+        if let Some(keep) = self.at_start.keep.take()
+            && let (Some(set), Some(row)) = (self.active(), self.rows().get(keep.saturating_sub(1)))
+        {
+            self.overrides.insert(set.key.clone(), vec![row.file.id]);
+        }
+        if std::mem::take(&mut self.at_start.loupe) {
+            self.open_loupe(self.target(), cx);
+        }
+    }
+
+    /// The pointer came onto a tile's folder line, or left it: its whole path shows after the
+    /// delay hover text has.
+    fn hover_folder(&mut self, file: Option<FileId>, cx: &mut Context<Self>) {
+        self.folder_tip_wait = None;
+        if self.folder_tip.take().is_some() {
+            cx.notify();
+        }
+        let Some(file) = file else {
+            return;
+        };
+        self.folder_tip_wait = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(FOLDER_TIP_AFTER).await;
+            this.update(cx, |this, cx| {
+                this.folder_tip = Some(file);
+                cx.notify();
+            })
+            .ok();
+        }));
     }
 
     /// A new set starts with focus on its first version that would go, fitted and paused.
@@ -481,10 +725,12 @@ impl DuplicatesPage {
         let key = set.key.clone();
         let several = keep.len() > 1;
         let kept_count = keep.len() as i64;
+        let total = kept_count + going.len() as i64;
         let kind = set.kind;
         let options = PerformOptions {
             source: Some("duplicates".into()),
             quiet: true,
+            undo_name: Some(format!("Kept {kept_count} of {total}")),
             on_undone: Some({
                 let (page, key) = (page.clone(), key.clone());
                 Rc::new(move |_, cx| {
@@ -514,18 +760,37 @@ impl DuplicatesPage {
                     if plan.failed > 0 {
                         return;
                     }
-                    // A file that changed since the scan stays where it is.
+                    // A file that changed since the scan stays where it is, and so do the copies
+                    // of a file kept that has: say which, since the first is not all it can be.
+                    let for_kept_file =
+                        plan.skipped > 0 && plan.skipped_for_kept_file == plan.skipped;
                     let stayed = (plan.skipped > 0).then(|| {
-                        format!(
-                            "{} changed since the scan and stayed; Tidy is scanning again",
-                            format::plural(plan.skipped, "file")
-                        )
+                        let files = format::plural(plan.skipped, "file");
+                        if for_kept_file {
+                            format!(
+                                "{files} stayed: the file kept has changed since the scan; Tidy is \
+                                 scanning again"
+                            )
+                        } else if plan.skipped_for_kept_file > 0 {
+                            format!(
+                                "{files} stayed: they or the file kept have changed since the \
+                                 scan; Tidy is scanning again"
+                            )
+                        } else {
+                            format!(
+                                "{files} changed since the scan and stayed; Tidy is scanning again"
+                            )
+                        }
                     });
                     if plan.done == 0 {
-                        let toast = Toast::info("Nothing moved");
-                        let toast = match stayed {
-                            Some(stayed) => toast.detail(stayed),
-                            None => toast,
+                        let toast = if for_kept_file {
+                            Toast::info("Nothing moved: the file kept has changed since the scan")
+                                .detail("Tidy is scanning again")
+                        } else {
+                            match stayed {
+                                Some(stayed) => Toast::info("Nothing moved").detail(stayed),
+                                None => Toast::info("Nothing moved"),
+                            }
                         };
                         crate::widgets::show_toast(window, toast, cx);
                         return;
@@ -560,19 +825,21 @@ impl DuplicatesPage {
                     });
                     let (undo_state, undo_page, undo_key, undone) =
                         (state.clone(), page.clone(), key.clone(), plan.clone());
-                    let mut toast = Toast::done(message).action("Undo", move |window, cx| {
-                        let (page, key) = (undo_page.clone(), undo_key.clone());
-                        let options = PerformOptions {
-                            quiet: true,
-                            on_undone: Some(Rc::new(move |_, cx| {
-                                page.update(cx, |page, cx| page.bring_back(&key, cx)).ok();
-                            })),
-                            ..PerformOptions::default()
-                        };
-                        undo_state.update(cx, |state, cx| {
-                            state.undo_plan(undone.clone(), options, window, cx);
+                    let mut toast = Toast::done(message)
+                        .brief(format!("Kept {kept_count} of {total}"))
+                        .action("Undo", move |window, cx| {
+                            let (page, key) = (undo_page.clone(), undo_key.clone());
+                            let options = PerformOptions {
+                                quiet: true,
+                                on_undone: Some(Rc::new(move |_, cx| {
+                                    page.update(cx, |page, cx| page.bring_back(&key, cx)).ok();
+                                })),
+                                ..PerformOptions::default()
+                            };
+                            undo_state.update(cx, |state, cx| {
+                                state.undo_plan(undone.clone(), options, window, cx);
+                            });
                         });
-                    });
                     if let Some(detail) = detail {
                         toast = toast.detail(detail);
                     }
@@ -583,10 +850,7 @@ impl DuplicatesPage {
         self.state.update(cx, |state, cx| {
             state.perform(
                 PlanRequest::ResolveDuplicates {
-                    groups: vec![ResolveGroup {
-                        keep,
-                        remove: going,
-                    }],
+                    groups: vec![ResolveGroup::of_set(&set, keep, going)],
                 },
                 options,
                 window,
@@ -610,29 +874,57 @@ impl DuplicatesPage {
         let ids: Vec<FileId> = files_of(&set).iter().map(|file| file.id).collect();
         let dismissed = engine.dismiss_duplicate_set(ids);
         let state = self.state.clone();
+        state.update(cx, |state, _| state.undo_entries_coming += 1);
+        let coming = state.clone();
         cx.spawn_in(window, async move |this, cx| {
             let dismissed = dismissed.await;
+            coming.update(cx, |state, _| state.undo_entries_coming -= 1);
             this.update_in(cx, |this, window, cx| match dismissed {
                 Ok(dismissal_id) => {
                     let page = cx.entity().downgrade();
                     let (restore_engine, key) = (engine.clone(), set.key.clone());
-                    let restore = Rc::new(move |cx: &mut App| {
-                        let restored = restore_engine.restore_duplicate_set(dismissal_id);
-                        let (page, key) = (page.clone(), key.clone());
-                        cx.spawn(async move |cx| {
-                            if restored.await.is_ok() {
-                                page.update(cx, |page, cx| {
-                                    page.bring_back(&key, cx);
-                                    page.state.update(cx, |state, cx| state.changed(cx));
+                    // Says what happened once it has: `done` for the ⌘Z, whose press has shown
+                    // nothing yet, and any failure, however it was asked for.
+                    let restore = Rc::new(
+                        move |done: Option<Toast>, window: &mut Window, cx: &mut App| {
+                            let restored = restore_engine.restore_duplicate_set(dismissal_id);
+                            let (page, key) = (page.clone(), key.clone());
+                            window
+                                .spawn(cx, async move |cx| {
+                                    let restored = restored.await;
+                                    cx.update(|window, cx| {
+                                        let toast = match restored {
+                                            Ok(()) => {
+                                                page.update(cx, |page, cx| {
+                                                    page.bring_back(&key, cx);
+                                                    page.state
+                                                        .update(cx, |state, cx| state.changed(cx));
+                                                })
+                                                .ok();
+                                                done
+                                            }
+                                            Err(error) => Some(
+                                                Toast::error("Couldn't bring the set back")
+                                                    .detail(format!("{error:#}")),
+                                            ),
+                                        };
+                                        if let Some(toast) = toast {
+                                            crate::widgets::show_toast(window, toast, cx);
+                                        }
+                                    })
+                                    .ok();
                                 })
-                                .ok();
-                            }
-                        })
-                        .detach();
-                    });
+                                .detach();
+                        },
+                    );
                     let undo = {
                         let restore = restore.clone();
-                        state.update(cx, |state, _| state.push_undo(move |_, _, cx| restore(cx)))
+                        state.update(cx, |state, _| {
+                            state.push_undo(move |_, window, cx| {
+                                let done = Toast::info("Undid “Kept all”");
+                                restore(Some(done), window, cx);
+                            })
+                        })
                     };
                     let undo_state = state.clone();
                     let message = if set.kind == DuplicateKind::Exact {
@@ -642,10 +934,12 @@ impl DuplicatesPage {
                     };
                     crate::widgets::show_toast(
                         window,
-                        Toast::done(message).action("Undo", move |_, cx| {
-                            undo_state.update(cx, |state, _| state.drop_undo(undo));
-                            restore(cx);
-                        }),
+                        Toast::done(message)
+                            .brief("Kept all")
+                            .action("Undo", move |window, cx| {
+                                undo_state.update(cx, |state, _| state.drop_undo(undo));
+                                restore(None, window, cx);
+                            }),
                         cx,
                     );
                     let version = this.state.read(cx).catalog_version();
@@ -707,10 +1001,20 @@ impl DuplicatesPage {
         } else {
             kept.into_iter().chain([row.file.id]).collect()
         };
-        if !next.is_empty() {
-            self.overrides.insert(set.key, next);
-            cx.notify();
+        if next.is_empty() {
+            return;
         }
+        // Back at the suggestion, it is the suggestion again and not the owner's pick.
+        let mut same = next.clone();
+        let mut suggested = kept_ids(&set, None);
+        same.sort_unstable();
+        suggested.sort_unstable();
+        if same == suggested {
+            self.overrides.remove(&set.key);
+        } else {
+            self.overrides.insert(set.key, next);
+        }
+        cx.notify();
     }
 
     fn move_by(&mut self, delta: isize, cx: &mut Context<Self>) {
@@ -743,7 +1047,54 @@ impl DuplicatesPage {
         self.focused_row = (self.target() as isize + delta).clamp(0, count - 1) as usize;
         self.keyboard_focus = true;
         self.keep_video_in_sight();
+        self.reveal_version(self.focused_row);
         cx.notify();
+    }
+
+    /// Scrolls the version grid so `line` starts at the top of the stage, as far as it can.
+    fn scroll_to_line(&mut self, line: usize, cx: &mut Context<Self>) {
+        let (Some(scroll), Some(plan)) = (&self.grid_scroll, &self.grid_plan) else {
+            return;
+        };
+        let top = plan.top_of(line, self.grid_gap);
+        scroll.set_offset(gpui_kit::point(px(0.), px(-top)));
+        cx.notify();
+    }
+
+    /// Brings a version's line onto the stage, when it is not whole on it.
+    fn reveal_version(&mut self, index: usize) {
+        let (Some(scroll), Some(plan)) = (&self.grid_scroll, &self.grid_plan) else {
+            return;
+        };
+        let gap = self.grid_gap;
+        let line = index / plan.columns.max(1);
+        let scrolled = -f32::from(scroll.offset().y);
+        let top = plan.top_of(line, gap);
+        let bottom = top + plan.line + gap * 2.;
+        let height = self.grid_height;
+        if top < scrolled || bottom > scrolled + height {
+            scroll.set_offset(gpui_kit::point(px(0.), px(-top)));
+        }
+    }
+
+    /// The free room in the decision bar, while a set shows.
+    pub fn toast_slot(&self) -> Option<gpui_kit::Bounds<Pixels>> {
+        self.active().and(self.bar_slot)
+    }
+
+    /// The bar's free room for the activity indicator, which may stay a long time, so it keeps
+    /// off the loupe's words about its keys, which use that room.
+    pub fn activity_room(&self) -> Option<gpui_kit::Bounds<Pixels>> {
+        self.toast_slot().filter(|_| !self.looking)
+    }
+
+    /// How much of the window's foot the page takes: the decision bar, while a set shows.
+    pub fn foot_height(&self) -> f32 {
+        if self.active().is_some() {
+            DECISION_FOOT
+        } else {
+            0.
+        }
     }
 
     /// Open in View, for one of the set's files (`useOpenInView`).
@@ -895,6 +1246,11 @@ impl DuplicatesPage {
         self.move_by(delta, cx);
     }
 
+    /// Keeps the set's first version, as a click on its Keep does.
+    pub(crate) fn spike_keep(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.keep_only(0, window, cx);
+    }
+
     /// Opens the loupe on the set's second version, as Space does, or closes it.
     pub(crate) fn spike_loupe(&mut self, open: bool, cx: &mut Context<Self>) {
         if open {
@@ -932,11 +1288,16 @@ impl DuplicatesPage {
     pub(crate) fn spike_tiles_shown(&self, count: usize, cx: &App) -> bool {
         let thumbs = self.thumbs.read(cx);
         let rows = self.rows();
+        if self.looking {
+            return rows
+                .get(self.focus_row())
+                .is_some_and(|row| thumbs.is_done(Path::new(&row.file.abs_path), LOUPE_PICTURE));
+        }
         !rows.is_empty()
             && rows
                 .iter()
                 .take(count)
-                .all(|row| thumbs.is_done(Path::new(&row.file.abs_path), 768))
+                .all(|row| thumbs.is_done(Path::new(&row.file.abs_path), TILE_PICTURE))
     }
 
     /// The version grid's scroll, while the set on screen has one.
@@ -964,9 +1325,26 @@ impl DuplicatesPage {
         cx.notify();
     }
 
-    fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    /// After a click on the bar, the page's keys are the page's again: ↩ keeps the next set's
+    /// suggestion, not the button the pointer last pressed. A press from the keyboard leaves focus
+    /// where Tab put it.
+    fn take_keys_back(&self, event: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if !event.is_keyboard() {
+            self.focus.focus(window, cx);
+        }
+    }
+
+    pub(crate) fn on_key_down(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // It is the open menu's, or nothing's; the page must not act on it behind the menu.
         if oriel_ui::popups::popup_open(window, cx) {
+            return;
+        }
+        if oriel_ui::keys::control_has_key(event, None, window, cx) {
             return;
         }
         let keys = &event.keystroke;
@@ -1076,6 +1454,12 @@ impl DuplicatesPage {
                 }
             }
             "escape" if self.looking => self.close_loupe(cx),
+            "pagedown" => {
+                if let Some(hidden) = self.out_of_sight.clone().filter(|hidden| hidden.below) {
+                    self.scroll_to_line(hidden.go_to, cx);
+                }
+            }
+            "pageup" => self.scroll_to_line(0, cx),
             _ => return,
         }
         cx.stop_propagation();
@@ -1090,8 +1474,26 @@ impl DuplicatesPage {
         let shell = self.state.read(cx).shell.clone();
         // What counts as similar matters only where similar versions are shown.
         let matching = self.scope(cx) != DuplicateScope::Exact;
+        // In the top bar, since a line that came and went in the queue would move every row under
+        // the pointer, and a click on a row can decide a set.
+        let checking = checking::render(
+            &self.state,
+            self.page().map_or(0, |page| page.counts.checking),
+            cx,
+        );
         TopBar::new(&shell, "Duplicates")
+            .when_some(checking, |bar, line| bar.trailing(line))
             .when(matching, |bar| bar.trailing(self.render_matching(cx)))
+            .when_some(self.at_start.set_missing.clone(), |bar, named| {
+                bar.trailing(
+                    div()
+                        .id("duplicates-set-missing")
+                        .test_support()
+                        .text_caption()
+                        .text_color(cx.theme().warning)
+                        .child(format!("{SET_VARIABLE}: no set here matches {named}")),
+                )
+            })
     }
 
     /// "Matching: Balanced…": the settings that decide what counts as a duplicate, Settings ›
@@ -1108,10 +1510,16 @@ impl DuplicatesPage {
         Popover::new("duplicates-matching-popover")
             .anchor(Anchor::TopRight)
             .default_open(open_at_start)
-            .trigger(Button::new("duplicates-matching").outline().label(format!(
-                "Matching: {}…",
-                crate::settings::similarity_label(level)
-            )))
+            .trigger(oriel_ui::controls::OutlineTrigger::new(
+                Button::new("duplicates-matching")
+                    .outline()
+                    .quiet_edge(cx)
+                    .bar_size()
+                    .label(format!(
+                        "Matching: {}…",
+                        crate::settings::similarity_label(level)
+                    )),
+            ))
             .content(move |_, _, cx| {
                 let Some(settings) = state.read(cx).settings().cloned() else {
                     return div().into_any_element();
@@ -1143,7 +1551,7 @@ impl DuplicatesPage {
         scopes.push((
             DuplicateScope::Exact,
             "Identical",
-            IconName::Copy,
+            IconName::Equal,
             counts.map(|counts| counts.exact),
         ));
         let this = cx.entity().downgrade();
@@ -1152,33 +1560,32 @@ impl DuplicatesPage {
             let this = this.clone();
             let current = value == scope;
             let shown = count.map(format::count);
-            div()
-                .when(count == Some(0) && !current, |this| this.opacity(0.5))
-                .child(
-                    NavItem::new(
-                        SharedString::from(format!("scope-{value}")),
-                        Icon::new(icon),
-                        label,
-                    )
-                    .accessibility_label(match &shown {
-                        Some(shown) => format!("{label} {shown}"),
-                        None => label.to_string(),
-                    })
-                    .current(current)
-                    .when_some(shown, |item, shown| {
-                        item.trailing(
-                            div()
-                                .flex_shrink_0()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(shown),
-                        )
-                    })
-                    .on_click(move |_, _, cx| {
-                        this.update(cx, |this, cx| this.change_scope(value, cx))
-                            .ok();
-                    }),
+            div().child(
+                NavItem::new(
+                    SharedString::from(format!("scope-{value}")),
+                    Icon::new(icon),
+                    label,
                 )
+                .quiet(count == Some(0))
+                .accessibility_label(match &shown {
+                    Some(shown) => format!("{label} {shown}"),
+                    None => label.to_string(),
+                })
+                .current(current)
+                .when_some(shown, |item, shown| {
+                    item.trailing(
+                        div()
+                            .flex_shrink_0()
+                            .text_caption()
+                            .text_color(muted)
+                            .child(shown),
+                    )
+                })
+                .on_click(move |_, _, cx| {
+                    this.update(cx, |this, cx| this.change_scope(value, cx))
+                        .ok();
+                }),
+            )
         });
         div()
             .id("duplicates-scopes")
@@ -1194,16 +1601,24 @@ impl DuplicatesPage {
 
     /// The queue's column: the scopes, then the sets of the scope on screen. `sets` is empty
     /// for a scope with nothing in it, where the column keeps only its scopes.
-    fn render_queue(&self, sets: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn render_queue(&self, sets: bool, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        // A short window gives the stage what the queue can spare.
+        let narrow = f32::from(window.viewport_size().width) < QUEUE_NARROW_WINDOW;
+        let queue_width = if narrow { 13. } else { 16. };
         let theme = cx.theme();
         let (border, muted) = (theme.border, theme.muted_foreground);
         let header = self.render_scope_list(cx);
         let count = self.sets().len();
+        let terse = narrow
+            && self
+                .sets()
+                .iter()
+                .any(|set| narrow_queue_caption(set, false).chars().count() > NARROW_QUEUE_LETTERS);
         let this = cx.entity().downgrade();
         div()
             .flex()
             .flex_col()
-            .w(rems(16.))
+            .w(rems(queue_width))
             .flex_shrink_0()
             .h_full()
             .border_r_1()
@@ -1224,7 +1639,7 @@ impl DuplicatesPage {
                             return Vec::new();
                         };
                         range
-                            .map(|index| render_queue_row(&page, index, muted, cx))
+                            .map(|index| render_queue_row(&page, index, muted, narrow, terse, cx))
                             .collect()
                     })
                     .track_scroll(&self.queue_scroll)
@@ -1242,18 +1657,29 @@ impl DuplicatesPage {
             return div().into_any_element();
         };
         let rows = rows_of(&set);
+        if self.looking
+            && std::mem::take(&mut self.at_start.play)
+            && let Some(row) = rows.get(self.focus_row())
+        {
+            let file = row.file.clone();
+            self.play(&file, window, cx);
+        }
         let kept = self.kept();
         let overridden = self.overrides.contains_key(&set.key);
         let reason = reason_of(&set, &rows, &kept, overridden);
-        let line = (!reason.text.is_empty()).then(|| render_decision_line(&reason, cx));
+        let common = self.common_on_decision_line(&set, &rows, &kept, &reason, window);
+        let line = (!reason.text.is_empty() || common.is_some())
+            .then(|| render_decision_line(&reason, common.clone(), cx));
+        self.out_of_sight = None;
         let body = if set.kind == DuplicateKind::Exact {
-            self.render_copies(&set, &rows, &kept, &reason.text, cx)
+            self.render_copies(&set, &rows, &kept, &reason.text, window, cx)
         } else {
             self.render_grid(&set, &rows, &kept, &reason, window, cx)
         };
         let bar = self.render_decision_bar(&set, &rows, &kept, cx);
         let loupe = (self.looking && set.kind == DuplicateKind::Similar)
-            .then(|| self.render_loupe(&set, &rows, &kept, &reason, window, cx));
+            .then(|| self.render_loupe(&set, &rows, &kept, &reason, cx));
+        self.decode_next_set_ahead(cx);
         div()
             .id(SharedString::from(format!("set-{}", set.key)))
             .test_support()
@@ -1279,10 +1705,64 @@ impl DuplicatesPage {
             .into_any_element()
     }
 
-    /// The versions, a tile each: as many as fit fill the stage, and more scroll in lines of
-    /// four. Only the lines on screen are drawn, and their videos play; the pictures of the lines
-    /// just past the screen are decoded ahead; a line not drawn keeps its place, so the grid
-    /// scrolls as if every line were there.
+    /// What every version shares, for the decision line to say beside its reason, when the two fit
+    /// there. The tiles then have one line less, which goes to their pictures.
+    fn common_on_decision_line(
+        &self,
+        set: &DuplicateSet,
+        rows: &[SetRow],
+        kept: &[FileId],
+        reason: &model::Reason,
+        window: &Window,
+    ) -> Option<String> {
+        if set.kind == DuplicateKind::Exact || rows.is_empty() {
+            return None;
+        }
+        let common = common_facts(set, rows, kept).join(" · ");
+        if common.is_empty() {
+            return None;
+        }
+        let rem = f32::from(window.rem_size());
+        let width = if self.stage_size.0 > 0. {
+            self.stage_size.0
+        } else {
+            f32::from(window.viewport_size().width) - 32. * rem
+        };
+        let wanted = reason.text.chars().count() as f32 * REASON_CHARACTER
+            + common.chars().count() as f32 * FACT_CHARACTER
+            + if reason.close_call { 1.5 * rem } else { 0. }
+            + 1.5 * rem;
+        (wanted <= width - 2.5 * rem).then_some(common)
+    }
+
+    /// Asks for the pictures the next set shows first, after everything on screen so they decode
+    /// next: moving on, or deciding this set, then finds them ready and draws no empty tile. With
+    /// the loupe open that is also the version a new set focuses, at the loupe's size.
+    fn decode_next_set_ahead(&self, cx: &mut Context<Self>) {
+        let Some(next) = self.sets().get(self.index() + 1).copied() else {
+            return;
+        };
+        let (size, tiles) = match next.kind {
+            DuplicateKind::Exact => (COPIES_PICTURE, 1),
+            DuplicateKind::Similar => (TILE_PICTURE, NEXT_SET_TILES),
+        };
+        let rows = rows_of(next);
+        let looking = self.looking && next.kind == DuplicateKind::Similar;
+        self.thumbs.update(cx, |thumbs, cx| {
+            if looking && let Some(focused) = rows.get(1).or(rows.first()) {
+                thumbs.get(&focused.file, LOUPE_PICTURE, cx);
+            }
+            for row in rows.iter().take(tiles) {
+                thumbs.get(&row.file, size, cx);
+            }
+        });
+    }
+
+    /// The versions, a tile each, laid out by `GridInput::plan` from the pictures' shape: as many
+    /// as can be judged at a glance fill the stage, and more scroll by lines, with the next line
+    /// always in sight and a button that says how many are below. Only the lines on screen are
+    /// drawn, and their videos play; the pictures of the lines just past the screen are decoded
+    /// ahead; a line not drawn keeps its place, so the grid scrolls as if every line were there.
     fn render_grid(
         &mut self,
         set: &DuplicateSet,
@@ -1293,19 +1773,24 @@ impl DuplicatesPage {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let count = rows.len();
-        let scrolls = count > FITS;
-        let columns = match count {
-            0..=1 => 1,
-            2 => 2,
-            3 => 3,
-            4 => 2,
-            5 | 6 => 3,
-            _ => 4,
+        let rem = f32::from(window.rem_size());
+        self.rem = rem;
+        let gap = GRID_GAP_REMS * rem;
+        let (pad_x, pad_y) = (1.25 * rem, rem);
+        // The stage as drawn last; before it has been drawn, what the window leaves it.
+        let stage = if self.stage_size.0 > 0. {
+            self.stage_size
+        } else {
+            let viewport = window.viewport_size();
+            (
+                f32::from(viewport.width) - 32. * rem,
+                f32::from(viewport.height) - 11. * rem,
+            )
         };
         // Every tile carries the same lines, so the pictures above them stay the same height:
         // the name when two versions share a folder, the video lanes when one is a video, and
         // a line of notes when one has a note.
-        let layout = TileLayout {
+        let mut layout = TileLayout {
             names: {
                 let mut seen = HashSet::new();
                 rows.iter().any(|row| !seen.insert(row.file.dir.as_str()))
@@ -1315,26 +1800,107 @@ impl DuplicatesPage {
                 .iter()
                 .enumerate()
                 .any(|(index, row)| !tile_notes(set, row, index).is_empty()),
+            folder_lines: 2,
+            labelled: true,
+            lanes: facts_of(&rows[0].file, &rows[0].file, has_video(rows)).len() as u8,
+            shared: shared_lanes(set, rows, kept),
+            common: None,
+            compact: 0,
+            width: 0.,
+            place: (0., 0.),
         };
+        let aspect = {
+            let mut shapes: Vec<f32> = rows
+                .iter()
+                .filter_map(|row| actual_size(&row.file))
+                .map(|(width, height)| width / height)
+                .collect();
+            shapes.sort_by(f32::total_cmp);
+            shapes.get(shapes.len() / 2).copied().unwrap_or(4. / 3.)
+        };
+        if self
+            .common_on_decision_line(set, rows, kept, reason, window)
+            .is_none()
+        {
+            let common = common_facts(set, rows, kept);
+            layout.common = (!common.is_empty()).then(|| common.join(" · ").into());
+        }
+        let plan_with = |layout: &TileLayout| {
+            GridInput {
+                width: stage.0 - pad_x * 2.,
+                height: stage.1 - pad_y * 2.,
+                gap,
+                count,
+                aspect,
+                facts: layout.height(rem),
+                inset: TILE_INSET,
+                least_tile: TILE_LEAST * rem,
+                least_picture: PICTURE_LEAST * rem,
+                good_side: if aspect < 1. {
+                    PORTRAIT_GOOD
+                } else {
+                    PICTURE_GOOD
+                } * rem,
+                peek: if stage.1 < SHORT_STAGE * rem {
+                    NEXT_LINE_SHORT_PEEK
+                } else {
+                    NEXT_LINE_PEEK
+                } * rem,
+            }
+            .plan()
+        };
+        let mut plan = plan_with(&layout);
+        let tile_width = |plan: &GridPlan| {
+            (stage.0 - pad_x * 2. - gap * (plan.columns - 1) as f32) / plan.columns as f32
+        };
+        // A folder takes one line when each fits on one, in the tile the plan drew.
+        let folder_width = tile_width(&plan) - TILE_INSET - 1. * rem;
+        let longest = rows
+            .iter()
+            .map(|row| row.file.dir.chars().count())
+            .max()
+            .unwrap_or(0);
+        if longest as f32 * FOLDER_CHARACTER < folder_width {
+            layout.folder_lines = 1;
+            plan = plan_with(&layout);
+        }
+        // A narrow tile's facts are shorter without their labels, which leaves its picture more.
+        if tile_width(&plan) < FACTS_LABELLED * rem {
+            layout.labelled = false;
+            plan = plan_with(&layout);
+        }
+        layout.width = tile_width(&plan);
+        layout.compact = compact_lanes(set, rows, kept, &layout);
+        layout.place = (
+            (layout.width - TILE_INSET).max(1.),
+            (plan.line - layout.height(rem)).max(1.),
+        );
+        let columns = plan.columns;
         let several = kept.len() > 1;
         let focused = self.keyboard_focus.then(|| self.focus_row());
-        let total_lines = count.div_ceil(columns);
+        let total_lines = plan.lines(count);
         // The scroll lives as long as the set's grid is drawn frame after frame, as an element's
         // own would: a new set, or the page shown again, starts at the top.
-        let scroll = scrolls.then(|| {
-            window
-                .use_keyed_state(
-                    SharedString::from(format!("version-grid-{}", set.key)),
-                    cx,
-                    |_, _| ScrollHandle::new(),
-                )
-                .read(cx)
-                .clone()
-        });
-        self.grid_scroll = scroll.clone();
-        let (drawn, near) = match &scroll {
-            Some(scroll) => lines_to_draw(scroll, total_lines, window),
-            None => ((0..total_lines).collect(), Vec::new()),
+        let scroll = window
+            .use_keyed_state(
+                SharedString::from(format!("version-grid-{}", set.key)),
+                cx,
+                |_, _| ScrollHandle::new(),
+            )
+            .read(cx)
+            .clone();
+        self.grid_scroll = plan.scrolls.then(|| scroll.clone());
+        self.grid_reveal = self.grid_reveal.over(&scroll);
+        self.grid_plan = Some(plan);
+        self.grid_gap = gap;
+        self.grid_height = stage.1;
+        if let Some(line) = self.at_start.scroll.take() {
+            scroll.set_offset(gpui_kit::point(px(0.), px(-plan.top_of(line, gap))));
+        }
+        let (drawn, near) = if plan.scrolls {
+            lines_to_draw(&scroll, total_lines, plan.line, window)
+        } else {
+            ((0..total_lines).collect(), Vec::new())
         };
         // The videos of the tiles drawn play, while the grid is what shows: not under the loupe,
         // nor with Tidy hidden.
@@ -1348,16 +1914,14 @@ impl DuplicatesPage {
                 .collect();
             self.keep_tile_videos(&shown, cx);
         }
-        let gap = f32::from(window.rem_size());
         let mut lines = Vec::new();
         let mut next = 0;
         for line in drawn {
             if line > next {
-                lines.push(skipped_lines(line - next, gap));
+                lines.push(skipped_lines(line - next, plan.line, gap));
             }
             next = line + 1;
             let range = line * columns..((line + 1) * columns).min(count);
-            let missing = columns - range.len();
             let tiles: Vec<AnyElement> = range
                 .map(|index| {
                     let row = &rows[index];
@@ -1371,7 +1935,7 @@ impl DuplicatesPage {
                         &keeper,
                         kept,
                         reason,
-                        layout,
+                        &layout,
                         several,
                         focused == Some(index),
                         cx,
@@ -1383,15 +1947,14 @@ impl DuplicatesPage {
                     .flex()
                     .flex_row()
                     .gap_4()
-                    .when(!scrolls, |this| this.flex_1())
-                    .when(scrolls, |this| this.h(px(LINE)).flex_shrink_0())
+                    .h(px(plan.line))
+                    .flex_shrink_0()
                     .children(tiles)
-                    .children((0..missing).map(|_| div().flex_1()))
                     .into_any_element(),
             );
         }
         if total_lines > next {
-            lines.push(skipped_lines(total_lines - next, gap));
+            lines.push(skipped_lines(total_lines - next, plan.line, gap));
         }
         // The lines just past the screen: their pictures are asked for after the ones on it, so
         // they decode next.
@@ -1399,37 +1962,203 @@ impl DuplicatesPage {
             self.thumbs.update(cx, |thumbs, cx| {
                 for line in near {
                     for row in &rows[line * columns..((line + 1) * columns).min(count)] {
-                        thumbs.get(&row.file, 768, cx);
+                        thumbs.get(&row.file, TILE_PICTURE, cx);
                     }
                 }
             });
         }
+        let page = cx.entity().downgrade();
+        self.out_of_sight = plan
+            .scrolls
+            .then(|| self.versions_out_of_sight(rows, kept, &plan, &scroll, stage.1, pad_y, gap))
+            .flatten();
+        let more_below = self
+            .out_of_sight
+            .as_ref()
+            .is_some_and(|hidden| hidden.below);
+        let background = cx.theme().background;
+        let scrolled = plan.scrolls && f32::from(scroll.offset().y) < 0.;
         div()
-            .id("version-grid")
-            .flex()
-            .flex_col()
+            .id("version-stage")
+            .relative()
             .flex_1()
             .min_h_0()
-            .gap_4()
-            .px_5()
-            .pt_4()
-            .pb_4()
-            // A few versions fill the stage; on a stage too short for their least, they scroll.
-            .overflow_y_scroll()
-            .when_some(scroll, |this, scroll| this.track_scroll(&scroll))
-            .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
-                if !*hovered {
-                    this.hover_row = None;
-                    cx.notify();
-                }
-            }))
-            .children(lines)
+            .child(
+                canvas(
+                    move |bounds, window, cx| {
+                        let size = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+                        let changed = page.update(cx, |page, _| {
+                            let changed = page.stage_size != size;
+                            page.stage_size = size;
+                            changed
+                        });
+                        if changed.unwrap_or(false) {
+                            oriel_ui::redraw::notify_next_frame(page.clone(), window);
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
+            .child(
+                div()
+                    .id("version-grid")
+                    .test_support()
+                    .absolute()
+                    .inset_0()
+                    .flex()
+                    .flex_col()
+                    .gap_4()
+                    .px_5()
+                    .pt_4()
+                    .pb_4()
+                    .overflow_y_scroll()
+                    .track_scroll(&scroll)
+                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                        if !*hovered {
+                            this.hover_row = None;
+                            cx.notify();
+                        }
+                    }))
+                    .children(lines),
+            )
+            // What has scrolled up goes under a fade, not straight into the decision line.
+            .when(scrolled, |this| {
+                this.child(div().absolute().left_0().right_0().top_0().h_8().bg(
+                    gpui_kit::linear_gradient(
+                        180.,
+                        gpui_kit::linear_color_stop(background.opacity(0.9), 0.),
+                        gpui_kit::linear_color_stop(background.opacity(0.), 1.),
+                    ),
+                ))
+            })
+            // More below, said four ways at once: the next line's top showing, the edge fading
+            // into it, a scrollbar that stays, and the decision bar's count of them.
+            .when(more_below, |this| {
+                this.child(div().absolute().left_0().right_0().bottom_0().h_12().bg(
+                    gpui_kit::linear_gradient(
+                        180.,
+                        gpui_kit::linear_color_stop(background.opacity(0.), 0.),
+                        gpui_kit::linear_color_stop(background.opacity(0.8), 1.),
+                    ),
+                ))
+            })
+            .when(plan.scrolls, |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always)),
+                )
+            })
             .into_any_element()
+    }
+
+    /// What the stage does not show, for the decision bar to say: "3 more below", or how many are
+    /// back above once the last line shows.
+    #[allow(clippy::too_many_arguments)]
+    fn versions_out_of_sight(
+        &self,
+        rows: &[SetRow],
+        kept: &[FileId],
+        plan: &GridPlan,
+        scroll: &ScrollHandle,
+        height: f32,
+        pad_top: f32,
+        gap: f32,
+    ) -> Option<OutOfSight> {
+        let count = rows.len();
+        let lines = plan.lines(count);
+        let top = (-f32::from(scroll.offset().y)).min(f32::from(scroll.max_offset().y)) - pad_top;
+        let view = in_view(plan, lines, top, height, gap);
+        let shown_end = (view.end * plan.columns).min(count);
+        let shown_start = (view.first * plan.columns).min(count);
+        let kept_in = |range: std::ops::Range<usize>| -> Vec<usize> {
+            range
+                .filter(|index| kept.contains(&rows[*index].file.id))
+                .map(|index| index + 1)
+                .collect()
+        };
+        if shown_end < count {
+            Some(OutOfSight {
+                below: true,
+                count: count - shown_end,
+                kept: kept_in(shown_end..count),
+                go_to: view.end,
+            })
+        } else if shown_start > 0 {
+            Some(OutOfSight {
+                below: false,
+                count: shown_start,
+                kept: kept_in(0..shown_start),
+                go_to: 0,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// The control at the start of the decision bar that says what the stage does not show. A
+    /// press goes to the next line down, or back to the top. When a version the Keep beside it
+    /// names is out of sight it says that too, in a stronger hand, so nothing is decided unseen.
+    fn render_out_of_sight(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let hidden = self.out_of_sight.clone()?;
+        // On a narrow stage the bar's commands leave it room for the count alone.
+        let narrow = self.stage_size.0 < NARROW_STAGE * self.rem;
+        // Short of the room for all of it, the kept version's number takes the place of "below".
+        let tight = self.stage_size.0 < WIDE_OUT_OF_SIGHT * self.rem;
+        // Short of room in the bar, for the activity indicator and a toast beside it.
+        let short = self.stage_size.0 < ROOMY_OUT_OF_SIGHT * self.rem;
+        let words = match (
+            hidden.below,
+            narrow || short || (tight && !hidden.kept.is_empty()),
+        ) {
+            (true, false) => format!("{} more below", hidden.count),
+            (true, true) => format!("{} more", hidden.count),
+            (false, _) => format!("{} above", hidden.count),
+        };
+        // A narrow bar names one version kept out of sight by its number alone, and more than one
+        // by the colour alone, Keep's own label beside it naming them, so its room stays free for
+        // a toast.
+        let label = match (hidden.kept.as_slice(), narrow) {
+            ([], _) => words,
+            (_, false) => format!("{words} · keeping {}", model::version_numbers(&hidden.kept)),
+            ([_], true) => format!("{words} · {}", model::version_numbers(&hidden.kept)),
+            (_, true) => words,
+        };
+        let primary = cx.theme().primary;
+        let go_to = hidden.go_to;
+        Some(
+            Button::new("duplicates-out-of-sight")
+                .outline()
+                .quiet_edge(cx)
+                .decision_size()
+                .when(narrow, |this| this.px_2().min_w(rems(OUT_OF_SIGHT_LEAST)))
+                .when(!narrow, |this| this.px_4())
+                .flex_shrink_0()
+                // The edge says a kept version is out of sight; the words stay plain to read.
+                .when(!hidden.kept.is_empty(), |this| this.border_color(primary))
+                .icon(Icon::new(if hidden.below {
+                    IconName::ChevronDown
+                } else {
+                    IconName::ChevronUp
+                }))
+                .label(label)
+                .tooltip(if hidden.below {
+                    "Show the next line of versions"
+                } else {
+                    "Back to the first versions"
+                })
+                .on_click(cx.listener(move |this, _, _, cx| this.scroll_to_line(go_to, cx)))
+                .into_any_element(),
+        )
     }
 
     /// One version: its picture with its checkbox, number and menu, then what happens to it,
     /// its folder, and its lanes against the keeper. A plain click keeps only this one and goes
-    /// on, as in Electron Oriel; the fate line and the tooltip say so.
+    /// on, as in Electron Oriel; the shortcuts say so. No hover text on the tile, which would land
+    /// on the pictures being judged: the file's path shows from its folder line.
     #[allow(clippy::too_many_arguments)]
     fn render_tile(
         &mut self,
@@ -1439,7 +2168,7 @@ impl DuplicatesPage {
         keeper: &FileRow,
         kept: &[FileId],
         reason: &model::Reason,
-        layout: TileLayout,
+        layout: &TileLayout,
         several: bool,
         focused: bool,
         cx: &mut Context<Self>,
@@ -1470,30 +2199,26 @@ impl DuplicatesPage {
         let is_playing = tile_video
             .as_ref()
             .is_some_and(|video| video.read(cx).is_playing());
-        let picture = rounded_picture(&self.thumbs, &file, 768, inner_radius, cx);
-        let chip = cx.theme().background;
+        let picture = rounded_picture(&self.thumbs, &file, TILE_PICTURE, inner_radius, cx);
+        let chip_focus = self
+            .chip_focus
+            .entry(file.id)
+            .or_insert_with(|| cx.focus_handle().tab_stop(true))
+            .clone();
+        let tile_focus = self
+            .tile_focus
+            .entry(file.id)
+            .or_insert_with(|| cx.focus_handle())
+            .clone();
+        let reveal = self.grid_reveal.watcher(&tile_focus);
         let ring: Hsla = if is_kept {
             if suggested {
                 primary.opacity(0.45)
             } else {
                 primary
             }
-        } else if focused {
-            muted
         } else {
             border
-        };
-        let tooltip = if video {
-            format!(
-                "{}\nClick the picture to pause or play it, and below it to keep only this one \
-                 and go on  {number}",
-                file.rel_path
-            )
-        } else {
-            format!(
-                "{}\nClick to keep only this one and go on  {number}",
-                file.rel_path
-            )
         };
         let play_id = file.id;
         let menu = VersionMenu {
@@ -1504,38 +2229,71 @@ impl DuplicatesPage {
             similar: set.kind == DuplicateKind::Similar,
         };
         let context_menu = menu.clone();
+        // Where the chip sits: on the picture's own corner, not the place's, which a tall or a
+        // wide picture leaves part empty. Where that empty part has room for the chip, in it, on
+        // the place's corner, so it covers none of a narrow picture.
+        let corner = {
+            let (place_w, place_h) = layout.place;
+            let aspect =
+                actual_size(&file).map_or(place_w / place_h, |(width, height)| width / height);
+            let (shown_w, shown_h) = grid::fitted(place_w, place_h, aspect);
+            let side = ((place_w - shown_w) / 2.).max(0.);
+            let top = ((place_h - shown_h) / 2.).max(0.);
+            let width = if number < 10 {
+                CHIP_WIDTH
+            } else {
+                CHIP_WIDTH_TWO_DIGITS
+            };
+            // Half the chip beside the picture covers less of a narrow one than all of it on top.
+            if side >= width / 2. || top >= CHIP_HEIGHT + 2. * CHIP_INSET_BESIDE {
+                (CHIP_INSET_BESIDE, CHIP_INSET_BESIDE)
+            } else {
+                (side + CHIP_INSET, top + CHIP_INSET)
+            }
+        };
         // What deciding does to this version: the icon, its colour, the words, and whether it
         // stays (which reads stronger).
-        let (fate_icon, fate_color, fate, strong) = if suggested {
+        // A plain click keeps only this version and goes on to the next set, so hovering says so
+        // before the click. A video's picture pauses instead, and its badge says that.
+        let about_to_keep = self.hover_row == Some(index)
+            && !self.keyboard_focus
+            && !(video && self.hover_picture == Some(file.id));
+        let (fate_icon, fate_color, fate, strong) = if about_to_keep {
+            (IconName::Check, foreground, "Keep only this", true)
+        } else if suggested {
             (IconName::Check, foreground, "Suggested", true)
         } else if is_kept {
             (IconName::Check, foreground, "Keep", true)
         } else {
-            (IconName::Archive, muted, "Goes to holding", false)
+            (IconName::Archive, muted, "To holding", false)
         };
         let tile = div()
             .id(("version", file.id as u64))
             .test_support()
+            .h_full()
             .aria_label(SharedString::from(file.name.clone()))
             .aria_selected(is_kept)
             .aria_description(SharedString::from(
                 copy_of.map_or_else(String::new, |of| format!("Same picture as {of}")),
             ))
-            .tooltip({
-                let tooltip = SharedString::from(tooltip);
-                move |window, cx| {
-                    gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(window, cx)
-                }
-            })
             .flex()
             .flex_col()
-            .flex_1()
-            .min_w_0()
+            .flex_shrink_0()
+            .w(px(layout.width))
             .p_1()
             .rounded(radius)
             .border_2()
             .border_color(ring)
+            // Where the arrow keys are, outside the edge, which says what is kept: the same mark
+            // on any version, and no change to the decision.
+            .when(focused, |this| {
+                this.shadow(vec![chip_ring(foreground, FOCUS_MARK)])
+            })
             .bg(card)
+            .cursor_pointer()
+            .when(!is_kept, |this| {
+                this.hover(|style| style.border_color(muted))
+            })
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 if *hovered {
                     this.hover_row = Some(index);
@@ -1571,86 +2329,86 @@ impl DuplicatesPage {
                     .min_h(rems(PICTURE_LEAST))
                     .overflow_hidden()
                     .when(video, |this| {
-                        this.on_click(cx.listener(move |this, _, window, cx| {
-                            cx.stop_propagation();
-                            this.toggle_tile(play_id, window, cx);
+                        this.on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                            this.hover_picture = hovered.then_some(play_id);
+                            cx.notify();
                         }))
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                cx.stop_propagation();
+                                this.toggle_tile(play_id, window, cx);
+                            },
+                        ))
                     })
                     .child(picture)
                     .children(tile_video)
                     .when(video, |this| this.child(play_badge(is_playing)))
                     .child(
-                        // The checkbox, its number and the menu sit on chips of the standard
-                        // 32 px control frame, so they are easy to hit over a small tile.
+                        // The checkbox and its number share one small chip on the picture's own
+                        // corner, see-through, so as little of the picture as can be is hidden;
+                        // the whole chip checks the box, as Electron Oriel's label did.
                         div()
+                            .id(("keep-version-chip", file.id as u64))
+                            .test_support()
+                            // Under the loupe the tile is out of sight, so the keyboard skips it.
+                            .track_focus(&chip_focus.clone().tab_stop(!self.looking))
                             .absolute()
-                            .top_2()
-                            .left_2()
+                            .left(px(corner.0))
+                            .top(px(corner.1))
+                            .h_8()
+                            .pr_2()
                             .flex()
                             .flex_row()
                             .items_center()
-                            .gap_1p5()
+                            .rounded(inner_radius)
+                            .bg(gpui_kit::black().opacity(0.55))
+                            // White in both themes: the chip is dark, over a picture, in both.
+                            .text_color(gpui_kit::white())
+                            // The ring goes round the whole chip with a dark line outside it, and
+                            // the chip goes solid, so it holds over any picture.
+                            .focus_visible(move |style| {
+                                style.bg(gpui_kit::black()).shadow(vec![
+                                    chip_ring(gpui_kit::black(), 3.),
+                                    chip_ring(gpui_kit::rgb(oriel_ui::STAGE_RING), 2.),
+                                ])
+                            })
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.toggle_keep(index, cx);
+                            }))
+                            // The box's own edge is for the page's ground, not a picture's.
+                            .when(!is_kept, |this| {
+                                this.child(
+                                    div()
+                                        .absolute()
+                                        .left(px(7.))
+                                        .top(px(7.))
+                                        .size(px(18.))
+                                        .rounded(px(4.))
+                                        .border_1()
+                                        .border_color(gpui_kit::white().opacity(0.8)),
+                                )
+                            })
                             .child(
-                                // The whole chip checks the box, as Electron Oriel's label did.
-                                div()
-                                    .id(("keep-version-chip", file.id as u64))
-                                    .test_support()
-                                    .size_8()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded(inner_radius)
-                                    .bg(chip)
-                                    .border_1()
-                                    .border_color(border)
+                                checkbox_target(Checkbox::new(("keep-version", file.id as u64)))
+                                    .checked(is_kept)
+                                    .tab_stop(false)
+                                    .accessibility_label(SharedString::from(format!(
+                                        "Keep version {number}"
+                                    )))
+                                    .tooltip(if !is_kept {
+                                        format!("Keep this one as well  ⇧{number}")
+                                    } else if several {
+                                        format!("Don't keep this one  ⇧{number}")
+                                    } else {
+                                        "Kept. Check another to keep more than one".into()
+                                    })
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         cx.stop_propagation();
                                         this.toggle_keep(index, cx);
-                                    }))
-                                    .child(
-                                        checkbox_target(Checkbox::new((
-                                            "keep-version",
-                                            file.id as u64,
-                                        )))
-                                        .checked(is_kept)
-                                        .accessibility_label(SharedString::from(format!(
-                                            "Keep version {number}"
-                                        )))
-                                        .tooltip(if !is_kept {
-                                            format!("Keep this one as well  ⇧{number}")
-                                        } else if several {
-                                            format!("Don't keep this one  ⇧{number}")
-                                        } else {
-                                            "Kept. Check another to keep more than one".into()
-                                        })
-                                        .on_click(
-                                            cx.listener(move |this, _, _, cx| {
-                                                cx.stop_propagation();
-                                                this.toggle_keep(index, cx);
-                                            }),
-                                        ),
-                                    ),
+                                    })),
                             )
-                            .child(number_badge(number, cx)),
-                    )
-                    .child(
-                        // The menu's own click must not reach the tile, which would keep it.
-                        div()
-                            .absolute()
-                            .top_2()
-                            .right_2()
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .child(
-                                Button::new(("version-menu", file.id as u64))
-                                    .icon(Icon::new(IconName::Ellipsis))
-                                    .accessibility_label(SharedString::from(format!(
-                                        "More for version {number}"
-                                    )))
-                                    .dropdown_menu_with_anchor(
-                                        Anchor::TopRight,
-                                        move |popup, _, _| menu.build(popup),
-                                    ),
-                            ),
+                            .child(number.to_string()),
                     ),
             )
             .child(
@@ -1659,8 +2417,7 @@ impl DuplicatesPage {
                     .flex_col()
                     .gap_1()
                     .px_2()
-                    .pt_2()
-                    .pb_1p5()
+                    .py_1()
                     .flex_shrink_0()
                     .child(
                         div()
@@ -1668,29 +2425,95 @@ impl DuplicatesPage {
                             .flex_row()
                             .items_center()
                             .gap_1p5()
+                            .h_8()
                             .text_sm()
                             .when(strong, |this| this.font_weight(FontWeight::MEDIUM))
                             .when(!strong, |this| this.text_color(muted))
-                            .child(Icon::new(fate_icon).small().text_color(fate_color))
-                            .child(fate),
+                            .child(
+                                Icon::new(fate_icon)
+                                    .size_4()
+                                    .flex_shrink_0()
+                                    .text_color(fate_color),
+                            )
+                            .child(div().flex_1().min_w_0().truncate().child(fate))
+                            .child(
+                                // The menu's own click must not reach the tile, which would keep
+                                // it.
+                                div()
+                                    .flex_shrink_0()
+                                    .mr(px(-6.))
+                                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                        cx.stop_propagation()
+                                    })
+                                    .child(
+                                        Button::new(("version-menu", file.id as u64))
+                                            .ghost()
+                                            .row_size()
+                                            .tab_stop(!self.looking)
+                                            .icon(Icon::new(IconName::Ellipsis))
+                                            .accessibility_label(SharedString::from(format!(
+                                                "More for version {number}"
+                                            )))
+                                            .dropdown_menu_with_anchor(
+                                                Anchor::TopRight,
+                                                move |popup, _, _| menu.build(popup),
+                                            ),
+                                    ),
+                            ),
                     )
                     .child(
-                        // Two lines for the folder, always, so pictures keep one height.
+                        // The same lines for every tile's folder, so pictures keep one height.
+                        // Its hover text, the file's whole path, stands above it: below would
+                        // cover the facts being compared.
                         div()
-                            .h(rems(2.5))
-                            .text_sm()
-                            .line_height(rems(1.25))
-                            .line_clamp(2)
-                            .child(if file.dir.is_empty() {
-                                "The top folder".to_string()
-                            } else {
-                                file.dir.clone()
+                            .id(("version-folder", file.id as u64))
+                            .relative()
+                            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                                this.hover_folder(hovered.then_some(play_id), cx);
+                            }))
+                            .child(
+                                div()
+                                    .h(rems(1.25 * f32::from(layout.folder_lines)))
+                                    .text_sm()
+                                    .line_height(rems(1.25))
+                                    .line_clamp(usize::from(layout.folder_lines))
+                                    .child(if file.dir.is_empty() {
+                                        "The top folder".to_string()
+                                    } else {
+                                        layout.folder(&file.dir)
+                                    }),
+                            )
+                            .when(self.folder_tip == Some(file.id), |this| {
+                                this.child(
+                                    div()
+                                        .id("version-folder-path")
+                                        .test_support()
+                                        .absolute()
+                                        .left_0()
+                                        .right_0()
+                                        .bottom_full()
+                                        .mb_1()
+                                        .px_2()
+                                        .py_1()
+                                        .rounded(inner_radius)
+                                        .bg(cx.theme().popover)
+                                        .text_color(cx.theme().popover_foreground)
+                                        .border_1()
+                                        .border_color(border)
+                                        .shadow_md()
+                                        .text_caption()
+                                        .child(file.rel_path.clone()),
+                                )
                             }),
                     )
                     .when(layout.names, |this| {
-                        this.child(widgets::caption(file.name.clone(), cx).truncate())
+                        this.child(
+                            widgets::caption(file.name.clone(), cx)
+                                .line_height(px(FACT_LINE))
+                                .truncate(),
+                        )
                     })
-                    .child(render_lanes(&lanes, cx))
+                    .child(render_lanes(&lanes, layout, cx))
                     .when(layout.notes, |this| {
                         this.child(
                             widgets::caption(
@@ -1701,11 +2524,19 @@ impl DuplicatesPage {
                                 },
                                 cx,
                             )
+                            .line_height(px(FACT_LINE))
                             .truncate(),
                         )
                     }),
             );
-        tile.context_menu(move |popup, _, _| context_menu.build(popup))
+        // Round the tile, not on it: a tile focused takes Enter as a click, which decides the set.
+        div()
+            .track_focus(&tile_focus)
+            .relative()
+            .flex_shrink_0()
+            .w(px(layout.width))
+            .child(tile.context_menu(move |popup, _, _| context_menu.build(popup)))
+            .child(reveal)
             .into_any_element()
     }
 
@@ -1714,13 +2545,14 @@ impl DuplicatesPage {
     /// (or pressing its number) keeps the copy there and moves on; checking several (or
     /// ⇧-clicking) keeps the copy in each, for when one file belongs in more than one folder. Each
     /// place leads with its whole folder path, then the date (the oldest copy is the usual pick),
-    /// and opens in Finder from its folder button. Below 680 px the list goes under the picture.
+    /// and opens in Finder from its folder button. Where the stage cannot spare the list its least, it goes under the picture.
     fn render_copies(
         &mut self,
         set: &DuplicateSet,
         rows: &[SetRow],
         kept: &[FileId],
         reason: &str,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let Some(first) = rows.first().map(|row| row.file.clone()) else {
@@ -1748,7 +2580,7 @@ impl DuplicatesPage {
         let radius = cx.theme().radius;
         let picture: AnyElement = match playing {
             Some(video) => video.into_any_element(),
-            None => rounded_picture(&self.thumbs, &first, 1024, radius, cx),
+            None => rounded_picture(&self.thumbs, &first, COPIES_PICTURE, radius, cx),
         };
         let theme = cx.theme();
         let (border, accent, muted) = (theme.border, theme.accent, theme.muted_foreground);
@@ -1772,14 +2604,37 @@ impl DuplicatesPage {
                         })),
                 )
         });
-        // A tall picture is held to a height (32 rem) by its width, so the list of places stays
-        // in reach.
+        // The picture takes what the stage can spare from the list of places, however tall it is:
+        // the list stays beside it where the stage has the room, and below it where it does not.
+        let viewport = window.viewport_size();
+        let rem = f32::from(window.rem_size());
+        let queue = if f32::from(viewport.width) < QUEUE_NARROW_WINDOW {
+            13.
+        } else {
+            16.
+        };
+        let sidebar = if self.state.read(cx).shell.read(cx).rail() {
+            RAIL_WIDTH
+        } else {
+            SIDEBAR_WIDTH
+        };
+        let stage = f32::from(viewport.width) - sidebar - queue * rem - 2.5 * rem;
+        let stage_height = (f32::from(viewport.height) - 13.5 * rem).max(12. * rem);
+        let (side_width, side_height) = grid::fitted(stage * 0.5, stage_height, aspect);
+        let list_width = stage - side_width - 1.5 * rem;
+        let beside = list_width >= COPIES_LIST_LEAST * rem;
+        let (well_width, well_height) = if beside {
+            (side_width, side_height)
+        } else {
+            grid::fitted(stage, stage_height * 0.35, aspect)
+        };
+        let list_width = if beside { list_width } else { stage };
+        let says_fate = list_width >= COPIES_FATE_LEAST * rem;
         let well = div()
             .relative()
-            .flex_1()
-            .min_w_80()
-            .max_w(rems(32. * aspect))
-            .aspect_ratio(aspect)
+            .flex_none()
+            .w(px(well_width))
+            .h(px(well_height))
             .overflow_hidden()
             .child(picture)
             .children(play);
@@ -1794,6 +2649,25 @@ impl DuplicatesPage {
         .collect::<Vec<_>>()
         .join(" · ");
         let linked = &set.hard_linked_ids;
+        let copy_scroll = window
+            .use_keyed_state(
+                SharedString::from(format!("copy-rows-{}", set.key)),
+                cx,
+                |_, _| ScrollHandle::new(),
+            )
+            .read(cx)
+            .clone();
+        self.grid_reveal = self.grid_reveal.over(&copy_scroll);
+        let reveal = self.grid_reveal.clone();
+        let row_focus: Vec<FocusHandle> = rows
+            .iter()
+            .map(|row| {
+                self.tile_focus
+                    .entry(row.file.id)
+                    .or_insert_with(|| cx.focus_handle())
+                    .clone()
+            })
+            .collect();
         let lines: Vec<AnyElement> = rows
             .iter()
             .enumerate()
@@ -1822,16 +2696,17 @@ impl DuplicatesPage {
                 } else {
                     format!("Keep the copy in {place} as well  ⇧{}", index + 1).into()
                 };
-                let row_tip: SharedString = format!(
-                    "{}\nClick to keep only this copy and go on  {}",
-                    file.rel_path,
-                    index + 1
-                )
-                .into();
                 let date = if seconds {
                     format::date_time_seconds(file.mtime_ms)
                 } else {
                     format::date_time(file.mtime_ms)
+                };
+                let fate = if self.hover_row == Some(index) && !self.keyboard_focus {
+                    "Keep only this"
+                } else if is_kept {
+                    "Keep"
+                } else {
+                    "To holding"
                 };
                 let note = [
                     Some(date),
@@ -1844,7 +2719,7 @@ impl DuplicatesPage {
                 .flatten()
                 .collect::<Vec<_>>()
                 .join(" · ");
-                div()
+                let row = div()
                     .id(("version", file.id as u64))
                     .test_support()
                     .aria_label(SharedString::from(file.name.clone()))
@@ -1854,18 +2729,24 @@ impl DuplicatesPage {
                     .flex_row()
                     .items_center()
                     .gap_3()
-                    .min_h_12()
-                    .pl_3()
+                    .flex_shrink_0()
+                    .relative()
+                    .h(px(COPY_ROW))
+                    .pl_2()
                     .pr_2()
-                    .py_2()
                     .when(index > 0, |this| this.border_t_1().border_color(border))
-                    .when(focus == Some(index), |this| this.bg(accent))
+                    .when(focus == Some(index), |this| {
+                        // The arrow keys' mark, as on a version's tile.
+                        this.bg(accent).child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .border_2()
+                                .border_color(cx.theme().foreground),
+                        )
+                    })
                     .cursor_pointer()
                     .hover(|style| style.bg(accent))
-                    .tooltip(move |window, cx| {
-                        gpui_kit::component::tooltip::Tooltip::new(row_tip.clone())
-                            .build(window, cx)
-                    })
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         if *hovered {
                             this.hover_row = Some(index);
@@ -1891,8 +2772,21 @@ impl DuplicatesPage {
                                 gpui_kit::component::tooltip::Tooltip::new(check_tip.clone())
                                     .build(window, cx)
                             })
+                            // The box's own edge is for the page's ground, not a picture's.
+                            .when(!is_kept, |this| {
+                                this.child(
+                                    div()
+                                        .absolute()
+                                        .left(px(7.))
+                                        .top(px(7.))
+                                        .size(px(18.))
+                                        .rounded(px(4.))
+                                        .border_1()
+                                        .border_color(gpui_kit::white().opacity(0.8)),
+                                )
+                            })
                             .child(
-                                Checkbox::new(("keep-version", file.id as u64))
+                                checkbox_target(Checkbox::new(("keep-version", file.id as u64)))
                                     .checked(is_kept)
                                     .accessibility_label(SharedString::from(format!(
                                         "Keep the copy in {place}"
@@ -1906,8 +2800,8 @@ impl DuplicatesPage {
                     .child(
                         div()
                             .flex_shrink_0()
-                            .min_w_5()
-                            .h_5()
+                            .min_w_7()
+                            .h_7()
                             .px_1()
                             .flex()
                             .items_center()
@@ -1915,7 +2809,7 @@ impl DuplicatesPage {
                             .rounded(radius)
                             .border_1()
                             .border_color(border)
-                            .text_xs()
+                            .text_caption()
                             .text_color(muted)
                             .child((index + 1).to_string()),
                     )
@@ -1925,21 +2819,41 @@ impl DuplicatesPage {
                             .flex_col()
                             .flex_1()
                             .min_w_0()
-                            .child(div().text_sm().line_clamp(3).child(if file.dir.is_empty() {
-                                "The top folder".to_string()
-                            } else {
-                                file.dir.clone()
-                            }))
+                            // One line, cut from its start: a folder's end tells it from its
+                            // neighbours, and its hover text has the file's whole path.
+                            .child(
+                                div()
+                                    .id(("copy-folder", file.id as u64))
+                                    .tooltip({
+                                        let path = SharedString::from(file.rel_path.clone());
+                                        move |window, cx| {
+                                            gpui_kit::component::tooltip::Tooltip::new(path.clone())
+                                                .build(window, cx)
+                                        }
+                                    })
+                                    .text_body()
+                                    .whitespace_nowrap()
+                                    .overflow_hidden()
+                                    .text_ellipsis_start()
+                                    .child(if file.dir.is_empty() {
+                                        "The top folder".to_string()
+                                    } else {
+                                        file.dir.clone()
+                                    }),
+                            )
                             .child(widgets::caption(note, cx).truncate()),
                     )
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .text_xs()
-                            .when(is_kept, |this| this.font_weight(FontWeight::MEDIUM))
-                            .when(!is_kept, |this| this.text_color(muted))
-                            .child(if is_kept { "Keep" } else { "Goes to holding" }),
-                    )
+                    // A narrow list leaves its row's words to the checkbox, and the folder the room.
+                    .when(says_fate, |this| {
+                        this.child(
+                            div()
+                                .flex_shrink_0()
+                                .text_sm()
+                                .when(is_kept, |this| this.font_weight(FontWeight::MEDIUM))
+                                .when(!is_kept, |this| this.text_color(muted))
+                                .child(fate),
+                        )
+                    })
                     .child(
                         // The menu's own click must not reach the row, which would keep it.
                         div()
@@ -1959,56 +2873,186 @@ impl DuplicatesPage {
                                     ),
                             ),
                     )
-                    .context_menu(move |popup, _, _| context_menu.build(popup))
+                    .context_menu(move |popup, _, _| context_menu.build(popup));
+                // Round the row, not on it: a row focused takes Enter as a click, which decides.
+                div()
+                    .track_focus(&row_focus[index])
+                    .relative()
+                    .flex_shrink_0()
+                    .w_full()
+                    .child(row)
+                    .child(reveal.watcher(&row_focus[index]))
                     .into_any_element()
             })
             .collect();
-        let list =
-            div()
-                .flex()
-                .flex_col()
-                .flex_1()
-                .min_w_80()
-                .child(div().text_base().font_weight(FontWeight::SEMIBOLD).child(
-                    format::plural_as(rows.len() as i64, "identical copy", "identical copies"),
-                ))
-                .child(widgets::caption(summary, cx).mt_1())
-                .child(
-                    div()
-                        .mt_5()
-                        .mb_2()
-                        .flex()
-                        .flex_row()
-                        .flex_wrap()
-                        .items_baseline()
-                        .justify_between()
-                        .gap_x_3()
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(muted)
-                                .child("Keep the copy in"),
-                        )
-                        .child(widgets::caption("Check more than one to keep several", cx)),
-                )
-                .child(widgets::card(cx).overflow_hidden().children(lines));
-        div()
-            .id("copy-list")
+        // The rows scroll inside their card, under the summary and beside the picture, which stay
+        // in sight; the next row always shows part, and the edge fades into it, a scrollbar stays
+        // and the decision bar counts what is below, as the version grid does.
+        let plan = GridPlan {
+            columns: 1,
+            line: COPY_ROW,
+            scrolls: true,
+        };
+        let scroll = window
+            .use_keyed_state(
+                SharedString::from(format!("copy-rows-{}", set.key)),
+                cx,
+                |_, _| ScrollHandle::new(),
+            )
+            .read(cx)
+            .clone();
+        let height = if self.copies_height > 0. {
+            self.copies_height
+        } else {
+            stage_height
+        };
+        let overflows = rows.len() as f32 * COPY_ROW > height + 0.5;
+        self.grid_scroll = overflows.then(|| scroll.clone());
+        self.grid_plan = Some(plan);
+        self.grid_gap = 0.;
+        self.grid_height = height;
+        if let Some(line) = self.at_start.scroll.take() {
+            scroll.set_offset(gpui_kit::point(px(0.), px(-plan.top_of(line, 0.))));
+        }
+        self.out_of_sight = overflows
+            .then(|| self.versions_out_of_sight(rows, kept, &plan, &scroll, height, 0., 0.))
+            .flatten();
+        let more_below = self
+            .out_of_sight
+            .as_ref()
+            .is_some_and(|hidden| hidden.below);
+        let page = cx.entity().downgrade();
+        let ground = cx.theme().group_box;
+        let row_list = widgets::card(cx)
+            .relative()
             .flex_1()
             .min_h_0()
-            .overflow_y_scroll()
+            .overflow_hidden()
+            .child(
+                canvas(
+                    move |bounds, window, cx| {
+                        let measured = f32::from(bounds.size.height);
+                        let changed = page.update(cx, |page, _| {
+                            let changed = (page.copies_height - measured).abs() >= 0.5;
+                            if changed {
+                                page.copies_height = measured;
+                            }
+                            changed
+                        });
+                        if changed.unwrap_or(false) {
+                            oriel_ui::redraw::notify_next_frame(page.clone(), window);
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .child(
                 div()
+                    .id("copy-rows")
+                    .test_support()
+                    .absolute()
+                    .inset_0()
+                    .flex()
+                    .flex_col()
+                    .overflow_y_scroll()
+                    .track_scroll(&scroll)
+                    .children(lines),
+            )
+            .when(more_below, |this| {
+                this.child(div().absolute().left_0().right_0().bottom_0().h_12().bg(
+                    gpui_kit::linear_gradient(
+                        180.,
+                        gpui_kit::linear_color_stop(ground.opacity(0.), 0.),
+                        gpui_kit::linear_color_stop(ground.opacity(0.85), 1.),
+                    ),
+                ))
+            })
+            .when(overflows, |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always)),
+                )
+            });
+        // The card is as tall as its rows, up to what the stage leaves it.
+        let list_room = rows.len() as f32 * COPY_ROW;
+        let list = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .text_heading()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(format::plural_as(
+                        rows.len() as i64,
+                        "identical copy",
+                        "identical copies",
+                    )),
+            )
+            .child(widgets::caption(summary, cx).flex_shrink_0().mt_1())
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .mt_5()
+                    .mb_2()
                     .flex()
                     .flex_row()
                     .flex_wrap()
-                    .items_start()
-                    .gap_6()
-                    .px_5()
-                    .pt_4()
-                    .pb_6()
-                    .child(well)
+                    .items_baseline()
+                    .justify_between()
+                    .gap_x_3()
+                    .child(
+                        div()
+                            .text_caption()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(muted)
+                            .child("Keep the copy in"),
+                    )
+                    .child(widgets::caption("Check more than one to keep several", cx)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h_0()
+                    .max_h(px(list_room + 2.))
+                    .child(row_list),
+            );
+        div()
+            .id("copy-list")
+            .flex()
+            .map(|this| {
+                if beside {
+                    this.flex_row()
+                } else {
+                    this.flex_col()
+                }
+            })
+            .flex_1()
+            .min_h_0()
+            .items_start()
+            .gap_6()
+            .px_5()
+            .pt_4()
+            .pb_4()
+            .child(well)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .w_full()
+                    .h_full()
+                    .min_w_0()
+                    .min_h_0()
                     .child(list),
             )
             .into_any_element()
@@ -2065,7 +3109,6 @@ impl DuplicatesPage {
         rows: &[SetRow],
         kept: &[FileId],
         reason: &model::Reason,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let focus = self.focus_row();
@@ -2098,11 +3141,12 @@ impl DuplicatesPage {
             Some(video) => video.into_any_element(),
             None if zoomed => {
                 let longest = actual_size(&file)
-                    .map_or(2048, |(w, h)| w.max(h).round() as u32)
+                    .map_or(LOUPE_PICTURE, |(w, h)| w.max(h).round() as u32)
                     .max(1);
                 // A flip shows the version's fitted picture, already decoded, until its own
                 // at actual size is, rather than a blank stage.
                 div()
+                    .relative()
                     .w(px(widest))
                     .h(px(tall))
                     .flex_shrink_0()
@@ -2110,13 +3154,13 @@ impl DuplicatesPage {
                         &self.thumbs,
                         &file,
                         longest,
-                        2048,
+                        LOUPE_PICTURE,
                         ObjectFit::Fill,
                         cx,
                     ))
                     .into_any_element()
             }
-            None => rounded_picture(&self.thumbs, &file, 2048, cx.theme().radius, cx),
+            None => rounded_picture(&self.thumbs, &file, LOUPE_PICTURE, cx.theme().radius, cx),
         };
         // The versions either side, so a flip finds its picture decoded.
         let neighbours: Vec<FileRow> = [focus.wrapping_sub(1), focus + 1]
@@ -2126,7 +3170,7 @@ impl DuplicatesPage {
             .collect();
         self.thumbs.update(cx, |thumbs, cx| {
             for file in &neighbours {
-                thumbs.get(file, 2048, cx);
+                thumbs.get(file, LOUPE_PICTURE, cx);
             }
         });
         // Entering actual size centres the chosen point; flipping keeps the pan as it is.
@@ -2144,7 +3188,6 @@ impl DuplicatesPage {
             .unwrap_or_else(|| file.clone());
         let lanes = facts_of(&file, &keeper, has_video(rows));
         let close_call = reason.close_call;
-        let wide = f32::from(window.viewport_size().width) >= 1024.;
         let amber = gpui_kit::rgb(LOUPE_LOSS);
         let chip = gpui_kit::rgb(LOUPE_TEXT).opacity(0.1);
         let mut caption = div()
@@ -2152,7 +3195,7 @@ impl DuplicatesPage {
             .flex_row()
             .overflow_hidden()
             .whitespace_nowrap()
-            .text_xs()
+            .text_caption()
             .opacity(0.7);
         // The same lanes as the tiles, on one line; a file without a value skips its lane.
         let shown = lanes.into_iter().filter(|lane| lane.value != "—");
@@ -2167,7 +3210,7 @@ impl DuplicatesPage {
                     .when(worse, |this| {
                         this.text_color(amber).font_weight(FontWeight::MEDIUM)
                     })
-                    .child(lane.value),
+                    .child(lane.said_alone()),
             );
         }
         if !is_kept {
@@ -2187,7 +3230,7 @@ impl DuplicatesPage {
                 .px_2()
                 .py_0p5()
                 .rounded(cx.theme().radius)
-                .text_xs()
+                .text_sm()
                 .font_weight(FontWeight::MEDIUM)
                 .map(|this| {
                     if close_call {
@@ -2195,7 +3238,7 @@ impl DuplicatesPage {
                     } else {
                         this.bg(cx.theme().primary)
                             .text_color(cx.theme().primary_foreground)
-                            .child(Icon::new(IconName::Check).small())
+                            .child(Icon::new(IconName::Check).size_4())
                             .child("Keep")
                     }
                 })
@@ -2244,7 +3287,7 @@ impl DuplicatesPage {
                     .flex_row()
                     .items_center()
                     .gap_3()
-                    .h_12()
+                    .h_16()
                     .pl_5()
                     .pr_3()
                     .child(
@@ -2257,7 +3300,7 @@ impl DuplicatesPage {
                             .py_0p5()
                             .rounded(cx.theme().radius)
                             .bg(chip)
-                            .text_xs()
+                            .text_sm()
                             .font_weight(FontWeight::MEDIUM)
                             .child(format!("{} of {}", focus + 1, rows.len())),
                     )
@@ -2271,23 +3314,17 @@ impl DuplicatesPage {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_sm()
+                                    .text_body()
                                     .font_weight(FontWeight::MEDIUM)
                                     .child(file.rel_path.clone()),
                             )
                             .child(caption),
                     )
-                    .when(wide, |this| {
-                        this.child(div().flex_shrink_0().text_xs().opacity(0.7).child(format!(
-                            "← → flip · 1–{} or ↩ keep · Z or click: actual size",
-                            rows.len()
-                        )))
-                    })
                     .child(
-                        Button::new("loupe-reveal")
+                        oriel_ui::on_dark_stage(Button::new("loupe-reveal"))
                             .ghost()
-                            .row_size()
-                            .icon(Icon::new(IconName::FolderOpen))
+                            .bar_size()
+                            .icon(Icon::new(IconName::FolderOpen).text_color(gpui_kit::white()))
                             .accessibility_label("Show in Finder")
                             .tooltip("Show in Finder  ⇧⌘R")
                             .on_click({
@@ -2296,10 +3333,10 @@ impl DuplicatesPage {
                             }),
                     )
                     .child(
-                        Button::new("loupe-open-in-view")
+                        oriel_ui::on_dark_stage(Button::new("loupe-open-in-view"))
                             .ghost()
-                            .row_size()
-                            .icon(Icon::new(IconName::Images))
+                            .bar_size()
+                            .icon(Icon::new(IconName::Images).text_color(gpui_kit::white()))
                             .accessibility_label("Open in View")
                             .tooltip("Open in View")
                             .on_click({
@@ -2310,10 +3347,10 @@ impl DuplicatesPage {
                             }),
                     )
                     .child(
-                        Button::new("loupe-close")
+                        oriel_ui::on_dark_stage(Button::new("loupe-close"))
                             .ghost()
-                            .row_size()
-                            .icon(Icon::new(IconName::Close))
+                            .bar_size()
+                            .icon(Icon::new(IconName::Close).text_color(gpui_kit::white()))
                             .accessibility_label("Back to the grid")
                             .tooltip("Back to the grid  Esc")
                             .on_click(cx.listener(|this, _, _, cx| this.close_loupe(cx))),
@@ -2357,11 +3394,10 @@ impl DuplicatesPage {
             .into_any_element()
     }
 
-    /// The decision bar, docked at the foot of the stage: the commands, centred under the
-    /// versions, a size up from the page's other buttons since every set ends here (GPUI Kit's
-    /// large button keeps the medium's height, so the bar sets the next one), and the primary
-    /// last. Each version's tile already says what happens to it, so the bar adds no
-    /// summary of its own.
+    /// The decision bar, docked at the foot of the stage: what the stage leaves out of sight at
+    /// its start, then the commands at its end, a size up from the page's other buttons since
+    /// every set ends here, and the primary last. Each version's tile already says what happens
+    /// to it, so the bar adds no summary of its own.
     fn render_decision_bar(
         &self,
         set: &DuplicateSet,
@@ -2371,28 +3407,75 @@ impl DuplicatesPage {
     ) -> AnyElement {
         let removed = removal_of(set, kept).len();
         let focus = self.focus_row();
+        let narrow = self.stage_size.0 < NARROW_STAGE * self.rem;
+        let page = cx.entity().downgrade();
+        let out_of_sight = (!self.looking)
+            .then(|| self.render_out_of_sight(cx))
+            .flatten();
+        // Under the loupe the keys take that place, where the stage has room to say them.
+        let keys = (self.looking && !narrow).then(|| {
+            widgets::caption(
+                format!("← → flip · 1–{} or ↩ keep · Z actual size", rows.len()),
+                cx,
+            )
+            .min_w_0()
+            .truncate()
+        });
         let theme = cx.theme();
         let mut bar = div()
             .id("duplicates-decision-bar")
+            .test_support()
             .flex()
             .flex_row()
             .items_center()
-            .justify_center()
             .flex_shrink_0()
-            .gap_2()
+            .gap_3()
             .px_5()
             .py_3()
             .border_t_1()
             .border_color(theme.border)
-            .bg(theme.background);
+            .bg(theme.background)
+            .children(out_of_sight)
+            // The commands stay at the bar's end whatever is beside them, so Keep is always in
+            // the same place, and the room this leaves is where a toast's Undo appears, beside the
+            // button just pressed and over nothing. Under the loupe it would go over the keys'
+            // words, never a command.
+            .child(
+                div()
+                    .relative()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .justify_end()
+                    .flex_1()
+                    .min_w_0()
+                    .h(oriel_ui::controls::DECISION_HEIGHT)
+                    .children(keys)
+                    .child(
+                        canvas(
+                            move |bounds, window, cx| {
+                                let changed = page.update(cx, |page, _| {
+                                    let changed = page.bar_slot != Some(bounds);
+                                    page.bar_slot = Some(bounds);
+                                    changed
+                                });
+                                if changed.unwrap_or(false) {
+                                    oriel_ui::redraw::notify_next_frame(page.clone(), window);
+                                }
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .size_full(),
+                    ),
+            );
         if self.looking {
             bar = bar
                 .child(
                     Button::new("loupe-previous")
                         .ghost()
-                        .large()
-                        .size(px(44.))
-                        .size_10()
+                        .bar_size()
+                        .size_12()
                         .icon(Icon::new(IconName::ChevronLeft))
                         .accessibility_label("Previous version")
                         .tooltip("Previous version  ←")
@@ -2402,9 +3485,8 @@ impl DuplicatesPage {
                 .child(
                     Button::new("loupe-next")
                         .ghost()
-                        .large()
-                        .size(px(44.))
-                        .size_10()
+                        .bar_size()
+                        .size_12()
                         .icon(Icon::new(IconName::ChevronRight))
                         .accessibility_label("Next version")
                         .tooltip("Next version  →")
@@ -2415,30 +3497,58 @@ impl DuplicatesPage {
         bar = bar.child(
             Button::new("duplicates-skip")
                 .outline()
-                .page_size()
+                .quiet_edge(cx)
+                .decision_size()
+                .when(narrow, |this| this.px_4())
                 .label("Skip")
                 .tooltip("Skip for now  S")
-                .on_click(cx.listener(|this, _, _, cx| this.skip(cx))),
+                .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                    if event.click_count() > 1 {
+                        return;
+                    }
+                    this.take_keys_back(event, window, cx);
+                    this.skip(cx);
+                })),
         );
         if removed > 0 {
             bar = bar.child(
                 Button::new("duplicates-keep-every")
                     .outline()
-                    .page_size()
+                    .quiet_edge(cx)
+                    .decision_size()
+                    .when(narrow, |this| this.px_4())
                     .label(keep_every_label(rows))
                     .tooltip(if set.kind == DuplicateKind::Exact {
                         "Keep every copy  N"
                     } else {
                         "Keep every version: they are not duplicates  N"
                     })
-                    .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx))),
+                    .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                        if event.click_count() > 1 {
+                            return;
+                        }
+                        this.take_keys_back(event, window, cx);
+                        this.dismiss(window, cx);
+                    })),
             );
         }
         let label = self.decision().unwrap_or_default();
         bar.child(
             widgets::primary_action("duplicates-decide", label, "↩")
-                .page_size()
-                .on_click(cx.listener(|this, _, window, cx| {
+                .decision_size()
+                // Skip beside it stays where it is as the number in its label changes.
+                .min_w(rems(if narrow {
+                    DECIDE_LEAST_NARROW
+                } else {
+                    DECIDE_LEAST
+                }))
+                .when(narrow, |this| this.px_4())
+                .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                    // The next set's button is under the second click of a double-click.
+                    if event.click_count() > 1 {
+                        return;
+                    }
+                    this.take_keys_back(event, window, cx);
                     if this.looking {
                         let focus = this.focus_row();
                         this.keep_only(focus, window, cx);
@@ -2450,18 +3560,19 @@ impl DuplicatesPage {
         .into_any_element()
     }
 
-    fn render_empty(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_empty(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let page = self.page();
         let scope = self.scope(cx);
         let fingerprinting = page.is_some_and(|page| page.fingerprinted < page.fingerprintable);
         let comparing = page.is_some_and(|page| page.compared < page.comparable);
+        let checking = page.map_or(0, |page| page.counts.checking);
         let title = match scope {
             DuplicateScope::Variants if comparing => "No variants found yet",
             DuplicateScope::Variants => "No sets of variants",
             DuplicateScope::Similar | DuplicateScope::All if self.freed_here > 0 => {
                 "All similar sets done"
             }
-            DuplicateScope::Similar | DuplicateScope::All if fingerprinting => {
+            DuplicateScope::Similar | DuplicateScope::All if fingerprinting || checking > 0 => {
                 "No similar versions found yet"
             }
             DuplicateScope::Similar | DuplicateScope::All => "No similar versions",
@@ -2480,6 +3591,11 @@ impl DuplicatesPage {
                     format::count(page.fingerprintable)
                 )
             })
+        } else if checking > 0 && scope != DuplicateScope::Exact {
+            Some(format!(
+                "{} still being checked, and shown here once that is done.",
+                format::plural_as(checking, "set", "sets")
+            ))
         } else if scope == DuplicateScope::Variants {
             Some(
                 "Similar sets whose pictures each differ in one area come here, since none of \
@@ -2501,6 +3617,7 @@ impl DuplicatesPage {
         let mut actions = vec![
             Button::new("duplicates-back")
                 .outline()
+                .quiet_edge(cx)
                 .label("Back to Overview")
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.state
@@ -2512,6 +3629,7 @@ impl DuplicatesPage {
             actions.push(
                 Button::new("duplicates-other")
                     .outline()
+                    .quiet_edge(cx)
                     .label(if other == DuplicateScope::Exact {
                         "Show identical copies"
                     } else {
@@ -2521,7 +3639,7 @@ impl DuplicatesPage {
                     .into_any_element(),
             );
         }
-        let queue = self.render_queue(false, cx);
+        let queue = self.render_queue(false, window, cx);
         div()
             .flex()
             .flex_row()
@@ -2545,10 +3663,15 @@ impl DuplicatesPage {
 ///
 /// The screen is the window's height, which the grid never exceeds, so a frame after a resize
 /// draws enough even before the grid's own bounds have caught up.
-fn lines_to_draw(scroll: &ScrollHandle, total: usize, window: &Window) -> (Vec<usize>, Vec<usize>) {
+fn lines_to_draw(
+    scroll: &ScrollHandle,
+    total: usize,
+    line: f32,
+    window: &Window,
+) -> (Vec<usize>, Vec<usize>) {
     // The space between lines and above the first, a rem each.
     let gap = f32::from(window.rem_size());
-    let pitch = LINE + gap;
+    let pitch = line + gap;
     let screen = f32::from(window.viewport_size().height);
     // The space above the first line, the lines and the gaps between them, the space below.
     let content = total as f32 * pitch + gap;
@@ -2570,15 +3693,15 @@ fn lines_to_draw(scroll: &ScrollHandle, total: usize, window: &Window) -> (Vec<u
 
 /// The room `lines` lines of versions not drawn take, `gap` apart, less the gap the grid puts
 /// after it.
-fn skipped_lines(lines: usize, gap: f32) -> AnyElement {
+fn skipped_lines(lines: usize, line: f32, gap: f32) -> AnyElement {
     div()
         .flex_shrink_0()
-        .h(px(lines as f32 * (LINE + gap) - gap))
+        .h(px(lines as f32 * (line + gap) - gap))
         .into_any_element()
 }
 
 /// The lines every tile of a set carries, so tiles stay level with one another.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct TileLayout {
     /// The file's name, when two versions share a folder.
     names: bool,
@@ -2586,13 +3709,88 @@ struct TileLayout {
     video: bool,
     /// A line of notes, when a version has one.
     notes: bool,
+    /// The lines every folder takes: 2 when one would wrap.
+    folder_lines: u8,
+    /// Whether the facts have their labels, when the tile has the room for them.
+    labelled: bool,
+    /// How many lanes a version has, and which of them, as bits, every version shares: those
+    /// take one line between them, so a set's facts come down to what tells its versions apart.
+    lanes: u8,
+    shared: u8,
+    /// What every version shares, on a line in each tile, when the decision line has no room.
+    common: Option<SharedString>,
+    /// Which lanes, as bits, take their compact form in every tile: one tile's value too long for
+    /// its room is enough, so that the versions still read alike.
+    compact: u8,
+    /// The tile's width, the same on a line with fewer tiles.
+    width: f32,
+    /// The room the tile leaves its picture.
+    place: (f32, f32),
+}
+
+impl TileLayout {
+    /// A folder as the tile's lines hold it. One too long for them keeps its end, the part that
+    /// tells it from its neighbours; the line's hover text has it whole. Two lines break where a
+    /// name does, at "/" or "-", not in the middle of a word.
+    fn folder(&self, folder: &str) -> String {
+        let per_line =
+            (((self.width - TILE_INSET - 16.) / FOLDER_CHARACTER).floor() as usize).max(1);
+        let letters: Vec<char> = folder.chars().collect();
+        // What fits on `room` letters of a line, ending where the folder's letters up to `end` do.
+        let ending = |end: usize, room: usize| -> String {
+            if end <= room {
+                letters[..end].iter().collect()
+            } else {
+                let start = end + 1 - room;
+                std::iter::once('…')
+                    .chain(letters[start..end].iter().copied())
+                    .collect()
+            }
+        };
+        if self.folder_lines < 2 || letters.len() <= per_line {
+            return ending(letters.len(), per_line);
+        }
+        let earliest = letters.len().saturating_sub(per_line).max(1);
+        let at = (earliest..letters.len())
+            .find(|at| matches!(letters[at - 1], '/' | '-' | '_' | ' '))
+            .unwrap_or(earliest);
+        let last: String = letters[at..].iter().collect();
+        format!("{}\n{last}", ending(at, per_line))
+    }
+
+    /// How many letters of a fact the tile holds on a line.
+    fn fact_room(&self) -> usize {
+        let label = if self.labelled { FACT_LABEL } else { 0. };
+        ((self.width - TILE_INSET - 16. - label) / FACT_CHARACTER).floor() as usize
+    }
+
+    /// What a tile takes under its picture and around it, in pixels at this rem: its rule and
+    /// padding, then the facts' padding and the space between their parts, its fate, its folder,
+    /// and its lanes.
+    fn height(&self, rem: f32) -> f32 {
+        let lanes = f32::from(self.lanes - self.shared.count_ones() as u8)
+            + if self.common.is_some() { 1. } else { 0. };
+        let mut height = TILE_INSET
+            + 2. * 0.25 * rem
+            + 2. * 0.25 * rem
+            + 2. * rem
+            + f32::from(self.folder_lines) * 1.25 * rem
+            + lanes * FACT_LINE;
+        if self.names {
+            height += FACT_LINE + 0.25 * rem;
+        }
+        if self.notes {
+            height += FACT_LINE + 0.25 * rem;
+        }
+        height
+    }
 }
 
 /// What a version's notes line says: the picture it repeats under Spot variants, the
 /// byte-identical copies that go with it ("Also in …"), and a hard link that frees nothing.
 fn tile_notes(set: &DuplicateSet, row: &SetRow, index: usize) -> Vec<String> {
     let mut notes = Vec::new();
-    if let Some(of) = copy_of_number(set, index) {
+    if let Some(of) = copy_of_number(set, index).filter(|_| !one_picture(set)) {
         notes.push(format!("Same picture as {of}"));
     }
     match row.copies.as_slice() {
@@ -2613,47 +3811,136 @@ fn tile_notes(set: &DuplicateSet, row: &SetRow, index: usize) -> Vec<String> {
     notes
 }
 
-/// A tile's lanes, a label and a value each, one line apiece: a loss reads in the warning
-/// colour, a value the keeper shares is muted.
-fn render_lanes(lanes: &[Lane], cx: &App) -> AnyElement {
+/// Whether every version of the set is the same picture, which then is said once for the set.
+fn one_picture(set: &DuplicateSet) -> bool {
+    set.pictures
+        .as_ref()
+        .is_some_and(|pictures| pictures.len() > 1 && pictures.iter().all(|p| *p == pictures[0]))
+}
+
+/// Which lanes a tile's room cannot hold whole in at least one version.
+fn compact_lanes(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId], layout: &TileLayout) -> u8 {
+    let room = layout.fact_room();
+    let video = has_video(rows);
+    let mut compact = 0;
+    for (index, row) in rows.iter().enumerate() {
+        let keeper = keeper_of(set, rows, index, kept).unwrap_or(&row.file);
+        for (lane_index, lane) in facts_of(&row.file, keeper, video).iter().enumerate() {
+            if lane.overflows(room, layout.labelled) {
+                compact |= 1 << lane_index;
+            }
+        }
+    }
+    compact
+}
+
+/// What is true of every version, for one line: the format first, the thing most often asked.
+fn common_facts(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId]) -> Vec<String> {
+    let shared = shared_lanes(set, rows, kept);
+    let lanes = facts_of(&rows[0].file, &rows[0].file, has_video(rows));
+    let in_common = lanes
+        .iter()
+        .enumerate()
+        .filter(|(index, lane)| shared & (1 << index) != 0 && lane.value != "—")
+        .map(|(_, lane)| lane);
+    let (format, others): (Vec<&Lane>, Vec<&Lane>) =
+        in_common.partition(|lane| lane.label == "Format");
+    one_picture(set)
+        .then(|| "Same picture".to_string())
+        .into_iter()
+        .chain(format.into_iter().chain(others).map(Lane::said_alone))
+        .collect()
+}
+
+/// Which lanes, as bits, every version of the set shares with its keeper: what those say goes on
+/// one quiet line, and only what tells the versions apart keeps a line of its own.
+fn shared_lanes(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId]) -> u8 {
+    let video = has_video(rows);
+    let mut shared = u8::MAX;
+    for (index, row) in rows.iter().enumerate() {
+        let keeper = keeper_of(set, rows, index, kept)
+            .cloned()
+            .unwrap_or_else(|| row.file.clone());
+        if keeper.id == row.file.id {
+            continue;
+        }
+        for (lane_index, lane) in facts_of(&row.file, &keeper, video).iter().enumerate() {
+            if lane.standing != Standing::Same {
+                shared &= !(1 << lane_index);
+            }
+        }
+    }
+    let lanes = facts_of(&rows[0].file, &rows[0].file, video).len();
+    shared & ((1u16 << lanes) - 1) as u8
+}
+
+/// A tile's lanes: what every version shares on one quiet line when the decision line has no room
+/// for it, then a label and a value each for what differs: a loss reads in the warning colour. A
+/// narrow tile shows the values alone, which say what they are, and in either a value cut short
+/// sooner than cut off.
+fn render_lanes(lanes: &[Lane], layout: &TileLayout, cx: &App) -> AnyElement {
     let theme = cx.theme();
-    div()
-        .flex()
-        .flex_col()
-        .text_xs()
-        .children(lanes.iter().map(|lane| {
+    let (warning, muted, foreground) = (theme.warning, theme.muted_foreground, theme.foreground);
+    let labelled = layout.labelled;
+    let lines = lanes
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| layout.shared & (1 << index) == 0)
+        .map(|(index, lane)| {
+            let value = div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .map(|this| match lane.standing {
+                    Standing::Worse => this.text_color(warning).font_weight(FontWeight::MEDIUM),
+                    Standing::Same => this.text_color(muted),
+                    Standing::Plain => this.text_color(foreground),
+                })
+                .child(lane.shown(layout.compact & (1 << index) != 0, labelled));
             div()
                 .flex()
                 .flex_row()
                 .gap_2()
-                .child(
-                    div()
-                        .w(rems(4.5))
-                        .flex_shrink_0()
-                        .text_color(theme.muted_foreground)
-                        .child(lane.label),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .map(|this| match lane.standing {
-                            Standing::Worse => this
-                                .text_color(theme.warning)
-                                .font_weight(FontWeight::MEDIUM),
-                            Standing::Same => this.text_color(theme.muted_foreground),
-                            Standing::Plain => this.text_color(theme.foreground),
-                        })
-                        .child(lane.value.clone()),
-                )
-        }))
+                .when(labelled, |this| {
+                    this.child(
+                        div()
+                            .w(rems(5.))
+                            .flex_shrink_0()
+                            .text_color(muted)
+                            .child(lane.label),
+                    )
+                })
+                .child(value)
+        });
+    div()
+        .flex()
+        .flex_col()
+        .text_caption()
+        .line_height(px(FACT_LINE))
+        .when_some(layout.common.clone(), |this, common| {
+            this.child(div().truncate().text_color(muted).child(common))
+        })
+        .children(lines)
         .into_any_element()
+}
+
+/// One line round a chip, drawn as a shadow so that it takes no room.
+/// How far the arrow keys' mark stands outside a version's edge.
+const FOCUS_MARK: f32 = 2.;
+
+fn chip_ring(color: impl Into<Hsla>, spread: f32) -> gpui_kit::BoxShadow {
+    gpui_kit::BoxShadow {
+        color: color.into(),
+        offset: gpui_kit::point(px(0.), px(0.)),
+        blur_radius: px(0.),
+        spread_radius: px(spread),
+        inset: false,
+    }
 }
 
 /// Why the suggestion keeps what it keeps, at the top of the stage: "Keeping 1: most pixels
 /// (2560×1440 against 1280×720)". A close call leads with a warning sign and says so.
-fn render_decision_line(reason: &model::Reason, cx: &App) -> AnyElement {
+fn render_decision_line(reason: &model::Reason, common: Option<String>, cx: &App) -> AnyElement {
     let theme = cx.theme();
     div()
         .id("duplicates-decision-line")
@@ -2666,22 +3953,41 @@ fn render_decision_line(reason: &model::Reason, cx: &App) -> AnyElement {
         .flex_shrink_0()
         .px_5()
         .pt_4()
-        .text_sm()
+        .text_body()
         .when(reason.close_call, |this| {
             this.child(
                 Icon::new(IconName::TriangleAlert)
-                    .small()
+                    .size_4()
                     .text_color(theme.warning),
             )
         })
-        .child(div().min_w_0().truncate().child(reason.text.clone()))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .child(reason.text.clone()),
+        )
+        .when_some(common, |this, common| {
+            this.child(
+                div()
+                    .id("duplicates-common-facts")
+                    .test_support()
+                    .ml_4()
+                    .flex_shrink_0()
+                    .text_caption()
+                    .text_color(theme.muted_foreground)
+                    .child(common),
+            )
+        })
         .into_any_element()
 }
 
-/// A picture fitted inside its place, its own corners rounded to `radius`. GPUI clips a child to
-/// its parent's rectangle, never to its rounded corners, so a picture that reached a rounded
-/// place's edge would show square corners there; rounded itself, it sits inside the shape
-/// wherever it lands. Until it is decoded, a rounded ground holds its place.
+/// A picture fitted inside its place, which must be positioned, its own corners rounded to
+/// `radius`. GPUI clips a child to its parent's rectangle, never to its rounded corners, so a
+/// picture that reached a rounded place's edge would show square corners there; rounded itself,
+/// it sits inside the shape wherever it lands. Until it is decoded, a rounded ground holds its
+/// place.
 fn rounded_picture(
     thumbs: &Entity<Thumbs>,
     file: &FileRow,
@@ -2692,17 +3998,15 @@ fn rounded_picture(
     let thumb = thumbs.update(cx, |thumbs, cx| thumbs.get(file, size, cx));
     let theme = cx.theme();
     match thumb {
-        Thumb::Ready(image) => img(image)
-            .size_full()
-            .object_fit(ObjectFit::Contain)
-            .rounded(radius)
-            .into_any_element(),
+        Thumb::Ready(image) => thumbs::painted(image, ObjectFit::Contain, radius),
         Thumb::Pending => div()
+            .absolute()
             .size_full()
             .rounded(radius)
             .bg(theme.muted)
             .into_any_element(),
         Thumb::Unavailable => div()
+            .absolute()
             .size_full()
             .flex()
             .items_center()
@@ -2713,27 +4017,6 @@ fn rounded_picture(
             .child(Icon::new(thumbs::kind_icon(file.kind)))
             .into_any_element(),
     }
-}
-
-/// A version's number on its picture, which 1–9 keep it by.
-fn number_badge(number: usize, cx: &App) -> AnyElement {
-    let theme = cx.theme();
-    div()
-        .min_w_8()
-        .h_8()
-        .px_2()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(theme.radius)
-        .bg(theme.background)
-        .border_1()
-        .border_color(theme.border)
-        .text_color(theme.foreground)
-        .text_sm()
-        .font_weight(FontWeight::MEDIUM)
-        .child(number.to_string())
-        .into_any_element()
 }
 
 /// A video tile's play or pause sign, large in the middle of its picture, which is the control:
@@ -2785,6 +4068,8 @@ fn menu_item(
             .items_center()
             .justify_between()
             .gap_4()
+            .h(oriel_ui::MENU_ROW_HEIGHT)
+            .text_body()
             .child(label)
             .children(
                 keys.and_then(|keys| Keystroke::parse(keys).ok())
@@ -2855,12 +4140,49 @@ impl VersionMenu {
     }
 }
 
+/// A row of the identical copies: its folder over its date.
+const COPY_ROW: f32 = 56.;
+
+/// The least the list of identical copies keeps beside the picture, in rems, or it goes below.
+const COPIES_LIST_LEAST: f32 = 20.;
+
+/// A list of identical copies at least this wide, in rems, says on each row what happens to it.
+const COPIES_FATE_LEAST: f32 = 22.;
+
+/// A window narrower than this gives the stage what the queue can spare.
+const QUEUE_NARROW_WINDOW: f32 = 1120.;
+
+/// A row of the queue's height, in rems: its thumbnail, or its two lines of text.
+const QUEUE_ROW: f32 = 3.75;
+
+/// A narrow queue row's second line: "7 versions · 955 KB", or "7 · 955 KB" in a list where some
+/// row's words would be cut, since one list should say it one way.
+fn narrow_queue_caption(set: &DuplicateSet, terse: bool) -> String {
+    let count = files_of(set).len().max(set.versions.len());
+    let bytes = format::bytes(set.reclaimable_bytes as f64);
+    if terse && set.reclaimable_bytes > 0 {
+        return format!("{count} · {bytes}");
+    }
+    let words = if set.kind == DuplicateKind::Exact {
+        format::plural_as(count as i64, "copy", "copies")
+    } else {
+        format::plural(count as i64, "version")
+    };
+    if set.reclaimable_bytes > 0 {
+        format!("{words} · {bytes}")
+    } else {
+        words
+    }
+}
+
 /// One row of the queue: the keeper's thumbnail, its name, and what deciding the set frees; a
-/// close call says so, with an amber dot beside the words, and a skipped set is dimmed.
+/// close call says so with an amber dot on the thumbnail, and a skipped set is dimmed.
 fn render_queue_row(
     page: &Entity<DuplicatesPage>,
     index: usize,
     muted: Hsla,
+    narrow: bool,
+    terse: bool,
     cx: &mut App,
 ) -> AnyElement {
     let this = page.read(cx);
@@ -2880,19 +4202,24 @@ fn render_queue_row(
         .or(files.first())
         .map(|file| (*file).clone());
     let close_call = overridden.is_none() && is_close_call(&set);
+    let shown_bytes = format::bytes(set.reclaimable_bytes as f64);
     let caption = if skipped {
         "Skipped".to_string()
+    } else if narrow {
+        // A narrow queue keeps the two numbers and leaves the words.
+        narrow_queue_caption(&set, terse)
     } else {
-        format!(
-            "{}{} · frees {}",
-            if close_call { "Close call · " } else { "" },
-            if set.kind == DuplicateKind::Exact {
-                format::plural_as(files.len() as i64, "copy", "copies")
-            } else {
-                format::plural(set.versions.len() as i64, "version")
-            },
-            format::bytes(set.reclaimable_bytes as f64)
-        )
+        let count = if set.kind == DuplicateKind::Exact {
+            format::plural_as(files.len() as i64, "copy", "copies")
+        } else {
+            format::plural(set.versions.len() as i64, "version")
+        };
+        // A set whose decision frees nothing, as variants' does, does not say so on every row.
+        if set.reclaimable_bytes > 0 {
+            format!("{count} · frees {shown_bytes}")
+        } else {
+            count
+        }
     };
     let theme = cx.theme();
     let (selected, hover, radius, warning) = (
@@ -2903,7 +4230,7 @@ fn render_queue_row(
     );
     let picture = keeper
         .as_ref()
-        .map(|file| thumbs::picture(&thumbs, file, 80, ObjectFit::Cover, cx));
+        .map(|file| thumbs::picture(&thumbs, file, 80, ObjectFit::Cover, radius, cx));
     let target = page.downgrade();
     div()
         .id(("set-row", index))
@@ -2921,14 +4248,13 @@ fn render_queue_row(
         .items_center()
         .gap_3()
         .w_full()
-        .h(rems(3.5))
+        .h(rems(QUEUE_ROW))
         .my_0p5()
         .px_2()
         .rounded(radius)
         .cursor_pointer()
         .when(active, |this| this.bg(selected))
         .when(!active, |this| this.hover(|style| style.bg(hover)))
-        .when(skipped, |this| this.opacity(0.55))
         .on_click(move |_, _, cx| {
             target
                 .update(cx, |page, cx| {
@@ -2941,11 +4267,27 @@ fn render_queue_row(
         })
         .child(
             div()
-                .size_10()
+                .relative()
+                .size(rems(2.75))
                 .flex_shrink_0()
                 .rounded(radius)
                 .overflow_hidden()
-                .children(picture),
+                // A skipped set steps back by its picture; its words stay readable.
+                .when(skipped, |this| this.opacity(0.55))
+                .children(picture)
+                .when(close_call && !skipped, |this| {
+                    this.child(
+                        div()
+                            .absolute()
+                            .top_1()
+                            .left_1()
+                            .size_2p5()
+                            .rounded_full()
+                            .border_1()
+                            .border_color(gpui_kit::black().opacity(0.6))
+                            .bg(warning),
+                    )
+                }),
         )
         .child(
             div()
@@ -2956,22 +4298,17 @@ fn render_queue_row(
                 .child(
                     div()
                         .truncate()
-                        .text_sm()
+                        .text_body()
                         .font_weight(FontWeight::MEDIUM)
+                        .when(skipped, |this| this.text_color(muted))
                         .child(keeper.map(|file| file.name).unwrap_or_default()),
                 )
                 .child(
                     div()
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap_1p5()
-                        .text_xs()
+                        .truncate()
+                        .text_caption()
                         .text_color(muted)
-                        .when(close_call && !skipped, |this| {
-                            this.child(div().flex_shrink_0().size_1p5().rounded_full().bg(warning))
-                        })
-                        .child(div().truncate().child(caption)),
+                        .child(caption),
                 ),
         )
         .into_any_element()
@@ -2988,6 +4325,7 @@ impl DuplicatesPage {
             vec![
                 Button::new("duplicates-try-again")
                     .outline()
+                    .quiet_edge(cx)
                     .label("Try again")
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.load(cx);
@@ -3024,9 +4362,9 @@ impl Render for DuplicatesPage {
             )
             .into_any_element()
         } else if self.sets().is_empty() {
-            self.render_empty(cx)
+            self.render_empty(window, cx)
         } else {
-            let queue = self.render_queue(true, cx);
+            let queue = self.render_queue(true, window, cx);
             let stage = self.render_stage(window, cx);
             div()
                 .flex()

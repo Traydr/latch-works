@@ -17,7 +17,7 @@ use support::*;
 /// Answers the system's folder picker with `folder`, as the owner would.
 fn choose(cx: &mut TestAppContext, opened: &Opened, folder: &Path) {
     click(cx, opened.handle, "welcome-choose-folder");
-    assert!(cx.did_prompt_for_paths(), "Choose Folder… asks the system");
+    assert!(cx.did_prompt_for_paths(), "Choose folder… asks the system");
     let folder = folder.to_path_buf();
     cx.simulate_path_prompt_response(move |options| {
         assert!(options.directories && !options.files);

@@ -15,6 +15,7 @@ use gpui_kit::{
     Styled as _, TestSupportExt as _, canvas, div, prelude::FluentBuilder as _, px, rems,
 };
 use oriel_ui::ControlSize as _;
+use oriel_ui::TextRole as _;
 
 use crate::format;
 
@@ -74,7 +75,7 @@ pub fn empty_state(
         .when_some(icon, |this, icon| {
             this.child(
                 Icon::new(icon)
-                    .size(px(32.))
+                    .size(px(40.))
                     .text_color(theme.muted_foreground),
             )
         })
@@ -84,15 +85,15 @@ pub fn empty_state(
                 .test_support()
                 .role(Role::Heading)
                 .aria_label(title.clone())
-                .text_size(px(15.))
+                .text_heading()
                 .font_weight(FontWeight::SEMIBOLD)
                 .child(title),
         )
         .when_some(body, |this, body| {
             this.child(
                 div()
-                    .max_w(px(420.))
-                    .text_sm()
+                    .max_w(px(520.))
+                    .text_body()
                     .text_color(theme.muted_foreground)
                     .child(body),
             )
@@ -122,6 +123,7 @@ pub fn error_state(
             Button::new(SharedString::from(format!("{id}-try-again")))
                 .bar_size()
                 .outline()
+                .quiet_edge(cx)
                 .label("Try again")
                 .on_click(move |_, window, cx| on_retry(window, cx))
                 .into_any_element(),
@@ -146,7 +148,7 @@ pub fn card(cx: &App) -> Div {
 /// Small grey text (`lw-caption`).
 pub fn caption(text: impl Into<SharedString>, cx: &App) -> Div {
     div()
-        .text_xs()
+        .text_caption()
         .text_color(cx.theme().muted_foreground)
         .child(text.into())
 }
@@ -159,15 +161,15 @@ pub fn row_icon(icon: IconName, cx: &App) -> Div {
         .flex_shrink_0()
         .items_center()
         .justify_center()
-        .size(px(32.))
+        .size(px(40.))
         .rounded(theme.radius)
         .bg(theme.muted)
-        .child(Icon::new(icon).size(px(16.)))
+        .child(Icon::new(icon).size(px(20.)))
 }
 
 /// A key inside a button, as `Kbd` sits in Electron Oriel's buttons: "Tidy up ⌘↩".
 pub fn key_hint(keys: &'static str) -> Div {
-    div().ml_1().text_xs().opacity(0.6).child(keys)
+    div().ml_1().text_caption().opacity(0.85).child(keys)
 }
 
 /// A primary action with its key, at the top bar's right, at the bar's size in the house scale.
@@ -199,14 +201,89 @@ pub fn while_changing(button: Button, status: Option<crate::actions::ChangeStatu
 /// A file as a tile (`MediaTile`): its picture in its own shape on a letterbox, then its name,
 /// its folder when `folder` (another tile shows the same name), and its size, with what
 /// converting is estimated to leave when `ratio` is known. Tiles grow to fill their row.
+/// "clip-3.mp4 · 47%", or just the name where the tool cannot say how far it has got.
+pub fn file_and_share(file: &crate::actions::RunningFile) -> String {
+    match file.share {
+        Some(share) => format!("{} · {}%", file.name, (share * 100.).floor()),
+        None => file.name.clone(),
+    }
+}
+
+/// What marks the tile of the file a change is working on: `doing` and how far along when the tool
+/// can say, or that it is paused, on the picture's ground, and a bar along the picture's foot.
+pub fn running_badge(doing: &str, file: &crate::actions::RunningFile, cx: &App) -> AnyElement {
+    let theme = cx.theme();
+    let doing = if file.paused {
+        "Paused"
+    } else if file.pausing {
+        "Pausing"
+    } else {
+        doing
+    };
+    let words = match file.share {
+        Some(share) => format!("{doing} · {}%", (share * 100.).floor()),
+        None if file.paused => doing.to_owned(),
+        None => format!("{doing}…"),
+    };
+    div()
+        .id("tile-running")
+        .test_support()
+        .absolute()
+        .inset_0()
+        .child(
+            div()
+                .absolute()
+                .left(px(8.))
+                .top(px(8.))
+                .h_8()
+                .px_2()
+                .flex()
+                .items_center()
+                .rounded(theme.radius)
+                .bg(gpui_kit::black().opacity(0.75))
+                .text_color(gpui_kit::white())
+                .text_sm()
+                .font_weight(FontWeight::MEDIUM)
+                .child(words),
+        )
+        .when_some(file.share, |this, share| {
+            this.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .h_1()
+                    .bg(gpui_kit::black().opacity(0.6))
+                    .child(
+                        div()
+                            .h_full()
+                            .w(gpui_kit::relative(share))
+                            .bg(theme.primary),
+                    ),
+            )
+        })
+        .into_any_element()
+}
+
 pub fn media_tile(
     thumbs: &gpui_kit::Entity<crate::thumbs::Thumbs>,
     row: &oriel_core_tidy::contract::FileRow,
     ratio: Option<f64>,
     folder: bool,
+    badge: Option<AnyElement>,
     cx: &mut App,
 ) -> AnyElement {
-    let picture = crate::thumbs::picture(thumbs, row, 320, gpui_kit::ObjectFit::Contain, cx);
+    // Covering its tile, as the Library's and View's tiles do: a tile here says which file it is,
+    // and a tall picture letterboxed to a sliver would say it badly.
+    let picture = crate::thumbs::picture(
+        thumbs,
+        row,
+        512,
+        gpui_kit::ObjectFit::Cover,
+        cx.theme().radius_lg,
+        cx,
+    );
     let theme = cx.theme();
     let size = match ratio {
         Some(ratio) => format!(
@@ -228,18 +305,20 @@ pub fn media_tile(
         .min_w_0()
         .child(
             div()
+                .relative()
                 .w_full()
-                .h(px(132.))
+                .h(px(168.))
                 .rounded(theme.radius_lg)
                 .overflow_hidden()
                 .bg(theme.muted)
-                .child(picture),
+                .child(picture)
+                .children(badge),
         )
         .child(
             div()
                 .px_0p5()
                 .pt(px(6.))
-                .child(div().truncate().text_sm().child(row.name.clone()))
+                .child(div().truncate().text_body().child(row.name.clone()))
                 .when(folder, |this| {
                     this.child(
                         caption(
@@ -258,8 +337,12 @@ pub fn media_tile(
         .into_any_element()
 }
 
+/// The most a page's column of cards takes: it reads as one piece in a large window, without a
+/// card's two ends drifting out of a glance.
+pub const PAGE_COLUMN: Pixels = px(960.);
+
 /// The width a media tile starts from before it grows to fill its row.
-const TILE_BASIS: f32 = 11.;
+const TILE_BASIS: f32 = 13.;
 
 /// Tiles in rows that wrap and fill the width. Empty tiles of no height end the last row, so
 /// its tiles keep the width of the rows above instead of stretching.
@@ -302,7 +385,7 @@ pub fn left_list(reasons: &[String], cx: &App) -> Div {
             .items_center()
             .h(px(44.))
             .px_4()
-            .text_size(px(13.))
+            .text_body()
             .when(index > 0, |this| {
                 this.border_t_1().border_color(theme.border)
             })

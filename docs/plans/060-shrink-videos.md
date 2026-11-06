@@ -59,6 +59,8 @@ At equal size SVT-AV1 scored 1.8 to 3.1 VMAF above x265 on every sample. Low-bit
   before (`files.shrink_not_smaller`, separate from Convert's mark). Expected size is
   `size × clamp(0.55 / bits-per-pixel-second, 0.2, 1)`, fitted to the measurements above; on the
   catalog it predicts 58 GB saved against the measured 55 (51–59).
+  Later: the holds were removed, so members of duplicate sets are shrunk too, identical copies with
+  one encode (see "Duplicates and Convert or Shrink" in `docs/runbooks/oriel.md`).
 - **Batches.** Most bytes saved first. A run takes 5 GB, 20 GB or every video's originals
   (`shrinkBatch` in the contract, shared by the button and the planner). Pause holds a run after
   the video in progress; Stop leaves finished videos done; the next run starts with what is left,

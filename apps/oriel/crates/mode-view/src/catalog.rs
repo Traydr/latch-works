@@ -10,7 +10,6 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
 
 use futures::StreamExt as _;
 use futures::channel::mpsc;
@@ -24,9 +23,6 @@ use oriel_runtime::CancelToken;
 
 use crate::browser::sort_media;
 use crate::listing::MediaEntry;
-
-/// How long "Loaded N item(s)" stays in the header after a scan (`PrismLayout`'s ready state).
-pub const READY_STATUS_FOR: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScanState {
@@ -146,7 +142,6 @@ pub struct Catalog {
     children: Arc<[FolderNode]>,
     siblings: Arc<[FolderNode]>,
     children_loading: bool,
-    finished_at: Option<Instant>,
 }
 
 impl EventEmitter<CatalogUpdate> for Catalog {}
@@ -173,7 +168,6 @@ impl Catalog {
             children: Arc::from([]),
             siblings: Arc::from([]),
             children_loading: false,
-            finished_at: None,
         }
     }
 
@@ -237,11 +231,6 @@ impl Catalog {
     /// The folder's siblings, its parent's subfolders, for the folder steps.
     pub fn siblings(&self) -> &Arc<[FolderNode]> {
         &self.siblings
-    }
-
-    /// When the last scan finished, for the header's ready status.
-    pub fn finished_at(&self) -> Option<Instant> {
-        self.finished_at
     }
 
     /// Starts a scan, cancelling the one running: `createSupersedeActiveScan`, then the worker's
@@ -352,7 +341,6 @@ impl Catalog {
                 self.state = ScanState::Loading;
                 self.message = "Scanning folder...".into();
                 self.message_path = None;
-                self.finished_at = None;
                 cx.emit(CatalogUpdate::Reset);
             }
             CatalogEvent::Progress {
@@ -385,7 +373,6 @@ impl Catalog {
                 )
                 .into();
                 self.message_path = None;
-                self.finished_at = Some(Instant::now());
                 self.revision += 1;
                 cx.emit(CatalogUpdate::Done);
             }

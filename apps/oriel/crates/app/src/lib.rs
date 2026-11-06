@@ -169,7 +169,7 @@ pub fn main_window_options(data: &DataRoot, cx: &mut App) -> WindowOptions {
         titlebar: Some(TitlebarOptions {
             title: Some(Shell::title(stored_mode(cx)).into()),
             appears_transparent: true,
-            traffic_light_position: Some(point(px(16.), px(18.))),
+            traffic_light_position: Some(point(px(16.), px(22.))),
         }),
         app_id: Some("dev.traydr.latchworks.oriel".into()),
         // GPUI caps an inactive window at 30 frames a second by default, so a video playing

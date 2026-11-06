@@ -1,16 +1,13 @@
 //! What Shrink would re-encode, from glazier-core's `optimize/shrink.ts` and its estimate of
 //! encode times, `optimize/encode-speed.ts`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
 use oriel_core_format::{ArchiveVideoCodec, ArchiveVideoPlan, plan_video_reencode};
 use rusqlite::Connection;
 
-use super::candidates::{
-    CandidateHolds, SKIP_DUPLICATE, SKIP_REVIEW, SKIP_UNCHECKED, open_duplicate_copies,
-    taken_paths, unchecked_files, video_source_of,
-};
+use super::candidates::{taken_paths, video_source_of};
 use crate::catalog::files::{SqlParams, query_records};
 use crate::catalog::rows::{FILE_COLUMNS, FILES_FROM, FileRecord};
 use crate::collation::locale_order;
@@ -153,14 +150,19 @@ pub struct ShrinkScan {
 }
 
 impl ShrinkScan {
-    pub fn totals(&self) -> ShrinkTotals {
+    /// The candidates added up. `removable` names the files the open duplicate sets' suggestions
+    /// would remove.
+    pub fn totals(&self, removable: &HashSet<FileId>) -> ShrinkTotals {
         let mut totals = ShrinkTotals {
             files: self.candidates.len() as i64,
             ..ShrinkTotals::default()
         };
-        for candidate in &self.candidates {
-            totals.bytes += candidate.item.bytes;
-            totals.estimated_bytes += candidate.item.estimated_bytes;
+        for ShrinkCandidate { record, item } in &self.candidates {
+            totals.bytes += item.bytes;
+            totals.estimated_bytes += item.estimated_bytes;
+            if removable.contains(&record.id) {
+                totals.duplicate_saving += item.bytes - item.estimated_bytes;
+            }
         }
         totals
     }
@@ -168,13 +170,13 @@ impl ShrinkScan {
 
 const SKIP_NOT_SMALLER: &str = "Came out no smaller as AV1";
 
-/// Every video under a root that an AV1 re-encode should shrink, the most bytes saved first.
-/// Videos already AV1 or already compact are left out, as are those duplicate review still needs
-/// as they are (the same holds as Convert) and those an earlier attempt could not shrink.
+/// Every video under a root that an AV1 re-encode should shrink, the most bytes saved for an encode
+/// first. Videos already AV1 or already compact are left out, as are those an earlier attempt could
+/// not shrink. Identical copies are listed together and cost one encode (`executor`); a hard link
+/// of a video listed already adds no bytes.
 pub fn find_shrink_candidates(
     connection: &Connection,
     root_id: RootId,
-    holds: &CandidateHolds,
 ) -> anyhow::Result<ShrinkScan> {
     let records = query_records(
         connection,
@@ -185,20 +187,14 @@ pub fn find_shrink_candidates(
         ),
         &SqlParams::new().with("root", root_id),
     )?;
-    let taken = taken_paths(connection, root_id)?;
-    let duplicates = open_duplicate_copies(connection, root_id)?;
-    let unchecked = if holds.wait_for_fingerprints {
-        unchecked_files(connection, root_id)?
-    } else {
-        HashSet::new()
-    };
+    let mut taken: Option<HashSet<String>> = None;
     let speed = encode_speed(connection)?;
     let mut candidates = Vec::new();
     let mut skipped: IndexMap<String, i64> = IndexMap::new();
     let mut skip = |reason: &str| *skipped.entry(reason.to_owned()).or_default() += 1;
 
     for record in records {
-        if let Some(reason) = skip_reason(&record, &duplicates, &unchecked, holds) {
+        if let Some(reason) = skip_reason(&record) {
             skip(reason);
             continue;
         }
@@ -229,10 +225,15 @@ pub fn find_shrink_candidates(
             format!("{}/{file_name}", record.dir)
         }
         .to_lowercase();
+        let taken = match &mut taken {
+            Some(taken) => taken,
+            None => taken.insert(taken_paths(connection, root_id)?),
+        };
         if target != record.rel_path.to_lowercase() && taken.contains(&target) {
             skip("A file with the target name already exists");
             continue;
         }
+        taken.insert(target);
         let item = ShrinkItem {
             file_id: record.id,
             bytes: record.size,
@@ -240,43 +241,62 @@ pub fn find_shrink_candidates(
                 as i64,
             duration_ms,
             encode_ms: js_round(duration_ms / speed.at(pixels)),
+            copy_of: None,
         };
         candidates.push(ShrinkCandidate { record, item });
     }
 
-    let saved = |candidate: &ShrinkCandidate| candidate.item.bytes - candidate.item.estimated_bytes;
-    candidates.sort_by(|left, right| {
-        saved(right)
-            .cmp(&saved(left))
-            .then_with(|| locale_order(&left.record.rel_path, &right.record.rel_path))
-    });
     Ok(ShrinkScan {
-        candidates,
+        candidates: in_encode_order(candidates),
         skipped,
         speed_measured: speed.measured(),
     })
 }
 
-fn skip_reason(
-    record: &FileRecord,
-    duplicates: &HashSet<FileId>,
-    unchecked: &HashSet<FileId>,
-    holds: &CandidateHolds,
-) -> Option<&'static str> {
+/// The candidates as a run takes them: each encode with the copies that share it, the most bytes
+/// saved first, so a run stopped partway has done the best of its batch. Only the first of a set
+/// of copies costs an encode, and a hard link of one already listed frees nothing more.
+fn in_encode_order(candidates: Vec<ShrinkCandidate>) -> Vec<ShrinkCandidate> {
+    let saved = |candidate: &ShrinkCandidate| candidate.item.bytes - candidate.item.estimated_bytes;
+    let mut groups: HashMap<String, Vec<ShrinkCandidate>> = HashMap::new();
+    for candidate in candidates {
+        let key = match &candidate.record.sha256 {
+            Some(sha256) => sha256.clone(),
+            None => format!("file {}", candidate.record.id),
+        };
+        groups.entry(key).or_default().push(candidate);
+    }
+    let mut groups: Vec<Vec<ShrinkCandidate>> = groups.into_values().collect();
+    for group in &mut groups {
+        group.sort_by(|left, right| locale_order(&left.record.rel_path, &right.record.rel_path));
+        let leader = group[0].record.id;
+        let mut inodes = HashSet::new();
+        for (index, candidate) in group.iter_mut().enumerate() {
+            if index > 0 {
+                candidate.item.copy_of = Some(leader);
+                candidate.item.encode_ms = 0.0;
+            }
+            if !inodes.insert(candidate.record.inode()) {
+                candidate.item.bytes = 0;
+                candidate.item.estimated_bytes = 0;
+            }
+        }
+    }
+    let total = |group: &[ShrinkCandidate]| group.iter().map(saved).sum::<i64>();
+    groups.sort_by(|left, right| {
+        total(right)
+            .cmp(&total(left))
+            .then_with(|| locale_order(&left[0].record.rel_path, &right[0].record.rel_path))
+    });
+    groups.into_iter().flatten().collect()
+}
+
+fn skip_reason(record: &FileRecord) -> Option<&'static str> {
     if record.probe_error.is_some() {
         return Some("Won't decode");
     }
     if record.video_codec.as_deref() == Some("av1") {
         return Some("Already AV1");
     }
-    if record.shrink_not_smaller {
-        return Some(SKIP_NOT_SMALLER);
-    }
-    if duplicates.contains(&record.id) {
-        return Some(SKIP_DUPLICATE);
-    }
-    if holds.reviewing.contains(&record.id) {
-        return Some(SKIP_REVIEW);
-    }
-    unchecked.contains(&record.id).then_some(SKIP_UNCHECKED)
+    record.shrink_not_smaller.then_some(SKIP_NOT_SMALLER)
 }

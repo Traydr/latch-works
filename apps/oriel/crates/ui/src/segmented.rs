@@ -1,4 +1,4 @@
-//! A segmented control in the house style (`.lw-seg`): a 32 px track with the selected item
+//! A segmented control in the house style (`.lw-seg`): a 40 px track with the selected item
 //! raised on it. The mode switcher and Settings' theme choice use it.
 //!
 //! Each item is a toggle button, pressed while selected, as Electron Oriel's `aria-pressed`
@@ -15,6 +15,7 @@ use gpui_kit::{
     Styled as _, TestSupportExt as _, Toggled, Window, div, prelude::FluentBuilder as _, px,
 };
 
+use crate::controls::TextRole as _;
 use crate::layout::KeepsFocus as _;
 
 type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
@@ -22,10 +23,10 @@ type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 /// The track's height, and its items' (two less on each side): the bar's frame in the house
 /// scale (`crate::controls`), and a page action's for a track that fills its container, as the
 /// mode switcher does, the control the shell is pressed at most.
-const TRACK_HEIGHT: f32 = 32.;
-const ITEM_HEIGHT: f32 = 28.;
-const FILLED_TRACK_HEIGHT: f32 = 36.;
-const FILLED_ITEM_HEIGHT: f32 = 32.;
+const TRACK_HEIGHT: f32 = 40.;
+const ITEM_HEIGHT: f32 = 36.;
+const FILLED_TRACK_HEIGHT: f32 = 44.;
+const FILLED_ITEM_HEIGHT: f32 = 40.;
 
 #[derive(IntoElement)]
 pub struct Segmented {
@@ -188,7 +189,7 @@ fn render_item(item: SegmentedItem, fill: bool, cx: &App) -> impl IntoElement {
         .border_2()
         .border_color(theme.transparent)
         .rounded(theme.radius - px(2.))
-        .text_size(px(13.))
+        .text_body()
         .font_weight(FontWeight::MEDIUM)
         .text_color(theme.tab_foreground)
         .hover(|style| style.text_color(theme.tab_active_foreground))
@@ -203,7 +204,7 @@ fn render_item(item: SegmentedItem, fill: bool, cx: &App) -> impl IntoElement {
                 gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(window, cx)
             })
         })
-        .when_some(item.icon, |this, icon| this.child(icon.size(px(16.))))
+        .when_some(item.icon, |this, icon| this.child(icon.size(px(18.))))
         .child(item.label)
         .children(item.trailing)
         .when_some(on_click, |this, on_click| {

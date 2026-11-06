@@ -86,21 +86,42 @@ scripted input:
 | `ORIEL_DATA_DIR=<folder>` | The data root, as `--user-data-dir` was for Electron Oriel |
 | `ORIEL_OPEN=<folder>` | View opens the folder at start |
 | `ORIEL_VIEW_SCROLL=<px>` | View scrolls its grid that far down once the folder lists |
+| `ORIEL_VIEW_VIEWER=<n>` | View opens its nth tile (from 0) in the viewer once the folder lists |
+| `ORIEL_VIEW_FOLDERS=1` | View opens its folder overlay once the folder lists |
+| `ORIEL_VIEW_COMIC=1` | View turns comic mode on and opens its first comic in the reader, once the folder lists |
+| `ORIEL_VIEW_PANEL=volume\|speed` | A video the viewer opens stays paused, with that panel of the player open |
 | `ORIEL_SETTINGS=general` | Settings opens at that section (`general`, `view`, `tidy`, `sync`) |
 | `ORIEL_ACTIVITY=tidy=0.4,sync=working` | Fakes mode activity; a faked progress makes ⌘Q wait, so press it twice |
 | `ORIEL_ACTIVITY_PANEL=1` | Opens the activity panel at the bottom right whenever work runs |
+| `ORIEL_ACTIVITY_JOBS=<n>` | Puts that many pretend jobs on the activity panel, in turn running, paused, in the background and queued, to see it and what stands on it without real work |
+| `ORIEL_TOAST=<words>` | Shows a toast with Undo that stays, once the window draws, to see and measure where it sits; `ORIEL_TOAST_DETAIL=<words>` gives it a second line, and `ORIEL_TOAST_FAULT=1` makes it a fault, which keeps that line in sight |
+| `ORIEL_SCRIPT=<steps>` | Plays pointer and key input through the window's own event path once it has drawn, so hover, focus, tooltips and live scrolling can be captured. Steps split by `;`: `wait <ms>`, `move <x>,<y>`, `click <x>,<y>`, `scroll <x>,<y>,<dy>`, `key <keystroke>`. Clicks and keys do what the owner's would: use a scratch data folder |
 | `ORIEL_SYNC_PLAN=1` | Sync plans the active profile at start |
+| `ORIEL_TOOLS_KEEP_RUNNING=1` | Tools run on when their job is paused, as they do where they cannot be suspended: Pause says "Pausing after …" until the file is done |
+| `ORIEL_SYNC_CHECK=form\|plan\|run\|done\|clean\|log` | Sync shows the new-profile form, or a made-up profile's made-up plan; `run` adds a push under way, `done` one finished with a failure, `clean` one finished without, which leaves Prune enabled, `log` the run log too. Only with `ORIEL_DATA_DIR` set. Nothing goes over the network, and only the check profile is written, in that data folder |
 | `ORIEL_VIDEO=avplayer` | Video through AVPlayer instead of libmpv |
 | `ORIEL_ABOUT=1` | Opens the About dialog at start, to see the version and the licences a bundle lists |
 | `ORIEL_WELCOME=1` | Shows the first-run welcome under `ORIEL_DATA_DIR` (it shows once otherwise, until `shell/welcomed` exists) |
 | `ORIEL_TIDY_ROOT=<folder>` | Tidy opens on that root (in a sandboxed run, one inside the sandbox) |
-| `ORIEL_TIDY_PAGE=<page>` | Tidy opens on that page (`overview`, `library`, `duplicates`, `duplicates:identical`, …) |
+| `ORIEL_TIDY_PAGE=<page>` | Tidy opens on that page (`overview`, `library`, `duplicates`, `duplicates:identical`, `duplicates:variants`, …) |
 | `ORIEL_DUPLICATES_MATCHING=1` | Duplicates opens its Matching popover when the page first draws |
+| `ORIEL_DUPLICATES_SET=<n or words>` | Duplicates opens the set at that place in its queue (from 1), or the first with a file whose path holds those words; if none does, the log and the top bar say so |
+| `ORIEL_DUPLICATES_KEEP=<n>` | Duplicates keeps only that version (from 1) of the set it opens, as a pick would |
+| `ORIEL_DUPLICATES_LOUPE=1` | Duplicates opens the loupe on the set it opens |
+| `ORIEL_DUPLICATES_PLAY=1` | With the loupe on a video, plays it, to show its controls |
+| `ORIEL_DUPLICATES_SCROLL=<line>` | Duplicates scrolls the set's versions, or its identical copies' rows, to that line (from 0) when they first draw |
+| `ORIEL_LIBRARY_SELECT=<n>` | Library selects its first n files once they are read, which brings the selection bar |
+| `ORIEL_LIBRARY_VIEW=list\|grid` | Library shows as that |
+| `ORIEL_LIBRARY_INSPECTOR=0\|1` | Library's inspector closed or open |
+| `ORIEL_HOLDING_SELECT=<n>` | Holding selects its first n files, which brings the selection bar |
 | `ORIEL_HISTORY_OPEN=1` | History opens its newest entry |
 | `ORIEL_MOVE_OFFER=1` | Offers the move to Applications even in a run that would skip it |
 | `ORIEL_APPLICATIONS_DIR=<folder>` | Where that move goes, read only when the offer is forced |
 | `ORIEL_QUICK_LOOK=<file>` | Tidy shows the file in Quick Look once it is up |
 | `ORIEL_TIDY_PICKER=1` | Tidy opens its folder picker (Add Folder…) once it is up |
+| `ORIEL_TIDY_MOVE=1` | Tidy opens the folder picker a Move to… opens, once it is up; choosing does nothing |
+| `ORIEL_TIDY_SHORTCUTS=1` | Tidy opens its keyboard shortcuts once it is up |
+| `ORIEL_TIDY_FORGET=1` | Tidy asks whether to forget the folder on screen once it is up; only its Forget button changes anything |
 | `ORIEL_TIDY_RUN=convert,cleanup` | Once the folder on screen is scanned, Tidy starts those pages' changes; the second queues behind the first. It changes files: point it only at a copy |
 | `ORIEL_LOCATIONS_MENU=1` | Opens the sidebar's location switcher about 4 s after the window first draws |
 | `ORIEL_SPIKE_PANEL=volume\|speed` | `mpv_spike` opens the player's volume or speed panel, for screenshots |
@@ -120,7 +141,9 @@ A run with `ORIEL_DATA_DIR` set (every check, test and agent run) is sandboxed: 
 only a root under that data folder's `sandbox/` or the temp folder, refuses a Move to… outside
 them, and holds every file in its own data folder. The folder picker, the welcome, Settings and
 a refused hand-off say so; the owner's run shows none of it. Agents change only archives under
-`/tmp` or a scratch data folder's `sandbox/`, and copy (`cp -c`) what they need there.
+`/tmp` or a scratch data folder's `sandbox/`, and copy (`cp -c`) what they need there. What would go to the system
+Trash (Empty to Trash, Forget, the old copy after a move to Applications) goes to
+`<data>/sandbox-trash/` instead, so a run never touches the owner's Trash.
 
 The synthetic fixtures live outside every data folder, in `~/.latch-works/oriel-fixtures/`:
 
@@ -149,16 +172,44 @@ again). Undo reverses a change's finished steps, newest first.
 | Move to holding (and resolving duplicates) | The file moves into its root's holding folder, `tidy/holding/<root id>-<root name>/<batch>/<its path>`. A root on another volume holds in `.latch-works/oriel/holding/` at that volume's top, so a removal stays a rename; a root that is a whole volume holds in the data folder by copying. | Moved back, unless something now sits at the original path. |
 | Clean up | System junk goes to holding, empty folders are removed, and extensions that do not match the bytes are renamed (an AVIF saved as `.jpg` becomes `.avif`). | Each step is reversed. |
 | Move to… / Rename / Fix extension | Renamed in place, or moved to the chosen folder (copied then deleted across volumes, keeping mtime). | Moved back. |
-| Convert, Shrink, remove a silent track | The result is written to `<target>.glazier-tmp`, checked (it decodes; dimensions, duration and tracks as planned; re-encodes at least 5% smaller), given the original's mtime and renamed into place; the original goes to holding. Video goes through the pinned ffmpeg. | The result goes to holding and the original comes back. |
+| Convert, Shrink, remove a silent track | The result is written to `<target>.glazier-tmp`, checked (it decodes; dimensions, duration and tracks as planned; re-encodes at least 5% smaller), given the original's mtime and renamed into place; the original goes to holding. Video goes through the pinned ffmpeg. Identical copies share one encode (below). | The result goes to holding and the original comes back, for each copy on its own. |
 | Restore (Holding, ⌘⌫) | The held file moves back to its original path. | — |
 | Empty to Trash (Holding, ⇧⌘⌫) | Each holding batch goes to the system Trash (the Recycle Bin on Windows), without asking: the Trash is the safety net. | Only from the Trash. |
 
 A file whose conversion came out no smaller is kept as it is, and Convert stops offering it
-until its bytes change. Members of open duplicate sets are not converted until they are reviewed.
-A converted file keeps the original's modification date, so date sorting in View and Pane View
+until its bytes change. A converted file keeps the original's modification date, so date sorting in View and Pane View
 holds, but not its creation date or extended attributes (Finder tags). A change cut short by a
 crash or a forced quit is marked stopped on the next launch, and the `*.glazier-tmp` files
 beside its pending targets are deleted; its finished steps stay finished and can be undone.
+
+**Duplicates and Convert or Shrink, in either order.** Files in open duplicate sets convert and
+shrink like any other, and the sets can be resolved afterwards:
+
+- Files with the same SHA-256 changed the same way share one encode, whichever plan changes them,
+  so stopping a run or leaving a copy out loses nothing. Before a step takes an earlier result it
+  hashes its own source and the result; if either fails it encodes as usual. The result is cloned
+  (`fs::copy`, a clone on APFS, ReFS and btrfs, a plain copy on other volumes or across them). Hard
+  links of one file stay hard links of one file, so no new set appears. Each copy's original goes
+  to holding and each copy has its own Undo, which depends on no other step. The set stays
+  identical, with the same file ids, without waiting for a scan.
+- A copy left out of a change (by selection, or a name already taken) becomes a similar version of
+  the others until it is changed too.
+- A similar version encodes on its own, gets a new SHA-256 and print, and stays in its set by that
+  print once background analysis reaches it. With background analysis off, it is out of the set
+  until a check is run. An AV1 shrink's motion print stays within Balanced (median 0 to 4 of 64
+  bits on eleven kinds of synthetic picture, 8 on pure noise; Balanced allows 9, Strict 5).
+- Files keep their ids through a change and its Undo, so dismissals and choices made in a set
+  stay. Set keys are `set:<lowest id>`.
+- When pixels, sound, length, home folder, format and extension tie, the keeper rules prefer the
+  copy Tidy re-encoded to save space over the very bytes it was made from, while those wait in
+  holding (`files.reencoded`, cleared when the bytes change, matched to the step's
+  `source_sha256`): the owner asked for that encode. A larger file that is not its source still
+  wins. The reason says so and names the size difference, and the owner can keep the larger copy.
+  Whichever goes waits in holding.
+- Shrink's totals count one encode for a set of copies and a hard-linked file's bytes once, and a
+  run's batch never cuts a set of copies in two. Overview's savings leave out copies its duplicate
+  totals would remove, so the two figures add up. Convert and Shrink's own pages count every file
+  they would change.
 
 After every scan and change, background analysis fingerprints every still (a 64-bit perceptual
 hash) and every video and animation (frames at 10, 30, 50, 70 and 90% of its length), and
@@ -204,6 +255,16 @@ groups, duplicate sets and Spot variants, sniffing, fingerprints), and what it d
 Tidy offers, and checks that its Undo puts every file back as it was, bytes and dates included.
 The repository holds no media for them; without the pinned ffmpeg the video cases skip, saying
 so.
+
+Spot variants is on by default, and plan 061 records how its rule was measured. Prints from an
+older version are made again when Tidy opens, and the pairs they call copies get a closer look at
+512×512, of which only the answers are kept. Closer looks always read through libvips, because the
+Mac's hardware route reads damaged files libvips refuses. A pair that cannot be read keeps both files and is asked again at the next launch or scan. A similar set whose stills lack a
+print or an answer, or with a version still due its fingerprint, offers nothing and waits out of
+every queue, counted under Duplicates' scopes as being checked, with Check now when no analysis is
+running to finish it. With Spot variants off nothing judges whether stills differ, but a similar set
+holding an AVIF or HEIF waits the same way until libvips has read its files, so a removal never rests
+on the hardware route alone.
 
 ## Video through libmpv
 
@@ -466,7 +527,9 @@ The spikes' variables, for a run by hand, are documented at the top of each spik
   switches, sorts, typing, filters, the Inspector, list and grid scrolls, Duplicates' sets, its
   version grid's scroll, the loupe and a rescan on the root Tidy shows, each step with its CPU
   time on the main thread and in all; `ORIEL_SPIKE_TIDY_ONLY=pages,rescan,redraw,
-  library,grid,duplicates` picks groups and `ORIEL_SPIKE_TIDY_HOLD=1` keeps the app open;
+  library,grid,duplicates` picks groups, `ORIEL_SPIKE_TIDY_SETS=<n>` steps through that many of
+  Duplicates' sets (10), reading memory every 50, and `ORIEL_SPIKE_TIDY_HOLD=1` keeps the app open;
+  `keep`, only when named, decides that many sets for real, so only on a copy;
 - the shell's in `crates/app/src/spike.rs`: `ORIEL_SPIKE_SHELL=<log>` times the launch, each
   mode switch and Settings at each section.
 
@@ -492,12 +555,26 @@ Tidy's engine has two timers of its own, headless, in `oriel-core-tidy`'s exampl
 # --changes (Convert, Shrink, Clean up, Tidy up and their undos, on a copy), --hold <s>.
 cargo run --release -p oriel-core-tidy --example tidy_timing -- <root> <data-folder> [flags]
 # Per still, at several counts at once, checking every round makes the same results:
-# fingerprint (decode and pHash), probe (header) or convert (decode and AVIF encode).
+# fingerprint (decode and pHash), probe (header), convert (decode and AVIF encode) or look (a
+# closer look's decode and averaging).
 cargo run --release -p oriel-core-tidy --example stills_timing -- \
-  fingerprint|probe|convert <folder> <scratch> 4,8,18
+  fingerprint|probe|convert|look <folder> <scratch> 4,8,18
+# The Mac's hardware AVIF route against libvips and the catalog's stored prints, still by still,
+# reading the files only and printing numbers only, and its CPU per kind of still.
+cargo run --release -p oriel-core-tidy --example avif_hardware_check -- \
+  check|time <catalog> <lanes> <every nth still> [rounds] 2>/dev/null
 # Each video's fingerprint frames, made one ffmpeg run per keyframe and five single runs, checked
 # byte for byte against each other and timed.
 cargo run --release -p oriel-core-tidy --example video_frames -- <folder>
+# Spot variants against a copy of a catalog (plan 061), numbers only: copies generates copies of
+# its stills and videos, measure reports before and after on a half of the owner's decisions or on
+# those since a date, and library the open sets, bytes, CPU per phase, catalog growth and how close
+# the pairs left as copies came. Reads the library, changes only the scratch folder. Report CPU
+# time, or alternate old and new runs: other work moves wall time.
+cargo run --release -p oriel-core-tidy --example dup_precision -- \
+  copies|video-copies|library <catalog> <scratch>
+cargo run --release -p oriel-core-tidy --example dup_precision -- \
+  measure <catalog> <scratch> train|test|all|since:<YYYY-MM-DD>
 ```
 
 The root must be one Tidy admits: a data folder whose `sandbox` links to the fixtures' folder, as

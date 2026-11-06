@@ -205,20 +205,10 @@ fn a_folder_tidy_tidies_is_offered_to_view_and_the_modes_hand_files_and_folders_
 /// Chooses `action` from the profile menu (`Profile actions`), whose items are known by name.
 fn choose_profile_action(cx: &mut TestAppContext, handle: gpui_kit::AnyWindowHandle, action: &str) {
     click(cx, handle, "sync-profile-menu");
-    let item = cx
-        .update_window(handle, |_, window, _| {
-            let menu = window.within("popup-menu");
-            (0..16usize).find(|ix| {
-                menu.try_find(gpui_kit::ElementId::Integer(*ix as u64))
-                    .is_some_and(|item| item.label() == Some(action))
-            })
-        })
-        .unwrap()
-        .unwrap_or_else(|| panic!("no {action} in the profile menu"));
     cx.update_window(handle, |_, window, cx| {
         window
             .within("popup-menu")
-            .click(gpui_kit::ElementId::Integer(item as u64), cx);
+            .click(gpui_kit::ElementId::Name(action.to_owned().into()), cx);
     })
     .unwrap();
     frame(cx, handle);

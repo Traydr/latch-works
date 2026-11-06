@@ -11,15 +11,11 @@ use oriel_core_format::{
 };
 use rusqlite::Connection;
 
-use crate::catalog::files::{SqlParams, query_records};
-use crate::catalog::rows::{
-    FILE_COLUMNS, FILES_FROM, FINGERPRINT_VERSION, FINGERPRINTABLE_SQL, FileRecord,
-};
+use crate::catalog::files::{SqlParams, get_file_records, query_records};
+use crate::catalog::rows::{FILE_COLUMNS, FILES_FROM, FileRecord, format_column, kind_column};
 use crate::contract::{
     CategoryCount, FileFormat, FileId, OptimizeCategory, OptimizeSummary, RootId, SkipCount,
 };
-use crate::duplicates::Dismissals;
-use crate::duplicates::queries::exact_group_sql;
 use crate::scan::preferred_extension;
 
 /// A file the archive policy would change, and how.
@@ -42,23 +38,7 @@ pub struct CandidateScan {
     pub skipped: IndexMap<String, i64>,
 }
 
-/// Why a file the policy would change is left out of the Convert step.
-pub const SKIP_DUPLICATE: &str = "Identical copies (resolve duplicates first)";
-
 const SKIP_NOT_SMALLER: &str = "Already as small as they get";
-
-pub const SKIP_REVIEW: &str = "Similar versions (review them first)";
-
-pub const SKIP_UNCHECKED: &str = "Not checked for similar versions yet";
-
-/// Files Convert leaves alone for now because duplicate review still needs them as they are: the
-/// members of open similar sets, and (while background analysis is on, so the check will come)
-/// files not yet checked for similar versions, which may turn out to belong to such a set.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct CandidateHolds {
-    pub reviewing: HashSet<FileId>,
-    pub wait_for_fingerprints: bool,
-}
 
 fn image_format(format: Option<FileFormat>) -> Option<ArchiveImageFormat> {
     Some(match format? {
@@ -122,69 +102,32 @@ fn ffprobe_audio_codec(name: &str) -> AudioCodec {
 
 /// What the video policy knows of a catalogued video, or `None` for a format no container is.
 pub fn video_source_of(record: &FileRecord) -> Option<ArchiveVideoSource<'_>> {
+    video_source(
+        &record.name,
+        record.format,
+        record.video_codec.as_deref(),
+        record.audio_streams,
+        record.audio_codec.as_deref(),
+    )
+}
+
+fn video_source<'a>(
+    file_name: &'a str,
+    format: Option<FileFormat>,
+    video_codec: Option<&str>,
+    audio_streams: Option<i64>,
+    audio_codec: Option<&str>,
+) -> Option<ArchiveVideoSource<'a>> {
     Some(ArchiveVideoSource {
-        file_name: &record.name,
-        container: video_container(record.format)?,
-        video_codec: record.video_codec.as_deref().map(ffprobe_video_codec),
-        audio_codec: if record.audio_streams.unwrap_or(0) == 0 {
+        file_name,
+        container: video_container(format)?,
+        video_codec: video_codec.map(ffprobe_video_codec),
+        audio_codec: if audio_streams.unwrap_or(0) == 0 {
             None
         } else {
-            record.audio_codec.as_deref().map(ffprobe_audio_codec)
+            audio_codec.map(ffprobe_audio_codec)
         },
     })
-}
-
-fn rel_path_beside(record: &FileRecord, name: &str) -> String {
-    if record.dir.is_empty() {
-        name.to_owned()
-    } else {
-        format!("{}/{name}", record.dir)
-    }
-}
-
-/// Files of a root fingerprinting has not reached yet.
-pub fn unchecked_files(
-    connection: &Connection,
-    root_id: RootId,
-) -> anyhow::Result<HashSet<FileId>> {
-    let params = SqlParams::new()
-        .with("root", root_id)
-        .with("version", FINGERPRINT_VERSION);
-    let mut statement = connection.prepare_cached(&format!(
-        "SELECT f.id FROM files f
-          WHERE f.root_id = $root AND f.fingerprint_version < $version AND {FINGERPRINTABLE_SQL}"
-    ))?;
-    let rows = statement.query_map(&*params.named(), |row| row.get(0))?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
-}
-
-/// Every file in an open set of identical copies. Converting one of them, even the keeper, turns
-/// the set from identical copies into similar versions that need a closer look, so the whole set
-/// waits until its duplicates are resolved or dismissed.
-pub fn open_duplicate_copies(
-    connection: &Connection,
-    root_id: RootId,
-) -> anyhow::Result<HashSet<FileId>> {
-    let mut params = SqlParams::new();
-    let groups = exact_group_sql(Some(root_id), &mut params);
-    let mut statement = connection.prepare_cached(&format!(
-        "SELECT f.id, f.sha256 FROM files f
-      WHERE f.sha256 IN ({groups})
-        AND f.root_id = $root AND f.is_junk = 0 AND f.size > 0"
-    ))?;
-    let members: Vec<(FileId, String)> = statement
-        .query_map(&*params.named(), |row| Ok((row.get(0)?, row.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    let mut groups: HashMap<String, Vec<FileId>> = HashMap::new();
-    for (id, sha256) in members {
-        groups.entry(sha256).or_default().push(id);
-    }
-    let dismissals = Dismissals::load(connection)?;
-    Ok(groups
-        .into_values()
-        .filter(|ids| dismissals.covering(ids).is_none())
-        .flatten()
-        .collect())
 }
 
 /// The lowercased paths of every file under a root, which a conversion's target must not take.
@@ -196,77 +139,113 @@ pub fn taken_paths(connection: &Connection, root_id: RootId) -> anyhow::Result<H
 }
 
 /// Every file under a root the archive policy would convert or rename. A conversion whose target
-/// name is already taken is skipped, never overwritten; identical copies wait for duplicate
-/// review, as do the files `holds` names, and a file an earlier conversion could not shrink is
-/// left as it is.
+/// name is already taken, by a file or an earlier candidate, is skipped, never overwritten, and a
+/// file an earlier conversion could not shrink is left as it is. Members of duplicate sets are
+/// converted like any other: identical copies share one encode and stay identical (`executor`).
+///
+/// The policy reads the row where it lies: an archive already in its formats has few candidates,
+/// so only those are read as whole records, and the paths taken only once one needs them.
 pub fn find_optimize_candidates(
     connection: &Connection,
     root_id: RootId,
-    holds: &CandidateHolds,
 ) -> anyhow::Result<CandidateScan> {
-    let records = query_records(
-        connection,
-        &format!(
-            "SELECT {FILE_COLUMNS} FROM {FILES_FROM}
+    let params = SqlParams::new().with("root", root_id);
+    let mut statement = connection.prepare_cached(&format!(
+        "SELECT f.id, f.kind, f.format, f.name, f.frames, f.probe_error IS NOT NULL, f.video_codec,
+        f.audio_streams, f.audio_codec, f.optimize_not_smaller, f.dir, f.rel_path
+      FROM {FILES_FROM}
       WHERE f.root_id = $root AND f.is_junk = 0 AND f.size > 0 AND f.kind IN ('image', 'video')
         AND f.probe_version > 0"
-        ),
-        &SqlParams::new().with("root", root_id),
-    )?;
-    let taken = taken_paths(connection, root_id)?;
-    let duplicates = open_duplicate_copies(connection, root_id)?;
-    let unchecked = if holds.wait_for_fingerprints {
-        unchecked_files(connection, root_id)?
-    } else {
-        HashSet::new()
-    };
+    ))?;
+    let mut rows = statement.query(&*params.named())?;
+    let mut taken: Option<HashSet<String>> = None;
     let mut scan = CandidateScan::default();
+    let mut planned: Vec<(FileId, Planned)> = Vec::new();
 
-    for record in records {
-        if record.probe_error.is_some() {
+    while let Some(row) = rows.next()? {
+        if row.get::<_, i64>(5)? == 1 {
             skip_one(&mut scan.skipped, "Won't decode");
             continue;
         }
-        let candidate = if record.kind == crate::contract::FileKind::Image {
-            image_candidate(&record, &mut |reason| skip_one(&mut scan.skipped, reason))
+        let format = format_column(row, 2)?;
+        let name = row.get_ref(3)?.as_str()?;
+        let mut skip = |reason: &str| skip_one(&mut scan.skipped, reason);
+        let plan = if kind_column(row, 1)? == crate::contract::FileKind::Image {
+            image_plan(format, name, row.get(4)?, &mut skip)
         } else {
-            video_candidate(&record, &mut |reason| skip_one(&mut scan.skipped, reason))
+            video_source(
+                name,
+                format,
+                row.get_ref(6)?.as_str_or_null()?,
+                row.get(7)?,
+                row.get_ref(8)?.as_str_or_null()?,
+            )
+            .and_then(|source| video_plan(&source, &mut skip))
         };
-        let Some(candidate) = candidate else {
+        let Some(plan) = plan else {
             continue;
         };
-        if duplicates.contains(&record.id) {
-            skip_one(&mut scan.skipped, SKIP_DUPLICATE);
-            continue;
-        }
-        if holds.reviewing.contains(&record.id) {
-            skip_one(&mut scan.skipped, SKIP_REVIEW);
-            continue;
-        }
-        if unchecked.contains(&record.id) {
-            skip_one(&mut scan.skipped, SKIP_UNCHECKED);
-            continue;
-        }
-        if record.optimize_not_smaller {
+        if row.get::<_, i64>(9)? == 1 {
             skip_one(&mut scan.skipped, SKIP_NOT_SMALLER);
             continue;
         }
-        let target = rel_path_beside(&record, &candidate.target_name).to_lowercase();
-        if target != record.rel_path.to_lowercase() && taken.contains(&target) {
+        let dir = row.get_ref(10)?.as_str()?;
+        let target = if dir.is_empty() {
+            plan.target_name.to_lowercase()
+        } else {
+            format!("{dir}/{}", plan.target_name).to_lowercase()
+        };
+        let taken = match &mut taken {
+            Some(taken) => taken,
+            None => taken.insert(taken_paths(connection, root_id)?),
+        };
+        if target != row.get_ref(11)?.as_str()?.to_lowercase() && taken.contains(&target) {
             skip_one(
                 &mut scan.skipped,
                 "A file with the target name already exists",
             );
             continue;
         }
-        scan.candidates.push(candidate);
+        taken.insert(target);
+        planned.push((row.get(0)?, plan));
     }
+
+    let ids: Vec<FileId> = planned.iter().map(|(id, _)| *id).collect();
+    let mut records: HashMap<FileId, FileRecord> = get_file_records(connection, &ids)?
+        .into_iter()
+        .map(|record| (record.id, record))
+        .collect();
+    scan.candidates = planned
+        .into_iter()
+        .filter_map(|(id, plan)| {
+            Some(OptimizeCandidate {
+                category: plan.category,
+                record: records.remove(&id)?,
+                target_name: plan.target_name,
+                mime_type: plan.mime_type,
+                tracks: plan.tracks,
+            })
+        })
+        .collect();
     Ok(scan)
 }
 
-fn image_candidate(record: &FileRecord, skip: &mut dyn FnMut(&str)) -> Option<OptimizeCandidate> {
-    let Some(format) = image_format(record.format) else {
-        if let Some(format @ (FileFormat::Tiff | FileFormat::Heic)) = record.format {
+/// What the archive policy would do with a file.
+struct Planned {
+    category: OptimizeCategory,
+    target_name: String,
+    mime_type: Option<&'static str>,
+    tracks: Option<(VideoTrackPlan, AudioTrackPlan)>,
+}
+
+fn image_plan(
+    format: Option<FileFormat>,
+    file_name: &str,
+    frames: Option<i64>,
+    skip: &mut dyn FnMut(&str),
+) -> Option<Planned> {
+    let Some(archive_format) = image_format(format) else {
+        if let Some(format @ (FileFormat::Tiff | FileFormat::Heic)) = format {
             skip(&format!(
                 "{} stills are left as they are",
                 format.as_str().to_uppercase()
@@ -275,39 +254,36 @@ fn image_candidate(record: &FileRecord, skip: &mut dyn FnMut(&str)) -> Option<Op
         return None;
     };
     let plan = plan_archive_image(&ArchiveImageSource {
-        file_name: &record.name,
-        format,
-        frame_count: record.frames.unwrap_or(1).clamp(0, i64::from(u32::MAX)) as u32,
+        file_name,
+        format: archive_format,
+        frame_count: frames.unwrap_or(1).clamp(0, i64::from(u32::MAX)) as u32,
     })?;
-    let candidate = |category, mime_type| OptimizeCandidate {
+    let planned = |category, mime_type| Planned {
         category,
-        record: record.clone(),
         target_name: plan.file_name.clone(),
         mime_type,
         tracks: None,
     };
     match plan.action {
-        ArchiveMediaAction::ConvertAvif => Some(candidate(OptimizeCategory::StillToAvif, None)),
-        ArchiveMediaAction::RenameAvif => Some(candidate(OptimizeCategory::RenameAvif, None)),
+        ArchiveMediaAction::ConvertAvif => Some(planned(OptimizeCategory::StillToAvif, None)),
+        ArchiveMediaAction::RenameAvif => Some(planned(OptimizeCategory::RenameAvif, None)),
         ArchiveMediaAction::ConvertMp4 => {
-            let mime_type = match format {
+            let mime_type = match archive_format {
                 ArchiveImageFormat::Gif => "image/gif",
                 ArchiveImageFormat::Webp => "image/webp",
                 ArchiveImageFormat::Png => "image/png",
                 _ => return None,
             };
-            Some(candidate(OptimizeCategory::AnimationToMp4, Some(mime_type)))
+            Some(planned(OptimizeCategory::AnimationToMp4, Some(mime_type)))
         }
         ArchiveMediaAction::RenameMp4 => None,
     }
 }
 
-fn video_candidate(record: &FileRecord, skip: &mut dyn FnMut(&str)) -> Option<OptimizeCandidate> {
-    let source = video_source_of(record)?;
-    match plan_archive_video(&source)? {
-        ArchiveVideoPlan::RenameMp4 { file_name } => Some(OptimizeCandidate {
+fn video_plan(source: &ArchiveVideoSource<'_>, skip: &mut dyn FnMut(&str)) -> Option<Planned> {
+    match plan_archive_video(source)? {
+        ArchiveVideoPlan::RenameMp4 { file_name } => Some(Planned {
             category: OptimizeCategory::RenameMp4,
-            record: record.clone(),
             target_name: file_name,
             mime_type: None,
             tracks: None,
@@ -316,13 +292,12 @@ fn video_candidate(record: &FileRecord, skip: &mut dyn FnMut(&str)) -> Option<Op
             file_name,
             video,
             audio,
-        } => Some(OptimizeCandidate {
+        } => Some(Planned {
             category: if video == VideoTrackPlan::Copy && audio == AudioTrackPlan::Copy {
                 OptimizeCategory::VideoRemux
             } else {
                 OptimizeCategory::VideoConvert
             },
-            record: record.clone(),
             target_name: file_name,
             mime_type: None,
             tracks: Some((video, audio)),
@@ -347,7 +322,10 @@ const CATEGORY_ORDER: [OptimizeCategory; 6] = [
     OptimizeCategory::RenameMp4,
 ];
 
-pub fn summarize_candidates(scan: &CandidateScan) -> OptimizeSummary {
+/// What Convert would change, by category. `removable` names the files the open duplicate sets'
+/// suggestions would remove.
+pub fn summarize_candidates(scan: &CandidateScan, removable: &HashSet<FileId>) -> OptimizeSummary {
+    let mut counted = HashSet::new();
     OptimizeSummary {
         categories: CATEGORY_ORDER
             .iter()
@@ -356,10 +334,16 @@ pub fn summarize_candidates(scan: &CandidateScan) -> OptimizeSummary {
                     category,
                     files: 0,
                     bytes: 0,
+                    duplicate_bytes: 0,
                 };
                 for candidate in scan.candidates.iter().filter(|c| c.category == category) {
                     count.files += 1;
-                    count.bytes += candidate.record.size;
+                    if counted.insert(candidate.record.inode()) {
+                        count.bytes += candidate.record.size;
+                        if removable.contains(&candidate.record.id) {
+                            count.duplicate_bytes += candidate.record.size;
+                        }
+                    }
                 }
                 count
             })

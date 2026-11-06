@@ -188,6 +188,23 @@ fn cancelling_kills_the_run() {
     assert!(error.is_cancelled(), "{error}");
 }
 
+/// A kill from outside says nothing about what the tool was reading; a crash may.
+#[cfg(unix)]
+#[test]
+fn a_tool_killed_from_outside_is_not_a_failure_of_its_file() {
+    let shell = |script: &str| {
+        ToolRun::new("/bin/sh", Duration::from_secs(30))
+            .args(["-c", script])
+            .run()
+    };
+    for script in ["kill -KILL $$", "kill -TERM $$"] {
+        assert!(matches!(shell(script), Err(ToolError::Killed)), "{script}");
+    }
+    let crashed = shell("kill -SEGV $$").unwrap();
+    assert_eq!(crashed.code(), None);
+    assert!(!crashed.success());
+}
+
 #[test]
 fn a_missing_executable_fails_to_start() {
     let error = ToolRun::new("/nonexistent/ffmpeg", TIMEOUT)

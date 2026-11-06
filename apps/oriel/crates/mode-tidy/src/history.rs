@@ -27,7 +27,9 @@ use gpui_kit::{
     TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
 use oriel_core_tidy::contract::{DuplicateDismissal, RootId};
-use oriel_ui::{Toast, TopBar};
+use oriel_ui::TextRole as _;
+use oriel_ui::focus::FocusReveal;
+use oriel_ui::{ControlSize as _, Toast, TopBar};
 
 use crate::actions::{PerformOptions, describe_plan};
 use crate::changes::{
@@ -81,6 +83,19 @@ impl Decision {
             Self::Plan(plan) => can_undo(plan),
             Self::Dismissal(_) => true,
         }
+    }
+
+    /// A duplicate decision that moved nothing, so it stays a row of its own and is not counted
+    /// among the sets resolved. Undone is another matter: those it did resolve, and took back.
+    fn resolved_nothing(&self) -> bool {
+        matches!(
+            self,
+            Self::Plan(plan) if plan.kind == PlanKind::ResolveDuplicates
+                && plan.steps > 0
+                && plan.done == 0
+                && plan.undone == 0
+                && plan.status != PlanStatus::Undone
+        )
     }
 
     fn about_duplicates(&self) -> bool {
@@ -295,6 +310,8 @@ fn group_decisions(
             && last.about_duplicates()
             && ((last.at() - decision.at()) as f64) < SESSION_GAP_MS
             && last.undoable() == decision.undoable()
+            && !last.resolved_nothing()
+            && !decision.resolved_nothing()
         {
             previous.decisions.push(decision);
             continue;
@@ -419,6 +436,7 @@ fn status_label(status: PlanStatus) -> Option<&'static str> {
 }
 
 pub struct HistoryPage {
+    reveal: FocusReveal,
     state: Entity<TidyState>,
     thumbs: Entity<Thumbs>,
     focus: FocusHandle,
@@ -447,6 +465,7 @@ impl HistoryPage {
             cx.observe(thumbs, |_, _, cx| cx.notify()),
         ];
         Self {
+            reveal: FocusReveal::new(&gpui_kit::ScrollHandle::new(), px(0.)),
             state: state.clone(),
             thumbs: thumbs.clone(),
             focus: cx.focus_handle(),
@@ -785,7 +804,7 @@ impl HistoryPage {
         };
         let Some(page) = self.steps.get(&plan.id) else {
             return div()
-                .h(px(36.))
+                .h(px(44.))
                 .pl(px(60.))
                 .flex()
                 .items_center()
@@ -808,19 +827,23 @@ impl HistoryPage {
                 .flex_row()
                 .items_center()
                 .gap_3()
-                .h(px(36.))
+                .h(px(44.))
                 .pl(px(60.))
                 .pr_4()
                 .border_t_1()
                 .border_color(border)
-                .text_size(px(13.))
+                .text_body()
                 .child(
                     div()
                         .w(px(96.))
                         .flex_shrink_0()
-                        .text_xs()
+                        .text_caption()
                         .text_color(muted)
-                        .child(action_label(step.action)),
+                        .child(if plan.kind == PlanKind::ShrinkVideos {
+                            "To AV1"
+                        } else {
+                            action_label(step.action)
+                        }),
                 )
                 .child(
                     div()
@@ -837,7 +860,7 @@ impl HistoryPage {
                         .max_w(gpui_kit::relative(0.35))
                         .flex_shrink_0()
                         .truncate()
-                        .text_xs()
+                        .text_caption()
                         .text_color(muted)
                         .tooltip(move |window, cx| {
                             gpui_kit::component::tooltip::Tooltip::new(full.clone())
@@ -850,7 +873,7 @@ impl HistoryPage {
                     div()
                         .id(("history-step-status", step.id as u64))
                         .flex_shrink_0()
-                        .text_xs()
+                        .text_caption()
                         .text_color(match step.status {
                             StepStatus::Failed | StepStatus::Skipped => warning,
                             _ => muted,
@@ -874,7 +897,7 @@ impl HistoryPage {
                 format!("Show all {}", format::count(page.total))
             };
             div()
-                .h(px(36.))
+                .h(px(44.))
                 .pl(px(52.))
                 .flex()
                 .items_center()
@@ -883,7 +906,7 @@ impl HistoryPage {
                 .child(
                     Button::new(SharedString::from(format!("history-show-all-{}", plan.id)))
                         .ghost()
-                        .small()
+                        .row_size()
                         .label(label)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             cx.stop_propagation();
@@ -916,17 +939,17 @@ impl HistoryPage {
                 .flex_row()
                 .items_center()
                 .gap_3()
-                .h(px(36.))
+                .h(px(44.))
                 .pl(px(60.))
                 .pr_4()
                 .border_t_1()
                 .border_color(border)
-                .text_size(px(13.))
+                .text_body()
                 .child(
                     div()
                         .w(px(96.))
                         .flex_shrink_0()
-                        .text_xs()
+                        .text_caption()
                         .text_color(muted)
                         .child("Kept"),
                 )
@@ -1141,7 +1164,8 @@ impl HistoryPage {
         let undo = undo.map(|undo| {
             Button::new(SharedString::from(undo_id))
                 .outline()
-                .small()
+                .quiet_edge(cx)
+                .row_size()
                 .label("Undo")
                 .loading(busy)
                 .disabled(busy)
@@ -1159,7 +1183,7 @@ impl HistoryPage {
             .flex_row()
             .items_center()
             .gap_3()
-            .h(px(48.))
+            .h(px(56.))
             .pl(px(60.))
             .pr_4()
             .border_t_1()
@@ -1183,7 +1207,7 @@ impl HistoryPage {
                         div()
                             .id(name_id)
                             .truncate()
-                            .text_size(px(13.))
+                            .text_body()
                             .when(undone, |this| this.text_color(theme.muted_foreground))
                             .when_some(full, |this, full| {
                                 this.tooltip(move |window, cx| {
@@ -1263,15 +1287,15 @@ impl HistoryPage {
                     Item::Day { first, at } => div()
                         .mx_auto()
                         .w_full()
-                        .max_w(px(760.))
+                        .max_w(widgets::PAGE_COLUMN)
                         .px_6()
                         .when(!*first, |this| this.pt_2())
                         .child(
                             div()
-                                .h(px(36.))
+                                .h(px(44.))
                                 .flex()
                                 .items_center()
-                                .text_xs()
+                                .text_caption()
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(cx.theme().muted_foreground)
                                 .child(format::day(*at, now)),
@@ -1283,13 +1307,14 @@ impl HistoryPage {
                     Item::More => div()
                         .mx_auto()
                         .w_full()
-                        .max_w(px(760.))
+                        .max_w(widgets::PAGE_COLUMN)
                         .px_6()
                         .pt_2()
                         .child(
                             Button::new("history-more")
                                 .outline()
-                                .small()
+                                .quiet_edge(cx)
+                                .row_size()
                                 .label("Show earlier changes")
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.wanted += PAGE;
@@ -1300,8 +1325,17 @@ impl HistoryPage {
                 },
             })
             .collect();
+        // What Tab lands on stays in sight, as the arrows' row does.
+        self.reveal = self.reveal.over(&scroll);
+        let reveal = self.reveal.clone();
+        let children: Vec<AnyElement> = children
+            .into_iter()
+            .enumerate()
+            .map(|(index, child)| reveal.keep(format!("history-{index}"), child, window, cx))
+            .collect();
         div()
             .id("history-scroll")
+            .test_support()
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
@@ -1347,6 +1381,7 @@ impl HistoryPage {
             theme.group_box,
             theme.radius_lg,
         );
+        let ring = cx.theme().ring;
         let open = self.expanded.contains(&entry.key);
         let focused = self.focused.as_ref() == Some(&entry.key);
         let first = entry.decisions.first().cloned();
@@ -1372,7 +1407,7 @@ impl HistoryPage {
                     key = entry.key
                 )))
                 .flex_shrink_0()
-                .text_xs()
+                .text_caption()
                 .text_color(muted)
                 .child(format::relative(Some(at as f64), format::now_ms()))
                 .tooltip(move |window, cx| {
@@ -1406,10 +1441,13 @@ impl HistoryPage {
                     .flex_row()
                     .items_center()
                     .gap_3()
-                    .min_h(px(52.))
+                    .min_h(px(60.))
                     .px_4()
                     .cursor_pointer()
-                    .when(focused, |this| this.bg(accent))
+                    // The arrow keys' place in the log, as Overview's rows show theirs.
+                    .when(focused, |this| {
+                        this.bg(accent).border_1().border_color(ring)
+                    })
                     .hover(|style| style.bg(accent))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.toggle(&toggle_entry, cx);
@@ -1420,7 +1458,7 @@ impl HistoryPage {
                         } else {
                             IconName::ChevronRight
                         })
-                        .size(px(14.))
+                        .size(px(16.))
                         .text_color(muted),
                     )
                     .children(icon)
@@ -1433,34 +1471,34 @@ impl HistoryPage {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(13.))
+                                    .text_body()
                                     .font_weight(FontWeight::MEDIUM)
                                     .child(title),
                             )
-                            .child(widgets::caption(
-                                [
+                            .map(|this| {
+                                // A title alone sits level with its icon.
+                                let caption = [
                                     status.map(String::from),
                                     (!detail.is_empty()).then_some(detail),
                                 ]
                                 .into_iter()
                                 .flatten()
                                 .collect::<Vec<_>>()
-                                .join(" · "),
-                                cx,
-                            )),
+                                .join(" · ");
+                                if caption.is_empty() {
+                                    this
+                                } else {
+                                    this.child(widgets::caption(caption, cx))
+                                }
+                            }),
                     )
                     .children(when)
                     .when(undoable, |this| {
                         this.child(
                             Button::new(SharedString::from(format!("history-undo-{key}")))
-                                .map(|button| {
-                                    if newest {
-                                        button.outline()
-                                    } else {
-                                        button.ghost()
-                                    }
-                                })
-                                .small()
+                                .outline()
+                                .quiet_edge(cx)
+                                .row_size()
                                 .label(if undoable_count > 1 {
                                     format!("Undo all {undoable_count}")
                                 } else {
@@ -1482,7 +1520,7 @@ impl HistoryPage {
         div()
             .mx_auto()
             .w_full()
-            .max_w(px(760.))
+            .max_w(widgets::PAGE_COLUMN)
             .px_6()
             .child(
                 div()
@@ -1515,7 +1553,7 @@ fn set_picture(thumb: Thumb, cx: &App) -> AnyElement {
             .items_center()
             .justify_center()
             .text_color(cx.theme().muted_foreground)
-            .child(Icon::new(IconName::File).size(px(14.)))
+            .child(Icon::new(IconName::File).size(px(16.)))
             .into_any_element(),
     }
 }
@@ -1544,7 +1582,7 @@ fn plan_icon(kind: PlanKind, cx: &App) -> impl IntoElement + use<> {
         .rounded(theme.radius_lg)
         .bg(theme.muted)
         .text_color(theme.muted_foreground)
-        .child(Icon::new(icon).size(px(16.)))
+        .child(Icon::new(icon).size(px(20.)))
 }
 
 /// An item's height until it has been drawn: a heading, an entry closed, or the button.
@@ -1606,5 +1644,54 @@ impl Render for HistoryPage {
             .min_h_0()
             .child(TopBar::new(&shell, "History"))
             .child(body)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use oriel_core_tidy::contract::HeldCount;
+
+    use super::*;
+
+    fn resolved(id: i64, status: PlanStatus, done: i64, undone: i64) -> PlanSummary {
+        PlanSummary {
+            id,
+            kind: PlanKind::ResolveDuplicates,
+            created_at: 1_000 - id,
+            status,
+            title: "Resolved 1 duplicate set".into(),
+            count: 1,
+            steps: 3,
+            done,
+            skipped: 3 - done - undone,
+            skipped_for_kept_file: 0,
+            failed: 0,
+            undone,
+            bytes_before: 0,
+            bytes_after: 0,
+            held: HeldCount::default(),
+        }
+    }
+
+    #[test]
+    fn a_plan_that_resolved_nothing_stays_its_own_row_and_is_not_counted() {
+        // One moved nothing, beside one undone, in one sitting.
+        let plans = vec![
+            resolved(1, PlanStatus::Applied, 0, 0),
+            resolved(2, PlanStatus::Undone, 0, 3),
+            resolved(3, PlanStatus::Undone, 0, 3),
+        ];
+        let entries = group_decisions(&plans, &[], 20);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].decisions.len(), 1);
+        assert_eq!(entries[0].key, "1");
+        assert_eq!(entry_title(&entries[1]), "Resolved 2 duplicate sets");
+
+        // Two that moved nothing are two rows, not "Resolved 2 duplicate sets".
+        let plans = vec![
+            resolved(1, PlanStatus::Applied, 0, 0),
+            resolved(2, PlanStatus::Applied, 0, 0),
+        ];
+        assert_eq!(group_decisions(&plans, &[], 20).len(), 2);
     }
 }

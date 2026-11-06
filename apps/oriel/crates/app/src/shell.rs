@@ -16,11 +16,11 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-use gpui_kit::component::WindowExt as _;
+use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
 use gpui_kit::{
     AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable, InteractiveElement as _,
-    IntoElement, ParentElement as _, Pixels, Render, Styled as _, Subscription, Task, Window,
-    WindowBounds, div, px,
+    IntoElement, KeyDownEvent, ParentElement as _, Pixels, Render, Styled as _, Subscription, Task,
+    Window, WindowBounds, div, px,
 };
 use oriel_core_paths::DataRoot;
 use oriel_mode_sync::{SyncEvent, SyncMode};
@@ -50,6 +50,9 @@ pub const SIDEBAR_KEY: &str = "oriel.sidebar";
 
 /// How long the window's bounds must stay put before they are written, as Electron Oriel waits.
 const SAVE_WINDOW_DELAY: Duration = Duration::from_millis(250);
+
+/// How long after the window draws `ORIEL_TOAST`'s toast shows, in milliseconds.
+const TOAST_AT_START_AFTER: u64 = 2000;
 
 /// What fills the window: a mode, or the Settings page over it.
 #[derive(Clone, Copy, PartialEq)]
@@ -96,6 +99,8 @@ pub struct Shell {
     about_at_start: bool,
     /// `ORIEL_ACTIVITY_PANEL=1` asked for the activity panel open whenever work runs.
     open_activity_on_work: bool,
+    /// `ORIEL_TOAST` asked for a toast, which shows once the window draws.
+    toast_at_start: Option<Toast>,
     /// The shell's measurements, when `ORIEL_SPIKE_SHELL` asks for them.
     pub(crate) spike: Option<crate::spike::ShellSpike>,
     _subscriptions: Vec<Subscription>,
@@ -109,6 +114,8 @@ impl Shell {
         crate::check::apply_from_environment(&this.state, cx);
         this.about_at_start = crate::check::about_from_environment();
         this.open_activity_on_work = crate::check::activity_panel_from_environment();
+        this.toast_at_start = crate::check::toast_from_environment();
+        crate::check::start_script(window, cx);
         this.spike = crate::spike::ShellSpike::from_environment();
         if this.spike.is_some() {
             crate::spike::start(window, cx);
@@ -181,6 +188,8 @@ impl Shell {
             }),
             cx.on_app_quit(|this, _| {
                 this.write_window_state();
+                // A child outlives its parent, so a long encode would run on after a forced quit.
+                oriel_tools::kill_running_tools();
                 async {}
             }),
             // What the modes ask of each other.
@@ -260,6 +269,7 @@ impl Shell {
             welcome: None,
             about_at_start: false,
             open_activity_on_work: false,
+            toast_at_start: None,
             spike: None,
             _subscriptions: subscriptions,
         };
@@ -390,10 +400,11 @@ impl Shell {
         *opened = true;
         let welcome = welcome.clone();
         cx.defer_in(window, move |_, window, cx| {
-            window.open_dialog(cx, move |dialog, _, _| {
+            window.open_dialog(cx, move |dialog, _, cx| {
                 dialog
-                    .w(px(520.))
+                    .w(px(680.))
                     .centered()
+                    .bg(cx.theme().popover)
                     .close_button(false)
                     .overlay_closable(false)
                     .keyboard(false)
@@ -466,7 +477,7 @@ impl Shell {
         let state = self.state.read(cx);
         let now = Applied {
             mode: state.mode(),
-            rail: state.rail(),
+            rail: state.rail_choice(),
             progress: state.progress().map(|ratio| (ratio * 100.).round() as u32),
         };
         let ratio = state.progress();
@@ -594,6 +605,15 @@ impl Shell {
         }
     }
 
+    /// Opens the shortcut sheet of the mode on screen.
+    fn show_shortcuts(&self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.state.read(cx).mode() {
+            ModeId::View => oriel_mode_view::show_shortcuts(window, cx),
+            ModeId::Tidy => oriel_mode_tidy::show_shortcuts(window, cx),
+            ModeId::Sync => oriel_mode_sync::show_shortcuts(window, cx),
+        }
+    }
+
     fn render_settings(
         &mut self,
         section: SettingsSection,
@@ -655,11 +675,42 @@ impl Render for Shell {
             spike.on_render(screen, window);
         }
         self.open_welcome_dialog(window, cx);
+        if let Some(toast) = self.toast_at_start.take() {
+            // Late enough that the page has its commands and its slot, as when something is done.
+            cx.spawn_in(window, async move |_, cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(TOAST_AT_START_AFTER))
+                    .await;
+                cx.update(|window, cx| window.show_toast(toast, cx)).ok();
+            })
+            .detach();
+        }
         if std::mem::take(&mut self.about_at_start) {
             cx.defer_in(window, |_, window, cx| {
                 about::show(about::LicenceIndex::of_running_app(), window, cx);
             });
         }
+        let width = f32::from(window.viewport_size().width);
+        self.state
+            .update(cx, |state, cx| state.set_window_width(width, cx));
+        // What the page keeps at the window's foot, which the activity panel and toasts stand on.
+        let foot = match (settings, mode) {
+            (Some(_), _) => px(0.),
+            (None, ModeId::Sync) => self.sync.read(cx).foot_height(),
+            (None, ModeId::View) => self.view.read(cx).foot_height(cx),
+            (None, ModeId::Tidy) => self.tidy.read(cx).foot_height(cx),
+        };
+        let jobs = self.state.read(cx).jobs().clone();
+        let standing = foot + jobs.read(cx).footprint();
+        let slot = match (settings, mode) {
+            (None, ModeId::Tidy) => self.tidy.read(cx).toast_slot(cx),
+            _ => None,
+        };
+        oriel_ui::toast::dock_toasts(standing, window.viewport_size(), slot, cx);
+        let room = match (settings, mode) {
+            (None, ModeId::Tidy) => self.tidy.read(cx).activity_room(cx),
+            _ => None,
+        };
         let content = match settings {
             Some(section) => self.render_settings(section, window, cx).into_any_element(),
             None => match mode {
@@ -675,6 +726,19 @@ impl Render for Shell {
             .track_focus(&self.focus_handle)
             .relative()
             .size_full()
+            // ? opens the sheet from anywhere but a text field, whichever part of a mode has focus.
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if event.keystroke.key_char.as_deref() == Some("?") && !window.has_focused_input(cx)
+                {
+                    this.show_shortcuts(window, cx);
+                    cx.stop_propagation();
+                }
+            }))
+            .on_action(
+                cx.listener(|this, _: &oriel_ui::commands::ShowShortcuts, window, cx| {
+                    this.show_shortcuts(window, cx);
+                }),
+            )
             .on_action(cx.listener(|this, _: &ShowView, _, cx| this.go(ModeId::View, cx)))
             .on_action(cx.listener(|this, _: &ShowTidy, _, cx| this.go(ModeId::Tidy, cx)))
             .on_action(cx.listener(|this, _: &ShowSync, _, cx| this.go(ModeId::Sync, cx)))
@@ -699,6 +763,6 @@ impl Render for Shell {
                 }
             }))
             .child(content)
-            .child(ActivityIndicator::new(self.state.read(cx).jobs()))
+            .child(ActivityIndicator::new(&jobs, foot).room(room))
     }
 }

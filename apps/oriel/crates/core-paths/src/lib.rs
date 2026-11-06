@@ -103,6 +103,31 @@ impl DataRoot {
         self.root.join("sandbox")
     }
 
+    /// Where a sandboxed run sends what the owner's run sends to the system Trash.
+    pub fn sandbox_trash(&self) -> PathBuf {
+        self.root.join("sandbox-trash")
+    }
+
+    /// Moves a file or folder into [`Self::sandbox_trash`], under a name of its own if that one is
+    /// taken, as the Trash does, and says where it went.
+    pub fn move_to_sandbox_trash(&self, path: &Path) -> io::Result<PathBuf> {
+        let trash = self.sandbox_trash();
+        std::fs::create_dir_all(&trash)?;
+        let name = path
+            .file_name()
+            .ok_or_else(|| invalid(format!("{} has no name to keep.", path.display())))?;
+        let mut target = trash.join(name);
+        let mut copy = 1;
+        while target.symlink_metadata().is_ok() {
+            copy += 1;
+            let mut numbered = name.to_os_string();
+            numbered.push(format!(" {copy}"));
+            target = trash.join(numbered);
+        }
+        std::fs::rename(path, &target)?;
+        Ok(target)
+    }
+
     /// Every folder above, to create at start.
     pub fn folders(&self) -> [PathBuf; 6] {
         [
@@ -235,5 +260,26 @@ mod tests {
         assert!(data.admits_tidy_root(Path::new(volume)));
         assert!(data.admits_tidy_root(&data.sandbox().join("archive")));
         assert!(!data.admits_tidy_root(Path::new("Pictures")));
+    }
+
+    #[test]
+    fn the_sandbox_trash_takes_files_and_folders_and_keeps_both_of_one_name() {
+        let top = env::temp_dir().join(format!("oriel-paths-trash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&top);
+        let data = DataRoot::at(top.join("data")).unwrap();
+        let folder = top.join("batch");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("held.png"), b"first").unwrap();
+        let first = data.move_to_sandbox_trash(&folder).unwrap();
+        assert_eq!(first, data.sandbox_trash().join("batch"));
+        assert!(!folder.exists());
+        assert_eq!(std::fs::read(first.join("held.png")).unwrap(), b"first");
+
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("held.png"), b"second").unwrap();
+        let second = data.move_to_sandbox_trash(&folder).unwrap();
+        assert_eq!(second, data.sandbox_trash().join("batch 2"));
+        assert_eq!(std::fs::read(first.join("held.png")).unwrap(), b"first");
+        std::fs::remove_dir_all(&top).unwrap();
     }
 }

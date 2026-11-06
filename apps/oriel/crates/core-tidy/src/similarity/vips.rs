@@ -29,6 +29,9 @@ use std::{
 
 use libloading::Library;
 
+#[cfg(target_os = "macos")]
+use super::hardware_avif::{self, Declined};
+
 /// A libvips call that failed, with libvips' own message when it gave one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VipsError(pub String);
@@ -89,6 +92,20 @@ struct Api {
     version: unsafe extern "C" fn(c_int) -> c_int,
     find_load: unsafe extern "C" fn(*const c_char) -> *const c_char,
     new_from_file: unsafe extern "C" fn(*const c_char, ...) -> *mut RawImage,
+    #[cfg(target_os = "macos")]
+    new_from_memory_copy:
+        unsafe extern "C" fn(*const c_void, usize, c_int, c_int, c_int, c_int) -> *mut RawImage,
+    #[cfg(target_os = "macos")]
+    set_int: unsafe extern "C" fn(*mut RawImage, *const c_char, c_int),
+    #[cfg(target_os = "macos")]
+    get_blob: unsafe extern "C" fn(
+        *const RawImage,
+        *const c_char,
+        *mut *const c_void,
+        *mut usize,
+    ) -> c_int,
+    #[cfg(target_os = "macos")]
+    set_blob_copy: unsafe extern "C" fn(*mut RawImage, *const c_char, *const c_void, usize),
     jpegload: Loader,
     webpload: Loader,
     get_typeof: unsafe extern "C" fn(*const RawImage, *const c_char) -> GType,
@@ -141,6 +158,8 @@ static INIT: Mutex<()> = Mutex::new(());
 pub struct Vips {
     path: PathBuf,
     loaded: OnceLock<Result<Loaded>>,
+    /// Whether plain AVIF stills may go through the Mac's hardware decoder.
+    hardware_decoder: bool,
 }
 
 /// A loaded and started libvips.
@@ -298,6 +317,7 @@ impl Vips {
         Ok(Vips {
             path: library.to_path_buf(),
             loaded: OnceLock::from(Ok(Loaded::open(library)?)),
+            hardware_decoder: true,
         })
     }
 
@@ -307,6 +327,7 @@ impl Vips {
         Vips {
             path: library.to_path_buf(),
             loaded: OnceLock::new(),
+            hardware_decoder: true,
         }
     }
 
@@ -339,6 +360,20 @@ impl Vips {
         self.loaded().is_ok()
     }
 
+    /// Reads every file through libvips' own loaders, as a Mac without the decoder does: what
+    /// `avif_hardware_check` compares the hardware route with.
+    pub fn without_hardware_decoder(mut self) -> Self {
+        self.hardware_decoder = false;
+        self
+    }
+
+    /// The route a still takes here: `Ok` through the hardware decoder, or why not. It decodes the
+    /// still, so it is only for checks.
+    #[cfg(target_os = "macos")]
+    pub fn hardware_route(&self, path: &Path) -> Result<std::result::Result<(), Declined>> {
+        self.loaded()?.hardware_route(path)
+    }
+
     /// The dylib it loads from.
     pub fn path(&self) -> &Path {
         &self.path
@@ -361,12 +396,18 @@ impl Vips {
     /// A picture as `size`×`size` grey, the way glazier-core's `greyPixels` reads it: EXIF
     /// orientation applied and transparency laid on white. `page` picks an animation's frame.
     pub fn grey_pixels(&self, path: &Path, size: u32, page: Option<u32>) -> Result<Vec<u8>> {
-        self.loaded()?.grey_pixels(path, size, page)
+        self.loaded()?
+            .grey_pixels(path, size, page, self.hardware_decoder)
     }
 
     /// A still as 8-bit sRGB RGBA, rows top to bottom, as Convert decodes it for the encoder.
     pub fn rgba_pixels(&self, path: &Path) -> Result<(u32, u32, Vec<u8>)> {
-        self.loaded()?.rgba_pixels(path)
+        self.loaded()?.rgba_pixels(path, self.hardware_decoder)
+    }
+
+    /// [`Self::rgba_pixels`] through libvips' own loaders, whatever else this one may use.
+    pub fn rgba_pixels_through_libvips(&self, path: &Path) -> Result<(u32, u32, Vec<u8>)> {
+        self.loaded()?.rgba_pixels(path, false)
     }
 
     /// What the probe pass reads of a picture: its size, frames, alpha and frame delays.
@@ -431,7 +472,13 @@ impl Loaded {
 
     /// A picture as `size`×`size` grey, the way glazier-core's `greyPixels` reads it: EXIF
     /// orientation applied and transparency laid on white. `page` picks an animation's frame.
-    fn grey_pixels(&self, path: &Path, size: u32, page: Option<u32>) -> Result<Vec<u8>> {
+    fn grey_pixels(
+        &self,
+        path: &Path,
+        size: u32,
+        page: Option<u32>,
+        hardware_decoder: bool,
+    ) -> Result<Vec<u8>> {
         let size = c_int::try_from(size).map_err(|_| VipsError("Too large a size.".into()))?;
         let page = match page {
             Some(page) => c_int::try_from(page).map_err(|_| VipsError("No such page.".into()))?,
@@ -442,7 +489,7 @@ impl Loaded {
         let enums = &api.enums;
 
         // OpenInput.
-        let (mut image, image_type) = self.open_input(&file, page)?;
+        let (mut image, image_type) = self.open_still(path, &file, page, hardware_decoder)?;
 
         // pipeline.cc: EXIF orientation, worked out now and applied after the resize.
         let (rotation, flop) = exif_rotation(enums, image.int_field(c"orientation"));
@@ -702,11 +749,11 @@ impl Loaded {
     /// In sharp's pipeline order: the first page, an embedded ICC profile (or CMYK) to sRGB, the
     /// EXIF turn and mirror, an alpha band if there is none, the 16-bit cast and the conversion
     /// to sRGB, then 8 bits. Returns the width, the height and the samples.
-    fn rgba_pixels(&self, path: &Path) -> Result<(u32, u32, Vec<u8>)> {
+    fn rgba_pixels(&self, path: &Path, hardware_decoder: bool) -> Result<(u32, u32, Vec<u8>)> {
         let file = file_name(path)?;
         let api = &self.api;
         let enums = &api.enums;
-        let (mut image, _) = self.open_input(&file, -1)?;
+        let (mut image, _) = self.open_still(path, &file, -1, hardware_decoder)?;
         let (rotation, flop) = exif_rotation(enums, image.int_field(c"orientation"));
 
         let interpretation = image.interpretation();
@@ -877,6 +924,125 @@ impl Loaded {
             has_alpha: image.has_alpha(),
             frame_delays_ms: delays_ms,
         })
+    }
+
+    #[cfg(target_os = "macos")]
+    fn hardware_route(&self, path: &Path) -> Result<std::result::Result<(), Declined>> {
+        let (header, image_type) = self.open_input(&file_name(path)?, -1)?;
+        Ok(if image_type == ImageType::Heif {
+            self.hardware_pixels(&header, path).map(drop)
+        } else {
+            Err(Declined::NotAvif)
+        })
+    }
+
+    /// [`Self::open_input`], with on a Mac a plain AVIF still's pixels from the hardware decoder.
+    /// libvips has only read the header so far, so a still the decoder declines costs it nothing.
+    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+    fn open_still(
+        &self,
+        path: &Path,
+        file: &CStr,
+        page: c_int,
+        hardware_decoder: bool,
+    ) -> Result<(Image<'_>, ImageType)> {
+        let (image, image_type) = self.open_input(file, page)?;
+        #[cfg(target_os = "macos")]
+        if hardware_decoder
+            && page == -1
+            && image_type == ImageType::Heif
+            && let Ok(pixels) = self.hardware_pixels(&image, path)
+        {
+            return Ok((pixels, image_type));
+        }
+        Ok((image, image_type))
+    }
+
+    /// The image libvips opened as `header`, its pixels from the hardware decoder: the same sRGB
+    /// bands with the same orientation and profile, copied so they last as long as what is made
+    /// from them. One worker, as libvips' own loader of such a file asks for.
+    #[cfg(target_os = "macos")]
+    fn hardware_pixels(
+        &self,
+        header: &Image<'_>,
+        path: &Path,
+    ) -> std::result::Result<Image<'_>, Declined> {
+        let api = &self.api;
+        let enums = &api.enums;
+        if header.bands() != 3
+            || header.format() != enums.format_uchar
+            || header.interpretation() != enums.srgb
+            || header.int_field(c"n-pages").unwrap_or(1) != 1
+        {
+            return Err(Declined::Format);
+        }
+        let still = hardware_avif::decode(path)?;
+        let wrong_size = |side, stated| side != c_int::try_from(stated).unwrap_or(-1);
+        if wrong_size(header.width(), still.width) || wrong_size(header.height(), still.height) {
+            return Err(Declined::Decoder);
+        }
+        // SAFETY: `rgb` holds width × height × 3 bytes, which libvips copies.
+        let raw = unsafe {
+            (api.new_from_memory_copy)(
+                still.rgb.as_ptr().cast(),
+                still.rgb.len(),
+                header.width(),
+                header.height(),
+                3,
+                enums.format_uchar,
+            )
+        };
+        let in_memory = self
+            .own(raw, "Could not hold the still in memory")
+            .map_err(|_| Declined::Decoder)?;
+        let image = self
+            .apply(&in_memory, |input, out| {
+                // SAFETY: `vips_copy` with one option, NULL-terminated.
+                unsafe {
+                    (api.copy)(
+                        input,
+                        out,
+                        c"interpretation".as_ptr(),
+                        enums.srgb,
+                        ptr::null::<c_char>(),
+                    )
+                }
+            })
+            .map_err(|_| Declined::Decoder)?;
+        // SAFETY: a live image this alone holds, and NUL-terminated names.
+        unsafe {
+            (api.set_int)(image.ptr(), c"concurrency".as_ptr(), 1);
+            // What libvips marks a sequential load with, and what its resize reads: without it, one
+            // still in about 1,600 printed differently from the same pixels, by 1 in 11 of 1,024
+            // bytes of grey.
+            (api.set_int)(image.ptr(), c"vips-sequential".as_ptr(), 1);
+        }
+        if let Some(orientation) = header.int_field(c"orientation") {
+            // SAFETY: as above.
+            unsafe { (api.set_int)(image.ptr(), c"orientation".as_ptr(), orientation) };
+        }
+        if header.type_of(c"icc-profile-data") == api.blob_type {
+            let (mut profile, mut length) = (ptr::null(), 0usize);
+            // SAFETY: a live header; libvips points `profile` into it, and copies it below.
+            let failed = unsafe {
+                (api.get_blob)(
+                    header.ptr(),
+                    c"icc-profile-data".as_ptr(),
+                    &mut profile,
+                    &mut length,
+                )
+            } != 0;
+            if failed {
+                // SAFETY: plain call.
+                unsafe { (api.error_clear)() };
+                return Err(Declined::Properties);
+            }
+            // SAFETY: `length` bytes at `profile`, alive as long as the header.
+            unsafe {
+                (api.set_blob_copy)(image.ptr(), c"icc-profile-data".as_ptr(), profile, length)
+            };
+        }
+        Ok(image)
     }
 
     /// sharp's `OpenInput` for a file: the loader libvips picks, with sharp's options, reopened
@@ -1073,6 +1239,14 @@ impl Api {
                 version: symbol(library, "vips_version")?,
                 find_load: symbol(library, "vips_foreign_find_load")?,
                 new_from_file: symbol(library, "vips_image_new_from_file")?,
+                #[cfg(target_os = "macos")]
+                new_from_memory_copy: symbol(library, "vips_image_new_from_memory_copy")?,
+                #[cfg(target_os = "macos")]
+                set_int: symbol(library, "vips_image_set_int")?,
+                #[cfg(target_os = "macos")]
+                get_blob: symbol(library, "vips_image_get_blob")?,
+                #[cfg(target_os = "macos")]
+                set_blob_copy: symbol(library, "vips_image_set_blob_copy")?,
                 jpegload: symbol(library, "vips_jpegload")?,
                 webpload: symbol(library, "vips_webpload")?,
                 get_typeof: symbol(library, "vips_image_get_typeof")?,

@@ -53,7 +53,7 @@ impl SqlParams {
 /// Columns derived from a file's bytes, and the value each returns to when the bytes change.
 /// The walk's upsert resets them all whenever size, mtime or ctime moved, so nothing stale (a
 /// hash, a probe, a fingerprint) outlives the content it describes.
-const DERIVED_COLUMN_RESETS: [(&str, &str); 22] = [
+const DERIVED_COLUMN_RESETS: [(&str, &str); 23] = [
     ("format", "NULL"),
     ("ext_mismatch", "0"),
     ("probe_version", "0"),
@@ -76,6 +76,7 @@ const DERIVED_COLUMN_RESETS: [(&str, &str); 22] = [
     ("loudness_max_db", "NULL"),
     ("optimize_not_smaller", "0"),
     ("shrink_not_smaller", "0"),
+    ("reencoded", "0"),
 ];
 
 const CHANGED: &str = "(files.size != excluded.size

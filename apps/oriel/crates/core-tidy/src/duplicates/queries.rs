@@ -35,6 +35,8 @@ pub fn to_keeper_candidate(record: &FileRecord, settings: &Settings) -> KeeperCa
         mtime_ms: record.mtime_ms,
         is_preferred: is_preferred_path(settings, record),
         in_home_folder: false,
+        sha256: record.sha256.clone(),
+        reencoded_from: None,
     }
 }
 
@@ -105,21 +107,14 @@ pub fn fingerprinted_files(
         "SELECT f.id, f.width, f.height, f.fingerprint FROM files f
       WHERE f.fingerprint IS NOT NULL AND {FINGERPRINTABLE_SQL} {root_filter}"
     ))?;
-    let rows = statement.query_map(&*params.named(), |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            row.get::<_, f64>(1)?,
-            row.get::<_, f64>(2)?,
-            row.get::<_, String>(3)?,
-        ))
-    })?;
+    let mut rows = statement.query(&*params.named())?;
     let mut files = Vec::new();
-    for row in rows {
-        let (id, width, height, stored) = row?;
+    while let Some(row) = rows.next()? {
+        let (id, width, height): (i64, f64, f64) = (row.get(0)?, row.get(1)?, row.get(2)?);
         if height == 0.0 {
             continue;
         }
-        if let Some(fingerprint) = Fingerprint::parse(&stored) {
+        if let Some(fingerprint) = Fingerprint::parse(row.get_ref(3)?.as_str()?) {
             files.push(FingerprintedFile {
                 id,
                 aspect: width / height,

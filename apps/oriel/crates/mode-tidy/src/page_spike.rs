@@ -12,6 +12,8 @@
 //!   Inspector and grid, each until the frame that shows the answer;
 //! - `scroll`: the Library's list and grid, top to bottom, every frame's interval;
 //! - `set`, `loupe`, `play`: Duplicates' next set, its loupe and a video in a tile;
+//! - `keep`, asked for by its group alone: a decision on each of `ORIEL_SPIKE_TIDY_SETS` sets, which
+//!   moves files to holding, so only on a copy;
 //! - `grid`: the version grid of the first set, top to bottom, every frame's interval;
 //! - `rescan`: Rescan, until Overview shows the result;
 //! - `watch`: a page drawn again every frame for a while, every frame's interval;
@@ -23,7 +25,9 @@
 //! the main thread and in all; a scroll or a watch says the main thread's CPU time per frame,
 //! which is what one frame costs even when the display's own interval hides it. The frames are drawn all the
 //! time the spike runs, as the Library's spike does. `ORIEL_SPIKE_TIDY_ONLY` picks groups of
-//! steps, and `ORIEL_SPIKE_TIDY_HOLD` keeps the app open at the end, to be looked at.
+//! steps, `ORIEL_SPIKE_TIDY_HOLD` keeps the app open at the end, to be looked at, and
+//! `ORIEL_SPIKE_TIDY_SETS` says how many of Duplicates' sets to step through (10), reading memory
+//! every 50, as a long session does.
 
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
@@ -46,6 +50,8 @@ pub const LOG_VARIABLE: &str = "ORIEL_SPIKE_TIDY";
 pub const ONLY_VARIABLE: &str = "ORIEL_SPIKE_TIDY_ONLY";
 /// Set, the app stays open once the spike is done, to be looked at from outside.
 pub const HOLD_VARIABLE: &str = "ORIEL_SPIKE_TIDY_HOLD";
+/// How many of Duplicates' sets the spike steps through.
+pub const SETS_VARIABLE: &str = "ORIEL_SPIKE_TIDY_SETS";
 /// How long the spike lets Tidy rest once it shows a root, before the first step.
 const SETTLE: Duration = Duration::from_millis(2_000);
 /// How long a step may take before the spike writes it down as timed out.
@@ -79,6 +85,9 @@ enum Action {
     Mode(LibraryMode),
     NextSet,
     PrevSet,
+    /// Keeps the set's first version, as a click on its Keep does, until the change is over and
+    /// every page has read the catalog again.
+    Keep,
     Loupe(bool),
     Play,
     /// Scans the root again, as Rescan does, and waits for Overview to show the result.
@@ -102,6 +111,7 @@ impl Action {
             Action::Inspector(_) => "inspector",
             Action::Mode(_) => "mode",
             Action::NextSet | Action::PrevSet => "set",
+            Action::Keep => "keep",
             Action::Loupe(_) => "loupe",
             Action::Play => "play",
             Action::Rescan => "rescan",
@@ -357,10 +367,20 @@ fn schedule(only: Option<&str>) -> VecDeque<(String, Action)> {
         push("duplicates", Action::Go(TidyPage::Duplicates));
         push("versions", Action::GridScroll(3_000.));
         push("versions", Action::Settle);
-        for index in 1..=10 {
+        let sets = std::env::var(SETS_VARIABLE)
+            .ok()
+            .and_then(|sets| sets.parse().ok())
+            .unwrap_or(10);
+        for index in 1..=sets {
             push(&format!("next-{index}"), Action::NextSet);
+            if index % 50 == 0 {
+                push(&format!("set-{index}"), Action::Memory);
+            }
         }
         push("open", Action::Loupe(true));
+        for index in 1..=10 {
+            push(&format!("loupe-next-{index}"), Action::NextSet);
+        }
         push("close", Action::Loupe(false));
         for index in (1..=9).rev() {
             push(&format!("back-{index}"), Action::PrevSet);
@@ -368,6 +388,18 @@ fn schedule(only: Option<&str>) -> VecDeque<(String, Action)> {
         push("after-duplicates", Action::Memory);
         push("video", Action::Play);
         push("video", Action::Watch(Duration::from_secs(3)));
+    }
+    // Only when asked for by name: it changes the files.
+    if only.is_some_and(|only| only.split(',').any(|name| name == "keep")) {
+        push("duplicates", Action::Go(TidyPage::Duplicates));
+        push("versions", Action::Settle);
+        let sets = std::env::var(SETS_VARIABLE)
+            .ok()
+            .and_then(|sets| sets.parse().ok())
+            .unwrap_or(10);
+        for index in 1..=sets {
+            push(&format!("keep-{index}"), Action::Keep);
+        }
     }
     push("end", Action::Memory);
     steps
@@ -404,6 +436,7 @@ fn perform(action: &Action, mode: &mut TidyMode, window: &mut Window, cx: &mut C
         Action::Mode(next) => library.update(cx, |library, cx| library.set_mode(*next, cx)),
         Action::NextSet => duplicates.update(cx, |page, cx| page.spike_move(1, cx)),
         Action::PrevSet => duplicates.update(cx, |page, cx| page.spike_move(-1, cx)),
+        Action::Keep => duplicates.update(cx, |page, cx| page.spike_keep(window, cx)),
         Action::Loupe(open) => duplicates.update(cx, |page, cx| page.spike_loupe(*open, cx)),
         Action::Play => {
             duplicates.update(cx, |page, cx| page.spike_play_video(window, cx));
@@ -449,7 +482,7 @@ fn advance(
     if running.shown_at.is_none()
         && matches!(
             running.action,
-            Action::Go(TidyPage::Duplicates) | Action::NextSet | Action::PrevSet
+            Action::Go(TidyPage::Duplicates) | Action::NextSet | Action::PrevSet | Action::Keep
         )
         && mode.duplicates.read(cx).spike_tiles_shown(SHOWN_TILES, cx)
     {
@@ -523,7 +556,7 @@ fn advance(
         Action::Inspector(true) => mode.library.read(cx).spike_targets_read() && settled(mode, cx),
         Action::Play => mode.duplicates.read(cx).spike_video_shows(cx),
         Action::Go(page) => mode.state.read(cx).page() == *page && settled(mode, cx),
-        Action::Rescan => !mode.state.read(cx).is_busy() && settled(mode, cx),
+        Action::Rescan | Action::Keep => !mode.state.read(cx).is_busy() && settled(mode, cx),
         _ => settled(mode, cx),
     };
     // A frame that finds everything in may still ask for more as it draws (a page whose rows

@@ -185,6 +185,8 @@ async fn a_press_on_the_bar_chooses_nothing_under_it(cx: &mut TestAppContext) {
     }
     let session = launch_changing(cx, "bar-covers");
     open_library(cx, &session).await;
+    // The bar shows while the Inspector is closed.
+    press(cx, &session, "i");
     click(cx, &session, ("library-row", 3usize));
     cx.update_window(session.handle, |_, window, cx| {
         window.click_with_modifiers(("library-row", 5usize), Modifiers::secondary_key(cx), cx);
@@ -265,7 +267,9 @@ async fn clearing_the_selection_leaves_the_cursor_where_it_is(cx: &mut TestAppCo
     press(cx, &session, "down");
     assert_eq!(cursor(cx, &session), line.ok());
 
-    // Several chosen in the list and cleared from the bar: ↓ goes on from the cursor.
+    // Several chosen in the list and cleared from the bar, which shows with the Inspector closed:
+    // ↓ goes on from the cursor.
+    press(cx, &session, "i");
     click(cx, &session, "library-mode-list");
     settle(cx, &session).await;
     click(cx, &session, ("library-row", 2usize));
@@ -301,6 +305,10 @@ async fn a_press_on_the_activity_indicator_chooses_no_file(cx: &mut TestAppConte
     open_library(cx, &session).await;
     press(cx, &session, "i");
     pause_a_rescan(cx, &session);
+    // The indicator shows once the work has gone on for a moment.
+    cx.executor().advance_clock(Duration::from_millis(350));
+    cx.run_until_parked();
+    render(cx, &session);
     let spot = centre_of(cx, &session, "activity-indicator");
     let a_row_under = cx
         .update_window(session.handle, |_, window, _| {

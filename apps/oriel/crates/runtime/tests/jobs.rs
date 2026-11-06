@@ -328,3 +328,74 @@ fn waiting_and_background_reach_the_progress(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(cx.read(|cx| job.read(cx).value() == Some(&1)));
 }
+
+/// What a job's tools hear of its pause: a job the owner asked for holds them, and background work
+/// does not, since it could then never come to a checkpoint and step aside. Promoted while paused,
+/// it holds them from then on.
+#[gpui_kit::test]
+async fn only_asked_for_work_holds_its_tools_when_paused(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let (told_tx, told_rx) = std::sync::mpsc::channel::<&'static str>();
+    let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+    let (ended_tx, ended_rx) = futures::channel::oneshot::channel::<()>();
+    let job: Entity<Job<()>> = cx.update(|cx| {
+        let heard = heard.clone();
+        Job::start(
+            "work",
+            cx,
+            move |reporter: oriel_runtime::JobReporter| async move {
+                // On a thread of its own, as real work is, so it may wait without stopping the test.
+                std::thread::spawn(move || {
+                    let noted = heard.clone();
+                    let _watch = reporter.cancel_token().on_hold(move |held| {
+                        noted.lock().unwrap().push(held);
+                    });
+                    told_tx.send("listening").unwrap();
+                    for step in ["background", "promoted"] {
+                        go_rx.recv().unwrap();
+                        reporter.set_background(step == "background");
+                        told_tx.send(step).unwrap();
+                    }
+                    go_rx.recv().unwrap();
+                    ended_tx.send(()).unwrap();
+                });
+                ended_rx.await?;
+                Ok(())
+            },
+        )
+    });
+    cx.run_until_parked();
+    assert_eq!(told_rx.recv().unwrap(), "listening");
+
+    // Asked-for so far, it holds them, and lets go on resume.
+    job.update(cx, |job, cx| job.pause(cx));
+    job.update(cx, |job, cx| job.resume(cx));
+    assert_eq!(*heard.lock().unwrap(), [true, false]);
+    heard.lock().unwrap().clear();
+
+    // Told it is background work, pausing leaves them running.
+    go_tx.send(()).unwrap();
+    assert_eq!(told_rx.recv().unwrap(), "background");
+    job.update(cx, |job, cx| job.pause(cx));
+    assert!(heard.lock().unwrap().is_empty());
+
+    // Still paused and made asked-for, it holds them.
+    go_tx.send(()).unwrap();
+    assert_eq!(told_rx.recv().unwrap(), "promoted");
+    assert_eq!(*heard.lock().unwrap(), [true]);
+
+    job.update(cx, |job, cx| job.resume(cx));
+    assert_eq!(*heard.lock().unwrap(), [true, false]);
+    go_tx.send(()).unwrap();
+    for _ in 0..500 {
+        cx.run_until_parked();
+        if !cx.read(|cx| job.read(cx).is_running()) {
+            return;
+        }
+        cx.background_executor
+            .timer(std::time::Duration::from_millis(10))
+            .await;
+    }
+    panic!("the job never ended");
+}

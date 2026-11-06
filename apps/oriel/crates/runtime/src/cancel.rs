@@ -33,7 +33,18 @@ pub struct CancelToken {
 struct Shared {
     cancelled: AtomicBool,
     callbacks: Mutex<Callbacks>,
+    holds: Mutex<Holds>,
 }
+
+/// Whether the work is held, and who wants to hear when that changes.
+#[derive(Default)]
+struct Holds {
+    held: bool,
+    next_id: u64,
+    watchers: Vec<(u64, HoldWatcher)>,
+}
+
+type HoldWatcher = Arc<dyn Fn(bool) + Send + Sync>;
 
 type Callback = Box<dyn FnOnce() + Send>;
 
@@ -44,12 +55,31 @@ struct Callbacks {
 }
 
 impl Shared {
+    fn holds(&self) -> MutexGuard<'_, Holds> {
+        self.holds.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// The callbacks never run under this lock, so a panic in one cannot poison it; a poisoned
     /// lock still holds a consistent list.
     fn callbacks(&self) -> MutexGuard<'_, Callbacks> {
         self.callbacks
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// Keeps a watcher given to [`CancelToken::on_hold`] listening; dropping it stops the watcher.
+pub struct HoldWatch {
+    shared: Arc<Shared>,
+    id: u64,
+}
+
+impl Drop for HoldWatch {
+    fn drop(&mut self) {
+        self.shared
+            .holds()
+            .watchers
+            .retain(|(id, _)| *id != self.id);
     }
 }
 
@@ -105,6 +135,43 @@ impl CancelToken {
         callbacks.pending.push((id, Box::new(callback)));
         CancelCallback {
             shared: Some(self.shared.clone()),
+            id,
+        }
+    }
+
+    /// Asks what is running under this token to hold still, or to go on: a paused job holds the
+    /// tools it started, which cannot wait at a checkpoint as its own code does. Every watcher
+    /// hears of a change, on this thread.
+    pub fn hold(&self, held: bool) {
+        let watchers: Vec<HoldWatcher> = {
+            let mut holds = self.shared.holds();
+            if holds.held == held {
+                return;
+            }
+            holds.held = held;
+            holds.watchers.iter().map(|(_, w)| w.clone()).collect()
+        };
+        for watcher in watchers {
+            watcher(held);
+        }
+    }
+
+    /// Runs `watcher` each time the token is held or let go, and now if it is held already.
+    /// Dropping the returned guard stops it.
+    pub fn on_hold(&self, watcher: impl Fn(bool) + Send + Sync + 'static) -> HoldWatch {
+        let watcher: HoldWatcher = Arc::new(watcher);
+        let (id, held) = {
+            let mut holds = self.shared.holds();
+            let id = holds.next_id;
+            holds.next_id += 1;
+            holds.watchers.push((id, watcher.clone()));
+            (id, holds.held)
+        };
+        if held {
+            watcher(true);
+        }
+        HoldWatch {
+            shared: self.shared.clone(),
             id,
         }
     }

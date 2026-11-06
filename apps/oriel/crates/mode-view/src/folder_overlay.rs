@@ -21,6 +21,7 @@ use gpui_kit::{
 use oriel_core_domain::FolderNode;
 use oriel_core_index::list_folder_children;
 use oriel_ui::ControlSize as _;
+use oriel_ui::TextRole as _;
 
 use crate::gallery::display_name;
 
@@ -163,6 +164,7 @@ impl FolderOverlay {
 
     fn render_card(&self, folder: &FolderNode, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
+        let muted = theme.muted_foreground;
         let path = PathBuf::from(&folder.path);
         let name: SharedString = folder.name.clone().into();
         let showing_root = self.current == self.root.as_ref();
@@ -184,7 +186,6 @@ impl FolderOverlay {
             .bg(theme.background)
             .border_1()
             .border_color(theme.border)
-            .when(excluded, |this| this.opacity(0.7))
             .child(
                 div()
                     .id(card_id(&folder.path))
@@ -211,8 +212,9 @@ impl FolderOverlay {
                             .w_full()
                             .truncate()
                             .text_center()
-                            .text_size(px(13.))
+                            .text_body()
                             .font_weight(gpui_kit::FontWeight::MEDIUM)
+                            .when(excluded, |this| this.text_color(muted))
                             .child(name.clone()),
                     )
                     .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
@@ -225,18 +227,17 @@ impl FolderOverlay {
             )
             .when(showing_root, |this| {
                 this.child({
-                    let button = Button::new(exclude_id(&folder.path))
+                    // Leaving a folder out is no danger: only the words say which it is.
+                    Button::new(exclude_id(&folder.path))
                         .bar_size()
                         .w_full()
+                        .outline()
+                        .quiet_edge(cx)
                         .label(if excluded { "Excluded" } else { "Included" })
+                        .when(excluded, |this| this.text_color(muted))
                         .on_click(cx.listener(move |_, _, _, cx| {
                             cx.emit(FolderOverlayEvent::ToggleExcluded(toggle_path.clone()));
-                        }));
-                    if excluded {
-                        button.danger()
-                    } else {
-                        button.outline()
-                    }
+                        }))
                 })
             })
     }
@@ -275,6 +276,9 @@ impl Render for FolderOverlay {
                             .role(Role::Button)
                             .test_support()
                             .aria_label(format!("Browse {name}"))
+                            .h_8()
+                            .flex()
+                            .items_center()
                             .truncate()
                             .when(last, |this| this.font_weight(gpui_kit::FontWeight::MEDIUM))
                             .when(!last, |this| this.text_color(theme.muted_foreground))
@@ -291,7 +295,7 @@ impl Render for FolderOverlay {
                 .py_12()
                 .flex()
                 .justify_center()
-                .text_size(px(13.))
+                .text_body()
                 .text_color(theme.muted_foreground)
                 .child("Loading…")
                 .into_any_element()
@@ -303,13 +307,14 @@ impl Render for FolderOverlay {
                 .flex_col()
                 .items_center()
                 .gap_3()
-                .text_size(px(13.))
+                .text_body()
                 .text_color(theme.muted_foreground)
                 .child("No subfolders")
                 .child(
                     Button::new("open-this-folder")
                         .bar_size()
                         .outline()
+                        .quiet_edge(cx)
                         .label("Open this folder")
                         .on_click(cx.listener(move |_, _, _, cx| {
                             cx.emit(FolderOverlayEvent::Open(open.clone()));
@@ -394,7 +399,7 @@ impl Render for FolderOverlay {
                                     .min_w_0()
                                     .items_center()
                                     .gap_1()
-                                    .text_size(px(13.))
+                                    .text_body()
                                     .children(crumbs),
                             )
                             .child(
@@ -411,6 +416,7 @@ impl Render for FolderOverlay {
                                 Button::new("folder-browser-open")
                                     .bar_size()
                                     .outline()
+                                    .quiet_edge(cx)
                                     .icon(Icon::new(IconName::FolderOpen))
                                     .label("Open")
                                     .tooltip("Open and scan this folder")
@@ -445,7 +451,7 @@ impl Render for FolderOverlay {
                             .py(px(10.))
                             .border_t_1()
                             .border_color(theme.border)
-                            .text_xs()
+                            .text_caption()
                             .text_color(theme.muted_foreground)
                             .child("Click to browse into folder · Double-click to open and scan"),
                     ),

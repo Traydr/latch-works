@@ -32,7 +32,8 @@ enum Outcome {
     },
     Video(crate::media::VideoProbe),
     Failed(String),
-    /// The tool the file needs is not here; the file waits for a later scan.
+    /// The tool the file needs is not here, or was stopped from outside the app; the file waits
+    /// for a later scan.
     Skipped,
 }
 
@@ -102,6 +103,7 @@ fn probe(context: &PassContext<'_>, file: &Pending) -> anyhow::Result<Outcome> {
         Ok(probe) => Ok(Outcome::Video(probe)),
         Err(ToolFailure::Cancelled) => Err(Cancelled.into()),
         Err(ToolFailure::Failed(message)) => Ok(Outcome::Failed(message)),
+        Err(ToolFailure::Interrupted) => Ok(Outcome::Skipped),
     }
 }
 

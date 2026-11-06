@@ -5,7 +5,7 @@ pub mod candidates;
 pub mod shrink;
 
 pub use candidates::{
-    CandidateHolds, CandidateScan, OptimizeCandidate, extension_fixes, find_optimize_candidates,
+    CandidateScan, OptimizeCandidate, extension_fixes, find_optimize_candidates,
     summarize_candidates,
 };
 pub use shrink::{
