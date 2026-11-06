@@ -875,8 +875,11 @@ async fn forgetting_a_folder_sends_holding_to_the_runs_own_trash(cx: &mut TestAp
             .update(cx, |state, cx| state.forget_root(root, window, cx));
     })
     .unwrap();
-    a_moment(cx, &session).await;
-    assert_eq!(cx.read(|cx| session.state.read(cx).roots().len()), 0);
+    let state = session.state.clone();
+    wait_for(cx, &session, "the folder to go", move |cx| {
+        state.read(cx).roots().is_empty()
+    })
+    .await;
     assert!(held_files(&session).is_empty());
     assert!(std::fs::read_dir(&trash).unwrap().next().is_some());
 }

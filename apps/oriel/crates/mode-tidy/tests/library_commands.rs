@@ -419,10 +419,12 @@ async fn a_second_click_of_restore_restores_no_other_file(cx: &mut TestAppContex
     let elsewhere = centre_of(cx, &session, ("held", tiles[2]));
     let pressed = std::time::Instant::now();
     restore(cx, tiles[0]);
-    wait_for(cx, &session, "the restore", |_| {
-        held_files(&session).len() == 2
+    // The page hears of it after the file has moved, and arms the guard as it says so.
+    wait_for(cx, &session, "the restore", |cx| {
+        last_toast(cx).is_some_and(|toast| toast.starts_with("Restored"))
     })
     .await;
+    assert_eq!(held_files(&session).len(), 2);
     render(cx, &session);
     // Just after, presses wait where the restored tile was, and only there.
     if pressed.elapsed() < Duration::from_millis(500) {
