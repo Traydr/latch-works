@@ -1,6 +1,7 @@
 //! Plain AVIF stills through the Mac's hardware AV1 decoder, for the pixels prints are made from;
-//! closer looks read through libvips. AV1's decoding is exact, so the hardware's planes are aom's bytes, and turning
-//! them to RGB as libheif does gives what libvips' loader gives, at a fraction of its CPU.
+//! closer looks read through libvips. AV1's decoding is exact, so the hardware's planes are aom's
+//! bytes, and turning them to RGB as libheif does gives what libvips' loader gives, at a fraction
+//! of its CPU.
 //!
 //! Stored prints depend on those bytes, so this only takes a file it can be sure of: one AV1 picture
 //! at 8 bits and 4:2:0, in full range and BT.601, with no film grain and no alpha, turn, mirror
