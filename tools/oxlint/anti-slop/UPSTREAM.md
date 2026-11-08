@@ -35,10 +35,15 @@ None in the rule source. Repository policy lives outside this directory:
   added the Effect plugin. The updated existing rules report no new findings in this repository.
 - 2026-11-09: updated to `d2a9aea`, a three-way merge from base `e6676e8`. The local copy matched
   the base, so the only change is upstream's: `require-readable-spacing` now keeps consecutive
-  single-line `const`, `let`, `var`, and `using` declarations grouped at module scope too, and the
-  vendored padding engine takes an optional table of caller-defined statement types. A binding
-  with its own leading comment still needs a blank line before it. No rules were added, and the
-  configuration did not change.
+  single-line `const`, `let`, `var`, and `using` declarations in one group at any scope, and the
+  vendored padding engine takes an optional table of caller-defined statement types. That covers
+  module scope, which used to need a blank line between them. It also covers a single-line binding
+  whose value ends in a block, such as `const f = (): void => {};`, which used to need a blank line
+  after it at every scope. A binding with its own leading comment still needs a blank line before
+  it. No rules were added, and the configuration did not change. Upstream pins `oxlint` and
+  `@oxlint/plugins` at 1.78.0. This repository stays on 1.88.0, which loads and runs the plugin.
+  Upstream's `src/rules/require-readable-spacing.test.ts` at `d2a9aea`, pointed at these files,
+  passes. `pnpm lint:oxlint` reports no findings in this repository's code.
 
 ## Verifying rules
 
