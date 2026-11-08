@@ -52,7 +52,9 @@ over, delete `/tmp/showcase-archive` and run the prepare script again.
   viewer. Thumbnails come straight from rustfs via Pane View's Shutter-less pass-through mode
   (leave `SHUTTER_EDGE_URL` empty in `.env`).
 - `capture-gather-box.mjs`: loads the unpacked extension into the vendored Chrome and captures
-  the actual side panel in idle and active states.
+  the actual side panel in idle and active states. AO3 refuses automated browsers, so the AO3
+  pages are a local mock (`mock-archive.mjs`) served at AO3's own URLs, where the extension's
+  AO3 collector runs unchanged.
 - `capture-oriel.mjs` (macOS only): launches the bundled Oriel once per screenshot on a throwaway
   data folder and captures its window with `screencapture`, once two captures in a row match. The
   `ORIEL_*` check variables (`docs/runbooks/oriel.md`) open each screen, all saved under
