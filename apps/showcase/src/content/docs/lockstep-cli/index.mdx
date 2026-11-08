@@ -59,14 +59,14 @@ Push and prune are separate, the same split as **Push** and **Prune** in Oriel's
 | `--source` | all | Local archive root |
 | `--api-url` | plan/push/prune/doctor | Pane View API base URL |
 | `--api-token-env` | plan/push/prune/doctor | Env var name holding the sync token (default `LOCKSTEP_API_TOKEN`) |
-| `--hash` / `--no-hash` | plan/verify | Full content hashing (plan); hash compare (verify) |
+| `--hash` / `--no-hash` | plan/verify/prune | Full content hashing (plan, prune); hash compare (verify) |
 | `--max-changes` | push/prune | Cap how many changes apply in one run |
 | `--upload-concurrency` | push | Parallel uploads, 1 to 8 (default 3) |
 | `--remote-snapshot` | plan/verify/push/prune | Snapshot JSON path (required for verify; replaces the live snapshot otherwise) |
-| `--show-skipped` / `--no-show-skipped` | plan | Include skipped items in output |
+| `--show-skipped` / `--no-show-skipped` | plan/verify/push/prune | Include skipped items in output |
 | `--yes` | prune, push | Skip confirmation prompts (required for prune when not interactive) |
 
-**Push always hashes** when talking to Pane View. `plan` compares path and size only unless you pass `--hash`, as Oriel's Plan does.
+**Push always hashes** when talking to Pane View. `plan` compares path and size only, as Oriel's Plan does, unless you pass `--hash`.
 
 ## Verify
 

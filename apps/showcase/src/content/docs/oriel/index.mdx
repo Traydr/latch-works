@@ -31,7 +31,7 @@ Oriel covers the **Organize** and **Sync** steps:
 | Tidy | Duplicates, Convert, Clean up, Shrink, Library, History, Holding | Yes, one reviewed change at a time, each with an Undo |
 | Sync | Profiles, Plan, Push, Prune, Check connection | On the server only, and only when you push or prune |
 
-Switch modes with the buttons at the top of the sidebar, or `Cmd+1`, `Cmd+2`, and `Cmd+3`. Each mode remembers its own folders. The location switcher under the mode buttons lists the folder the mode is on, and under **Open one you already use**, the folders the other modes use.
+Switch modes with the buttons at the top of the sidebar, or `Cmd+1`, `Cmd+2`, and `Cmd+3`. Each mode remembers its own folders. The location switcher under the mode buttons lists the folder the mode is on and, below it, the folders the other modes use.
 
 The modes hand files to each other: the viewer's **Show in Tidy** opens the file in Tidy, Tidy's **Open in View** and **Sync this folder** open the folder in the other modes, and Sync's profile menu has **Open in View** and **Tidy this folder**.
 
@@ -53,7 +53,7 @@ Oriel is built from the repository rather than downloaded:
 pnpm --filter @latch-works/oriel bundle   # Oriel.app in apps/oriel/target/release/bundle
 ```
 
-`cargo run -p xtask -- dmg` in `apps/oriel` makes an installable disk image. The runbook at `docs/runbooks/oriel.md` lists the prerequisites. A bundle that arrives through a browser or AirDrop is unsigned, so Gatekeeper refuses it until you Control-click it and choose Open, or clear its quarantine attribute.
+`cargo run -p xtask -- dmg` in `apps/oriel` makes an installable disk image. The runbook at `docs/runbooks/oriel.md` lists the prerequisites. The bundle is ad hoc signed, so when it arrives through a browser or AirDrop, Gatekeeper refuses it until you choose **Open Anyway** in System Settings › Privacy & Security, or clear its quarantine attribute with `xattr -dr com.apple.quarantine Oriel.app`.
 
 ## Related docs
 

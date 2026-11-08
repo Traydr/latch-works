@@ -27,25 +27,25 @@ Under the card, an **Also found** line names files that will not open, empty fil
 
 ## Duplicates
 
-Sets queue up in three scopes. **Identical** sets are byte-for-byte copies; you choose which folders keep one. **Similar** sets are versions that look alike, shown as a numbered grid where videos play silently. **Variants** are similar sets whose pictures each differ in one area, such as a face or a caption's language, so every version stays.
+Sets queue up in three scopes. **Identical** sets are byte-for-byte copies; you choose which folders keep one. **Similar** sets are versions that look alike, shown as a numbered grid where videos play silently. With **Spot variants** on, **Variants** are similar sets whose pictures each differ in one area, such as a face or a caption's language, so every version stays.
 
 Tidy suggests a keeper and says why: a preferred folder, then sound, more pixels, a longer video, the set's home folder, the archive format (AVIF, or MP4 with H.264, HEVC, or AV1), a correct extension, a copy Tidy already shrank, a larger file, a name without a copy suffix, age, and path. Close calls are labelled as such.
 
 - **Keep 1** (Return) keeps the suggestion. Press **1** to **9** to keep only that version, or Shift+**1** to **9** to keep it as well.
 - **Keep both** / **Keep all** (N) marks the set as not duplicates. **Skip** (S) comes back to it later.
-- **Space** opens the loupe to compare versions at actual size; **P** prefers a version's folder for the rest of the queue.
+- **Space** opens the loupe to compare versions, fitted to the window, and **Z** there switches to actual size; in Identical sets it opens Quick Look. **P** prefers a version's folder for the rest of the queue.
 
 **Matching** in the top bar sets how alike two files must look: **Strict** for near-exact copies, **Balanced** (the default) for resized or recompressed copies, **Loose** for heavier compression and small edits, plus the **Spot variants** switch. Every decision shows a toast with **Undo**, and the copies you did not keep go to Holding.
 
 ## Convert
 
-Convert brings files into the archive formats: **Pictures → AVIF** (PNG, JPEG, WebP, and BMP, at quality 70), **Animations → MP4** (GIF and animated PNG or WebP), and **Videos → MP4**. Video tracks already in H.264, HEVC, or AV1 are copied into the MP4 unchanged, others are re-encoded to H.264, and audio that is not AAC or MP3 becomes AAC. **Options** switches each of the three groups on or off, and **Convert N** (`Cmd+Return`) runs them.
+Convert brings files into the archive formats: **Pictures → AVIF** (PNG, JPEG, WebP, BMP, and single-frame GIF, at quality 70), **Animations → MP4** (GIF and animated PNG or WebP), and **Videos → MP4**. Video tracks already in H.264, HEVC, or AV1 are copied into the MP4 unchanged, others are re-encoded to H.264, and audio that is not AAC or MP3 becomes AAC. **Options** switches each of the three groups on or off, and **Convert N** (`Cmd+Return`) runs them.
 
 A still or animation is converted only when the result is at least 5% smaller. Otherwise the original stays, Tidy says why under **left as they are**, and the file is not offered again until its bytes change. Converted files keep the original's modification date, so date sorting in View and Pane View holds. TIFF and HEIC stills are left as they are.
 
 ## Clean up
 
-Clean up handles four kinds of mess at once or one card at a time: **silent soundtracks** (a peak below −60 dBFS) are removed from their videos, **junk files** such as `.DS_Store`, `Thumbs.db`, and `._*` resource forks go to Holding, **empty folders** (including folders holding only junk) are removed, and **wrong extensions** are put right, so an AVIF saved as `.jpg` becomes `.avif`. **Clean up N** (`Cmd+Return`) runs the lot.
+Clean up handles four kinds of mess at once or one card at a time: **silent soundtracks** (a peak at or below −60 dBFS) are removed from their videos, **junk files** (`._*` resource forks) go to Holding, **empty folders** (including folders holding only junk, `.DS_Store`, or `Thumbs.db`) are removed, and **wrong extensions** are put right, so an AVIF saved as `.jpg` becomes `.avif`. **Clean up N** (`Cmd+Return`) runs the lot.
 
 ## Shrink
 

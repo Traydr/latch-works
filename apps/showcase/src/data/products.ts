@@ -223,7 +223,7 @@ export const products: Product[] = [
           src: "/screenshots/oriel/tidy-overview.png",
           alt: "Oriel in Tidy mode on its Overview page: a card saying tidying up saves about 690 KB with a Tidy up button, a Convert to AVIF and MP4 row, and a sidebar listing Duplicates, Convert, Clean up, Shrink, Library, History and Holding",
           caption:
-            "Tidy's Overview: what tidying up saves, with Convert, Clean up, Duplicates, Shrink, Library, History, and Holding",
+            "Tidy's Overview: what tidying up saves, with Duplicates, Convert, Clean up, Shrink, Library, History, and Holding",
         },
       },
       {
@@ -240,7 +240,7 @@ export const products: Product[] = [
         ],
         screenshot: {
           src: "/screenshots/oriel/sync-plan.png",
-          alt: "Oriel in Sync mode with a plan: 24 files to upload under sfw/photos, a Filter paths box, Re-plan and Push buttons, and a footer reading 0 unchanged, 1 skipped",
+          alt: "Oriel in Sync mode with a plan: 24 files to upload under sfw/, 18 of them in photos/, a Filter paths box, Re-plan and Push buttons, and a footer reading 0 unchanged, 1 skipped",
           caption: "A plan: 24 to upload, nothing changes on the server until Push",
         },
       },

@@ -64,7 +64,7 @@ over, delete `/tmp/showcase-archive` and run the prepare script again.
   the terminal. Sync pushes to `http://localhost:3000` with `PANE_VIEW_SYNC_TOKEN` from `.env`;
   for a plan that shows only the sample archive, push to an empty server instead, such as the e2e
   one (`node e2e/scripts/start-pane-view.ts`, which recreates the e2e database and empties its
-  bucket):
+  bucket, and listens on port 3100, so stop the showcase dev server first):
 
   ```bash
   SHOWCASE_PANE_VIEW_URL=http://127.0.0.1:3100 SHOWCASE_SYNC_TOKEN=e2e-sync-token-0123456789abcdef \

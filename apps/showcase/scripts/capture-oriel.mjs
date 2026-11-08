@@ -220,10 +220,17 @@ function copyArchiveIntoSandbox(dataDir) {
   return copy;
 }
 
+/** The shell's environment without its `ORIEL_*` variables, so only this script's reach the app. */
+function baseEnvironment() {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith("ORIEL_")),
+  );
+}
+
 function launch(dataDir, env) {
   const child = spawn(orielBinary, [], {
     cwd: dataDir,
-    env: { ...process.env, ...env, ORIEL_DATA_DIR: dataDir },
+    env: { ...baseEnvironment(), ...env, ORIEL_DATA_DIR: dataDir },
     stdio: ["ignore", "ignore", "pipe"],
   });
 

@@ -24,7 +24,7 @@ With no profile yet, Sync offers **Add a profile**, or a folder View or Tidy alr
 
 Switch profiles from the location switcher at the top of the sidebar, which shows each profile's state (in sync, N to sync, never planned, or the last run). The **…** menu in the top bar has **Edit profile…**, **Check connection**, **Run log**, **Open in View**, **Tidy this folder**, and **Delete profile…**. Editing leaves the saved token in place unless you enter a new one or tick **Forget the saved token**; changing the source folder or URL clears that profile's plan and last run. Deleting a profile removes its token from this computer and touches nothing in the folder or on Pane View.
 
-Tokens are saved encrypted in Oriel's data folder, with a key only your user account can read. They are separate from your Pane View sign-in password. Every action, including Plan and Check connection, needs one, and Sync asks for it at the bottom of the page when a profile has none.
+Tokens are saved encrypted in Oriel's data folder, with a key that on macOS only your user account can read. They are separate from your Pane View sign-in password. Every action, including Plan and Check connection, needs one, and Sync asks for it at the bottom of the page when a profile has none.
 
 ## Plan
 
@@ -37,7 +37,7 @@ Press **Plan** (or **Re-plan**) to walk the source folder and compare it with th
 | Delete | Remote entry with no local file. Only **Prune** removes it, never Push |
 | Unchanged | Already in sync; counted in the footer, not listed |
 
-The footer also counts **skipped** files, with **why?** listing each one: system files, unsupported extensions, and anything that is not a regular file. Plan compares paths and sizes (and hashes when both sides have one), ignoring differences of letter case, Unicode form, and `.jpeg` against `.jpg`. A content change that kept the same size shows as unchanged until Push.
+The footer also counts **skipped** files, with **why?** listing each one: system files, unsupported extensions, and anything that is not a regular file. Plan compares paths and sizes only, ignoring differences of letter case, Unicode form, and `.jpeg` against `.jpg`. A content change that kept the same size shows as unchanged until Push.
 
 Plan again after a Gather Box collection day, after renaming or moving folders, after tidying, and whenever counts look unexpectedly large.
 
@@ -65,7 +65,7 @@ Each plan can be pruned once. Run **Plan** again before pruning more. Prune cann
 | --- | --- |
 | Could not reach Pane View | Typo, VPN, or server down |
 | Failed with 401 | Expired or wrong token for this library |
-| Source folder is not available | Profile points at a moved or unmounted disk |
+| Source path check failed | Profile points at a moved or unmounted disk |
 
 ## Scripted runs
 

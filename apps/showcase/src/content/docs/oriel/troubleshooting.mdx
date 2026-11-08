@@ -86,7 +86,7 @@ The sync token is wrong or expired for this library. **Edit profile…**, enter 
 
 ## Sync: Prune is locked
 
-Hover the button for the reason: run **Plan** first, push this plan's uploads and updates first, or plan again because this plan's deletes were already pruned.
+Hover the button for the reason: push this plan's uploads and updates first, or plan again because this plan's deletes were already pruned.
 
 ## Sync: "Local file changed after planning"
 
@@ -94,11 +94,11 @@ A file changed between the plan and its upload, so Push left it out. Press **Re-
 
 ## Sync: a run could not be finalized
 
-The push finished but Pane View still shows the run as in progress. Cancel it on Pane View's **Manage** page.
+A push or prune ended, or was cancelled, but Pane View still shows the run as in progress. Cancel it on Pane View's **Manage** page.
 
 ## The app will not open after download
 
-A bundle that arrived through a browser or AirDrop is quarantined and unsigned, so macOS says it is damaged or cannot be opened. Control-click it in Finder and choose **Open**, or on macOS 15 and later use **Open Anyway** under System Settings › Privacy & Security.
+A bundle that arrived through a browser or AirDrop is quarantined and only ad hoc signed, so macOS says it is damaged or cannot be opened. Choose **Open Anyway** under System Settings › Privacy & Security, or run `xattr -dr com.apple.quarantine Oriel.app`.
 
 ## Related docs
 
