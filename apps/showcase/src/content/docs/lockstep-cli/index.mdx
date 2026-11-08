@@ -1,25 +1,25 @@
 ---
-title: Lockstep CLI companion
-description: Optional scriptable Lockstep for plan, push, prune, verify, and doctor.
-section: Lockstep
+title: Lockstep CLI
+description: Scriptable plan, push, prune, verify, and doctor for the archive, as Sync's command-line companion.
+section: Lockstep CLI
 sectionOrder: 4
-order: 6
-navTitle: CLI
+order: 1
+navTitle: Lockstep CLI
 ---
 
-# Lockstep CLI companion
+# Lockstep CLI
 
-The desktop app covers everyday sync. The CLI companion runs the same engine headlessly for automation or remote shells.
+Oriel's [Sync](/docs/oriel/sync) mode covers everyday sync. The Lockstep CLI drives the same Pane View API from a terminal, for automation, remote shells, and the checks the desktop does not have.
 
 ## When to use it
 
 - Scheduled plan-only reports
-- Push from a machine without opening the desktop UI
+- Push from a machine without opening Oriel
 - Capped pushes with `--max-changes`
 - Verify against a snapshot file
 - Explicit prune of remote deletes in scripts
 
-For most personal use, prefer the desktop app for visibility into progress and errors.
+For most personal use, prefer Oriel for visibility into progress and errors.
 
 ## Invoke
 
@@ -46,7 +46,7 @@ pnpm exec tsx src/cli.ts plan --source /path/to/archive
 | `verify` | Compare tree to `--remote-snapshot`; exits non-zero on drift |
 | `doctor` | Environment and connectivity checks |
 
-Push and prune are separate, the same split as **Push** and **Prune** in the desktop app.
+Push and prune are separate, the same split as **Push** and **Prune** in Oriel's Sync mode.
 
 `prune` plans once, prints the deletes it will apply (the first `--max-changes` of them when you pass that flag), and after you confirm, deletes exactly those remote entries. It does not plan a second time. A delete whose file is back in the source folder by then is skipped and counted as skipped, and prune stops without deleting anything if the source folder is missing. With `--remote-snapshot`, the deletes come from the plan against that file and are sent to the Pane View API.
 
@@ -59,20 +59,32 @@ Push and prune are separate, the same split as **Push** and **Prune** in the des
 | `--source` | all | Local archive root |
 | `--api-url` | plan/push/prune/doctor | Pane View API base URL |
 | `--api-token-env` | plan/push/prune/doctor | Env var name holding the sync token (default `LOCKSTEP_API_TOKEN`) |
-| `--hash` / `--no-hash` | plan/verify | Full content hashing (plan); hash compare (verify) |
+| `--hash` / `--no-hash` | plan/verify/prune | Full content hashing (plan, prune); hash compare (verify) |
 | `--max-changes` | push/prune | Cap how many changes apply in one run |
 | `--upload-concurrency` | push | Parallel uploads, 1 to 8 (default 3) |
 | `--remote-snapshot` | plan/verify/push/prune | Snapshot JSON path (required for verify; replaces the live snapshot otherwise) |
-| `--show-skipped` / `--no-show-skipped` | plan | Include skipped items in output |
+| `--show-skipped` / `--no-show-skipped` | plan/verify/push/prune | Include skipped items in output |
 | `--yes` | prune, push | Skip confirmation prompts (required for prune when not interactive) |
 
-**Push always uses remote-aware hashing** when talking to Pane View. Desktop plan compares path and size only; CLI plan uses hashing only with `--hash`.
+**Push always hashes** when talking to Pane View. `plan` compares path and size only, as Oriel's Plan does, unless you pass `--hash`.
+
+## Verify
+
+**Verify** exists only on the CLI. It compares your local archive to a **snapshot file** you provide with `--remote-snapshot`. The file is either a JSON array of `{ "path", "size", "sha256" }` entries (`sha256` is optional) or a saved response from Pane View's `GET /api/sync/snapshot` (authorized with the sync token), which wraps that array in `entries`. Without `--hash`, drift is path and size based; with `--hash`, content hashes are compared too.
+
+Verify exits with a non-zero status when any path differs, so scripts can react to drift. It does not fix drift, only reports it; plan and push (or restore from backup) to reconcile. Use it for automated assurance after manual file edits, a yes/no answer after an interrupted push, or alongside backup routines.
+
+## Doctor
+
+`doctor` checks the source folder, the API URL and token, and that Pane View answers with its snapshot, the same checks as **Check connection** in Oriel's Sync mode. Run it before the first automated push to a new remote library and after changing tokens.
 
 ## Configuration
 
 Settings resolve in this order: command-line flag, environment variable, then `~/.latch-works/lockstep.json`. The CLI reads `LOCKSTEP_SOURCE`, `LOCKSTEP_API_URL`, and `LOCKSTEP_API_TOKEN` from the environment. **Keep tokens in environment variables**, not in the config file.
 
 The CLI remembers the source folder and API URL you pass as flags (or choose in the wizard) so the next run can omit them. Run flags such as `--hash`, `--show-skipped`, `--max-changes`, and `--upload-concurrency` apply to that run only. To make one a lasting default, add it to the `defaults` block of the config file by hand; `--no-hash` and `--no-show-skipped` override those defaults for a single run.
+
+The CLI and Oriel keep separate settings: Oriel's profiles and encrypted tokens live in its own data folder.
 
 ## Interactive mode
 
@@ -86,7 +98,6 @@ Running with no arguments in a terminal starts a wizard for **plan / push / veri
 
 ## Related docs
 
-- [Lockstep overview](/docs/lockstep)
-- [Setup](/docs/lockstep/setup)
-- [Plan](/docs/lockstep/plan)
-- [Verify and Doctor](/docs/lockstep/verify-and-doctor)
+- [Sync](/docs/oriel/sync)
+- [Workflows](/docs/workflows)
+- [Privacy and safety](/docs/privacy-and-safety)

@@ -9,9 +9,7 @@ import "@fontsource/barlow/400.css";
 import "@fontsource/barlow/500.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/700.css";
-import { pipeline, pipelineProducts, productEnamel } from "@/data/products";
-
-const stages = pipelineProducts;
+import { pipeline, pipelineProducts, pipelineStepsFor, productEnamel } from "@/data/products";
 ---
 
 <div class="page">
@@ -19,16 +17,16 @@ const stages = pipelineProducts;
     <p class="kicker">Latch Works / private archive tools</p>
     <h1>COLLECT<br />TO VIEW.</h1>
     <p class="intro-copy">
-      Four local-first tools for a private media archive. Keep the archive on disk. Move through
-      it with intent.
+      Three local-first tools for a private media archive. Keep the archive on disk. Move
+      through it with intent.
     </p>
     <div class="pipeline" aria-label="Archive pipeline">
       {
-        pipeline.map((item, index) => (
+        pipeline.map((item) => (
           <a
             class="stage-chip"
-            style={`--enamel:${productEnamel[stages[index].slug]}`}
-            href={`/${stages[index].slug}`}
+            style={`--enamel:${productEnamel[item.slug]}`}
+            href={`/${item.slug}`}
           >
             <span>{item.step}</span>
             <b>{item.product}</b>
@@ -41,7 +39,7 @@ const stages = pipelineProducts;
   <div class="seam"><span>ARCHIVE PIPELINE</span></div>
 
   {
-    stages.map((product, index) => {
+    pipelineProducts.map((product, index) => {
       const shot = product.homeScreenshot ?? product.heroScreenshot;
       return (
       <section
@@ -53,18 +51,8 @@ const stages = pipelineProducts;
         <i class="chev bl"></i>
         <i class="chev br"></i>
         <div class="plate-copy">
-          <p class="stage">{pipeline[index].step}</p>
-          <h2>
-            {product.slug === "lockstep" ? (
-              <>
-                LOCK
-                <br />
-                STEP
-              </>
-            ) : (
-              product.name
-            )}
-          </h2>
+          <p class="stage">{pipelineStepsFor(product.slug)}</p>
+          <h2>{product.name}</h2>
           <p class="tagline">{product.tagline}</p>
           <a class="open" href={`/${product.slug}`}>
             Open <span>→</span>

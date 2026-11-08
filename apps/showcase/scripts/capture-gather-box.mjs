@@ -4,13 +4,16 @@
  *
  * Launches Chrome with the unpacked extension from apps/gather-box/dist and shoots:
  *   - sidepanel.png            — idle state (an open page the extension does not support)
- *   - sidepanel-active.png     — active state on a real supported page (an AO3 work)
+ *   - sidepanel-active.png     — active state on a supported page (an AO3 work)
  *   - sidepanel-in-browser.png — the active panel docked beside that work inside a 1440x900
  *                                browser frame, so the home plate gets a landscape like the
- *                                other products. The page and panel are real captures; the
- *                                tab strip, toolbar, and panel header are drawn, because
- *                                Chrome exposes neither its own chrome nor the side panel
- *                                container to CDP screenshots.
+ *                                other products. The page and panel are captures; the tab
+ *                                strip, toolbar, and panel header are drawn, because Chrome
+ *                                exposes neither its own chrome nor the side panel container
+ *                                to CDP screenshots.
+ *
+ * The AO3 pages are a local mock (mock-archive.mjs) served at AO3's own URLs, since AO3 refuses
+ * automated browsers: the extension and its AO3 collector run unmodified against them.
  *
  * Build the extension first: pnpm --filter @latch-works/gather-box build
  */
@@ -19,6 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
+import { mockHomeUrl, mockWorkUrl, serveMockArchive } from "./mock-archive.mjs";
 import { resolveChromePath } from "./resolve-chrome.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -30,9 +34,9 @@ const outputDir = join(root, "public", "screenshots", "gather-box");
 const shots = [
   {
     outFile: "sidepanel.png",
-    // The AO3 homepage sits on a permitted host but is not a collectable page, so the panel
+    // The AO3 home page sits on a permitted host but is not a collectable page, so the panel
     // renders its real "This isn't a supported page" idle state.
-    contentUrl: "https://archiveofourown.org/",
+    contentUrl: mockHomeUrl,
     tabPattern: "https://archiveofourown.org/",
     readyInPanel: () => {
       const banner = document.getElementById("unsupportedBanner-mini");
@@ -42,7 +46,7 @@ const shots = [
   },
   {
     outFile: "sidepanel-active.png",
-    contentUrl: "https://archiveofourown.org/works/19182319",
+    contentUrl: mockWorkUrl,
     tabPattern: "https://archiveofourown.org/works/*",
     // Persist a real directory handle first so the panel's restore path runs and
     // the Download button renders enabled, as it would after a folder pick.
@@ -250,6 +254,7 @@ async function loadContentPage(page, url) {
 async function captureShot(browser, panelUrl, shot) {
   const contentPage = await browser.newPage();
   await contentPage.setViewport({ width: 1280, height: 900 });
+  await serveMockArchive(contentPage);
   await loadContentPage(contentPage, shot.contentUrl);
 
   const tabId = await findTabId(browser, panelUrl, shot.tabPattern);
@@ -306,7 +311,6 @@ async function captureInBrowser(browser, contentPage, panelPage, path) {
   const panelHeight = contentHeight - windowFrame.panelHeaderHeight;
 
   await contentPage.setViewport({ width: pageWidth, height: contentHeight, deviceScaleFactor: 2 });
-  await acceptArchiveTerms(contentPage);
   await contentPage.evaluate(() => window.scrollTo(0, 0));
   await sleep(500);
   const pageImage = await contentPage.screenshot({ type: "png", encoding: "base64" });
@@ -333,43 +337,6 @@ async function captureInBrowser(browser, contentPage, panelPage, path) {
   await composer.screenshot({ path, type: "png" });
   await composer.close();
   console.log(`Saved ${path} (composited into a browser frame)`);
-}
-
-/**
- * AO3 covers the work with a terms-of-service prompt on a fresh profile. Accept it the way a
- * reader does (both checkboxes, then the button) so the composite shows the work itself.
- */
-async function acceptArchiveTerms(page) {
-  const accepted = await page.evaluate(() => {
-    const prompt = document.getElementById("tos_prompt");
-
-    if (prompt === null || getComputedStyle(prompt).display === "none") {
-      return false;
-    }
-
-    for (const box of prompt.querySelectorAll("input[type=checkbox]")) {
-      box.click();
-    }
-
-    document.getElementById("accept_tos")?.click();
-
-    return true;
-  });
-
-  if (accepted) {
-    await page
-      .waitForFunction(
-        () => {
-          const prompt = document.getElementById("tos_prompt");
-
-          return prompt === null || getComputedStyle(prompt).display === "none";
-        },
-        { timeout: 5_000 },
-      )
-      .catch(() => {
-        console.warn("The AO3 terms prompt did not close; the composite may show it.");
-      });
-  }
 }
 
 function escapeHtml(text) {

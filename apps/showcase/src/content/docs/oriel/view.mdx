@@ -1,0 +1,57 @@
+---
+title: View
+description: Open folders, grid navigation, recursive scanning, comic mode, and sorting.
+section: Oriel
+sectionOrder: 3
+order: 2
+navTitle: View
+---
+
+# View
+
+View turns a folder on disk into a grid of media entries. It never writes into the folder it shows; thumbnails and the media index live in Oriel's data folder.
+
+## Open a folder
+
+Click **Open** in the toolbar, press `Cmd+O`, or drag a folder anywhere onto the window. Dropping a file opens its folder and then that file in the viewer. The location switcher at the top of the sidebar also lists the folders Tidy and Sync use, so one click opens them here.
+
+With **Remember last folder** on (the default), View reopens the previous folder on launch. The folder you opened is the top of the tree: **Parent** never goes above it.
+
+## Grid navigation
+
+- Click an item to select it; double-click or press Enter / F to open the viewer.
+- Use W/A/S/D or the arrow keys to move the selection. Movement wraps from the end of one row to the next.
+- Shift+S opens the selected folder (or the first folder tile); Shift+W goes to the parent.
+- Shift+A and Shift+D move to the previous and next sibling folders. The top bar has **Parent**, **Previous folder**, and **Next folder** buttons for the same moves, and pills with the folder and item counts and your position in the grid.
+
+The sidebar lists the current folder's subfolders under **Folders**. Images and videos share one grid. With **Autoplay video on hover** on, a video tile plays once the pointer rests on it, muted unless **Enable audio in video preview** is on, and looping when **Loop videos** is on. Hovering a media tile shows its size, and for videos its dimensions.
+
+## Recursive scanning
+
+Toggle **Recursive** in the toolbar to include media from subfolders in the current view. Folder tiles hide while recursive is on. Useful for scanning across a creator tree without drilling down manually.
+
+Large folders scan in the background, and the activity panel at the bottom right shows the progress. The first scan of a big tree takes time; later visits reuse the local media index. See [Troubleshooting](/docs/oriel/troubleshooting).
+
+## Comic mode
+
+Toggle **Comic** in the toolbar to group image folders into comics. Each folder under the opened folder becomes one comic made of its images and GIFs, with the first page as the cover and the folder name as the title. Loose media tiles and videos hide, and Comic forces Recursive on. Turning either Comic or Recursive off turns both off. Comic mode is remembered per folder.
+
+Open a comic to enter the reader. Pages are stacked in a vertical scroll with a page counter in the top bar, next to **Scroll to top**, **Reveal in folder**, and **Close**. **Q** / **E** or the arrow keys jump between pages, and Escape returns to the gallery.
+
+Page order uses numeric-aware sorting, so `2` sorts before `10`. Zero-padded names (`001`, `002`, and so on) are still fine when you want predictable filenames. Oriel does not open PDFs; read story PDFs in Pane View after sync, and keep them out of comic folders.
+
+## Sorting
+
+Switch sort modes from the gallery toolbar: A-Z, Z-A, Newest, Oldest, and Random. Newest and Oldest use each file's modification time. When Random is selected, a **Shuffle** button draws a new order. Sort affects grid order only, not files on disk.
+
+## Browse subfolders
+
+**Folders** in the toolbar opens a subfolder browser with breadcrumbs, **Back**, and **Open**. Click a folder to browse into it, or double-click to open and scan it. At the top level of the browser each folder has an **Included** / **Excluded** button, so you can leave folders out of recursive and comic views. Exclusions are remembered per folder, and a running recursive scan restarts without the excluded folders.
+
+Press **Refresh** in the toolbar, or `Cmd+R`, to rescan after copying files in from outside Gather Box.
+
+## Related docs
+
+- [Oriel overview](/docs/oriel)
+- [Viewer](/docs/oriel/viewer)
+- [Keyboard shortcuts](/docs/keyboard-shortcuts)

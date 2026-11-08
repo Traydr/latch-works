@@ -1,0 +1,107 @@
+---
+title: Oriel troubleshooting
+description: Missing media, slow scans, stale thumbnails, Tidy changes that were skipped, and sync errors.
+section: Oriel
+sectionOrder: 3
+order: 8
+navTitle: Troubleshooting
+---
+
+# Oriel troubleshooting
+
+## View: missing media in grid
+
+**Symptom:** Files exist on disk but do not appear.
+
+**Fix:**
+
+- Confirm you opened the correct folder, or enable **Recursive**.
+- Wait for the scan in the activity panel to finish.
+- Check that files use supported extensions (images: jpg/jpeg/png/webp/gif/bmp/avif/heic/heif; video: mp4/m4v/webm/mov/mkv). PDFs are not shown.
+- Check **Show images** / **Show videos** in Settings.
+- If Comic mode is on, loose media tiles are hidden. Toggle Comic off to see them.
+- If you excluded a folder under **Folders**, its media is left out of recursive views.
+- Rescan with **Refresh** (`Cmd+R`) after copying files in from outside Gather Box.
+
+## View: slow scans on large folders
+
+**Symptom:** The first open of a huge tree takes minutes.
+
+**Fix:**
+
+- Let the first index complete. Later visits reuse the local media index.
+- Narrow to a subfolder when spot-checking new downloads.
+- Clear the media index under Settings › View › Storage only if it looks corrupt, not for every slow folder.
+
+## View: stale or wrong thumbnails
+
+**Symptom:** Grid previews show old frames or blank cells.
+
+**Fix:**
+
+- **Clear thumbnail cache** under Settings › View › Storage and rescan.
+- For blank video thumbnails, check that Storage reports ffmpeg and ffprobe as available.
+- Open the file in Tidy's Library: if it is listed under **Won't open**, the file itself is damaged.
+
+## View: video will not play
+
+**Symptom:** Black screen or an error in the viewer.
+
+**Fix:**
+
+- Confirm the file plays in another player.
+- Check the viewer settings for autoplay and loop.
+- Try a neighbouring file to isolate a corrupt download, and re-download it with Gather Box if the original is incomplete.
+
+## View: comic page order wrong
+
+**Fix:**
+
+- Confirm Comic mode is on and you opened the comic entry, not loose files.
+- Prefer consistent numeric filenames; remove non-page images from the comic folder.
+
+## Tidy: a step says "changed since the scan"
+
+Tidy re-reads each file before changing it and skips any whose size or dates moved since the scan. **Rescan** (`Cmd+R`) and apply the change again.
+
+## Tidy: Convert left files as they are
+
+Expand **left as they are** on the Convert page for the reason. A result that **came out no smaller** than 5% keeps the original and is not offered again until the file's bytes change. **No H.264 encoder on this machine** means the bundled encoders are incomplete: check **Encoders** in Settings › Tidy.
+
+## Tidy: a change shows as Stopped
+
+A crash or forced quit during a change marks it **Stopped** in History. Its finished steps are real and can be undone; its temporary files were deleted. Run the change again for what is left.
+
+## Tidy: I need a file that was removed
+
+Open **Holding** and **Restore** it, or **Undo** the change in History. Once Holding has been emptied to the Trash, recover the file from the Trash.
+
+## Sync: Could not reach Pane View
+
+Check the profile's URL, your network or VPN, and that the server is up. **Check connection** in the **…** menu tests each part in turn.
+
+## Sync: failed with 401
+
+The sync token is wrong or expired for this library. **Edit profile…**, enter the token your operator gave you, and run **Check connection**. Sync tokens are not your Pane View sign-in password.
+
+## Sync: Prune is locked
+
+Hover the button for the reason: push this plan's uploads and updates first, or plan again because this plan's deletes were already pruned.
+
+## Sync: "Local file changed after planning"
+
+A file changed between the plan and its upload, so Push left it out. Press **Re-plan**, then push again.
+
+## Sync: a run could not be finalized
+
+A push or prune ended, or was cancelled, but Pane View still shows the run as in progress. Cancel it on Pane View's **Manage** page.
+
+## The app will not open after download
+
+A bundle that arrived through a browser or AirDrop is quarantined and only ad hoc signed, so macOS says it is damaged or cannot be opened. Choose **Open Anyway** under System Settings › Privacy & Security, or run `xattr -dr com.apple.quarantine Oriel.app`.
+
+## Related docs
+
+- [Settings](/docs/oriel/settings)
+- [Holding and undo](/docs/oriel/holding-and-undo)
+- [Pane View troubleshooting](/docs/pane-view/troubleshooting)

@@ -1,0 +1,58 @@
+---
+title: Viewer controls
+description: Image and video viewer, fullscreen, and playback controls.
+section: Oriel
+sectionOrder: 3
+order: 3
+navTitle: Viewer
+---
+
+# Viewer controls
+
+The viewer opens images and videos over the gallery.
+
+![Oriel's viewer showing an image, with its controls along the top](/screenshots/oriel/view-viewer.png)
+
+## Opening and closing
+
+- Double-click a grid item or press Enter / F.
+- Press Escape to close and return to the grid.
+- The top bar names the file and shows its size and format (and, for videos, length, dimensions, and codec), with **Copy path**, **Reveal in folder** (shows the file in Finder), **Show in Tidy** (opens the file in Tidy, leaving View as it is), **Fullscreen**, and **Close**.
+
+The controls and the pointer hide after a couple of seconds without movement. A paused video keeps them in sight.
+
+## Image navigation
+
+- **Q** or **Arrow Left**: previous item
+- **E** or **Arrow Right**: next item
+- On-screen arrows at the sides do the same.
+
+**Loop viewer navigation** (on by default) wraps previous/next at the ends of the list. With it off, the arrows disable at the ends. Sort order and recursive settings still apply to what is in the list.
+
+## Video playback
+
+| Control | Keys |
+| --- | --- |
+| Play / pause | Space or 2 (or click the video) |
+| Seek backward 5s | 1 |
+| Seek forward 5s | 3 |
+| Temporary speed boost (2×) | Hold 4 |
+| Mute / unmute | M |
+
+The on-screen bar also has a seek bar that shows the time under the pointer, a volume panel with a slider and **Mute**, and a **Playback speed** panel from 0.5× to 2×. Volume and mute are remembered between launches; speed lasts while the viewer stays open. **Autoplay videos in viewer** and **Loop videos** in Settings apply here.
+
+Video plays through the bundled libmpv, so MKV and WebM play as well as MP4 and MOV, and AV1 seeks exactly.
+
+## Fullscreen
+
+Use the **Fullscreen** button in the viewer's top bar or `Ctrl+Cmd+F`. Both make the whole window full screen.
+
+## GIFs and large images
+
+GIFs animate. Still images scale to fit the viewport; there is no zoom. Very large files may take a moment to decode, so wait before skipping to the next item if the screen is blank. A file that cannot be decoded says so in place of the image, and Tidy's Library lists it under **Won't open**.
+
+## Related docs
+
+- [View](/docs/oriel/view)
+- [Tidy](/docs/oriel/tidy)
+- [Keyboard shortcuts](/docs/keyboard-shortcuts)

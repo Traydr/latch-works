@@ -20,14 +20,15 @@ This is the fastest way to see the full Latch Works loop working. You can refine
 
 ## 2. Browse locally
 
-1. Open [Frame View](/docs/frame-view).
+1. Open [Oriel](/docs/oriel) in **View** mode.
 2. Click **Open** and select the archive root where Gather Box saved files.
 3. Browse the grid, open a few items in the viewer, and confirm folders look right.
+4. Optionally switch to **Tidy**, add the same folder, and see what it finds. Nothing changes until you ask.
 
 ## 3. Plan and push
 
-1. Open [Lockstep](/docs/lockstep) and create a profile with your archive folder, Pane View API URL, and sync token (from your Pane View operator).
-2. Click **Doctor**, then run **Plan** to see upload, update, keep, and delete counts without changing anything.
+1. Switch Oriel to [Sync](/docs/oriel/sync) and add a profile with your archive folder, Pane View API URL, and sync token (from your Pane View operator).
+2. Run **Check connection** from the **…** menu, then **Plan** to see what would upload, update, and delete without changing anything.
 3. When the plan looks right, run **Push** to upload changed originals.
 
 ## 4. View remotely
@@ -39,8 +40,8 @@ This is the fastest way to see the full Latch Works loop working. You can refine
 ## What to do next
 
 - Read [Archive organization](/docs/archive-organization) before your archive grows large.
-- Keep [Plan](/docs/lockstep/plan) read-only until you trust the diff summary.
-- Run [Doctor](/docs/lockstep/verify-and-doctor) after changing folders or tokens.
+- Plan without pushing until you trust the diff summary. [Plan](/docs/oriel/sync#plan) never writes.
+- Run [Check connection](/docs/oriel/sync#check-connection) after changing folders or tokens.
 
 ## Related docs
 

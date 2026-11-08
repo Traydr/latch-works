@@ -1,6 +1,6 @@
 ---
 title: Keyboard shortcuts
-description: Consolidated shortcuts for Frame View, Pane View, and Gather Box.
+description: Consolidated shortcuts for Oriel, Pane View, and Gather Box.
 section: Reference
 sectionOrder: 6
 order: 3
@@ -9,17 +9,20 @@ navTitle: Shortcuts
 
 # Keyboard shortcuts
 
-Shortcuts are plain key presses unless noted. They are disabled while typing in text fields.
+Shortcuts are plain key presses unless noted. They are disabled while typing in text fields. In Oriel, `Cmd` is `Ctrl` off macOS (Refresh is F5 and full screen is F11 there), and **?** shows the current mode's shortcut sheet.
 
-## Frame View: app menu
+## Oriel: everywhere
 
 | Keys | Action |
 | --- | --- |
-| Cmd/Ctrl+O | Open folder |
-| Cmd+R (macOS) / F5 (Windows, Linux) | Refresh / rescan |
-| Cmd/Ctrl+, | Open settings |
+| Cmd+1 / Cmd+2 / Cmd+3 | Switch to View, Tidy, or Sync |
+| Cmd+O | Open a folder (View) or add one (Tidy) |
+| Cmd+R | Refresh (View) or rescan (Tidy) |
+| Cmd+, | Settings |
+| Cmd+\ | Collapse or expand the sidebar |
+| ? | Keyboard shortcuts |
 
-## Frame View: gallery
+## Oriel View: gallery
 
 | Keys | Action |
 | --- | --- |
@@ -29,7 +32,7 @@ Shortcuts are plain key presses unless noted. They are disabled while typing in 
 | Shift+S | Open selected / first folder |
 | Shift+A / Shift+D | Previous / next sibling folder |
 
-## Frame View: viewer
+## Oriel View: viewer
 
 | Keys | Action |
 | --- | --- |
@@ -41,17 +44,45 @@ Shortcuts are plain key presses unless noted. They are disabled while typing in 
 | Hold 4 | Temporary playback speed boost (2×) |
 | M | Mute or unmute video |
 
-## Frame View: comic reader
+## Oriel View: comic reader
 
 | Keys | Action |
 | --- | --- |
-| Q / Arrow Left | Jump to previous page |
-| E / Arrow Right | Jump to next page |
+| Q / Arrow Left | Previous page |
+| E / Arrow Right | Next page |
 | Escape | Close reader |
+
+## Oriel Tidy
+
+| Keys | Action |
+| --- | --- |
+| Opt+Cmd+1 to 7 | Overview, Duplicates, Convert, Clean up, Library, History, Holding |
+| Cmd+Return | The page's main action: Tidy up, Convert, Clean up, or Shrink |
+| Cmd+Z | Undo the last change |
+| Cmd+F or / | Search the Library |
+| Return | Duplicates: keep the suggestion. Library: rename |
+| 1 to 9 / Shift+1 to 9 | Duplicates: keep only this version / keep it as well |
+| N / S | Duplicates: keep all / skip the set |
+| Space | Duplicates: look closer. Library: Quick Look |
+| P | Duplicates: prefer this version's folder |
+| I | Library: show or hide the Inspector |
+| Cmd+Delete | Library: move to Holding. Holding: restore |
+| Shift+Cmd+M | Library: Move to… |
+| Shift+Cmd+Delete | Holding: empty to Trash |
+| U | History: undo the selected change |
+
+## Oriel Sync
+
+| Keys | Action |
+| --- | --- |
+| / | Filter the plan by path |
+| Cmd+L | Show or hide the run log |
+
+Sync is worked with its buttons, so it has only these keys.
 
 ## Pane View: gallery and viewer
 
-Pane View mirrors Frame View navigation for grid and viewer actions:
+Pane View mirrors Oriel's View navigation for grid and viewer actions:
 
 | Keys | Action |
 | --- | --- |
@@ -80,12 +111,8 @@ Pane View mirrors Frame View navigation for grid and viewer actions:
 
 Change the Cmd/Ctrl shortcuts under `chrome://extensions/shortcuts`. The Right Shift page shortcuts are on by default and can be turned off in Gather Box Settings.
 
-## Lockstep
-
-Lockstep desktop has no keyboard shortcuts: **Plan**, **Push**, **Prune**, and **Doctor** are buttons in the command dock. The optional CLI uses named subcommands. See [Lockstep CLI](/docs/lockstep/cli).
-
 ## Related docs
 
-- [Frame View viewer](/docs/frame-view/viewer)
+- [Oriel viewer](/docs/oriel/viewer)
 - [Pane View viewer](/docs/pane-view/viewer)
-- [Frame View preferences](/docs/frame-view/preferences)
+- [Oriel settings](/docs/oriel/settings)

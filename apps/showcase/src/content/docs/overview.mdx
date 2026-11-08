@@ -14,8 +14,8 @@ Latch Works is a private media archive toolchain. You collect media from the web
 ## The pipeline
 
 1. **Gather Box** collects images, videos, and story PDFs from supported pages into folders on your computer.
-2. **Frame View** is the desktop gallery for browsing and verifying the archive on disk.
-3. **Lockstep** compares your local archive to your remote library and explicitly pushes changed originals when you choose.
+2. **Oriel** is the desktop app: its **View** mode browses the archive on disk, **Tidy** removes duplicates and junk and converts files, and **Sync** compares the archive to your remote library and pushes changed originals when you choose.
+3. The **Lockstep CLI** runs the same plan and push from a terminal, for scripts and schedules.
 4. **Pane View** is the authenticated web gallery for browsing synced media on desktop, iPad, and iPhone.
 
 ```
@@ -27,14 +27,14 @@ Gather → Organize → Sync → View
 | Tool | Best for |
 | --- | --- |
 | Gather Box | Saving galleries, videos, and long-form stories while you browse |
-| Frame View | Day-to-day local browsing, comic reading, and archive checks |
-| Lockstep | Reviewing what would change and pushing updates on your schedule |
+| Oriel | Day-to-day local browsing, tidying the archive, and pushing updates on your schedule |
+| Lockstep CLI | Scripted plans, capped pushes, and drift checks against a snapshot |
 | Pane View | Private remote access without exposing a public gallery |
 
 ## Principles
 
 - **Local-first:** the folder on your computer stays the source of truth.
-- **Explicit sync:** nothing uploads until you run Lockstep **Push**, and deletes need a separate **Prune**.
+- **Explicit sync:** nothing uploads until you run **Push** in Oriel's Sync mode, and deletes need a separate **Prune**.
 - **Private delivery:** Pane View serves media through signed links that expire, not open URLs.
 
 ## Related docs

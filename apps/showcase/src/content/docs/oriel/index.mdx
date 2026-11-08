@@ -1,0 +1,63 @@
+---
+title: Oriel overview
+description: The native desktop app that views, tidies, and syncs your local archive.
+section: Oriel
+sectionOrder: 3
+order: 1
+navTitle: Overview
+---
+
+# Oriel
+
+Oriel is the desktop app for your local archive. It has three modes in one window: **View** browses folders as a gallery, **Tidy** finds and fixes what is wrong with the files, and **Sync** pushes them to Pane View. It is a native app written in Rust on GPUI, for Apple silicon Macs.
+
+![Oriel in View mode, with the mode switcher at the top of the sidebar](/screenshots/oriel/view-gallery.png)
+
+## Role in the workflow
+
+Oriel covers the **Organize** and **Sync** steps:
+
+1. Gather Box writes new folders to disk.
+2. View lets you check layout, order, and quality locally.
+3. Tidy removes duplicates and junk, converts to AVIF and MP4, and shrinks video, holding every change so it can be undone.
+4. Sync plans a diff against Pane View and pushes when you say so.
+5. Pane View mirrors the synced tree for remote browsing.
+
+## The three modes
+
+| Mode | What it does | Changes files? |
+| --- | --- | --- |
+| View | Gallery, viewer, and comic reader for any folder on disk | No. It never writes into the folder it shows |
+| Tidy | Duplicates, Convert, Clean up, Shrink, Library, History, Holding | Yes, one reviewed change at a time, each with an Undo |
+| Sync | Profiles, Plan, Push, Prune, Check connection | On the server only, and only when you push or prune |
+
+Switch modes with the buttons at the top of the sidebar, or `Cmd+1`, `Cmd+2`, and `Cmd+3`. Each mode remembers its own folders. The location switcher under the mode buttons lists the folder the mode is on and, below it, the folders the other modes use.
+
+The modes hand files to each other: the viewer's **Show in Tidy** opens the file in Tidy, Tidy's **Open in View** and **Sync this folder** open the folder in the other modes, and Sync's profile menu has **Open in View** and **Tidy this folder**.
+
+## First start
+
+The welcome asks for an archive folder for View, and whether to tidy it and sync it to Pane View as well. Skip it if you would rather add folders mode by mode.
+
+Oriel keeps its own data, including thumbnails, Tidy's catalog, Holding, and Sync profiles, in `~/.latch-works/oriel/`. Settings › General shows the folder.
+
+## Supported files
+
+View and Tidy work with images (jpg, jpeg, png, webp, gif, bmp, avif, plus heic and heif in View) and video (mp4, m4v, webm, mov, mkv). Oriel does not open PDFs. Read story PDFs in Pane View after sync.
+
+## Get Oriel
+
+Oriel is built from the repository rather than downloaded:
+
+```bash
+pnpm --filter @latch-works/oriel bundle   # Oriel.app in apps/oriel/target/release/bundle
+```
+
+`cargo run -p xtask -- dmg` in `apps/oriel` makes an installable disk image. The runbook at `docs/runbooks/oriel.md` lists the prerequisites. The bundle is ad hoc signed, so when it arrives through a browser or AirDrop, Gatekeeper refuses it until you choose **Open Anyway** in System Settings › Privacy & Security, or clear its quarantine attribute with `xattr -dr com.apple.quarantine Oriel.app`.
+
+## Related docs
+
+- [View](/docs/oriel/view)
+- [Tidy](/docs/oriel/tidy)
+- [Sync](/docs/oriel/sync)
+- [Settings](/docs/oriel/settings)
