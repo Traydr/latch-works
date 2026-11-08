@@ -1,11 +1,11 @@
 # Vendored anti-slop Oxlint plugin
 
 Source: [dmmulroy/anti-slop](https://github.com/dmmulroy/anti-slop), path
-`skills/install-anti-slop/assets/anti-slop`, commit `e6676e8d0bf17c678cb45b9dacb2bd6ca8dea53a`
-(2026-08-31). No later upstream commit changes that path as of `c44ef22` (2026-09-10).
+`skills/install-anti-slop/assets/anti-slop`, commit `d2a9aea3b896ffcb291a85f2c1301aa2543ad8c8`
+(2026-09-13). No later upstream commit changes that path as of `13909c9` (2026-10-13).
 
 Every file in this directory except this record is byte-identical to that commit. To check it, run
-`git archive e6676e8 skills/install-anti-slop/assets/anti-slop` in an upstream clone and `diff -r`
+`git archive d2a9aea skills/install-anti-slop/assets/anti-slop` in an upstream clone and `diff -r`
 the result against this directory.
 
 ## Installed paths
@@ -33,6 +33,12 @@ None in the rule source. Repository policy lives outside this directory:
 - 2026-09-18: updated to `e6676e8`. Added `no-array-filter-map`, `no-reduce-accumulator-copy`, and
   `require-readable-spacing`. Upstream also changed 13 existing rules and 3 shared helpers, and
   added the Effect plugin. The updated existing rules report no new findings in this repository.
+- 2026-11-09: updated to `d2a9aea`, a three-way merge from base `e6676e8`. The local copy matched
+  the base, so the only change is upstream's: `require-readable-spacing` now keeps consecutive
+  single-line `const`, `let`, `var`, and `using` declarations grouped at module scope too, and the
+  vendored padding engine takes an optional table of caller-defined statement types. A binding
+  with its own leading comment still needs a blank line before it. No rules were added, and the
+  configuration did not change.
 
 ## Verifying rules
 
