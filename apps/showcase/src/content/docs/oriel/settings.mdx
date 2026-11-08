@@ -1,0 +1,59 @@
+---
+title: Oriel settings
+description: Theme and data folder, View's gallery and viewer toggles, Tidy's matching and quality, and Sync's profiles.
+section: Oriel
+sectionOrder: 3
+order: 7
+navTitle: Settings
+---
+
+# Oriel settings
+
+Open Settings from the bottom of the sidebar or with `Cmd+,`. It opens at the section of the mode you were in, and Escape takes you back. The sections are **General**, **View**, **Tidy**, and **Sync**.
+
+![Settings open at the View section](/screenshots/oriel/view-settings.png)
+
+## General
+
+- **Theme:** System, Light, or Dark. View, Tidy, and Sync all follow it.
+- **Data folder:** where Oriel keeps thumbnails, Tidy's catalog and Holding, and Sync profiles, with **Show in Finder**.
+
+Window size, position, and the display it was on restore on launch.
+
+## View
+
+**Gallery**
+
+- **Remember last folder:** open it again when Oriel starts.
+- **Enable recursive mode by default:** show the media in every subfolder too.
+- **Thumbnail size:** 140 to 340 px wide.
+- **Show images** / **Show videos:** what the grid displays.
+- **Autoplay video on hover** and **Enable audio in video preview:** video tiles in the grid.
+
+**Viewer**
+
+- **Autoplay videos in viewer**, **Loop videos**, and **Loop viewer navigation**, which steps from the last item back to the first.
+
+**Storage** shows the thumbnail cache and the media index, each with a **Clear** button, and whether the bundled ffmpeg and ffprobe are available for video thumbnails. Clearing either removes derived data only, which rebuilds on the next scan. **Keys** opens the shortcut sheet, and **Diagnostics** has debug logging, performance monitoring, and a copyable report for a bug.
+
+## Tidy
+
+Tidy's settings apply to the folder it is on.
+
+- **Preferred folders:** Duplicates keeps the copy in these folders first. **P** on a version in the queue adds its folder.
+- **Similar versions:** Strict, Balanced, or Loose, the same choice as Duplicates' **Matching** popover.
+- **Spot variants:** keep pictures that differ in one area, like a face, an outfit, or a caption's language, and keep each picture's copy in the folder with the rest of its set.
+- **Video quality:** Medium, High, or Very high, used when Convert re-encodes a video and for Shrink's AV1.
+- **Encoders:** whether H.264, HEVC, AV1, AAC, AVIF, ffmpeg, ffprobe, and libvips are available in this build.
+- **Background analysis:** find similar versions and measure soundtracks after each scan.
+
+## Sync
+
+Each profile is listed with its folder, server, and whether a token is saved, with **Edit…** on each and **Add profile** below. The **Tokens** row shows where they are kept: in the data folder, encrypted with a key only your user account can read.
+
+## Related docs
+
+- [View](/docs/oriel/view)
+- [Tidy](/docs/oriel/tidy)
+- [Sync](/docs/oriel/sync)
+- [Troubleshooting](/docs/oriel/troubleshooting)

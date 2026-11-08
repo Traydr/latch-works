@@ -1,0 +1,52 @@
+---
+title: Holding and undo
+description: What Tidy changes on disk, where held files wait, and how Undo and History reverse a change.
+section: Oriel
+sectionOrder: 3
+order: 5
+navTitle: Holding & undo
+---
+
+# Holding and undo
+
+Tidy does not delete. Every file a change removes or replaces moves to **Holding**, where it stays until you empty it, and every change can be undone. Only forgetting a folder asks for confirmation first; everything else applies at once and ends with a toast that has **Undo**.
+
+## What each action does on disk
+
+| Action | What happens on disk | Undo |
+| --- | --- | --- |
+| Move to holding, resolving duplicates | The file moves into the folder's holding area, keeping its path inside it | Moved back, unless something now sits at the original path |
+| Clean up | Junk goes to Holding, empty folders are removed, wrong extensions are renamed | Each step is reversed |
+| Move to…, Rename, Fix extension | Renamed in place, or moved to the chosen folder (copied then deleted across volumes, keeping the modification date) | Moved back |
+| Convert, Shrink, remove a silent track | The result is written beside the original, checked, given the original's modification date, and renamed into place; the original goes to Holding | The result goes to Holding and the original comes back |
+| Restore (Holding) | The held file moves back to its original path | — |
+| Empty to Trash (Holding) | Everything held for this folder goes to the system Trash | Only from the Trash |
+
+Before each step Tidy re-reads the file and skips it if its size or dates moved since the scan. The toast reports it as **changed since the scan**: rescan and apply again. Identical copies changed the same way share one encode, and each copy has its own Undo.
+
+A converted file keeps the original's modification date but not its creation date or Finder tags. A change cut short by a crash or a forced quit is marked **Stopped** on the next launch and its temporary files are deleted; the steps that finished stay finished and can be undone.
+
+## Where Holding lives
+
+Holding is outside every folder you tidy: `~/.latch-works/oriel/tidy/holding/` for a folder on the system volume, or a `.latch-works/oriel/holding/` folder at the top of another volume, so a removal stays a rename rather than a copy. View does not show held files and Sync does not read them.
+
+## The Holding page
+
+**Holding** at the bottom of the sidebar (`Opt+Cmd+7`) lists held files grouped by the change that held them, with the space they take as a badge.
+
+- **Restore** on a file, or **Restore N** (`Cmd+Delete`) with a selection, moves files back to their original paths. **Show in Finder** opens the held copy.
+- **Empty to Trash** (`Shift+Cmd+Delete`) moves everything held for this folder to the system Trash without asking: the Trash is the safety net. It is refused while a change is running.
+
+Forgetting a folder from the location switcher moves what it holds to the Trash as well, after asking.
+
+## Undo and History
+
+`Cmd+Z` undoes the last change. **History** (`Opt+Cmd+6`) lists every change, newest first and grouped by day, with **Undo** or **Undo all N** on each and the status of anything still running, partly done, failed, or stopped. Consecutive duplicate decisions merge into one entry, **Resolved N duplicate sets**, that expands to each set with its own Undo. Expand an entry to see its steps.
+
+Undo reverses a change's finished steps newest first. Once Holding is emptied to the Trash, the originals are only in the Trash, so Undo can no longer bring them back.
+
+## Related docs
+
+- [Tidy](/docs/oriel/tidy)
+- [Sync](/docs/oriel/sync)
+- [Troubleshooting](/docs/oriel/troubleshooting)

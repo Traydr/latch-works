@@ -13,8 +13,11 @@ pnpm --filter @latch-works/showcase dev
 Opens at http://127.0.0.1:3100
 
 - `/`: ecosystem overview
-- `/{slug}`: Gather Box, Frame View, Lockstep, Pane View
-- `/docs`: MDX documentation
+- `/{slug}`: Gather Box, Oriel, Pane View
+- `/docs`: MDX documentation (Start Here, Gather Box, Oriel, Lockstep CLI, Pane View, Reference)
+
+The old Frame View and Lockstep product pages and docs redirect to their Oriel homes
+(`redirects` in `astro.config.mjs`).
 
 ## Screenshots
 
@@ -30,6 +33,7 @@ node apps/showcase/scripts/prepare-showcase-media.mjs
 LOCKSTEP_API_URL=http://localhost:3000 LOCKSTEP_API_TOKEN=$PANE_VIEW_SYNC_TOKEN \
   pnpm --filter @latch-works/lockstep start push --source /tmp/showcase-archive
 pnpm --filter @latch-works/gather-box build
+pnpm --filter @latch-works/oriel bundle                          # Oriel.app (macOS)
 pnpm --filter @latch-works/showcase screenshots:install-browser   # Chrome for Testing
 
 # With the Pane View dev server running on port 3000:
@@ -42,19 +46,28 @@ The scripts refuse to write into a directory without that marker, a symbolic lin
 holding any file they did not generate, so sample media never lands in a real archive. To start
 over, delete `/tmp/showcase-archive` and run the prepare script again.
 
-`capture-screenshots.mjs` runs four per-app scripts (each also runnable on its own):
+`capture-screenshots.mjs` runs three per-app scripts (each also runnable on its own):
 
 - `capture-pane-view.mjs`: logs into the running web app and captures login, gallery, and
   viewer. Thumbnails come straight from rustfs via Pane View's Shutter-less pass-through mode
   (leave `SHUTTER_EDGE_URL` empty in `.env`).
-- `capture-frame-view.mjs`: launches the real Electron app over CDP against
-  `apps/frame-view/showcase-media`. Backs up and restores your personal settings file.
-- `capture-lockstep.mjs`: launches the real Lockstep desktop app, runs a real plan and push
-  against the local sync API (seeding fresh sample scans each run), and captures the review and
-  run-log screens. Runs on a throwaway profile directory, so your own profiles and tokens are
-  never touched.
 - `capture-gather-box.mjs`: loads the unpacked extension into the vendored Chrome and captures
   the actual side panel in idle and active states.
+- `capture-oriel.mjs` (macOS only): launches the bundled Oriel once per screenshot on a throwaway
+  data folder and captures its window with `screencapture`, once two captures in a row match. The
+  `ORIEL_*` check variables (`docs/runbooks/oriel.md`) open each screen, all saved under
+  `screenshots/oriel/`: View's gallery, viewer and settings (`view-*.png`), Tidy's overview of a
+  copy of the archive in the run's sandbox (`tidy-overview.png`), and Sync's plan and a real push
+  (`sync-*.png`), seeding fresh sample scans each run. Needs the Xcode command line tools for `swiftc` and Screen Recording permission for
+  the terminal. Sync pushes to `http://localhost:3000` with `PANE_VIEW_SYNC_TOKEN` from `.env`;
+  for a plan that shows only the sample archive, push to an empty server instead, such as the e2e
+  one (`node e2e/scripts/start-pane-view.ts`, which recreates the e2e database and empties its
+  bucket):
+
+  ```bash
+  SHOWCASE_PANE_VIEW_URL=http://127.0.0.1:3100 SHOWCASE_SYNC_TOKEN=e2e-sync-token-0123456789abcdef \
+    node apps/showcase/scripts/capture-oriel.mjs
+  ```
 
 All captures are dark mode at 1440x900 @2x. The Pane View and Gather Box captures use the newest
 Chrome for Testing that `screenshots:install-browser` put in `apps/showcase/chrome` for your

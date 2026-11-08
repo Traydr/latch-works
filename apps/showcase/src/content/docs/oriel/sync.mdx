@@ -1,0 +1,79 @@
+---
+title: Sync
+description: Profiles, read-only plans, explicit push, separate prune, and connection checks.
+section: Oriel
+sectionOrder: 3
+order: 6
+navTitle: Sync
+---
+
+# Sync
+
+Sync is the bridge between your local archive and Pane View. A profile pairs an archive folder with a server. **Plan** compares the two, **Push** uploads what changed, and **Prune** removes remote entries only when you ask. Nothing syncs in the background.
+
+![Sync's plan: 24 files to upload, nothing changed on the server yet](/screenshots/oriel/sync-plan.png)
+
+## Profiles
+
+With no profile yet, Sync offers **Add a profile**, or a folder View or Tidy already use under **Or sync one you already use**. The form takes:
+
+- **Profile name:** a label such as "Main archive"
+- **Pane View API URL:** the base URL of your Pane View instance
+- **Source folder:** the root of your local archive tree (type a path or **Choose…**)
+- **Sync API token:** the secret that authorizes uploads, from your Pane View operator
+
+Switch profiles from the location switcher at the top of the sidebar, which shows each profile's state (in sync, N to sync, never planned, or the last run). The **…** menu in the top bar has **Edit profile…**, **Check connection**, **Run log**, **Open in View**, **Tidy this folder**, and **Delete profile…**. Editing leaves the saved token in place unless you enter a new one or tick **Forget the saved token**; changing the source folder or URL clears that profile's plan and last run. Deleting a profile removes its token from this computer and touches nothing in the folder or on Pane View.
+
+Tokens are saved encrypted in Oriel's data folder, with a key only your user account can read. They are separate from your Pane View sign-in password. Every action, including Plan and Check connection, needs one, and Sync asks for it at the bottom of the page when a profile has none.
+
+## Plan
+
+Press **Plan** (or **Re-plan**) to walk the source folder and compare it with the server. Plan never runs by itself and never writes anything. The top bar then reads **Planned just now · N files · size** for everything it scanned, and chips show what would change: **N to upload**, **N to update**, and **N to delete**. Click a chip to show only that kind, and type in **Filter paths** (or press `/`) to narrow the tree.
+
+| Entry | Meaning |
+| --- | --- |
+| Upload | New local file not yet on the server |
+| Update | Local file differs from the server copy |
+| Delete | Remote entry with no local file. Only **Prune** removes it, never Push |
+| Unchanged | Already in sync; counted in the footer, not listed |
+
+The footer also counts **skipped** files, with **why?** listing each one: system files, unsupported extensions, and anything that is not a regular file. Plan compares paths and sizes (and hashes when both sides have one), ignoring differences of letter case, Unicode form, and `.jpeg` against `.jpg`. A content change that kept the same size shows as unchanged until Push.
+
+Plan again after a Gather Box collection day, after renaming or moving folders, after tidying, and whenever counts look unexpectedly large.
+
+## Push
+
+**Push N · size** uploads and registers new and changed originals. It plans again from scratch first, hashing the local files whose server copy has a hash of the same size, so it can find updates a size-only plan missed. Each file is checked against the plan, hashed, uploaded, and verified; a file that changed in between is reported, not uploaded. Uploads run a few at a time, adapting to the server. Push never deletes.
+
+![A finished push with its run panel](/screenshots/oriel/sync-push.png)
+
+While a push runs, the activity panel at the bottom right shows the progress and a **Stop** button. The tree ticks rows as they finish, and the chips become **All**, **Remaining**, **Done**, and **Failed** filters. When it ends, a run panel reports **Push complete** (or finished with failures, failed, or cancelled), the bytes sent, throughput, and the pushed, failed, and skipped counts, with **Done**, **Retry N failed**, and **Prune N…** when a prune is allowed. A failed file does not stop the run; **Retry** starts a new push for what is left. **Run log** (`Cmd+L`) keeps the run's recent log lines.
+
+Pane View renders thumbnails the first time you view them, so the first visit to a large folder can be slower.
+
+## Prune
+
+**Prune N** appears in the top bar only when the plan lists deletes. It unlocks right away if the plan has nothing else, or after a push with no failures; otherwise hovering it says what to do first. Prune asks you to confirm how many remote entries it will delete from which server, then deletes exactly the deletes in the plan you reviewed. It does not plan again. Before each delete it checks your source folder: a file that is back at its path is skipped and reported as such, and if the source folder itself is missing, for example an unplugged drive, Prune stops without deleting anything.
+
+Each plan can be pruned once. Run **Plan** again before pruning more. Prune cannot be undone from Oriel, so read the plan before you confirm.
+
+## Check connection
+
+**Check connection** in the **…** menu tests the profile without changing anything: the source folder exists, the URL and token are present, and Pane View answers with its snapshot. The results appear at the bottom of the page as **Every check passed** or **Some checks failed**, with each check's detail. Run it after creating a profile or changing a token.
+
+| Issue | What to check |
+| --- | --- |
+| Could not reach Pane View | Typo, VPN, or server down |
+| Failed with 401 | Expired or wrong token for this library |
+| Source folder is not available | Profile points at a moved or unmounted disk |
+
+## Scripted runs
+
+Sync has no cap on how much one push applies and no verify-against-snapshot check. For scheduled plan-only reports, capped pushes, and drift checks against a snapshot file, use the [Lockstep CLI](/docs/lockstep-cli), which talks to the same Pane View API.
+
+## Related docs
+
+- [Lockstep CLI](/docs/lockstep-cli)
+- [Settings](/docs/oriel/settings)
+- [Workflows](/docs/workflows)
+- [Privacy and safety](/docs/privacy-and-safety)

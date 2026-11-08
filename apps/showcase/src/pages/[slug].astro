@@ -1,7 +1,6 @@
 ---
-import FrameView from "@/components/colorblock/FrameView.astro";
 import GatherBox from "@/components/colorblock/GatherBox.astro";
-import Lockstep from "@/components/colorblock/Lockstep.astro";
+import Oriel from "@/components/colorblock/Oriel.astro";
 import PaneView from "@/components/colorblock/PaneView.astro";
 import { getProduct } from "@/data/products";
 import BaseLayout from "@/layouts/BaseLayout.astro";
@@ -17,7 +16,6 @@ if (!product) {
 
 <BaseLayout title={`${product.name} - Latch Works`} description={product.description}>
   {product.slug === "gather-box" && <GatherBox product={product} />}
-  {product.slug === "frame-view" && <FrameView product={product} />}
-  {product.slug === "lockstep" && <Lockstep product={product} />}
+  {product.slug === "oriel" && <Oriel product={product} />}
   {product.slug === "pane-view" && <PaneView product={product} />}
 </BaseLayout>

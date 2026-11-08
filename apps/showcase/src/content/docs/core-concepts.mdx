@@ -13,32 +13,32 @@ These terms appear throughout the handbook. They describe how Latch Works treats
 
 ## Archive
 
-Your **archive** is the folder tree on your computer that holds collected and organized media. Frame View and Lockstep both work from this tree. Pane View shows a remote index of what you have synced.
+Your **archive** is the folder tree on your computer that holds collected and organized media. Oriel's View, Tidy, and Sync modes all work from this tree. Pane View shows a remote index of what you have synced.
 
 The archive is **local-first**: you decide what is on disk, when to reorganize folders, and when to push changes outward.
 
 ## Source of truth
 
-The local archive is the **source of truth**. Pane View reflects what Lockstep has uploaded and registered. If something is missing remotely, fix or collect it locally first, then plan and push again.
+The local archive is the **source of truth**. Pane View reflects what Sync has uploaded and registered. If something is missing remotely, fix or collect it locally first, then plan and push again.
 
-Lockstep does not remove remote media during **Push**. If the plan lists delete entries, run **Prune** separately after review.
+Sync does not remove remote media during **Push**. If the plan lists delete entries, run **Prune** separately after review.
 
 ## Sync
 
 **Sync** in Latch Works means a deliberate compare-and-push cycle:
 
-1. Lockstep scans your source folder and builds a **plan** (read-only).
-2. You review upload, update, keep, and delete counts.
+1. Sync scans your source folder and builds a **plan** (read-only).
+2. You review the upload, update, and delete counts.
 3. You run **Push** for new and changed originals.
 4. You run **Prune** only when you intend to remove remote entries that no longer exist locally.
 
 There is no background auto-sync. That keeps uploads predictable and private.
 
-Desktop plan compares path and size; push re-plans with content hashing. Optional CLI **verify** compares against a snapshot file for drift checks.
+Plan compares path and size; push plans again with content hashing. The Lockstep CLI's **verify** compares against a snapshot file for drift checks.
 
 ## Originals
 
-An **original** is the full-resolution file in your archive: the image, video, or PDF on disk. Lockstep uploads originals when the plan says they are new or changed.
+An **original** is the full-resolution file in your archive: the image, video, or PDF on disk. Sync uploads originals when the plan says they are new or changed. Tidy's conversions replace an original on disk with its AVIF or MP4 and hold the old file, so the next plan shows the new path as an upload and the old one as a delete.
 
 Pane View also shows **thumbnails** and **previews**: smaller derived images for fast grid browsing and viewer loading. They are made from originals the first time you view them and never replace them.
 
@@ -51,19 +51,19 @@ Pane View also shows **thumbnails** and **previews**: smaller derived images for
 
 In Pane View, thumbnails, previews, and originals are delivered through **signed links** that expire. They are not permanent public URLs.
 
-Frame View builds its own local thumbnail cache as tiles scroll into view.
+Oriel's View builds its own local thumbnail cache as tiles scroll into view.
 
 ## Local vs remote
 
-| | Local (Frame View) | Remote (Pane View) |
+| | Local (Oriel) | Remote (Pane View) |
 | --- | --- | --- |
 | Requires sign-in | No | Yes |
 | Shows unsynced files | Yes | No |
-| Changes files on disk | No | No |
+| Changes files on disk | Only Tidy, one reviewed change at a time, each with an Undo | No |
 | Best for | Checking new downloads | Access away from your desk |
 
 ## Related docs
 
 - [Archive organization](/docs/archive-organization)
-- [Lockstep plan](/docs/lockstep/plan)
+- [Sync](/docs/oriel/sync)
 - [Privacy and safety](/docs/privacy-and-safety)
