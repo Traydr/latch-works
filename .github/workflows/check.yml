@@ -1,8 +1,9 @@
 name: Check
 
-# Typechecks the TypeScript workspace and runs the shared packages' tests, which include the
-# conformance vectors Oriel's Rust tests read. Formatting, lints, Knip and the app tests run on the
-# owner's machine (`pnpm check:all`, `pnpm test`).
+# Typechecks the TypeScript workspace, runs the shared packages' tests, which include the
+# conformance vectors Oriel's Rust tests read, and checks the Rust formatting. The other formatting,
+# lints, Knip and the app tests run on the owner's machine (`pnpm check:all`, `pnpm test`,
+# `pnpm oriel:check`).
 on:
   pull_request:
   push:
@@ -36,3 +37,17 @@ jobs:
 
       - name: Test the shared packages and their conformance vectors
         run: pnpm -r --filter "./packages/**" test
+
+  rust-format:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/oriel
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Check the Rust formatting
+        run: cargo fmt --check
