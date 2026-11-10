@@ -91,8 +91,6 @@ export function parseShutterConfig(environment: ShutterEnvironment): ShutterConf
   };
 }
 
-export const shutterConfig: ShutterConfig = parseShutterConfig(env);
-
 /** Encoded key material: 64 hex characters or base64url. */
 const KeyMaterialSchema = z.string();
 
@@ -220,3 +218,6 @@ function readCapabilityKey({
 
   return { key, kid };
 }
+
+/** Parsed last: it reads the registry schemas above, which a bundler may hoist as `var`. */
+export const shutterConfig: ShutterConfig = parseShutterConfig(env);
