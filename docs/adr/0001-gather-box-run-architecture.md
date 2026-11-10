@@ -54,6 +54,13 @@ detaches the view but does not cancel a running Gather Run; reopening it attache
 The side panel observes, starts, cancels, and retries runs through the run owner. It does not fetch
 source files, write the archive, generate PDFs, or keep authoritative run state.
 
+One exception is recorded (2026-11): a file a site's bot check blocked is downloaded by the person
+and handed back through the side panel, which writes it into the archive itself. The `File` comes
+from a file picker that needs the panel's user activation, and moving it to the offscreen
+document would mean staging it in IndexedDB for a single small write. The panel uses the same
+collision-safe writer as the executor (`src/shared/archive-writer.ts`) and only reports the saved
+name to the run owner, which records it on the run.
+
 ### Deterministic command routing
 
 Chrome commands, page shortcuts, the context menu, and side-panel controls are input adapters over
@@ -79,7 +86,8 @@ only in the execution document. Popup or side-panel startup must not load PDF co
 
 The build is organized by Chrome execution context, emits local ESM chunks where supported, minifies
 release artifacts, copies only declared assets, emits an esbuild metafile, and enforces artifact size
-budgets in `check`.
+budgets in `check`. (The build has since moved to Rolldown and writes its own per-context reports
+in place of the esbuild metafile.)
 
 ### Authoritative Gather Source catalog
 

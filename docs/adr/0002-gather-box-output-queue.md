@@ -23,7 +23,8 @@ Output and the execution settings that apply to it, acknowledges the queue posit
 depends on the source tab.
 
 The offscreen document executes one output at a time. Downloads retain their existing bounded
-per-file fetch concurrency, while media conversions and filesystem commits remain serialized. A run
+per-file fetch concurrency. Media conversions are serialized, and writes to the same file name are
+locked, so saves to different names run alongside each other. A run
 reports itself finished only after its execution slot is released, because the background dispatches
 the next output while handling that report and would otherwise be told the executor is still busy. One
 persisted queue snapshot owns pending jobs and bounded terminal results. The side panel derives its

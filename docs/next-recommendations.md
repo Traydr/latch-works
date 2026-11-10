@@ -17,7 +17,7 @@ can be turned into a separate self-contained plan later.
   library query is path/name-first, so there is no reliable source metadata to search until the
   Gather Box -> Lockstep -> Pane View metadata path exists.
 - Server-side sync token management can be planned independently, but it becomes more valuable
-  once multiple Lockstep profiles, environments, or client machines are actively used.
+  once multiple Oriel Sync profiles, environments, or client machines are actively used.
 
 Pane View's image, video, and PDF renditions are provided by Shutter. Do not add a Pane-side
 derivative queue, worker, storage layout, or prewarm feature; `docs/ARCHITECTURE.md` defines
@@ -35,13 +35,13 @@ scraping filenames later.
 - `docs/gather-box-sidecar-manifests.md:3` states that sidecar writing and ingestion are not
   implemented yet.
 - `apps/gather-box/src/shared/types.ts:12` already has collector payloads with source metadata.
-- `apps/gather-box/src/shared/gather-controller.ts:429` writes downloaded files but not sidecar
+- `apps/gather-box/src/shared/archive-writer.ts:92` writes downloaded files but not sidecar
   manifests.
-- `packages/media-index/src/scan.ts:128` treats unsupported files as skipped entries, so sidecars
+- `packages/lockstep-core/src/scan.ts:320` treats unsupported files as skipped entries, so sidecars
   are not consumed as metadata during scans.
-- `apps/pane-view/src/server/db/schema.ts:234` and
-  `apps/pane-view/src/server/db/schema.ts:255` already have source and collection fields that can
-  receive richer metadata later.
+- Pane View has no source or collection fields to receive the metadata: migration
+  `0022_drop_dead_schema.sql` dropped the unused `sources` and `collections` tables and the
+  `library_entries.source*` columns.
 
 **Trade-offs:** This is a multi-stage feature, not a single small patch. It should start with an
 optional Gather Box writer and shared validation before touching Lockstep payloads or Pane View
@@ -57,16 +57,14 @@ or viewed content across devices.
 
 **Evidence:**
 
-- `apps/pane-view/src/server/db/schema.ts:346` defines `viewer_state`.
-- `apps/pane-view/src/server/db/schema.ts:363` defines `favorites`.
-- `apps/pane-view/src/features/gallery/MediaViewerModal.tsx:93` wires viewer state for video and
+- `apps/pane-view/src/server/db/schema.ts:231` defines `viewer_state`, one row per library entry.
+- `apps/pane-view/src/features/viewer/MediaViewerSession.tsx:368` wires viewer state for video and
   PDF subjects.
-- `apps/pane-view/src/server/management/library-wipe.ts:47` cleans up favorites, but there is no
-  visible favorite workflow in the gallery.
+- There is no favorite workflow: migration `0022_drop_dead_schema.sql` dropped the unused
+  `favorites` table.
 
 **Trade-offs:** Resume state has moved ahead of the docs, so the next plan should not redo that
-work. It should add the missing user-facing favorite/bookmark/read-state flows and keep the schema
-compatible with future collection subjects.
+work. It should add the missing user-facing favorite/bookmark/read-state flows and their schema.
 
 **Coarse effort:** Medium.
 
@@ -78,9 +76,9 @@ the local archive remains the source of truth.
 
 **Evidence:**
 
-- `apps/pane-view/src/routes/__root.tsx:19` currently declares only basic head metadata, favicon,
-  and stylesheet links.
-- `apps/pane-view/public/` currently contains only `favicon.svg`.
+- `apps/pane-view/src/routes/__root.tsx:11` currently declares only basic head metadata, favicon,
+  apple-touch-icon, and stylesheet links.
+- `apps/pane-view/public/` currently contains only the favicons and `apple-touch-icon.png`.
 
 **Trade-offs:** Keep this installability-first. Add a web manifest, icons, mobile app metadata,
 and smoke tests for the installed browser chrome. Avoid caching private originals or building
@@ -91,18 +89,17 @@ offline media sync until there is a deliberate security and storage design.
 ## 4. Make Sync Tokens First-Class On The Server
 
 **Product value:** Pane View can rotate, revoke, name, and audit sync clients instead of relying
-on one environment-wide bearer token. This pairs naturally with Lockstep desktop profiles and
-future multi-machine or production/dev workflows.
+on one environment-wide bearer token. This pairs naturally with Oriel Sync's profiles and future
+multi-machine or production/dev workflows.
 
 **Evidence:**
 
-- `apps/pane-view/src/server/db/schema.ts:127` defines an `api_tokens` table with token hashes,
-  scopes, last-used timestamps, and revocation.
-- `apps/pane-view/src/server/db/schema.ts:170` includes `createdByTokenId` on sync runs.
-- `apps/pane-view/src/server/auth/api-token.ts:26` still validates sync requests against a single
-  `PANE_VIEW_SYNC_TOKEN` environment value.
-- `apps/lockstep/src/main/services/profileService.ts:81` already supports per-profile token
-  storage on the desktop client.
+- `apps/pane-view/src/server/auth/api-token.ts:32` validates sync requests against a single
+  `PANE_VIEW_SYNC_TOKEN` environment value. The unused `api_tokens` table and
+  `sync_runs.created_by_token_id` were dropped in migration `0022_drop_dead_schema.sql`, so token
+  storage starts from scratch.
+- `apps/oriel/crates/mode-sync/src/profiles.rs:1` already stores a token per profile on the
+  desktop client.
 
 **Trade-offs:** This is operational maturity, not the most visible user feature. Keep an
 environment-token fallback during migration, add management UI or CLI affordances for token

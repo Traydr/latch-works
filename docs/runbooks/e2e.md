@@ -23,15 +23,16 @@ pnpm --filter @latch-works/e2e fixture   # render e2e/.fixtures/ from the manife
 pnpm e2e:pane                            # Pane View, seeded through the Lockstep CLI
 ```
 
-`pnpm e2e` runs the same suite: Pane View is its only project.
+The stack (Pane View's port, the sign-in and sync token, the database and bucket names,
+the fixture folders) is defined once in `e2e/stack.json`; `e2e/src/env.ts` reads it.
 
 `pnpm e2e:pane` starts Pane View itself: it drops and recreates the e2e database, runs the
-migrations, builds `apps/pane-view` and serves the build on port 3100. The setup project then
+migrations, builds `apps/pane-view` and serves the build on the port in `e2e/stack.json` (3101). The setup project then
 pushes the fixture archive with `lockstep push` (that push is the Lockstep → Pane View roundtrip
 test) and signs in once.
 
 While iterating on specs, leave the server running between runs: an e2e server already listening
-on 3100 is reused as-is (no rebuild, no reseed). Stop it to force a clean rebuild.
+on that port is reused as-is (no rebuild, no reseed). Stop it to force a clean rebuild.
 `E2E_SKIP_BUILD=1` serves the existing `.output` without rebuilding on a cold start.
 
 Run one spec or test: `pnpm --filter @latch-works/e2e e2e:pane -- -g "comic mode"`.
@@ -47,7 +48,7 @@ expected order and count from it.
 
 | spec | covers |
 |---|---|
-| `seed.setup.ts` | Lockstep push completes, a second push is a no-op, the remote snapshot matches |
+| `seed.setup.ts` | Lockstep push exits cleanly, the remote snapshot matches the fixture, and `lockstep verify --hash` finds no drift |
 | `auth.spec.ts` | login redirect, wrong password, five-failure throttle, sign out |
 | `browse.spec.ts` | root and folder listings, sidebar navigation, prev/next sibling folder (buttons and Shift+A/D) |
 | `sorting.spec.ts` | all five sort modes, paging past 60 items, random seed stability and Shuffle |
@@ -69,7 +70,8 @@ the [Oriel runbook](oriel.md)).
 
 Two of its tests use this suite's stack and are ignored by default: `oriel-mode-sync`'s and
 `oriel-core-sync`'s `stack` tests push into the e2e Pane View that `scripts/start-pane-view.ts`
-serves on port 3100. The Sync one also needs the fixture command's second archive,
+serves, with the URL, token and fixture folders they read from `e2e/stack.json`. The Sync one also
+needs the fixture command's second archive,
 `e2e/.fixtures/lockstep-source` (two images that are not in the seeded one). Each test's module
 comment says how to run it.
 

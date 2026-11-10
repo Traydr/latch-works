@@ -284,6 +284,10 @@ display, Windows 11 Pro build 26300, PowerShell 7.6.9, Visual Studio Community 2
     tests here;
   - `scans_the_tree_as_the_typescript_does` expects a file named `trailing.`, and Windows drops a
     name's trailing dot when it makes the file.
+  - These five are in core-sync now (`compares_fingerprints_and_escapes_as_the_typescript_does`
+    became `tells_paths_outside_the_root_as_lockstep_core_does`, and
+    `scans_the_tree_as_the_typescript_does` became `scans_as_lockstep_core_does`), and are
+    marked `#[cfg_attr(windows, ignore)]`: the vectors' paths are Node's on macOS by nature.
 - With Developer Mode off, as on 2026-11-01, 7 more fail because they make symlinks (`catalog.rs`
   ×4, `scans_as_lockstep_core_does`, the Tidy walk, `a_root_outside_the_sandbox_is_refused`).
 - Two tests failed once under the full suite's load and passed six of six alone:

@@ -8,11 +8,16 @@ Latch Works is a TypeScript pnpm workspace with one Rust app. Product code lives
 Lockstep desktop app) live in its `crates/mode-*`; `gather-box` is a Chrome extension;
 `lockstep-cli` is the sync CLI; and `showcase` is the Astro site. `oriel` is a Cargo workspace
 outside `pnpm test`, checked with `pnpm oriel:check`. Shared TypeScript code belongs in
-`packages/`.
+`packages/`. `vendor/` holds Shutter's client and protocol, copied from the Shutter repo: do not
+edit them here (Biome and Oxlint skip them). `tools/conformance` is the harness the packages'
+tests use to write the conformance vectors Oriel's Rust tests read. `tools/oxlint` holds the
+Oxlint plugins: the vendored anti-slop rules and the repository's own. `e2e/` is the Playwright
+suite for Pane View.
 
-Keep source in each workspace's `src/`. Tests sit beside modules as `*.test.ts` or in
-`apps/*/tests/`. Put decisions, plans, and runbooks in `docs/`. Keep `dist/`, `.output/` and
-Cargo's `target/` untracked.
+Keep source in each workspace's `src/`. Tests sit beside modules as `*.test.ts`; the Playwright
+specs live in `e2e/tests/` and Oriel's integration tests in `apps/oriel/crates/*/tests/`. Put
+decisions, plans, and runbooks in `docs/`. Keep `dist/`, `.output/` and Cargo's `target/`
+untracked.
 
 ## Build, test, and development commands
 
@@ -42,7 +47,7 @@ sync invariants, parser output). Do not commit tests for one-off bug fixes, conf
 choices, or the absence of something. Prefer tests that exercise real dependencies and assert on
 output over tests that mock a module's collaborators and assert on calls; the end-to-end suite is
 the place to confirm user-facing features. Run a focused suite first, for example
-`pnpm --filter @latch-works/media-index test`, then run `pnpm test` and `pnpm typecheck`. The
+`pnpm --filter @latch-works/lockstep-core test`, then run `pnpm test` and `pnpm typecheck`. The
 repository does not define a numeric coverage threshold.
 
 The end-to-end suite lives in `e2e/` (Playwright) and is the final check before a PR is ready:

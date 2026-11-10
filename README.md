@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-6-blue?logo=typescript&logoColor=white" alt="TypeScript" /></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-7-blue?logo=typescript&logoColor=white" alt="TypeScript" /></a>
   <a href="https://pnpm.io/"><img src="https://img.shields.io/badge/pnpm-workspace-F69220?logo=pnpm&logoColor=white" alt="pnpm" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT" /></a>
 </p>
@@ -26,7 +26,7 @@ Latch Works is a private workshop for a personal media archive: a Chrome extensi
 
 The local archive is the source of truth. Nothing is public, nothing is inferred from a cloud service. Remote access is explicit, authenticated, and read-only. Lockstep is the only write path.
 
-The names follow a window-and-access metaphor: the latch controls access to the archive, Frame and Pane are the desktop and web viewing surfaces, the Box collects incoming media, and Lockstep keeps local and remote in step. The [brand kit](docs/latch-works-brand-kit.md) has the full vocabulary.
+The names follow a window-and-access metaphor: the latch controls access to the archive, Oriel and Pane are the desktop and web viewing surfaces, the Box collects incoming media, and Lockstep keeps local and remote in step. The [brand kit](docs/latch-works-brand-kit.md) has the full vocabulary.
 
 <table>
 <tr>
@@ -46,7 +46,7 @@ Pane View is a private web viewer for the synced archive. Galleries, videos, and
 <tr>
 <td width="50%">
 
-<img src="apps/showcase/public/screenshots/frame-view/viewer.png" alt="Frame View desktop viewer" width="100%" />
+<img src="apps/showcase/public/screenshots/oriel/view-viewer.png" alt="Oriel's View mode viewer" width="100%" />
 
 </td>
 <td width="50%" valign="middle">
@@ -67,7 +67,7 @@ Lockstep plans and pushes archive changes to Pane View. Use Oriel's Sync mode, w
 </td>
 <td width="50%">
 
-<img src="apps/showcase/public/screenshots/lockstep/plan.png" alt="Lockstep sync plan output" width="100%" />
+<img src="apps/showcase/public/screenshots/oriel/sync-plan.png" alt="A sync plan in Oriel's Sync mode" width="100%" />
 
 </td>
 </tr>
@@ -102,7 +102,7 @@ Gather Box downloads a gallery
   -> Shutter signs thumbnail and preview renditions on demand
 ```
 
-The scan, sort, grouping, and plan logic all live in `packages/`. The Lockstep CLI and Pane View use them directly; Oriel ports them to Rust, and conformance vectors written by each package's tests hold its ports to the same answers, so a sorting rule changes everywhere or a check fails.
+The scan, sort, and plan logic all live in `packages/`. The Lockstep CLI uses them directly and Pane View uses the shared media types and sync API; Oriel ports them to Rust, and conformance vectors written by each package's tests hold its ports to the same answers, so a sorting rule changes everywhere or a check fails.
 
 ---
 
@@ -113,18 +113,19 @@ The scan, sort, grouping, and plan logic all live in `packages/`. The Lockstep C
 | Pane View | [`apps/pane-view`](apps/pane-view) | Private web viewer for a synced archive. TanStack Start + PostgreSQL + S3. |
 | Oriel | [`apps/oriel`](apps/oriel) | The desktop app, in Rust on GPUI, in three modes. **View** (once Frame View) is the gallery for local images, videos, and comics; PDF reading is [planned](docs/plans/040-frame-view-pdf-spike.md), not shipped. **Tidy** (once Glazier) audits and tidies the local archive: exact and similar duplicates, sound, conversion to AVIF and MP4, with holding and undo. **Sync** (once the Lockstep desktop app) plans and pushes to Pane View with profiles, encrypted tokens, and run history. |
 | Gather Box | [`apps/gather-box`](apps/gather-box) | Chrome extension that downloads galleries and story PDFs into local folder structures. |
-| Lockstep CLI | [`apps/lockstep-cli`](apps/lockstep-cli) | Scriptable `plan` / `push` / `verify` / `doctor`. npm package `@latch-works/lockstep`. |
+| Lockstep CLI | [`apps/lockstep-cli`](apps/lockstep-cli) | Scriptable `plan` / `push` / `prune` / `verify` / `doctor`. npm package `@latch-works/lockstep`. |
 | Showcase | [`apps/showcase`](apps/showcase) | Astro product site and MDX docs: pages, screenshots, getting-started guides. |
 
 ### Shared packages
 
 | Package | Path | Role |
 | --- | --- | --- |
-| `@latch-works/media-domain` | [`packages/media-domain`](packages/media-domain) | Media types, path helpers, gallery sort / comic grouping, Zod schemas |
-| `@latch-works/media-index` | [`packages/media-index`](packages/media-index) | Archive scanning and sync-plan generation |
-| `@latch-works/media-storage` | [`packages/media-storage`](packages/media-storage) | Content-addressed S3 object key conventions |
-| `@latch-works/lockstep-core` | [`packages/lockstep-core`](packages/lockstep-core) | Headless sync engine behind the Lockstep CLI, which Oriel's Sync mode ports to Rust |
-| `@latch-works/media-format` | [`packages/media-format`](packages/media-format) | Archive format policy (AVIF stills, MP4 video) and encoder settings, used by Gather Box and ported to Rust for Oriel's Tidy mode |
+| `@latch-works/media-domain` | [`packages/media-domain`](packages/media-domain) | Media types, path helpers, natural name order |
+| `@latch-works/sync-protocol` | [`packages/sync-protocol`](packages/sync-protocol) | Pane View's sync API: request and response schemas, content types, object keys |
+| `@latch-works/lockstep-core` | [`packages/lockstep-core`](packages/lockstep-core) | Headless sync engine behind the Lockstep CLI (archive scan, sync plan, push, prune), which Oriel's Sync mode ports to Rust |
+| `@latch-works/media-format` | [`packages/media-format`](packages/media-format) | Archive format policy for stills and the AVIF and GIF-to-MP4 encoders, used by Gather Box |
+| `@latch-works/conformance` | [`tools/conformance`](tools/conformance) | The conformance-vector harness the packages' tests use to write the vectors Oriel's Rust tests read |
+| `@shutter/client`, `@shutter/protocol` | [`vendor/`](vendor) | Shutter's client and protocol, vendored from the Shutter repo for Pane View; not edited here |
 
 ---
 
@@ -136,16 +137,10 @@ Requires Node.js 24 and pnpm 12 (`corepack enable`). Oriel additionally needs Ru
 pnpm install
 ```
 
-Shared packages build to `dist/` and app dev servers import from there, so build them once up front:
+Workspaces read the shared and vendored packages from source, so nothing needs building first. The full workspace check builds everything, formats, then runs lint, typecheck and knip (tests are `pnpm test`):
 
 ```bash
-pnpm -r --filter './packages/*' build
-```
-
-Then run the full workspace check. It builds everything, runs each package's checks, then lint and knip:
-
-```bash
-pnpm check
+pnpm check:all
 ```
 
 ---
@@ -155,7 +150,7 @@ pnpm check
 ### Run an app
 
 ```bash
-pnpm dev:pane                                  # Pane View  → http://127.0.0.1:3000
+pnpm --filter @latch-works/pane-view dev       # Pane View  → http://127.0.0.1:3000
 pnpm --filter @latch-works/showcase dev        # Showcase   → http://127.0.0.1:3100
 pnpm --filter @latch-works/oriel dev           # Oriel: View, Tidy and Sync (a debug build)
 pnpm --filter @latch-works/gather-box build    # Gather Box → dist/, load unpacked in Chrome
@@ -182,7 +177,7 @@ export LOCKSTEP_API_TOKEN="your-sync-token"
 pnpm --filter @latch-works/lockstep start push --source "/path/to/archive"
 ```
 
-`pnpm start:lockstep` with no arguments opens an interactive wizard when run on a TTY. Full reference: [`apps/lockstep-cli/README.md`](apps/lockstep-cli/README.md) and the [runbook](docs/runbooks/lockstep.md).
+`pnpm --filter @latch-works/lockstep start` with no arguments opens an interactive wizard when run on a TTY. Full reference: [`apps/lockstep-cli/README.md`](apps/lockstep-cli/README.md) and the [runbook](docs/runbooks/lockstep.md).
 
 ### Repo checks
 
