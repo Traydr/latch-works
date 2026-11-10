@@ -34,7 +34,7 @@ describe("readRemoteSnapshot", () => {
   });
 
   it("reads a saved GET /api/sync/snapshot response", async () => {
-    const filePath = await writeSnapshot(JSON.stringify({ entries: ENTRIES, status: "database" }));
+    const filePath = await writeSnapshot(JSON.stringify({ entries: ENTRIES }));
 
     await expect(readRemoteSnapshot(filePath)).resolves.toEqual(ENTRIES);
   });

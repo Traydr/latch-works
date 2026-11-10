@@ -2,6 +2,25 @@
   "about": "Written by packages/lockstep-core/src/conformance.test.ts; ORIEL_UPDATE_VECTORS=1 rewrites it.",
   "cases": [
     {
+      "name": "nothing on either side",
+      "local": [],
+      "remote": [],
+      "items": [],
+      "counts": { "upload": 0, "update": 0, "keep": 0, "delete": 0 },
+      "hashPaths": { "all": [], "remoteAware": [] },
+      "push": [
+        { "omittedCount": 0, "paths": [] },
+        { "maxChanges": 1, "omittedCount": 0, "paths": [] },
+        { "maxChanges": 2, "omittedCount": 0, "paths": [] }
+      ],
+      "prune": [
+        { "omittedCount": 0, "paths": [] },
+        { "maxChanges": 1, "omittedCount": 0, "paths": [] },
+        { "maxChanges": 2, "omittedCount": 0, "paths": [] }
+      ],
+      "plannedLocalPaths": []
+    },
+    {
       "name": "a first push uploads everything",
       "local": [
         { "path": "a.jpg", "size": 10 },
@@ -10,9 +29,19 @@
       ],
       "remote": [],
       "items": [
-        { "action": "upload", "path": "a.jpg", "localPath": "a.jpg" },
-        { "action": "upload", "path": "folder/b.png", "localPath": "folder/b.png" },
-        { "action": "upload", "path": "folder/nested/c.mp4", "localPath": "folder/nested/c.mp4" }
+        { "action": "upload", "path": "a.jpg", "localPath": "a.jpg", "localSize": 10 },
+        {
+          "action": "upload",
+          "path": "folder/b.png",
+          "localPath": "folder/b.png",
+          "localSize": 20
+        },
+        {
+          "action": "upload",
+          "path": "folder/nested/c.mp4",
+          "localPath": "folder/nested/c.mp4",
+          "localSize": 30
+        }
       ],
       "counts": { "upload": 3, "update": 0, "keep": 0, "delete": 0 },
       "hashPaths": { "all": ["a.jpg", "folder/b.png", "folder/nested/c.mp4"], "remoteAware": [] },
@@ -57,9 +86,27 @@
         }
       ],
       "items": [
-        { "action": "keep", "path": "a.jpg", "localPath": "a.jpg", "remotePath": "a.jpg" },
-        { "action": "keep", "path": "b.jpg", "localPath": "b.jpg", "remotePath": "b.jpg" },
-        { "action": "keep", "path": "c.jpg", "localPath": "c.jpg", "remotePath": "c.jpg" }
+        {
+          "action": "keep",
+          "path": "a.jpg",
+          "localPath": "a.jpg",
+          "localSize": 10,
+          "remotePath": "a.jpg"
+        },
+        {
+          "action": "keep",
+          "path": "b.jpg",
+          "localPath": "b.jpg",
+          "localSize": 20,
+          "remotePath": "b.jpg"
+        },
+        {
+          "action": "keep",
+          "path": "c.jpg",
+          "localPath": "c.jpg",
+          "localSize": 30,
+          "remotePath": "c.jpg"
+        }
       ],
       "counts": { "upload": 0, "update": 0, "keep": 3, "delete": 0 },
       "hashPaths": { "all": ["a.jpg"], "remoteAware": ["a.jpg"] },
@@ -108,18 +155,21 @@
           "action": "update",
           "path": "grown.jpg",
           "localPath": "grown.jpg",
+          "localSize": 11,
           "remotePath": "grown.jpg"
         },
         {
           "action": "update",
           "path": "edited.jpg",
           "localPath": "edited.jpg",
+          "localSize": 20,
           "remotePath": "edited.jpg"
         },
         {
           "action": "keep",
           "path": "same-size.jpg",
           "localPath": "same-size.jpg",
+          "localSize": 30,
           "remotePath": "same-size.jpg"
         }
       ],
@@ -154,18 +204,21 @@
           "action": "keep",
           "path": "Photos/IMG_1.JPEG",
           "localPath": "Photos/IMG_1.JPEG",
+          "localSize": 10,
           "remotePath": "photos/img_1.jpg"
         },
         {
           "action": "keep",
           "path": "Cafe\u0301/menu.png",
           "localPath": "Cafe\u0301/menu.png",
+          "localSize": 20,
           "remotePath": "Caf\u00e9/menu.png"
         },
         {
           "action": "update",
           "path": "Mixed/Case.MP4",
           "localPath": "Mixed/Case.MP4",
+          "localSize": 31,
           "remotePath": "mixed/case.mp4"
         }
       ],
@@ -191,8 +244,8 @@
       "local": [{ "path": "a/Photo.jpg", "size": 10 }, { "path": "a/photo.jpg", "size": 10 }],
       "remote": [{ "path": "a/PHOTO.jpg", "size": 10 }],
       "items": [
-        { "action": "upload", "path": "a/Photo.jpg", "localPath": "a/Photo.jpg" },
-        { "action": "upload", "path": "a/photo.jpg", "localPath": "a/photo.jpg" },
+        { "action": "upload", "path": "a/Photo.jpg", "localPath": "a/Photo.jpg", "localSize": 10 },
+        { "action": "upload", "path": "a/photo.jpg", "localPath": "a/photo.jpg", "localSize": 10 },
         { "action": "delete", "path": "a/PHOTO.jpg", "remotePath": "a/PHOTO.jpg" }
       ],
       "counts": { "upload": 2, "update": 0, "keep": 0, "delete": 1 },
@@ -214,7 +267,13 @@
       "local": [{ "path": "x.jpg", "size": 10 }],
       "remote": [{ "path": "x.jpeg", "size": 10 }, { "path": "x.jpg", "size": 10 }],
       "items": [
-        { "action": "keep", "path": "x.jpg", "localPath": "x.jpg", "remotePath": "x.jpg" },
+        {
+          "action": "keep",
+          "path": "x.jpg",
+          "localPath": "x.jpg",
+          "localSize": 10,
+          "remotePath": "x.jpg"
+        },
         { "action": "delete", "path": "x.jpeg", "remotePath": "x.jpeg" }
       ],
       "counts": { "upload": 0, "update": 0, "keep": 1, "delete": 1 },
@@ -240,8 +299,14 @@
         { "path": "gone/z.mp4", "size": 99 }
       ],
       "items": [
-        { "action": "upload", "path": "new/a.png", "localPath": "new/a.png" },
-        { "action": "keep", "path": "keep.png", "localPath": "keep.png", "remotePath": "keep.png" },
+        { "action": "upload", "path": "new/a.png", "localPath": "new/a.png", "localSize": 10 },
+        {
+          "action": "keep",
+          "path": "keep.png",
+          "localPath": "keep.png",
+          "localSize": 5,
+          "remotePath": "keep.png"
+        },
         { "action": "delete", "path": "old/a.png", "remotePath": "old/a.png" },
         { "action": "delete", "path": "gone/z.mp4", "remotePath": "gone/z.mp4" }
       ],
@@ -315,11 +380,29 @@
         { "path": "r3.jpg", "size": 8 }
       ],
       "items": [
-        { "action": "upload", "path": "u1.jpg", "localPath": "u1.jpg" },
-        { "action": "keep", "path": "k1.jpg", "localPath": "k1.jpg", "remotePath": "k1.jpg" },
-        { "action": "update", "path": "d1.jpg", "localPath": "d1.jpg", "remotePath": "d1.jpg" },
-        { "action": "upload", "path": "u2.jpg", "localPath": "u2.jpg" },
-        { "action": "keep", "path": "same.jpg", "localPath": "same.jpg", "remotePath": "same.jpg" },
+        { "action": "upload", "path": "u1.jpg", "localPath": "u1.jpg", "localSize": 1 },
+        {
+          "action": "keep",
+          "path": "k1.jpg",
+          "localPath": "k1.jpg",
+          "localSize": 2,
+          "remotePath": "k1.jpg"
+        },
+        {
+          "action": "update",
+          "path": "d1.jpg",
+          "localPath": "d1.jpg",
+          "localSize": 3,
+          "remotePath": "d1.jpg"
+        },
+        { "action": "upload", "path": "u2.jpg", "localPath": "u2.jpg", "localSize": 4 },
+        {
+          "action": "keep",
+          "path": "same.jpg",
+          "localPath": "same.jpg",
+          "localSize": 5,
+          "remotePath": "same.jpg"
+        },
         { "action": "delete", "path": "r1.jpg", "remotePath": "r1.jpg" },
         { "action": "delete", "path": "r2.jpg", "remotePath": "r2.jpg" },
         { "action": "delete", "path": "r3.jpg", "remotePath": "r3.jpg" }
@@ -340,6 +423,167 @@
         { "maxChanges": 2, "omittedCount": 1, "paths": ["r1.jpg", "r2.jpg"] }
       ],
       "plannedLocalPaths": ["u1.jpg", "k1.jpg", "d1.jpg", "u2.jpg", "same.jpg"]
+    },
+    {
+      "name": "case, extension aliases and separators pair",
+      "local": [
+        { "path": "Photos/IMG_1.JPG", "size": 1 },
+        { "path": "clips/Clip.MP4", "size": 2 },
+        { "path": "a.jpeg", "size": 3 }
+      ],
+      "remote": [
+        { "path": "photos/img_1.jpg", "size": 1 },
+        { "path": "Clips\\clip.mp4", "size": 2 },
+        { "path": "a.jpg", "size": 3 }
+      ],
+      "items": [
+        {
+          "action": "keep",
+          "path": "Photos/IMG_1.JPG",
+          "localPath": "Photos/IMG_1.JPG",
+          "localSize": 1,
+          "remotePath": "photos/img_1.jpg"
+        },
+        {
+          "action": "keep",
+          "path": "clips/Clip.MP4",
+          "localPath": "clips/Clip.MP4",
+          "localSize": 2,
+          "remotePath": "Clips\\clip.mp4"
+        },
+        {
+          "action": "keep",
+          "path": "a.jpeg",
+          "localPath": "a.jpeg",
+          "localSize": 3,
+          "remotePath": "a.jpg"
+        }
+      ],
+      "counts": { "upload": 0, "update": 0, "keep": 3, "delete": 0 },
+      "hashPaths": { "all": ["Photos/IMG_1.JPG", "clips/Clip.MP4", "a.jpeg"], "remoteAware": [] },
+      "push": [
+        { "omittedCount": 0, "paths": [] },
+        { "maxChanges": 1, "omittedCount": 0, "paths": [] },
+        { "maxChanges": 2, "omittedCount": 0, "paths": [] }
+      ],
+      "prune": [
+        { "omittedCount": 0, "paths": [] },
+        { "maxChanges": 1, "omittedCount": 0, "paths": [] },
+        { "maxChanges": 2, "omittedCount": 0, "paths": [] }
+      ],
+      "plannedLocalPaths": ["Photos/IMG_1.JPG", "clips/Clip.MP4", "a.jpeg"]
+    },
+    {
+      "name": "a case twin left after its sibling paired is deleted",
+      "local": [{ "path": "x.jpg", "size": 1 }],
+      "remote": [{ "path": "x.jpg", "size": 1 }, { "path": "X.JPG", "size": 1 }],
+      "items": [
+        {
+          "action": "keep",
+          "path": "x.jpg",
+          "localPath": "x.jpg",
+          "localSize": 1,
+          "remotePath": "x.jpg"
+        },
+        { "action": "delete", "path": "X.JPG", "remotePath": "X.JPG" }
+      ],
+      "counts": { "upload": 0, "update": 0, "keep": 1, "delete": 1 },
+      "hashPaths": { "all": ["x.jpg"], "remoteAware": [] },
+      "push": [
+        { "omittedCount": 0, "paths": [] },
+        { "maxChanges": 1, "omittedCount": 0, "paths": [] },
+        { "maxChanges": 2, "omittedCount": 0, "paths": [] }
+      ],
+      "prune": [
+        { "omittedCount": 0, "paths": ["X.JPG"] },
+        { "maxChanges": 1, "omittedCount": 0, "paths": ["X.JPG"] },
+        { "maxChanges": 2, "omittedCount": 0, "paths": ["X.JPG"] }
+      ],
+      "plannedLocalPaths": ["x.jpg"]
+    },
+    {
+      "name": "an exact path wins over an alias",
+      "local": [{ "path": "p.jpg", "size": 1 }, { "path": "p.jpeg", "size": 2 }],
+      "remote": [{ "path": "p.jpeg", "size": 2 }, { "path": "p.jpg", "size": 1 }],
+      "items": [
+        {
+          "action": "keep",
+          "path": "p.jpg",
+          "localPath": "p.jpg",
+          "localSize": 1,
+          "remotePath": "p.jpg"
+        },
+        {
+          "action": "keep",
+          "path": "p.jpeg",
+          "localPath": "p.jpeg",
+          "localSize": 2,
+          "remotePath": "p.jpeg"
+        }
+      ],
+      "counts": { "upload": 0, "update": 0, "keep": 2, "delete": 0 },
+      "hashPaths": { "all": ["p.jpg", "p.jpeg"], "remoteAware": [] },
+      "push": [
+        { "omittedCount": 0, "paths": [] },
+        { "maxChanges": 1, "omittedCount": 0, "paths": [] },
+        { "maxChanges": 2, "omittedCount": 0, "paths": [] }
+      ],
+      "prune": [
+        { "omittedCount": 0, "paths": [] },
+        { "maxChanges": 1, "omittedCount": 0, "paths": [] },
+        { "maxChanges": 2, "omittedCount": 0, "paths": [] }
+      ],
+      "plannedLocalPaths": ["p.jpg", "p.jpeg"]
+    },
+    {
+      "name": "a path listed twice locally",
+      "local": [{ "path": "dup.jpg", "size": 1 }, { "path": "dup.jpg", "size": 2 }],
+      "remote": [{ "path": "dup.jpg", "size": 2 }],
+      "items": [
+        { "action": "upload", "path": "dup.jpg", "localPath": "dup.jpg", "localSize": 1 },
+        { "action": "upload", "path": "dup.jpg", "localPath": "dup.jpg", "localSize": 2 },
+        { "action": "delete", "path": "dup.jpg", "remotePath": "dup.jpg" }
+      ],
+      "counts": { "upload": 2, "update": 0, "keep": 0, "delete": 1 },
+      "hashPaths": { "all": ["dup.jpg"], "remoteAware": [] },
+      "push": [
+        { "omittedCount": 0, "paths": ["dup.jpg", "dup.jpg"] },
+        { "maxChanges": 1, "omittedCount": 1, "paths": ["dup.jpg"] },
+        { "maxChanges": 2, "omittedCount": 0, "paths": ["dup.jpg", "dup.jpg"] }
+      ],
+      "prune": [
+        { "omittedCount": 0, "paths": ["dup.jpg"] },
+        { "maxChanges": 1, "omittedCount": 0, "paths": ["dup.jpg"] },
+        { "maxChanges": 2, "omittedCount": 0, "paths": ["dup.jpg"] }
+      ],
+      "plannedLocalPaths": ["dup.jpg", "dup.jpg"]
+    },
+    {
+      "name": "a trailing slash and a leading slash",
+      "local": [{ "path": "folder/a.jpg", "size": 1 }],
+      "remote": [{ "path": "/folder/a.jpg/", "size": 1 }],
+      "items": [
+        {
+          "action": "keep",
+          "path": "folder/a.jpg",
+          "localPath": "folder/a.jpg",
+          "localSize": 1,
+          "remotePath": "/folder/a.jpg/"
+        }
+      ],
+      "counts": { "upload": 0, "update": 0, "keep": 1, "delete": 0 },
+      "hashPaths": { "all": ["folder/a.jpg"], "remoteAware": [] },
+      "push": [
+        { "omittedCount": 0, "paths": [] },
+        { "maxChanges": 1, "omittedCount": 0, "paths": [] },
+        { "maxChanges": 2, "omittedCount": 0, "paths": [] }
+      ],
+      "prune": [
+        { "omittedCount": 0, "paths": [] },
+        { "maxChanges": 1, "omittedCount": 0, "paths": [] },
+        { "maxChanges": 2, "omittedCount": 0, "paths": [] }
+      ],
+      "plannedLocalPaths": ["folder/a.jpg"]
     }
   ]
 }

@@ -1,18 +1,23 @@
-import { access, stat } from "node:fs/promises";
 import path from "node:path";
+import { UPLOAD_CONCURRENCY } from "@latch-works/lockstep-core";
 import { z } from "zod";
 import type { ConfigStore } from "./config.js";
 import { runFullWizard, runPartialPrompts } from "./interactive.js";
-import type {
-  CliArgs,
-  CliOptions,
-  Command,
-  LockstepConfig,
-  RememberedSettings,
-  ResolvedRun,
+import {
+  type CliArgs,
+  type CliOptions,
+  COMMANDS,
+  type Command,
+  DEFAULT_API_TOKEN_ENV,
+  type LockstepConfig,
+  type MergedOptions,
+  type MissingField,
+  REQUIRED_FIELDS,
+  type RememberedSettings,
+  type ResolvedRun,
 } from "./types.js";
 
-export function printHelp(): void {
+function printHelp(): void {
   console.log(`Lockstep
 
 Usage:
@@ -39,7 +44,7 @@ Notes:
     those remote entries. A delete whose file is back in the source folder is skipped.
   Ctrl+C during push or prune finalizes the sync run as cancelled; press it again to quit at once.
   API tokens are read from LOCKSTEP_API_TOKEN, or the variable named by --api-token-env.
-  --upload-concurrency bounds parallel uploads (1-8, default 3).
+  --upload-concurrency bounds parallel uploads (${UPLOAD_CONCURRENCY.min}-${UPLOAD_CONCURRENCY.max}, default ${UPLOAD_CONCURRENCY.default}).
   Flags apply to the current run only. ~/.latch-works/lockstep.json remembers the source
     and API URL you last passed or chose; its "defaults" block (hashFiles, showSkipped,
     maxChanges, uploadConcurrency) is read but never written, so edit it by hand.
@@ -54,10 +59,7 @@ export type ParseArgvResult =
   | { kind: "empty" }
   | { kind: "parsed"; options: CliArgs };
 
-const CommandSchema = z.enum(["doctor", "plan", "prune", "push", "verify"]) satisfies z.ZodType<
-  Command,
-  unknown
->;
+const CommandSchema = z.enum(COMMANDS);
 
 export function parseArgv(argv: string[]): ParseArgvResult {
   if (argv.length === 0) {
@@ -76,7 +78,7 @@ export function parseArgv(argv: string[]): ParseArgvResult {
   }
 
   const options: CliArgs = {
-    apiTokenEnv: "LOCKSTEP_API_TOKEN",
+    apiTokenEnv: DEFAULT_API_TOKEN_ENV,
     command: command.data,
     yes: false,
   };
@@ -111,8 +113,8 @@ export function parseArgv(argv: string[]): ParseArgvResult {
         options.uploadConcurrency = parseBoundedInteger(
           rest[index + 1],
           "--upload-concurrency",
-          1,
-          8,
+          UPLOAD_CONCURRENCY.min,
+          UPLOAD_CONCURRENCY.max,
         );
         index += 1;
         break;
@@ -217,35 +219,27 @@ export async function resolveOptions(
       return null;
     }
 
-    return withAbsoluteSource(await runFullWizard(config, env));
+    const wizard = await runFullWizard(config, env);
+
+    return withAbsoluteSource({ ...wizard, options: commandOptions(wizard.options) });
   }
 
   const merged = mergeWithConfigAndEnv(parsed.options, config, env);
-  const missing = getMissingFields(merged, env);
+  const missing = getMissingFields(merged);
 
   const remember: RememberedSettings = {
     apiUrl: parsed.options.apiUrl,
     source: parsed.options.source,
   };
 
-  if (missing.length === 0) {
-    return withAbsoluteSource({ options: merged, remember });
+  if (missing.length === 0 || !isInteractive) {
+    return withAbsoluteSource({ options: commandOptions(merged), remember });
   }
 
-  if (!isInteractive) {
-    const [firstMissing] = missing;
-
-    if (!firstMissing) {
-      throw new Error("Expected at least one missing field");
-    }
-
-    throwMissingFieldError(firstMissing);
-  }
-
-  const resolved = await runPartialPrompts(merged, missing, config, env);
+  const resolved = await runPartialPrompts(merged, missing);
 
   return withAbsoluteSource({
-    options: resolved,
+    options: commandOptions(resolved),
     remember: {
       apiUrl: missing.includes("apiUrl") ? resolved.apiUrl : remember.apiUrl,
       source: missing.includes("source") ? resolved.source : remember.source,
@@ -260,16 +254,20 @@ function withAbsoluteSource(run: ResolvedRun): ResolvedRun {
   return source ? { ...run, remember: { ...run.remember, source: path.resolve(source) } } : run;
 }
 
-/** Flags win over env, env over the config file, and the config file over built-in defaults. */
+/**
+ * Flags win over env, env over the config file, and the config file over built-in defaults. The
+ * only place a run reads `LOCKSTEP_*` or the token variable.
+ */
 export function mergeWithConfigAndEnv(
   args: CliArgs,
   config: LockstepConfig,
   env: NodeJS.ProcessEnv,
-): CliOptions {
+): MergedOptions {
   const defaults = config.defaults ?? {};
 
   return {
     ...args,
+    apiToken: env[args.apiTokenEnv],
     source: args.source ?? env.LOCKSTEP_SOURCE ?? config.source,
     apiUrl: args.apiUrl ?? env.LOCKSTEP_API_URL ?? config.apiUrl,
     hashFiles: args.hashFiles ?? defaults.hashFiles ?? false,
@@ -279,63 +277,39 @@ export function mergeWithConfigAndEnv(
   };
 }
 
-export type MissingField = "source" | "remoteSnapshot" | "apiUrl";
-
-export function getMissingFields(
-  options: CliOptions,
-  env: NodeJS.ProcessEnv = process.env,
-): MissingField[] {
-  const missing: MissingField[] = [];
-
-  if (options.command !== "doctor" && !options.source) {
-    missing.push("source");
-  }
-
-  if (options.command === "verify" && !options.remoteSnapshot) {
-    missing.push("remoteSnapshot");
-  }
-
-  if (
-    (options.command === "push" || options.command === "prune") &&
-    !(options.apiUrl ?? env.LOCKSTEP_API_URL)
-  ) {
-    missing.push("apiUrl");
-  }
-
-  return missing;
+export function getMissingFields(options: MergedOptions): MissingField[] {
+  return REQUIRED_FIELDS[options.command].filter((field) => !options[field]);
 }
 
-function throwMissingFieldError(field: MissingField): never {
+function missingFieldMessage(field: MissingField, command: Command): string {
   switch (field) {
     case "source":
-      throw new Error("--source is required.");
+      return "--source is required.";
     case "remoteSnapshot":
-      throw new Error("--remote-snapshot is required for verify.");
+      return `--remote-snapshot is required for ${command}.`;
     case "apiUrl":
-      throw new Error("Push requires a remote API URL. Set LOCKSTEP_API_URL or pass --api-url.");
-    default:
-      throw new Error("Missing required option.");
+      return `${command.charAt(0).toUpperCase()}${command.slice(1)} requires a remote API URL. Set LOCKSTEP_API_URL or pass --api-url.`;
+    default: {
+      const _exhaustive: never = field;
+
+      return _exhaustive;
+    }
   }
+}
+
+/** The options as their command's type, or the error for the first field it still lacks. */
+function commandOptions(options: MergedOptions): CliOptions {
+  const [missing] = getMissingFields(options);
+
+  if (missing !== undefined) {
+    throw new Error(missingFieldMessage(missing, options.command));
+  }
+
+  // SAFETY: getMissingFields found every field REQUIRED_FIELDS names for this command set, and
+  // CliOptions is derived from that same table.
+  return options as CliOptions;
 }
 
 export function isInteractiveTerminal(): boolean {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
-}
-
-export async function validateSourceDirectory(source: string): Promise<string> {
-  const resolved = path.resolve(source);
-  const sourceStat = await stat(resolved);
-
-  if (!sourceStat.isDirectory()) {
-    throw new Error(`Source is not a directory: ${resolved}`);
-  }
-
-  return resolved;
-}
-
-export async function validateSnapshotFile(snapshotPath: string): Promise<string> {
-  const resolved = path.resolve(snapshotPath);
-  await access(resolved);
-
-  return resolved;
 }

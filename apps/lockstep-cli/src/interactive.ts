@@ -1,37 +1,36 @@
+import { access, stat } from "node:fs/promises";
+import path from "node:path";
 import { confirm, input, number, select } from "@inquirer/prompts";
-import type { MissingField } from "./options.js";
-import { validateSnapshotFile, validateSourceDirectory } from "./options.js";
-import type { CliOptions, Command, LockstepConfig, ResolvedRun } from "./types.js";
+import { mergeWithConfigAndEnv } from "./options.js";
+import {
+  DEFAULT_API_TOKEN_ENV,
+  type LockstepConfig,
+  type MergedOptions,
+  type MissingField,
+  type ResolvedRun,
+  WIZARD_COMMANDS,
+  type WizardCommand,
+} from "./types.js";
 
 /** Wizard answers are the user's picks, so the command, source, and prompted URL are remembered. */
 export async function runFullWizard(
   config: LockstepConfig,
   env: NodeJS.ProcessEnv,
-): Promise<ResolvedRun> {
+): Promise<ResolvedRun<MergedOptions>> {
   console.log("Lockstep");
   console.log("Sync your local media archive with Pane View.\n");
 
-  const command = await select<Command>({
+  const command = await select<WizardCommand>({
     message: "What would you like to do?",
-    choices: [
-      { name: "Plan — scan archive and show sync plan (read-only)", value: "plan" },
-      { name: "Push — upload changes to Pane View", value: "push" },
-      { name: "Verify — compare local archive to a snapshot file", value: "verify" },
-      { name: "Doctor — check configuration and API connectivity", value: "doctor" },
-    ],
+    choices: WIZARD_COMMANDS,
     default: config.lastCommand ?? "plan",
   });
 
-  const base: CliOptions = {
-    apiTokenEnv: "LOCKSTEP_API_TOKEN",
-    command,
-    hashFiles: config.defaults?.hashFiles ?? false,
-    maxChanges: config.defaults?.maxChanges,
-    showSkipped: config.defaults?.showSkipped ?? false,
-    yes: false,
-    source: env.LOCKSTEP_SOURCE ?? config.source,
-    apiUrl: env.LOCKSTEP_API_URL ?? config.apiUrl,
-  };
+  const base = mergeWithConfigAndEnv(
+    { apiTokenEnv: DEFAULT_API_TOKEN_ENV, command, yes: false },
+    config,
+    env,
+  );
 
   if (command === "doctor") {
     if (base.source) {
@@ -79,7 +78,7 @@ export async function runFullWizard(
   }
 
   if (command === "push") {
-    await configurePushOptions(base, env);
+    await configurePushOptions(base);
   }
 
   return {
@@ -94,25 +93,21 @@ export async function runFullWizard(
 }
 
 export async function runPartialPrompts(
-  options: CliOptions,
+  options: MergedOptions,
   missing: MissingField[],
-  config: LockstepConfig,
-  env: NodeJS.ProcessEnv,
-): Promise<CliOptions> {
+): Promise<MergedOptions> {
   const current = { ...options };
 
   for (const field of missing) {
     switch (field) {
       case "source":
-        current.source = await promptSource(current.source ?? env.LOCKSTEP_SOURCE ?? config.source);
+        current.source = await promptSource(current.source);
         break;
       case "remoteSnapshot":
         current.remoteSnapshot = await promptRemoteSnapshot(current.remoteSnapshot);
         break;
       case "apiUrl":
-        current.apiUrl = await promptApiUrl(
-          current.apiUrl ?? env.LOCKSTEP_API_URL ?? config.apiUrl,
-        );
+        current.apiUrl = await promptApiUrl(current.apiUrl);
         break;
       default:
         break;
@@ -120,14 +115,12 @@ export async function runPartialPrompts(
   }
 
   if (current.command === "push" && !current.yes) {
-    await confirmPush(current, env);
+    await confirmPush(current);
     current.yes = true;
   }
 
   if (current.command === "push") {
-    const token = env[current.apiTokenEnv];
-
-    if (!token) {
+    if (!current.apiToken) {
       throw new Error(
         `Push requires ${current.apiTokenEnv}. Set it in your environment and run lockstep doctor.`,
       );
@@ -137,11 +130,11 @@ export async function runPartialPrompts(
   return current;
 }
 
-async function configurePushOptions(options: CliOptions, env: NodeJS.ProcessEnv): Promise<void> {
+async function configurePushOptions(options: MergedOptions): Promise<void> {
   options.apiUrl = await promptApiUrl(options.apiUrl);
 
   const tokenEnv = options.apiTokenEnv;
-  const tokenConfigured = Boolean(env[tokenEnv]);
+  const tokenConfigured = Boolean(options.apiToken);
   console.log(
     tokenConfigured
       ? `API token: configured via ${tokenEnv}`
@@ -168,18 +161,16 @@ async function configurePushOptions(options: CliOptions, env: NodeJS.ProcessEnv)
     options.maxChanges = undefined;
   }
 
-  await confirmPush(options, env);
+  await confirmPush(options);
   options.yes = true;
 }
 
-async function confirmPush(options: CliOptions, env: NodeJS.ProcessEnv): Promise<void> {
-  const apiUrl = options.apiUrl ?? env.LOCKSTEP_API_URL;
-
+async function confirmPush(options: MergedOptions): Promise<void> {
   const cap =
     options.maxChanges !== undefined ? ` (max ${options.maxChanges} changes)` : " (all changes)";
 
   const confirmed = await confirm({
-    message: `Push from ${options.source} to ${apiUrl}${cap}?`,
+    message: `Push from ${options.source} to ${options.apiUrl}${cap}?`,
     default: false,
   });
 
@@ -237,4 +228,17 @@ async function promptApiUrl(defaultValue?: string): Promise<string> {
       }
     },
   });
+}
+
+async function validateSourceDirectory(source: string): Promise<void> {
+  const resolved = path.resolve(source);
+  const sourceStat = await stat(resolved);
+
+  if (!sourceStat.isDirectory()) {
+    throw new Error(`Source is not a directory: ${resolved}`);
+  }
+}
+
+async function validateSnapshotFile(snapshotPath: string): Promise<void> {
+  await access(path.resolve(snapshotPath));
 }

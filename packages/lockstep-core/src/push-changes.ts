@@ -1,123 +1,39 @@
 import { stat } from "node:fs/promises";
 import type { MediaItem } from "@latch-works/media-domain";
-import { type ArchiveFileFingerprint, fingerprintsMatch } from "@latch-works/media-index";
-import { formatBytes, formatPushError, toError } from "./format.js";
+import { formatError, throwIfAborted, toError } from "./errors.js";
 import { type HashCache, loadHashCache } from "./hash-cache.js";
-import { planSync } from "./plan-sync.js";
 import {
+  plannedChanges,
+  plannedUploads,
   resolveLocalFilePath,
-  selectChangedItems,
-  selectUploadUpdateItems,
+  resolveUploadConcurrency,
 } from "./push-helpers.js";
-import {
-  createSyncRun,
-  failUnfinalizedRun,
-  finalizeSyncRun,
-  type PushRemoteApi,
-  remoteApi,
-} from "./remote-api.js";
-import type { LockstepObserver, LockstepPlan, PushChangesOptions } from "./types.js";
+import { type HashedMediaItem, hashLocalFile, pushMediaItem } from "./remote-api.js";
+import type { ArchiveFileFingerprint } from "./scan.js";
+import { SyncRun } from "./sync-run.js";
+import type { LockstepObserver, PushChangesOptions, PushStage, RunSummary } from "./types.js";
 
-const DEFAULT_UPLOAD_CONCURRENCY = 3;
-
-const MIN_UPLOAD_CONCURRENCY = 1;
-
-const MAX_UPLOAD_CONCURRENCY = 8;
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) {
-    throw signal.reason ?? new DOMException("Aborted", "AbortError");
-  }
-}
-
-/** The bounded upload queue's width (plan 036): 3 by default, an integer from 1 to 8. */
-export function resolveUploadConcurrency(value: number | undefined): number {
-  if (value === undefined) {
-    return DEFAULT_UPLOAD_CONCURRENCY;
-  }
-
-  if (
-    !Number.isInteger(value) ||
-    value < MIN_UPLOAD_CONCURRENCY ||
-    value > MAX_UPLOAD_CONCURRENCY
-  ) {
-    throw new RangeError(
-      `uploadConcurrency must be an integer between ${MIN_UPLOAD_CONCURRENCY} and ${MAX_UPLOAD_CONCURRENCY}`,
-    );
-  }
-
-  return value;
-}
-
+/** Uploads and updates the reviewed plan's changes, capped by `maxChanges`; never deletes. */
 export async function pushChanges(
   options: PushChangesOptions,
   observer?: LockstepObserver,
-  remote: PushRemoteApi = remoteApi,
-): Promise<{ failed: number; plan: LockstepPlan; pushed: number }> {
-  const { signal } = options;
+): Promise<RunSummary> {
+  const { plan, signal } = options;
   throwIfAborted(signal);
   const uploadConcurrency = resolveUploadConcurrency(options.uploadConcurrency);
-
-  const plan =
-    options.plan ??
-    (await planSync(
-      {
-        apiToken: options.apiToken,
-        apiUrl: options.apiUrl,
-        hashCacheRoot: options.hashCacheRoot,
-        hashFiles: options.hashFiles ?? true,
-        hashMode:
-          options.hashMode ?? (options.hashFiles === undefined ? "remote-aware" : undefined),
-        remoteSnapshotPath: options.remoteSnapshotPath,
-        signal,
-        sourceRoot: options.sourceRoot,
-      },
-      observer,
-    ));
-
-  throwIfAborted(signal);
-
-  const changedItems = selectChangedItems(plan.items);
-
-  const { items: itemsToPush, omittedCount } = selectUploadUpdateItems(
-    changedItems,
-    options.maxChanges,
-  );
+  const changedItems = plannedChanges(plan);
+  const { items: itemsToPush, omittedCount } = plannedUploads(plan, options.maxChanges);
 
   if (itemsToPush.length === 0) {
-    observer?.onEvent({
-      type: "complete",
-      summary: {
-        action: "push",
-        completedAt: new Date().toISOString(),
-        failed: 0,
-        message: "Nothing to push.",
-        planCounts: plan.counts,
-        pushed: 0,
-        status: "completed",
-      },
-    });
-
-    return { failed: 0, plan, pushed: 0 };
-  }
-
-  if (omittedCount > 0) {
-    observer?.onEvent({
-      type: "status",
-      message: `Pushing ${itemsToPush.length} of ${changedItems.length} changes (capped by max-changes).`,
-    });
-  } else {
-    observer?.onEvent({
-      type: "status",
-      message: `Pushing ${itemsToPush.length} upload/update change(s).`,
-    });
+    return { action: "push", applied: 0, failed: 0, skipped: 0, status: "completed" };
   }
 
   observer?.onEvent({
-    type: "items-queued",
-    action: "push",
-    total: itemsToPush.length,
-    totalBytes: itemsToPush.reduce((sum, item) => sum + (item.local?.size ?? 0), 0),
+    type: "status",
+    message:
+      omittedCount > 0
+        ? `Pushing ${itemsToPush.length} of ${changedItems.length} changes (capped by max-changes).`
+        : `Pushing ${itemsToPush.length} upload/update change(s).`,
   });
 
   const { cache: hashCache, warning: cacheWarning } = await loadHashCache({
@@ -126,344 +42,73 @@ export async function pushChanges(
   });
 
   if (cacheWarning) {
-    observer?.onEvent({ type: "status", message: `Warning: ${cacheWarning}` });
+    observer?.onEvent({ type: "warning", message: cacheWarning });
   }
 
-  observer?.onEvent({ type: "status", message: "Creating sync run..." });
+  const api = { apiToken: options.apiToken, apiUrl: options.apiUrl };
 
-  // A cancel does not abort creation (see createSyncRun); it skips all item work (the loop below
-  // checks the signal first) and finalizes this run as cancelled.
-  const syncRun = await createSyncRun({
-    apiToken: options.apiToken,
-    apiUrl: options.apiUrl,
-    body: { counts: plan.counts, sourceRoot: plan.sourceRoot },
-    postJson: remote.postJson,
+  const run = await SyncRun.open({
+    action: "push",
+    api,
+    observer,
+    plan,
     signal,
   });
 
-  let pushed = 0;
-  let failed = 0;
-  let abortError: unknown;
-  let runError: Error | undefined;
-
-  const workItems = itemsToPush.map((item, index) => ({
-    current: index + 1,
-    item,
-  }));
-
-  try {
-    await runBoundedQueue({
-      concurrency: uploadConcurrency,
-      signal,
-      tasks: workItems,
-      work: async ({ current, item }) => {
-        if (!item.local) {
-          return;
-        }
-
-        const bytes = item.local.size;
-        observer?.onEvent({
-          type: "item-start",
-          action: item.action,
-          bytes,
-          current,
-          path: item.path,
-          total: itemsToPush.length,
-        });
-
-        try {
-          const local = await resolvePushItemHash({
-            cache: hashCache,
-            current,
-            item: item.local,
-            observer,
-            remote,
-            signal,
-            sourceRoot: plan.sourceRoot,
-            total: itemsToPush.length,
-          });
-
-          await remote.pushMediaItem({
-            apiToken: options.apiToken,
-            apiUrl: options.apiUrl,
-            item: local,
-            // Keep the existing library row when only case / jpeg↔jpg spelling differs.
-            logicalPath: item.action === "update" && item.remote ? item.remote.path : local.path,
-            onStage: (stage, detail) => {
-              observer?.onEvent({
-                type: "status",
-                message: `[${current}/${itemsToPush.length}] ${stage} ${item.path}${detail ? ` (${detail})` : ""}`,
-              });
-            },
-            signal,
-            sourceRoot: plan.sourceRoot,
-            syncRunId: syncRun.syncRunId,
-          });
-          pushed += 1;
-          observer?.onEvent({
-            type: "item-success",
-            action: item.action,
-            bytes,
-            current,
-            path: item.path,
-            total: itemsToPush.length,
-          });
-        } catch (error) {
-          if (signal?.aborted) {
-            abortError = error;
-            throw error;
-          }
-
-          const failure = toError(error);
-          failed += 1;
-          observer?.onEvent({
-            type: "item-failure",
-            action: item.action,
-            bytes,
-            current,
-            error: formatPushError(failure),
-            path: item.path,
-            total: itemsToPush.length,
-          });
-        }
-      },
-    });
-  } catch (error) {
-    if (signal?.aborted) {
-      abortError = abortError ?? error;
-    } else {
-      runError = toError(error);
+  const outcome = await run.apply(itemsToPush, uploadConcurrency, async (item, report) => {
+    if (!item.local) {
+      throw new Error(`The plan has no local file for ${item.path}.`);
     }
-  }
 
-  // Decided once, after the queue: the server and the caller must agree on how the run ended.
-  const cancelled = signal?.aborted ?? false;
+    const local = await hashPushItem({
+      cache: hashCache,
+      item: item.local,
+      report,
+      signal,
+      sourceRoot: plan.sourceRoot,
+    });
 
-  const finalizeError = await finalizeSyncRun({
-    apiToken: options.apiToken,
-    apiUrl: options.apiUrl,
-    body: {
-      counts: {
-        ...plan.counts,
-        capped: itemsToPush.length,
-        failed,
-        planned: changedItems.length,
-        pushed,
-      },
-      error: cancelled
-        ? "Run cancelled by user"
-        : runError
-          ? runError.message
-          : failed > 0
-            ? `${failed} item(s) failed during push`
-            : undefined,
-      status: cancelled ? "cancelled" : runError || failed > 0 ? "failed" : "completed",
-    },
-    onRetry: (error) => {
-      observer?.onEvent({
-        type: "status",
-        message: `Warning: failed to finalize sync run, retrying: ${formatPushError(error)}`,
-      });
-    },
-    postJson: remote.postJson,
-    syncRunId: syncRun.syncRunId,
+    await pushMediaItem({
+      api,
+      item: local,
+      // Keep the existing library row when only case / jpeg↔jpg spelling differs.
+      logicalPath: item.action === "update" && item.remote ? item.remote.path : local.path,
+      onStage: report,
+      signal,
+      sourceRoot: plan.sourceRoot,
+      syncRunId: run.syncRunId,
+    });
+
+    return { kind: "applied" };
   });
 
   await hashCache.save().catch((error) => {
-    const failure = toError(error);
     observer?.onEvent({
-      type: "status",
-      message: `Warning: hash cache could not be saved: ${formatPushError(failure)}`,
+      type: "warning",
+      message: `hash cache could not be saved: ${formatError(toError(error))}`,
     });
   });
 
-  const abortReason = abortError ?? signal?.reason ?? new DOMException("Aborted", "AbortError");
-
-  // An unfinalized run outranks cancellation and fatal errors: it is the one the user must act on.
-  if (finalizeError) {
-    observer?.onEvent({
-      type: "status",
-      message: `Warning: failed to finalize sync run: ${formatPushError(finalizeError)}`,
-    });
-
-    throw failUnfinalizedRun({
-      action: "push",
-      done: `${pushed} item(s) pushed`,
-      failed,
-      finalizeError,
-      interruption: cancelled
-        ? { reason: abortReason, status: "cancelled" }
-        : runError
-          ? { error: runError, status: "failed" }
-          : undefined,
-      observer,
-      planCounts: plan.counts,
-      pushed,
-      syncRunId: syncRun.syncRunId,
-    });
-  }
-
-  if (cancelled) {
-    observer?.onEvent({
-      type: "complete",
-      summary: {
-        action: "push",
-        completedAt: new Date().toISOString(),
-        failed,
-        planCounts: plan.counts,
-        pushed,
-        status: "cancelled",
-      },
-    });
-    throw abortReason;
-  }
-
-  if (runError) {
-    throw runError;
-  }
-
-  const summary = {
-    action: "push" as const,
-    completedAt: new Date().toISOString(),
-    failed,
-    planCounts: plan.counts,
-    pushed,
-    status: failed > 0 ? ("failed" as const) : ("completed" as const),
-  };
-
-  observer?.onEvent({ type: "complete", summary });
-
-  return { failed, plan, pushed };
+  return run.finish(outcome);
 }
 
-async function runBoundedQueue<T>({
-  concurrency,
-  signal,
-  tasks,
-  work,
-}: {
-  concurrency: number;
-  signal?: AbortSignal;
-  tasks: T[];
-  work: (task: T) => Promise<void>;
-}): Promise<void> {
-  let nextIndex = 0;
-  let active = 0;
-  let settled = false;
-  let firstError: Error | undefined;
-
-  await new Promise<void>((resolve, reject) => {
-    const fail = (error: Error): void => {
-      if (!settled) {
-        settled = true;
-        reject(error);
-      }
-    };
-
-    const settleIfDone = (): void => {
-      if (settled) {
-        return;
-      }
-
-      if (active === 0 && (nextIndex >= tasks.length || signal?.aborted)) {
-        settled = true;
-
-        if (signal?.aborted) {
-          reject(firstError ?? signal.reason ?? new DOMException("Aborted", "AbortError"));
-
-          return;
-        }
-
-        resolve();
-      }
-    };
-
-    const schedule = (): void => {
-      if (settled) {
-        return;
-      }
-
-      if (signal?.aborted) {
-        settleIfDone();
-
-        return;
-      }
-
-      while (active < concurrency && nextIndex < tasks.length) {
-        if (signal?.aborted) {
-          break;
-        }
-
-        const task = tasks[nextIndex++];
-
-        if (task === undefined) {
-          break;
-        }
-
-        active += 1;
-        void work(task)
-          .catch((error) => {
-            const failure = toError(error);
-
-            if (signal?.aborted) {
-              firstError = firstError ?? failure;
-            } else if (!settled) {
-              // Unexpected non-abort failures from the worker wrapper should fail the queue.
-              // Per-item failures are handled inside `work` and should not reject.
-              firstError = firstError ?? failure;
-              fail(failure);
-            }
-          })
-          .finally(() => {
-            active -= 1;
-
-            if (settled) {
-              return;
-            }
-
-            if (signal?.aborted) {
-              settleIfDone();
-
-              return;
-            }
-
-            schedule();
-            settleIfDone();
-          });
-      }
-
-      settleIfDone();
-    };
-
-    if (tasks.length === 0) {
-      resolve();
-
-      return;
-    }
-
-    schedule();
-  });
-}
-
-async function resolvePushItemHash({
+/**
+ * The item with its content hash, from the cache when the file is unchanged since planning. A file
+ * that changed after planning, or while it is hashed, fails the item.
+ */
+async function hashPushItem({
   cache,
-  current,
   item,
-  observer,
-  remote,
+  report,
   signal,
   sourceRoot,
-  total,
 }: {
   cache: HashCache;
-  current: number;
   item: MediaItem;
-  observer?: LockstepObserver;
-  remote: PushRemoteApi;
+  report: (stage: PushStage, bytes?: { done: number; total: number }) => void;
   signal?: AbortSignal;
   sourceRoot: string;
-  total: number;
-}): Promise<MediaItem> {
+}): Promise<HashedMediaItem> {
   const filePath = resolveLocalFilePath(sourceRoot, item.path);
   const fileStat = await stat(filePath);
 
@@ -480,32 +125,13 @@ async function resolvePushItemHash({
   let sha256 = cache.get(item.path, fingerprint);
 
   if (!sha256) {
-    observer?.onEvent({
-      type: "status",
-      message: `[${current}/${total}] hashing ${item.path}`,
-    });
-    sha256 = await remote.hashLocalFile(
+    report("hashing");
+    sha256 = await hashLocalFile(
       filePath,
-      (bytesHashed, fileSize) => {
-        observer?.onEvent({
-          type: "status",
-          message: `[${current}/${total}] hashing ${item.path} (${formatBytes(bytesHashed)} / ${formatBytes(fileSize)})`,
-        });
-      },
+      fingerprint,
+      (done) => report("hashing", { done, total: fingerprint.size }),
       signal,
     );
-    const afterStat = await stat(filePath);
-
-    const afterFingerprint: ArchiveFileFingerprint = {
-      ctimeMs: afterStat.ctimeMs,
-      mtimeMs: Math.trunc(afterStat.mtimeMs),
-      size: afterStat.size,
-    };
-
-    if (!fingerprintsMatch(fingerprint, afterFingerprint)) {
-      throw new Error(`Local file changed after planning; rerun sync: ${item.path}`);
-    }
-
     cache.set(item.path, fingerprint, sha256);
   }
 

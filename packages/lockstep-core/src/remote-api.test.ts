@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createSyncRun, uploadFile } from "./remote-api.js";
+import { startFakePaneView } from "./testing.js";
 
 /** `Server.address()` widens to a pipe name or null; only a bound TCP address is usable. */
 const TcpAddressSchema = z.object({ port: z.number() });
@@ -164,46 +165,44 @@ describe("uploadFile", () => {
   });
 });
 
-type CreatePost = Parameters<typeof createSyncRun>[0]["postJson"];
-
 describe("createSyncRun", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
   it("gives up ten seconds after a cancel and says the run may be left running", async () => {
-    vi.useFakeTimers();
-    let requestAborted = false;
-
-    // A server queued behind a library lock: the create request settles only when aborted.
-    const post: CreatePost = (_apiUrl, _route, _apiToken, _body, _schema, signal) =>
-      new Promise<never>((_resolve, reject) => {
-        signal?.addEventListener("abort", () => {
-          requestAborted = true;
-          reject(new DOMException("Aborted", "AbortError"));
-        });
-      });
+    // A server queued behind a library lock: the create request is never answered.
+    const paneView = await startFakePaneView();
+    paneView.intercept((request) => (request.route === "createRun" ? "hold" : undefined));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
     const controller = new AbortController();
+    let settled = false;
 
     const result = createSyncRun({
-      apiToken: "token",
-      apiUrl: "http://127.0.0.1:3000",
+      api: { apiToken: paneView.apiToken, apiUrl: paneView.apiUrl },
       body: { counts: { delete: 0, keep: 0, update: 0, upload: 0 }, sourceRoot: "/archive" },
-      postJson: post,
       signal: controller.signal,
+    }).finally(() => {
+      settled = true;
     });
 
     const rejection = expect(result).rejects.toThrow("may be left running");
 
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(requestAborted).toBe(false);
+    try {
+      await vi.waitFor(() => expect(paneView.requests).toHaveLength(1));
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(settled).toBe(false);
 
-    controller.abort();
-    await vi.advanceTimersByTimeAsync(9_999);
-    expect(requestAborted).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
 
-    await rejection;
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+      await paneView.close();
+    }
   });
 });

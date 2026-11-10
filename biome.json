@@ -4,6 +4,17 @@
     "ignoreUnknown": true,
     "includes": [
       "**",
+      "!.agent",
+      "!.agents",
+      "!.claude",
+      "!.codex",
+      "!.continue",
+      "!.cursor",
+      "!.gemini",
+      "!.opencode",
+      "!.pi",
+      "!.roo",
+      "!.windsurf",
       "!**/node_modules",
       "!**/.pnpm-store",
       "!**/dist",
@@ -20,8 +31,9 @@
       "!docs/plans/*.html",
       "!apps/pane-view/src/components/dither-kit",
       "!apps/pane-view/dither-kit.json",
-      "!apps/gather-box",
+      "!apps/gather-box/site-htmls",
       "!tools/oxlint/anti-slop",
+      "!vendor",
       "!apps/oriel/target",
       "!apps/oriel/.libmpv",
       "!apps/oriel/.vendor",
@@ -77,7 +89,7 @@
     {
       "includes": [
         "apps/pane-view/src/features/gallery/**",
-        "apps/pane-view/src/features/comics/**"
+        "apps/pane-view/src/features/viewer/**"
       ],
       "linter": {
         "rules": {

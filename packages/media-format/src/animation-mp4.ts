@@ -6,10 +6,9 @@ const MINIMUM_FRAME_DURATION_MICROSECONDS = 10_000;
 
 /**
  * What an animation becomes: H.264 at Mediabunny's "high" quality, its transparency flattened
- * onto black, a key frame at least every 2 seconds, and the MP4's index written first. Exported
- * for Oriel's conformance vectors (plan 063), so its port keeps the same settings.
+ * onto black, a key frame at least every 2 seconds, and the MP4's index written first.
  */
-export const ANIMATION_MP4_SETTINGS = {
+const ANIMATION_MP4_SETTINGS = {
   codec: "avc",
   quality: "high",
   alpha: "discard",
@@ -39,7 +38,7 @@ export interface Mp4Encoder {
   open(canvas: OffscreenCanvas): Promise<Mp4VideoSink>;
 }
 
-export const mediabunnyMp4Encoder: Mp4Encoder = {
+const mediabunnyMp4Encoder: Mp4Encoder = {
   async open(canvas) {
     const target = new BufferTarget();
 

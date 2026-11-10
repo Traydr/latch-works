@@ -1,9 +1,7 @@
+import type { PushStage } from "@latch-works/lockstep-core";
 import { formatBytes } from "@latch-works/media-domain";
-import { z } from "zod";
 
-export { formatBytes };
-
-export function formatPercent(numerator: number, denominator: number): string {
+function formatPercent(numerator: number, denominator: number): string {
   if (denominator <= 0) {
     return "0%";
   }
@@ -19,14 +17,13 @@ export interface LineReporter {
   setStatus(message: string): void;
 }
 
-export interface CreateLineReporterOptions {
-  minIntervalMs?: number;
-  stream?: NodeJS.WritableStream;
-}
+/**
+ * The fastest a status line is redrawn. Core reports every scanned file and every chunk read, so
+ * this is the one place progress is throttled; the latest status is drawn when the interval ends.
+ */
+const STATUS_INTERVAL_MS = 100;
 
-export function createLineReporter(options: CreateLineReporterOptions = {}): LineReporter {
-  const stream = options.stream ?? process.stderr;
-  const minIntervalMs = options.minIntervalMs ?? 100;
+export function createLineReporter(stream: NodeJS.WritableStream = process.stderr): LineReporter {
   const tty = "isTTY" in stream && Boolean(stream.isTTY);
   let lastLine = "";
   let lastWrite = 0;
@@ -40,7 +37,7 @@ export function createLineReporter(options: CreateLineReporterOptions = {}): Lin
 
     const now = Date.now();
 
-    if (!force && now - lastWrite < minIntervalMs) {
+    if (!force && now - lastWrite < STATUS_INTERVAL_MS) {
       pendingLine = line;
 
       if (!flushTimer) {
@@ -54,7 +51,7 @@ export function createLineReporter(options: CreateLineReporterOptions = {}): Lin
               writeStatus(next, true);
             }
           },
-          minIntervalMs - (now - lastWrite),
+          STATUS_INTERVAL_MS - (now - lastWrite),
         );
       }
 
@@ -110,19 +107,15 @@ export function createLineReporter(options: CreateLineReporterOptions = {}): Lin
   };
 }
 
-export const PushStageSchema = z.enum(["deleting", "hashing", "registering", "uploading"]);
-
-export type PushStage = z.infer<typeof PushStageSchema>;
-
-export function formatPushStatus({
+export function formatItemStage({
+  bytes,
   current,
-  detail,
   path,
   stage,
   total,
 }: {
+  bytes?: { done: number; total: number };
   current: number;
-  detail?: string;
   path: string;
   stage: PushStage;
   total: number;
@@ -134,7 +127,7 @@ export function formatPushStatus({
     uploading: "Uploading",
   } satisfies Record<PushStage, string>;
 
-  const suffix = detail ? ` — ${detail}` : "";
+  const suffix = bytes ? ` — ${formatBytes(bytes.done)} / ${formatBytes(bytes.total)}` : "";
 
   return `[${current}/${total}] ${stageLabel[stage]} ${path}${suffix}`;
 }

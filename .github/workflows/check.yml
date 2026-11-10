@@ -1,7 +1,8 @@
 name: Check
 
-# A basic typecheck of the TypeScript workspace, after building the shared packages it needs.
-# Formatting, lints, Knip and the tests run on the owner's machine (`pnpm check:all`, `pnpm test`).
+# Typechecks the TypeScript workspace and runs the shared packages' tests, which include the
+# conformance vectors Oriel's Rust tests read. Formatting, lints, Knip and the app tests run on the
+# owner's machine (`pnpm check:all`, `pnpm test`).
 on:
   pull_request:
   push:
@@ -30,13 +31,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prod=false
 
-      # The shared packages export their types from dist/, so the apps that import them can only
-      # be typechecked after the packages are built.
-      - name: Build the shared packages
-        run: pnpm -r --filter "./packages/**" run build
-
       - name: Run Typecheck
         run: pnpm run typecheck
-        env:
-          LOCKSTEP_API_URL: ""
-          LOCKSTEP_API_TOKEN: ""
+
+      - name: Test the shared packages and their conformance vectors
+        run: pnpm -r --filter "./packages/**" test

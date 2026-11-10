@@ -1,11 +1,8 @@
 import type { BigIntStats } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { normalizePathForCompare } from "@latch-works/media-domain";
-import { z } from "zod";
+import { isMissingPathError } from "./errors.js";
 import { resolveLocalFilePath } from "./push-helpers.js";
-
-/** The fs error codes that mean nothing exists at a path. */
-export const MissingPathErrorSchema = z.object({ code: z.enum(["ENOENT", "ENOTDIR"]) });
 
 /**
  * Coarse file systems (FAT, some network shares) store folder times in steps of up to 2 s, so a
@@ -33,6 +30,16 @@ function isSameDirectoryState(listing: DirectoryListing, current: BigIntStats): 
     listing.mtimeNs === current.mtimeNs &&
     listing.ctimeNs === current.ctimeNs
   );
+}
+
+/** Whether a listing taken at `listedAtNs` may be reused while its folder keeps these times. */
+export function isListingReusable(
+  listedAtNs: bigint,
+  folder: { ctimeNs: bigint; mtimeNs: bigint },
+): boolean {
+  const lastChangeNs = folder.mtimeNs > folder.ctimeNs ? folder.mtimeNs : folder.ctimeNs;
+
+  return listedAtNs - lastChangeNs > RACY_LISTING_WINDOW_NS;
 }
 
 function normalizeName(name: string, kind: NameKind): string {
@@ -145,9 +152,7 @@ export class DirectoryAliasIndex {
       names,
     };
 
-    const lastChangeNs = current.mtimeNs > current.ctimeNs ? current.mtimeNs : current.ctimeNs;
-
-    if (listedAtNs - lastChangeNs > RACY_LISTING_WINDOW_NS) {
+    if (isListingReusable(listedAtNs, current)) {
       this.#listings.set(archiveDir, listing);
     }
 
@@ -159,7 +164,7 @@ async function readMissingAsUndefined<T>(read: () => Promise<T>): Promise<T | un
   try {
     return await read();
   } catch (error) {
-    if (MissingPathErrorSchema.safeParse(error).success) {
+    if (isMissingPathError(error)) {
       return undefined;
     }
 

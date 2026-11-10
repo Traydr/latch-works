@@ -6,14 +6,14 @@
     { "extension": "png", "contentType": "image/png" },
     { "extension": "webp", "contentType": "image/webp" },
     { "extension": "gif", "contentType": "image/gif" },
+    { "extension": "bmp", "contentType": "application/octet-stream" },
     { "extension": "avif", "contentType": "image/avif" },
     { "extension": "mp4", "contentType": "video/mp4" },
-    { "extension": "m4v", "contentType": "video/mp4" },
     { "extension": "webm", "contentType": "video/webm" },
     { "extension": "mov", "contentType": "video/quicktime" },
-    { "extension": "pdf", "contentType": "application/pdf" },
     { "extension": "mkv", "contentType": "application/octet-stream" },
-    { "extension": "bmp", "contentType": "application/octet-stream" },
+    { "extension": "m4v", "contentType": "video/mp4" },
+    { "extension": "pdf", "contentType": "application/pdf" },
     { "extension": "JPG", "contentType": "application/octet-stream" },
     { "extension": "", "contentType": "application/octet-stream" }
   ],
@@ -70,15 +70,6 @@
     { "value": 9, "resolved": null },
     { "value": 2.5, "resolved": null },
     { "value": -1, "resolved": null }
-  ],
-  "hashModes": [
-    { "resolved": "none" },
-    { "hashFiles": true, "resolved": "all" },
-    { "hashFiles": false, "resolved": "none" },
-    { "hashMode": "remote-aware", "resolved": "remote-aware" },
-    { "hashMode": "none", "hashFiles": true, "resolved": "none" },
-    { "defaultMode": "remote-aware", "resolved": "remote-aware" },
-    { "defaultMode": "all", "hashFiles": false, "resolved": "none" }
   ],
   "localPaths": [
     { "archivePath": "a.jpg", "resolved": "/archive/root/a.jpg" },

@@ -21,7 +21,7 @@ export const GallerySortModeSchema = z.enum([
 
 export type GallerySortMode = z.infer<typeof GallerySortModeSchema>;
 
-export const MediaItemSchema = z.object({
+const MediaItemSchema = z.object({
   id: z.string(),
   path: z.string(),
   parentPath: z.string(),
@@ -35,13 +35,11 @@ export const MediaItemSchema = z.object({
   height: z.number().int().positive().optional(),
   durationMs: z.number().nonnegative().optional(),
   pageCount: z.number().int().positive().optional(),
-  thumbnailUrl: z.string().optional(),
-  originalUrl: z.string().optional(),
 });
 
 export type MediaItem = z.infer<typeof MediaItemSchema>;
 
-export const FolderNodeSchema = z.object({
+const FolderNodeSchema = z.object({
   path: z.string(),
   parentPath: z.string(),
   parentId: z.uuid().nullable().optional(),

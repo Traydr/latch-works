@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "allowSyntheticDefaultImports": true,
+    "customConditions": ["source"],
     "declaration": true,
     "declarationMap": true,
     "esModuleInterop": true,

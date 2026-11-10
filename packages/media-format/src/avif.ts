@@ -12,12 +12,6 @@ export const ARCHIVE_AVIF_SPEED = 6;
  */
 export const ARCHIVE_AVIF_LOW_MEMORY_SPEED = 8;
 
-/**
- * Above this many pixels the wasm encoder cannot fit the image at any speed, so a Node consumer
- * encodes it natively with sharp instead (see {@link ARCHIVE_AVIF_SHARP_OPTIONS}).
- */
-export const ARCHIVE_AVIF_WASM_PIXEL_LIMIT = 64_000_000;
-
 /** The libavif options the wasm encoder takes; the field names match the codec's own. */
 export interface AvifEncodeOptions {
   quality: number;
@@ -49,19 +43,6 @@ export const ARCHIVE_AVIF_OPTIONS: AvifEncodeOptions = {
   tune: 0,
   bitDepth: 8,
 };
-
-/**
- * The closest sharp (libheif + aom) settings for images too large for the wasm encoder. sharp
- * takes `effort` 0–9 where libvips passes `9 - effort` to aom as its speed, so effort 3 is speed 6.
- * Its quality scale is libheif's rather than libavif's, so the files are close to, not identical
- * with, the wasm encoder's.
- */
-export const ARCHIVE_AVIF_SHARP_OPTIONS = {
-  bitdepth: 8,
-  chromaSubsampling: "4:2:0",
-  effort: 3,
-  quality: ARCHIVE_AVIF_QUALITY,
-} as const;
 
 /** The pixel buffer the encoder reads; a canvas `ImageData` supplies exactly this. */
 export interface RgbaImage {

@@ -1,24 +1,13 @@
 import { lstat, stat } from "node:fs/promises";
-import { DirectoryAliasIndex, MissingPathErrorSchema } from "./directory-alias-index.js";
-import { formatPushError, toError } from "./format.js";
-import { resolveLocalFilePath, selectChangedItems, selectDeleteItems } from "./push-helpers.js";
-import {
-  createSyncRun,
-  failUnfinalizedRun,
-  finalizeSyncRun,
-  type PruneRemoteApi,
-  remoteApi,
-} from "./remote-api.js";
-import type { LockstepObserver, LockstepPlan, PruneDeletedOptions } from "./types.js";
+import { DirectoryAliasIndex } from "./directory-alias-index.js";
+import { isMissingPathError, throwIfAborted } from "./errors.js";
+import { plannedDeletes, resolveLocalFilePath } from "./push-helpers.js";
+import { deleteRemoteItem } from "./remote-api.js";
+import { FatalRunError, SyncRun } from "./sync-run.js";
+import type { LockstepObserver, PruneDeletedOptions, RunSummary } from "./types.js";
 
 /** Why a planned delete was left alone; shown next to the path in progress output. */
 const BACK_IN_SOURCE_REASON = "the file is back in the source folder";
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) {
-    throw signal.reason ?? new DOMException("Aborted", "AbortError");
-  }
-}
 
 /**
  * A planned delete is only safe while the file is still missing locally. Anything at the path
@@ -38,7 +27,7 @@ async function isAbsentLocally(
 
     return false;
   } catch (error) {
-    if (!MissingPathErrorSchema.safeParse(error).success) {
+    if (!isMissingPathError(error)) {
       throw error;
     }
   }
@@ -55,7 +44,7 @@ interface SourceRootIdentity {
 }
 
 /** Stops the whole prune: without the reviewed source folder no absence can be trusted. */
-class SourceRootUnavailableError extends Error {
+class SourceRootUnavailableError extends FatalRunError {
   constructor(sourceRoot: string) {
     super(
       `Source folder is not available: ${sourceRoot}. Prune needs it to confirm each file is still gone.`,
@@ -98,242 +87,59 @@ async function assertSourceRootUnchanged(
 export async function pruneDeleted(
   options: PruneDeletedOptions,
   observer?: LockstepObserver,
-  remote: PruneRemoteApi = remoteApi,
-): Promise<{ failed: number; plan: LockstepPlan; pruned: number; skipped: number }> {
+): Promise<RunSummary> {
   const { plan, signal } = options;
   throwIfAborted(signal);
-
-  const changedItems = selectChangedItems(plan.items);
 
   const plannedLocalPaths = new Set(
     plan.items.filter((item) => item.action !== "delete").map((item) => item.path),
   );
 
-  const { items: itemsToPrune, omittedCount } = selectDeleteItems(changedItems, options.maxChanges);
+  const { items: itemsToPrune, omittedCount } = plannedDeletes(plan, options.maxChanges);
 
   if (itemsToPrune.length === 0) {
-    observer?.onEvent({
-      type: "complete",
-      summary: {
-        action: "prune",
-        completedAt: new Date().toISOString(),
-        failed: 0,
-        message: "Nothing to prune.",
-        planCounts: plan.counts,
-        pushed: 0,
-        status: "completed",
-      },
-    });
-
-    return { failed: 0, plan, pruned: 0, skipped: 0 };
+    return { action: "prune", applied: 0, failed: 0, skipped: 0, status: "completed" };
   }
 
   const sourceRootIdentity = await assertSourceRootAvailable(plan.sourceRoot);
   throwIfAborted(signal);
 
-  if (omittedCount > 0) {
-    observer?.onEvent({
-      type: "status",
-      message: `Pruning ${itemsToPrune.length} of ${plan.counts.delete} delete(s) (capped by max-changes).`,
-    });
-  } else {
-    observer?.onEvent({
-      type: "status",
-      message: `Applying ${itemsToPrune.length} remote delete(s).`,
-    });
-  }
-
   observer?.onEvent({
-    type: "items-queued",
-    action: "delete",
-    total: itemsToPrune.length,
-    totalBytes: 0,
+    type: "status",
+    message:
+      omittedCount > 0
+        ? `Pruning ${itemsToPrune.length} of ${plan.counts.delete} delete(s) (capped by max-changes).`
+        : `Applying ${itemsToPrune.length} remote delete(s).`,
   });
-  observer?.onEvent({ type: "status", message: "Creating sync run..." });
 
-  // A cancel does not abort creation (see createSyncRun); it skips all item work (the loop below
-  // checks the signal first) and finalizes this run as cancelled.
-  const syncRun = await createSyncRun({
-    apiToken: options.apiToken,
-    apiUrl: options.apiUrl,
-    body: { counts: plan.counts, sourceRoot: plan.sourceRoot },
-    postJson: remote.postJson,
+  const api = { apiToken: options.apiToken, apiUrl: options.apiUrl };
+
+  const run = await SyncRun.open({
+    action: "prune",
+    api,
+    observer,
+    plan,
     signal,
   });
 
   const aliasIndex = new DirectoryAliasIndex(plan.sourceRoot);
-  let pruned = 0;
-  let skipped = 0;
-  let failed = 0;
-  let abortError: unknown;
-  let runError: Error | undefined;
 
-  try {
-    for (const [index, item] of itemsToPrune.entries()) {
-      throwIfAborted(signal);
-
-      const current = index + 1;
-      observer?.onEvent({
-        type: "item-start",
-        action: "delete",
-        current,
-        path: item.path,
-        total: itemsToPrune.length,
-      });
-
-      try {
-        if (!(await isAbsentLocally(plan.sourceRoot, item.path, plannedLocalPaths, aliasIndex))) {
-          skipped += 1;
-          observer?.onEvent({
-            type: "item-skipped",
-            action: "delete",
-            current,
-            path: item.path,
-            reason: BACK_IN_SOURCE_REASON,
-            total: itemsToPrune.length,
-          });
-
-          continue;
-        }
-
-        await assertSourceRootUnchanged(plan.sourceRoot, sourceRootIdentity);
-        observer?.onEvent({
-          type: "status",
-          message: `[${current}/${itemsToPrune.length}] deleting ${item.path}`,
-        });
-        await remote.deleteRemoteItem({
-          apiToken: options.apiToken,
-          apiUrl: options.apiUrl,
-          logicalPath: item.path,
-          signal,
-          syncRunId: syncRun.syncRunId,
-        });
-        pruned += 1;
-        observer?.onEvent({
-          type: "item-success",
-          action: "delete",
-          current,
-          path: item.path,
-          total: itemsToPrune.length,
-        });
-      } catch (error) {
-        if (signal?.aborted || error instanceof SourceRootUnavailableError) {
-          throw error;
-        }
-
-        const failure = toError(error);
-        failed += 1;
-        observer?.onEvent({
-          type: "item-failure",
-          action: "delete",
-          current,
-          error: formatPushError(failure),
-          path: item.path,
-          total: itemsToPrune.length,
-        });
-      }
+  const outcome = await run.apply(itemsToPrune, 1, async (item, report) => {
+    if (!(await isAbsentLocally(plan.sourceRoot, item.path, plannedLocalPaths, aliasIndex))) {
+      return { kind: "skipped", reason: BACK_IN_SOURCE_REASON };
     }
-  } catch (error) {
-    if (signal?.aborted) {
-      abortError = error;
-    } else {
-      runError = toError(error);
-    }
-  }
 
-  // Decided once, after the loop: the server and the caller must agree on how the run ended.
-  const cancelled = signal?.aborted ?? false;
+    await assertSourceRootUnchanged(plan.sourceRoot, sourceRootIdentity);
+    report("deleting");
+    await deleteRemoteItem({
+      api,
+      logicalPath: item.path,
+      signal,
+      syncRunId: run.syncRunId,
+    });
 
-  const finalizeError = await finalizeSyncRun({
-    apiToken: options.apiToken,
-    apiUrl: options.apiUrl,
-    body: {
-      counts: {
-        ...plan.counts,
-        capped: itemsToPrune.length,
-        failed,
-        planned: changedItems.length,
-        pushed: pruned,
-      },
-      error: cancelled
-        ? "Run cancelled by user"
-        : runError
-          ? runError.message
-          : failed > 0
-            ? `${failed} delete(s) failed during prune`
-            : undefined,
-      status: cancelled ? "cancelled" : runError || failed > 0 ? "failed" : "completed",
-    },
-    onRetry: (error) => {
-      observer?.onEvent({
-        type: "status",
-        message: `Warning: failed to finalize sync run, retrying: ${formatPushError(error)}`,
-      });
-    },
-    postJson: remote.postJson,
-    syncRunId: syncRun.syncRunId,
+    return { kind: "applied" };
   });
 
-  const abortReason = abortError ?? signal?.reason ?? new DOMException("Aborted", "AbortError");
-
-  // An unfinalized run outranks cancellation and fatal errors: it is the one the user must act on.
-  if (finalizeError) {
-    observer?.onEvent({
-      type: "status",
-      message: `Warning: failed to finalize sync run: ${formatPushError(finalizeError)}`,
-    });
-
-    throw failUnfinalizedRun({
-      action: "prune",
-      done: `${pruned} delete(s) applied`,
-      failed,
-      finalizeError,
-      interruption: cancelled
-        ? { reason: abortReason, status: "cancelled" }
-        : runError
-          ? { error: runError, status: "failed" }
-          : undefined,
-      observer,
-      planCounts: plan.counts,
-      pushed: pruned,
-      skipped,
-      syncRunId: syncRun.syncRunId,
-    });
-  }
-
-  if (cancelled) {
-    observer?.onEvent({
-      type: "complete",
-      summary: {
-        action: "prune",
-        completedAt: new Date().toISOString(),
-        failed,
-        planCounts: plan.counts,
-        pushed: pruned,
-        skipped,
-        status: "cancelled",
-      },
-    });
-    throw abortReason;
-  }
-
-  if (runError) {
-    throw runError;
-  }
-
-  const summary = {
-    action: "prune" as const,
-    completedAt: new Date().toISOString(),
-    failed,
-    message:
-      skipped > 0 ? `${skipped} delete(s) skipped because ${BACK_IN_SOURCE_REASON}.` : undefined,
-    planCounts: plan.counts,
-    pushed: pruned,
-    skipped,
-    status: failed > 0 ? ("failed" as const) : ("completed" as const),
-  };
-
-  observer?.onEvent({ type: "complete", summary });
-
-  return { failed, plan, pruned, skipped };
+  return run.finish(outcome);
 }

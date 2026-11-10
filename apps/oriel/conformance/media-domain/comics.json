@@ -1,5 +1,5 @@
 {
-  "about": "Made by packages/media-domain/src/conformance.test.ts from comics.ts; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test. Non-ASCII characters are escaped.",
+  "about": "Frozen Rust fixture: only Oriel View groups and sorts comics this way (Pane View does it in SQL), so no TypeScript makes this file any more (it was made from media-domain's comics.ts, since deleted). Change it together with apps/oriel/crates/core-domain. Non-ASCII characters are escaped.",
   "generatedWith": { "node": "24.18.0", "icu": "78.3", "unicode": "17.0" },
   "cases": [
     {

@@ -2,7 +2,7 @@
 
 > Scan a local media archive, plan sync changes, and push originals to Pane View.
 
-Lockstep is the **local → remote bridge** in Latch Works. It walks a source directory, detects media files using shared [`@latch-works/media-index`](../../packages/media-index) logic, compares against a remote snapshot, and uploads changed originals through the Pane View sync API.
+Lockstep is the **local → remote bridge** in Latch Works. It walks a source directory, detects media files with [`@latch-works/lockstep-core`](../../packages/lockstep-core), compares against a remote snapshot, and uploads changed originals through the Pane View sync API.
 
 `plan` and `verify` are **read-only**. `push` uploads and updates remote files; it never applies deletes. `prune` plans once, prints the deletes, and after confirmation (`--yes` for scripts, or type `prune` at an interactive prompt) deletes exactly the remote entries that plan listed; it never plans a second time, and it skips any delete whose file is back in the source folder. `push` always hashes during scan; use `--hash` with `plan` or `verify` for content-accurate comparisons. Capped pushes warn when delete actions are delayed by `--max-changes`, and each run is finalized through `/api/sync/runs/{id}/complete`.
 
@@ -23,7 +23,7 @@ Run with no arguments from a TTY terminal for an **interactive wizard** that pro
 From the **repo root**:
 
 ```powershell
-pnpm start:lockstep
+pnpm --filter @latch-works/lockstep start
 ```
 
 Read-only plan against the live Pane View snapshot (same URL and token resolution as `push`):
@@ -112,7 +112,7 @@ pnpm --filter @latch-works/lockstep start verify --source "T:\cloud-desktop\medi
 ```
 
 A snapshot file is either a JSON array of `{ "path", "size", "sha256"? }` entries or a saved
-`GET /api/sync/snapshot` response (`{ "entries": [...], "status": "database" }`), so you can save
+`GET /api/sync/snapshot` response (`{ "entries": [...] }`), so you can save
 one straight from Pane View:
 
 ```powershell
@@ -136,8 +136,8 @@ Entry point: `src/cli.ts` (run via `tsx` in dev, compiled to `dist/cli.js` for t
 
 ## Dependencies
 
-- [`@latch-works/media-domain`](../../packages/media-domain) — media type detection and path normalization
-- [`@latch-works/media-index`](../../packages/media-index) — `scanArchive`, `createSyncPlan`
+- [`@latch-works/lockstep-core`](../../packages/lockstep-core) — scan, plan, push, prune and doctor
+- [`@latch-works/media-domain`](../../packages/media-domain) — byte formatting and the `.latch-works` folder name
 
 ## Related docs
 

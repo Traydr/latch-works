@@ -13,7 +13,10 @@
     ".roo/**",
     ".windsurf/**",
     ".railway/**",
+    // Code that is not ours (anti-slop, vendor, dither-kit) is also skipped in biome.json's
+    // files.includes and knip.json's ignoreIssues; the three tools cannot share one list.
     "tools/oxlint/anti-slop/**",
+    "vendor/**",
     "**/node_modules/**",
     "**/.pnpm-store/**",
     "**/dist/**",
@@ -25,7 +28,16 @@
     "apps/showcase/chrome/**",
     "apps/pane-view/src/components/dither-kit/**"
   ],
-  "jsPlugins": [{ "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" }],
+  "jsPlugins": [
+    {
+      "name": "anti-slop",
+      "specifier": "./tools/oxlint/anti-slop/index.ts"
+    },
+    {
+      "name": "latch-works",
+      "specifier": "./tools/oxlint/latch-works/index.ts"
+    }
+  ],
   "rules": {
     "oxc/no-accumulating-spread": "error",
     "anti-slop/no-array-filter-map": "error",
@@ -46,5 +58,19 @@
     "anti-slop/no-widen-then-assert": "error",
     "anti-slop/require-readable-spacing": "error",
     "anti-slop/require-safety-comment-for-type-assertion": "error"
-  }
+  },
+  "overrides": [
+    {
+      "files": ["apps/pane-view/src/features/**"],
+      "rules": {
+        "latch-works/no-static-imports": [
+          "error",
+          {
+            "patterns": ["^(@/|(\\.\\./)+)server/"],
+            "message": "Features run in the browser too: load server modules with import() inside a server function."
+          }
+        ]
+      }
+    }
+  ]
 }

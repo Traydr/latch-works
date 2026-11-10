@@ -1,9 +1,3 @@
-export type { AudioCodec as MediaAudioCodec, VideoCodec as MediaVideoCodec } from "mediabunny";
+export { createArchiveAvifEncoder, MediaEncodeError } from "./avif.js";
 
-export * from "./avif.js";
-
-export * from "./file-names.js";
-
-export * from "./still-policy.js";
-
-export * from "./video-policy.js";
+export { getExpectedArchiveTarget, planArchiveMedia } from "./still-policy.js";

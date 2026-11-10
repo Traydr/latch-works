@@ -4,19 +4,12 @@
   "ignoreIssues": {
     "apps/pane-view/src/components/dither-kit/**": ["exports", "types", "files"],
     "apps/pane-view/src/components/ui/**": ["exports", "types"],
-    "apps/pane-view/src/components/ui/select.tsx": ["files"],
-    "apps/gather-box/**": ["exports", "types", "files"],
-    "apps/lockstep-cli/src/**": ["exports"],
-    "apps/showcase/src/**": ["exports", "types"],
-    "packages/media-domain/src/gather-box-sidecar.ts": ["exports", "types"],
-    "packages/shutter-protocol/src/**": ["exports", "types"],
-    "packages/shutter-client/src/**": ["exports", "types"],
-    "tools/oxlint/anti-slop/**": ["exports", "types", "files"]
+    "tools/oxlint/anti-slop/**": ["exports", "types", "files"],
+    "vendor/**": ["exports", "types"]
   },
   "workspaces": {
     ".": {
-      "entry": [".railway/railway.ts", "scripts/*.ts"],
-      "ignoreDependencies": ["lodash", "vitest"]
+      "entry": ["scripts/*.ts"]
     },
     "apps/pane-view": {
       "entry": ["drizzle.config.ts", "src/routes/**/*.{ts,tsx}", "src/server/db/schema.ts"],
@@ -25,42 +18,49 @@
     "apps/gather-box": {
       "entry": [
         "src/background/index.ts",
-        "src/content/page-shortcuts.ts",
+        "src/content/page-shortcuts-entry.ts",
         "src/content/collector-entry.ts",
         "src/sidepanel/index.ts",
         "src/options/index.ts",
         "src/offscreen/index.ts",
-        "src/gather/avif-encoder.worker.ts",
+        "src/shared/media/avif-encoder.worker.ts",
+        "src/content/collectors/*.ts",
         "src/**/*.test.ts"
       ]
     },
     "apps/lockstep-cli": {
-      "entry": ["src/**/*.test.ts"]
+      "entry": ["src/**/*.test.ts"],
+      "includeEntryExports": true
     },
     "apps/oriel": {
       "entry": ["scripts/**/*.ts"],
       "ignoreBinaries": ["ffmpeg"]
     },
     "apps/showcase": {
-      "entry": ["src/pages/**/*.{astro,ts,tsx}", "scripts/*.mjs"]
+      "entry": ["src/pages/**/*.{astro,ts,tsx}", "scripts/*.mjs"],
+      "ignoreBinaries": ["screencapture", "swiftc"]
     },
     "packages/media-domain": {
-      "entry": ["src/**/*.test.ts"]
-    },
-    "packages/media-index": {
-      "entry": ["src/**/*.test.ts"]
+      "entry": ["src/**/*.test.ts"],
+      "includeEntryExports": true
     },
     "packages/media-format": {
-      "entry": ["src/**/*.test.ts"]
+      "entry": ["src/**/*.test.ts"],
+      "includeEntryExports": true
     },
     "packages/lockstep-core": {
-      "entry": ["src/**/*.test.ts"]
-    },
-    "packages/shutter-client": {
-      "entry": ["src/**/*.test.ts"]
+      "entry": ["src/**/*.test.ts"],
+      "includeEntryExports": true
     },
     "e2e": {
       "entry": ["scripts/*.ts", "tests/**/*.setup.ts", "tests/**/*.spec.ts"]
+    },
+    "packages/sync-protocol": {
+      "entry": ["src/**/*.test.ts"],
+      "includeEntryExports": true
+    },
+    "tools/conformance": {
+      "includeEntryExports": true
     }
   }
 }

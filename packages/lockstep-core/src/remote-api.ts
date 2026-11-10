@@ -3,103 +3,35 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { pipeline, Readable, Transform } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
+import { getBaseName, getExtension, type MediaItem } from "@latch-works/media-domain";
 import {
-  getBaseName,
-  getExtension,
-  type MediaItem,
-  MediaTypeSchema,
-} from "@latch-works/media-domain";
-import { hashFileContents } from "@latch-works/media-index";
+  ArchiveMediaTypeSchema,
+  type CompleteObjectRequest,
+  type CompleteSyncRunRequest,
+  type CreateSyncRunRequest,
+  completeSyncRunRoute,
+  contentTypeForExtension,
+  type DeleteObjectRequest,
+  SYNC_ROUTES,
+  SyncRunSchema,
+  UploadTargetSchema,
+  type UploadUrlRequest,
+} from "@latch-works/sync-protocol";
 import { z } from "zod";
-import { formatBytes, formatPushError, toError } from "./format.js";
+import { toError } from "./errors.js";
 import { resolveLocalFilePath } from "./push-helpers.js";
-import type { LockstepObserver, LockstepPlanCounts } from "./types.js";
+import { type ArchiveFileFingerprint, hashFileContents } from "./scan.js";
+import type { LockstepPlan, PaneViewApi, PushStage } from "./types.js";
 
-type PushStage = "deleting" | "hashing" | "registering" | "uploading";
-
-/*
- * The bodies this client posts and the answers it reads, as zod schemas: the request types below
- * are inferred from them, and Oriel generates its Rust client's types from the same schemas
- * (`api-schema.test.ts` writes them to apps/oriel/conformance/lockstep-core/api-schema.json).
- */
-
-/** A plan's counts, which a sync run records. */
-export const LockstepPlanCountsSchema = z.object({
-  delete: z.number(),
-  keep: z.number(),
-  update: z.number(),
-  upload: z.number(),
-});
-
-export const CreateSyncRunRequestSchema = z.object({
-  counts: LockstepPlanCountsSchema,
-  sourceRoot: z.string(),
-});
-
-type CreateSyncRunRequest = z.infer<typeof CreateSyncRunRequestSchema>;
-
-export const SyncRunOutcomeCountsSchema = LockstepPlanCountsSchema.extend({
-  capped: z.number(),
-  failed: z.number(),
-  planned: z.number(),
-  pushed: z.number(),
-});
-
-export const CompleteSyncRunRequestSchema = z.object({
-  counts: SyncRunOutcomeCountsSchema,
-  error: z.string().optional(),
-  status: z.enum(["cancelled", "completed", "failed"]),
-});
-
-type CompleteSyncRunRequest = z.infer<typeof CompleteSyncRunRequestSchema>;
-
-export const UploadUrlRequestSchema = z.object({
-  contentType: z.string(),
-  filename: z.string(),
-  sha256: z.string(),
-  size: z.number(),
-});
-
-type UploadUrlRequest = z.infer<typeof UploadUrlRequestSchema>;
-
-export const CompleteObjectRequestSchema = z.object({
-  contentType: z.string(),
-  extension: z.string(),
-  filename: z.string(),
-  logicalPath: z.string(),
-  mediaType: MediaTypeSchema,
-  mtimeMs: z.number(),
-  objectKey: z.string(),
-  sha256: z.string(),
-  size: z.number(),
-  syncRunId: z.string(),
-});
-
-type CompleteObjectRequest = z.infer<typeof CompleteObjectRequestSchema>;
-
-export const DeleteObjectRequestSchema = z.object({
-  action: z.literal("delete"),
-  logicalPath: z.string(),
-  syncRunId: z.string(),
-});
-
-type DeleteObjectRequest = z.infer<typeof DeleteObjectRequestSchema>;
-
-/** Every body this client posts to the Pane View sync API. */
-export type SyncRequestBody =
+/** Every body a client posts to the Pane View sync API. */
+type SyncRequestBody =
   | CompleteObjectRequest
   | CompleteSyncRunRequest
   | CreateSyncRunRequest
   | DeleteObjectRequest
   | UploadUrlRequest;
 
-export const SyncRunSchema = z.object({ syncRunId: z.string() });
-
-export const UploadTargetSchema = z.object({
-  headers: z.record(z.string(), z.string()).optional(),
-  objectKey: z.string(),
-  uploadUrl: z.string().nullable(),
-});
+export type HashedMediaItem = MediaItem & { sha256: string };
 
 /** Routes whose acknowledgement body is never read; only the HTTP status matters. */
 const AcknowledgementSchema = z.unknown();
@@ -110,9 +42,8 @@ interface StreamingRequestInit extends RequestInit {
 }
 
 async function postJson<TSchema extends z.ZodType>(
-  apiUrl: string,
+  { apiToken, apiUrl }: PaneViewApi,
   route: string,
-  apiToken: string,
   body: SyncRequestBody,
   schema: TSchema,
   signal?: AbortSignal,
@@ -134,140 +65,144 @@ async function postJson<TSchema extends z.ZodType>(
   return schema.parse(await response.json());
 }
 
-async function hashLocalFile(
+/**
+ * Hashes a local file that should still match `expected`, the fingerprint it was planned with;
+ * throws when the file changes while it is read.
+ */
+export async function hashLocalFile(
   filePath: string,
-  onProgress?: (bytesHashed: number, fileSize: number) => void,
+  expected: ArchiveFileFingerprint,
+  onProgress?: (bytesHashed: number) => void,
   signal?: AbortSignal,
 ): Promise<string> {
-  const fileStat = await stat(filePath);
-  let lastReport = 0;
-
-  const sha256 = await hashFileContents({
-    expected: {
-      ctimeMs: fileStat.ctimeMs,
-      mtimeMs: fileStat.mtimeMs,
-      size: fileStat.size,
-    },
+  return hashFileContents({
+    expected,
     filePath,
-    onProgress: (bytesHashed) => {
-      const now = Date.now();
-
-      if (now - lastReport >= 100) {
-        lastReport = now;
-        onProgress?.(bytesHashed, fileStat.size);
-      }
-    },
+    onProgress,
     operations: { createReadStream, stat },
     signal,
   });
-
-  onProgress?.(fileStat.size, fileStat.size);
-
-  return sha256;
 }
 
-async function pushMediaItem({
-  apiToken,
-  apiUrl,
+export function uploadUrlBody(item: HashedMediaItem, logicalPath: string): UploadUrlRequest {
+  const filename = getBaseName(logicalPath);
+
+  return {
+    contentType: contentTypeForExtension(getExtension(filename)),
+    filename,
+    sha256: item.sha256,
+    size: item.size,
+  };
+}
+
+export function completeObjectBody({
   item,
-  /**
-   * Library path to register. For updates, pass the existing remote path when it only
-   * differs by case/extension alias so upsert hits the same row instead of inserting a twin.
-   */
-  logicalPath = item.path,
+  logicalPath,
+  objectKey,
+  syncRunId,
+}: {
+  item: HashedMediaItem;
+  logicalPath: string;
+  objectKey: string;
+  syncRunId: string;
+}): CompleteObjectRequest {
+  const { contentType, filename, sha256, size } = uploadUrlBody(item, logicalPath);
+  const mediaType = ArchiveMediaTypeSchema.safeParse(item.mediaType);
+
+  if (!mediaType.success) {
+    throw new Error("unsupported media type");
+  }
+
+  return {
+    contentType,
+    extension: getExtension(filename),
+    filename,
+    logicalPath,
+    mediaType: mediaType.data,
+    mtimeMs: item.mtimeMs,
+    objectKey,
+    sha256,
+    size,
+    syncRunId,
+  };
+}
+
+export function createSyncRunBody(plan: LockstepPlan): CreateSyncRunRequest {
+  return { counts: plan.counts, sourceRoot: plan.sourceRoot };
+}
+
+/**
+ * Uploads an item and registers it at `logicalPath`. For an update that is the existing remote
+ * path when it differs only by case or the jpeg↔jpg alias, so the upsert hits the same library row
+ * instead of inserting a twin.
+ */
+export async function pushMediaItem({
+  api,
+  item,
+  logicalPath,
   onStage,
   signal,
   sourceRoot,
   syncRunId,
 }: {
-  apiToken: string;
-  apiUrl: string;
-  item: MediaItem;
-  logicalPath?: string;
-  onStage: (stage: PushStage, detail?: string) => void;
+  api: PaneViewApi;
+  item: HashedMediaItem;
+  logicalPath: string;
+  onStage: (stage: PushStage, bytes?: { done: number; total: number }) => void;
   signal?: AbortSignal;
   sourceRoot: string;
   syncRunId: string;
 }): Promise<void> {
-  const filePath = resolveLocalFilePath(sourceRoot, item.path);
-  const registrationName = getBaseName(logicalPath);
-  const registrationExtension = getExtension(registrationName);
-  const contentType = contentTypeForExtension(registrationExtension);
-  const preHashStat = await stat(filePath);
+  const request = uploadUrlBody(item, logicalPath);
 
-  const sha256 =
-    item.sha256 ??
-    (await hashLocalFile(
-      filePath,
-      (bytesHashed, fileSize) => {
-        onStage("hashing", `${formatBytes(bytesHashed)} / ${formatBytes(fileSize)}`);
-      },
-      signal,
-    ));
+  onStage("registering");
 
-  onStage("registering", "requesting upload URL");
+  const target = await postJson(api, SYNC_ROUTES.uploadUrl, request, UploadTargetSchema, signal);
 
-  const uploadTarget = await postJson(
-    apiUrl,
-    "/api/sync/upload-url",
-    apiToken,
-    {
-      contentType,
-      filename: registrationName,
-      sha256,
-      size: preHashStat.size,
-    },
-    UploadTargetSchema,
+  await uploadFile({
+    contentType: request.contentType,
+    expectedSha256: item.sha256,
+    expectedSize: item.size,
+    filePath: resolveLocalFilePath(sourceRoot, item.path),
+    headers: target.headers ?? {},
+    onProgress: (done, total) => onStage("uploading", { done, total }),
     signal,
-  );
+    uploadUrl: target.uploadUrl,
+  });
 
-  if (uploadTarget.uploadUrl) {
-    await uploadFile({
-      contentType,
-      expectedSha256: sha256,
-      expectedSize: preHashStat.size,
-      filePath,
-      headers: uploadTarget.headers ?? {},
-      onProgress: (bytesUploaded, total) => {
-        onStage("uploading", `${formatBytes(bytesUploaded)} / ${formatBytes(total)}`);
-      },
-      signal,
-      uploadUrl: uploadTarget.uploadUrl,
-    });
-  } else {
-    onStage("uploading", "skipped (storage not configured)");
-  }
-
-  const postUploadStat = await stat(filePath);
-
-  if (postUploadStat.size !== preHashStat.size || postUploadStat.mtimeMs !== preHashStat.mtimeMs) {
-    throw new Error("File changed during sync; retry this item.");
-  }
-
-  onStage("registering", "recording ingest");
+  onStage("registering");
   await postJson(
-    apiUrl,
-    "/api/sync/complete-object",
-    apiToken,
-    {
-      contentType,
-      extension: registrationExtension,
-      filename: registrationName,
-      logicalPath,
-      mediaType: item.mediaType,
-      mtimeMs: item.mtimeMs,
-      objectKey: uploadTarget.objectKey,
-      sha256,
-      size: preHashStat.size,
-      syncRunId,
-    },
+    api,
+    SYNC_ROUTES.completeObject,
+    completeObjectBody({ item, logicalPath, objectKey: target.objectKey, syncRunId }),
     AcknowledgementSchema,
     signal,
   );
 }
 
-/** How long run creation may still take once the caller cancels; it cannot be aborted outright. */
-const CREATE_SYNC_RUN_CANCEL_GRACE_MS = 10_000;
+/**
+ * How long run creation may still take once the caller cancels; it cannot be aborted outright,
+ * since only the id it returns lets the run be finalized.
+ */
+export const CREATE_SYNC_RUN_CANCEL_GRACE_MS = 10_000;
+
+/** Waits between finalization attempts; the server accepts an exact replay of the same outcome. */
+export const FINALIZE_RETRY_DELAYS_MS = [250, 1000];
+
+/**
+ * How long one finalize attempt may take. A finalize is a single row update, so a slower answer
+ * counts as a failed attempt and is retried.
+ */
+export const FINALIZE_ATTEMPT_TIMEOUT_MS = 5_000;
+
+/**
+ * How long a cancelled run may take to clean up: run creation's cancel grace, then every finalize
+ * attempt and the waits between them.
+ */
+export const CANCELLED_RUN_CLEANUP_MS =
+  CREATE_SYNC_RUN_CANCEL_GRACE_MS +
+  FINALIZE_RETRY_DELAYS_MS.reduce((total, wait) => total + wait, 0) +
+  (FINALIZE_RETRY_DELAYS_MS.length + 1) * FINALIZE_ATTEMPT_TIMEOUT_MS;
 
 /**
  * Starts a sync run. The caller's abort signal does not abort the request: once it is sent the
@@ -276,16 +211,12 @@ const CREATE_SYNC_RUN_CANCEL_GRACE_MS = 10_000;
  * a bounded grace period to return the id, so the caller can finalize the run as cancelled.
  */
 export async function createSyncRun({
-  apiToken,
-  apiUrl,
+  api,
   body,
-  postJson: post,
   signal,
 }: {
-  apiToken: string;
-  apiUrl: string;
+  api: PaneViewApi;
   body: CreateSyncRunRequest;
-  postJson: typeof postJson;
   signal?: AbortSignal;
 }): Promise<z.output<typeof SyncRunSchema>> {
   const deadline = new AbortController();
@@ -302,7 +233,7 @@ export async function createSyncRun({
   }
 
   try {
-    return await post(apiUrl, "/api/sync/runs", apiToken, body, SyncRunSchema, deadline.signal);
+    return await postJson(api, SYNC_ROUTES.runs, body, SyncRunSchema, deadline.signal);
   } catch (error) {
     if (deadline.signal.aborted) {
       throw new Error(
@@ -319,44 +250,39 @@ export async function createSyncRun({
   }
 }
 
-/** Waits between finalization attempts; the server accepts an exact replay of the same outcome. */
-const FINALIZE_RETRY_DELAYS_MS = [250, 1000];
-
 /**
  * Records a sync run's outcome, retrying a few times so a brief outage does not leave the run
- * marked running. No abort signal: a cancelled run still has to be finalized. Returns the last
- * error when every attempt failed.
+ * marked running. No abort signal: a cancelled run still has to be finalized. Each attempt is
+ * bounded, so the whole call fits `CANCELLED_RUN_CLEANUP_MS`. Returns the last error when every
+ * attempt failed.
  */
 export async function finalizeSyncRun({
-  apiToken,
-  apiUrl,
+  api,
   body,
   onRetry,
-  postJson: post,
   syncRunId,
 }: {
-  apiToken: string;
-  apiUrl: string;
+  api: PaneViewApi;
   body: CompleteSyncRunRequest;
   onRetry?: (error: Error) => void;
-  postJson: typeof postJson;
   syncRunId: string;
 }): Promise<Error | undefined> {
   let lastError: Error | undefined;
 
   for (const retryDelay of [...FINALIZE_RETRY_DELAYS_MS, undefined]) {
+    const timeout = AbortSignal.timeout(FINALIZE_ATTEMPT_TIMEOUT_MS);
+
     try {
-      await post(
-        apiUrl,
-        `/api/sync/runs/${syncRunId}/complete`,
-        apiToken,
-        body,
-        AcknowledgementSchema,
-      );
+      await postJson(api, completeSyncRunRoute(syncRunId), body, AcknowledgementSchema, timeout);
 
       return undefined;
     } catch (error) {
-      lastError = toError(error);
+      lastError = timeout.aborted
+        ? new Error(
+            `Pane View did not answer within ${FINALIZE_ATTEMPT_TIMEOUT_MS / 1000} s while finalizing the sync run.`,
+            { cause: error },
+          )
+        : toError(error);
 
       if (retryDelay === undefined) {
         break;
@@ -370,135 +296,21 @@ export async function finalizeSyncRun({
   return lastError;
 }
 
-/** The status a sync run was meant to be recorded with when finalization failed. */
-export type SyncRunOutcomeStatus = CompleteSyncRunRequest["status"];
-
-/**
- * Every finalization attempt failed, so Pane View still shows the run as running and blocks
- * library maintenance until it is cancelled on the management page. Thrown by push and prune in
- * place of whatever else ended the run: `cause` is the cancellation reason or fatal error when
- * there was one, and the finalization error otherwise. `intendedStatus` says which.
- */
-export class UnfinalizedSyncRunError extends Error {
-  readonly action: "prune" | "push";
-  readonly finalizeError: Error;
-  readonly intendedStatus: SyncRunOutcomeStatus;
-  readonly syncRunId: string;
-
-  constructor({
-    action,
-    cause,
-    finalizeError,
-    intendedStatus,
-    message,
-    syncRunId,
-  }: {
-    action: "prune" | "push";
-    cause: unknown;
-    finalizeError: Error;
-    intendedStatus: SyncRunOutcomeStatus;
-    message: string;
-    syncRunId: string;
-  }) {
-    super(message, { cause });
-    this.name = "UnfinalizedSyncRunError";
-    this.action = action;
-    this.finalizeError = finalizeError;
-    this.intendedStatus = intendedStatus;
-    this.syncRunId = syncRunId;
-  }
-}
-
-/**
- * The server still has the run marked running. Reports the run as failed, naming it so it can be
- * cancelled in Pane View's management page, and returns the error to throw. `interruption` is
- * what ended the run early, if anything: a cancellation or a fatal error.
- */
-export function failUnfinalizedRun({
-  action,
-  done,
-  failed,
-  finalizeError,
-  interruption,
-  observer,
-  planCounts,
-  pushed,
-  skipped,
-  syncRunId,
-}: {
-  action: "prune" | "push";
-  done: string;
-  failed: number;
-  finalizeError: Error;
-  interruption?: { error: Error; status: "failed" } | { reason: unknown; status: "cancelled" };
-  observer?: LockstepObserver;
-  planCounts: LockstepPlanCounts;
-  pushed: number;
-  skipped?: number;
-  syncRunId: string;
-}): UnfinalizedSyncRunError {
-  const outcome =
-    interruption?.status === "cancelled"
-      ? `Run cancelled after ${done}`
-      : interruption?.status === "failed"
-        ? `${interruption.error.message} Stopped after ${done}`
-        : done;
-
-  const message =
-    `${outcome}, but sync run ${syncRunId} could not be finalized: ${formatPushError(finalizeError)}. ` +
-    "Pane View shows it as running until it is cancelled on the management page.";
-
-  observer?.onEvent({
-    type: "complete",
-    summary: {
-      action,
-      completedAt: new Date().toISOString(),
-      failed,
-      message,
-      planCounts,
-      pushed,
-      skipped,
-      status: "failed",
-    },
-  });
-
-  return new UnfinalizedSyncRunError({
-    action,
-    cause:
-      interruption?.status === "cancelled"
-        ? interruption.reason
-        : interruption?.status === "failed"
-          ? interruption.error
-          : finalizeError,
-    finalizeError,
-    intendedStatus: interruption?.status ?? (failed > 0 ? "failed" : "completed"),
-    message,
-    syncRunId,
-  });
-}
-
-async function deleteRemoteItem({
-  apiToken,
-  apiUrl,
+export async function deleteRemoteItem({
+  api,
   logicalPath,
   signal,
   syncRunId,
 }: {
-  apiToken: string;
-  apiUrl: string;
+  api: PaneViewApi;
   logicalPath: string;
   signal?: AbortSignal;
   syncRunId: string;
 }): Promise<void> {
   await postJson(
-    apiUrl,
-    "/api/sync/complete-object",
-    apiToken,
-    {
-      action: "delete",
-      logicalPath,
-      syncRunId,
-    },
+    api,
+    SYNC_ROUTES.completeObject,
+    { action: "delete", logicalPath, syncRunId },
     AcknowledgementSchema,
     signal,
   );
@@ -531,7 +343,6 @@ export async function uploadFile({
 
   const total = fileStat.size;
   let bytesUploaded = 0;
-  let lastReport = 0;
   const digest = createHash("sha256");
   const source = createReadStream(filePath);
 
@@ -539,13 +350,7 @@ export async function uploadFile({
     transform(chunk, _encoding, callback) {
       bytesUploaded += chunk.length;
       digest.update(chunk);
-      const now = Date.now();
-
-      if (onProgress && now - lastReport >= 100) {
-        lastReport = now;
-        onProgress(bytesUploaded, total);
-      }
-
+      onProgress?.(bytesUploaded, total);
       callback(null, chunk);
     },
   });
@@ -619,51 +424,3 @@ export async function uploadFile({
     destroyStreams();
   }
 }
-
-/** The content type an upload declares for a registration extension; Pane View signs it. */
-export function contentTypeForExtension(extension: string): string {
-  switch (extension) {
-    case "jpg":
-    case "jpeg":
-      return "image/jpeg";
-    case "png":
-      return "image/png";
-    case "webp":
-      return "image/webp";
-    case "gif":
-      return "image/gif";
-    case "avif":
-      return "image/avif";
-    case "mp4":
-    case "m4v":
-      return "video/mp4";
-    case "webm":
-      return "video/webm";
-    case "mov":
-      return "video/quicktime";
-    case "pdf":
-      return "application/pdf";
-    default:
-      return "application/octet-stream";
-  }
-}
-
-/** Remote calls `pushChanges` makes, injectable so tests can drive a faithful fake. */
-export interface PushRemoteApi {
-  hashLocalFile: typeof hashLocalFile;
-  postJson: typeof postJson;
-  pushMediaItem: typeof pushMediaItem;
-}
-
-/** Remote calls `pruneDeleted` makes, injectable so tests can drive a faithful fake. */
-export interface PruneRemoteApi {
-  deleteRemoteItem: typeof deleteRemoteItem;
-  postJson: typeof postJson;
-}
-
-export const remoteApi = {
-  deleteRemoteItem,
-  hashLocalFile,
-  postJson,
-  pushMediaItem,
-} satisfies PruneRemoteApi & PushRemoteApi;

@@ -5,10 +5,12 @@
   "type": "module",
   "exports": {
     ".": {
+      "source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
     "./animation-mp4": {
+      "source": "./src/animation-mp4.ts",
       "types": "./dist/animation-mp4.d.ts",
       "default": "./dist/animation-mp4.js"
     }
@@ -23,6 +25,7 @@
     "mediabunny": "1.61.4"
   },
   "devDependencies": {
+    "@latch-works/conformance": "workspace:*",
     "typescript": "^7.0.2",
     "vitest": "^5.0.4"
   }

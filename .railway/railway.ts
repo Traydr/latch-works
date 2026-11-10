@@ -14,7 +14,12 @@ const europeWest4 = "europe-west4-drams3a";
 
 const workspaceConfigWatchPatterns = ["/package.json", "/pnpm-lock.yaml", "/pnpm-workspace.yaml"];
 
-const mediaPackageWatchPatterns = ["/packages/media-domain/**", "/packages/media-storage/**"];
+/** The workspace packages Pane View depends on (its package.json), so a change to one redeploys it. */
+const workspacePackageWatchPatterns = [
+  "/packages/media-domain/**",
+  "/packages/sync-protocol/**",
+  "/vendor/**",
+];
 
 export default defineRailway(() => {
   const latchWorks = github("Traydr/latch-works");
@@ -40,12 +45,13 @@ export default defineRailway(() => {
   const PaneView = service("Pane-View", {
     source: latchWorks,
     build: {
-      buildCommand: "pnpm --filter @latch-works/pane-view... build",
+      // The server bundle inlines the workspace packages from source, so none is built first.
+      buildCommand: "pnpm --filter @latch-works/pane-view build",
       buildEnvironment: "V3",
       builder: "RAILPACK",
       watchPatterns: [
         "/apps/pane-view/**",
-        ...mediaPackageWatchPatterns,
+        ...workspacePackageWatchPatterns,
         ...workspaceConfigWatchPatterns,
       ],
     },

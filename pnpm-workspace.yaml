@@ -1,6 +1,8 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "vendor/*"
+  - "tools/conformance"
   - "e2e"
 minimumReleaseAge: 10080
 trustPolicy: no-downgrade

@@ -206,9 +206,6 @@ importers:
       knip:
         specifier: ^6.41.0
         version: 6.41.0
-      lodash:
-        specifier: 4.18.1
-        version: 4.18.1
       oxlint:
         specifier: 1.88.0
         version: 1.88.0
@@ -221,9 +218,6 @@ importers:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
-      vitest:
-        specifier: ^5.0.4
-        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/gather-box:
     dependencies:
@@ -242,7 +236,7 @@ importers:
     devDependencies:
       '@types/chrome':
         specifier: latest
-        version: 0.3.6
+        version: 0.3.7
       jsdom:
         specifier: ^30.1.2
         version: 30.1.2(@noble/hashes@2.4.0)
@@ -254,7 +248,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/lockstep-cli:
     dependencies:
@@ -279,12 +273,18 @@ importers:
         version: 7.0.2
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/oriel: {}
 
   apps/pane-view:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1151.0
+        version: 3.1151.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: ^3.1151.0
+        version: 3.1151.0
       '@better-auth/drizzle-adapter':
         specifier: ^1.7.15
         version: 1.7.15(@better-auth/core@1.7.15(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.4(zod@4.6.7))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.4))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.4(@electric-sql/pglite@0.5.14)(kysely@0.29.6)(pg@8.23.1)(postgres@4.0.0))
@@ -294,15 +294,15 @@ importers:
       '@latch-works/media-domain':
         specifier: workspace:*
         version: link:../../packages/media-domain
-      '@latch-works/media-storage':
+      '@latch-works/sync-protocol':
         specifier: workspace:*
-        version: link:../../packages/media-storage
+        version: link:../../packages/sync-protocol
       '@shutter/client':
         specifier: workspace:*
-        version: link:../../packages/shutter-client
+        version: link:../../vendor/shutter-client
       '@shutter/protocol':
         specifier: workspace:*
-        version: link:../../packages/shutter-protocol
+        version: link:../../vendor/shutter-protocol
       '@t3-oss/env-core':
         specifier: ^0.13.11
         version: 0.13.11(typescript@7.0.2)(zod@4.6.7)
@@ -379,6 +379,9 @@ importers:
       '@electric-sql/pglite-icu-full':
         specifier: ^0.1.0
         version: 0.1.0
+      '@latch-works/conformance':
+        specifier: workspace:*
+        version: link:../../tools/conformance
       '@tailwindcss/postcss':
         specifier: ^4.3.3
         version: 4.3.3
@@ -494,6 +497,9 @@ importers:
       '@latch-works/media-domain':
         specifier: workspace:*
         version: link:../packages/media-domain
+      '@latch-works/sync-protocol':
+        specifier: workspace:*
+        version: link:../packages/sync-protocol
       '@playwright/test':
         specifier: ^1.64.0
         version: 1.64.0
@@ -522,19 +528,22 @@ importers:
       '@latch-works/media-domain':
         specifier: workspace:*
         version: link:../media-domain
-      '@latch-works/media-index':
+      '@latch-works/sync-protocol':
         specifier: workspace:*
-        version: link:../media-index
+        version: link:../sync-protocol
       zod:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@latch-works/conformance':
+        specifier: workspace:*
+        version: link:../../tools/conformance
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/media-domain:
     dependencies:
@@ -542,12 +551,15 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@latch-works/conformance':
+        specifier: workspace:*
+        version: link:../../tools/conformance
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/media-format:
     dependencies:
@@ -555,40 +567,49 @@ importers:
         specifier: 1.61.4
         version: 1.61.4
     devDependencies:
+      '@latch-works/conformance':
+        specifier: workspace:*
+        version: link:../../tools/conformance
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
-  packages/media-index:
+  packages/sync-protocol:
     dependencies:
       '@latch-works/media-domain':
         specifier: workspace:*
         version: link:../media-domain
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@latch-works/conformance':
+        specifier: workspace:*
+        version: link:../../tools/conformance
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^5.0.4
+        version: 5.0.5(@types/node@26.6.5)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  tools/conformance:
+    dependencies:
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.5(@types/node@26.6.5)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
-  packages/media-storage:
-    dependencies:
-      '@aws-sdk/client-s3':
-        specifier: ^3.1151.0
-        version: 3.1151.0
-      '@aws-sdk/s3-request-presigner':
-        specifier: ^3.1151.0
-        version: 3.1151.0
-    devDependencies:
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-
-  packages/shutter-client:
+  vendor/shutter-client:
     dependencies:
       '@shutter/protocol':
         specifier: workspace:*
@@ -602,9 +623,9 @@ importers:
         version: 7.0.2
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.5(@types/node@26.6.5)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
-  packages/shutter-protocol:
+  vendor/shutter-protocol:
     dependencies:
       zod:
         specifier: ^4.6.7
@@ -3846,8 +3867,8 @@ packages:
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
 
-  '@types/chrome@0.3.6':
-    resolution: {integrity: sha512-NXCrCBefCHCKMVbkaxfBQqyP766Wg85S2FQhixCCxq7AtjJwoEaja2y5NSqCzpihIi9mPqhaF5RuybTnrdYD2Q==}
+  '@types/chrome@0.3.7':
+    resolution: {integrity: sha512-jWZgbHqWbTL1a5+PoyN0OJutNyejWgyZ5MdcvKo6iJE1TNRtXR3FxsC4WzNl52yZWPidfWC8NV/VUNZf+OFKcA==}
 
   '@types/d3-path@3.1.1':
     resolution: {integrity: sha512-VMZBYyQvbGmWyWVea0EHs/BwLgxc+MKi1zLDCONksozI4YJMcTt8ZEuIR4Sb1MMTE8MMW49v0IwI5+b7RmfWlg==}
@@ -5071,9 +5092,6 @@ packages:
   lightningcss@1.33.0:
     resolution: {integrity: sha512-WkUDrojuJs0xkgGf2udWxa3yGBRxPtxUkB79i6aCZLRgc7PM8fZe9TosfPDcvEpQZbuFASnHYmRLBLUbmLOIIA==}
     engines: {node: '>= 12.0.0'}
-
-  lodash@4.18.1:
-    resolution: {integrity: sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==}
 
   lru-cache@11.5.3:
     resolution: {integrity: sha512-U4N8FgzmWxc8k1VH8Kr6lQg18U7Fjvby6wXHVRX/ZZ7IwWbRMgrRbP0Wrb5q5NVinryp4SQampHKdvtecItxUg==}
@@ -9164,7 +9182,7 @@ snapshots:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
 
-  '@types/chrome@0.3.6':
+  '@types/chrome@0.3.7':
     dependencies:
       '@types/har-format': 1.2.16
 
@@ -9297,15 +9315,6 @@ snapshots:
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
-
-  '@vitest/mocker@5.0.4(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
-    dependencies:
-      '@jridgewell/trace-mapping': 0.3.31
-      '@vitest/spy': 5.0.4
-      estree-walker: 3.0.3
-      magic-string: 1.4.3
-    optionalDependencies:
-      vite: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
 
   '@vitest/mocker@5.0.4(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
@@ -10105,7 +10114,7 @@ snapshots:
       parse5: 8.0.1
       saxes: 6.0.0
       tough-cookie: 6.0.2
-      undici: 8.11.2
+      undici: 8.12.3
       w3c-xmlserializer: 6.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -10291,8 +10300,6 @@ snapshots:
       lightningcss-linux-x64-musl: 1.33.0
       lightningcss-win32-arm64-msvc: 1.33.0
       lightningcss-win32-x64-msvc: 1.33.0
-
-  lodash@4.18.1: {}
 
   lru-cache@11.5.3: {}
 
@@ -11275,28 +11282,6 @@ snapshots:
     optionalDependencies:
       vite: 8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
 
-  vitest@5.0.4(@types/node@26.6.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
-    dependencies:
-      '@types/chai': 5.2.3
-      '@vitest/mocker': 5.0.4(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
-      chai: 6.3.0
-      es-module-lexer: 2.3.2
-      expect-type: 1.4.0
-      magic-string: 1.4.3
-      obug: 3.0.0
-      picomatch: 4.0.7
-      std-env: 4.3.0
-      tinybench: 6.2.2
-      tinyexec: 1.3.1
-      tinyglobby: 0.2.17
-      vite: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
-      why-is-node-running: 3.2.1
-    optionalDependencies:
-      '@types/node': 26.6.5
-      jsdom: 30.1.1(@noble/hashes@2.4.0)
-    transitivePeerDependencies:
-      - msw
-
   vitest@5.0.4(@types/node@26.6.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
       '@types/chai': 5.2.3
@@ -11319,10 +11304,10 @@ snapshots:
     transitivePeerDependencies:
       - msw
 
-  vitest@5.0.4(@types/node@26.6.5)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
+  vitest@5.0.4(@types/node@26.6.5)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
       '@types/chai': 5.2.3
-      '@vitest/mocker': 5.0.4(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      '@vitest/mocker': 5.0.4(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       chai: 6.3.0
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
@@ -11333,7 +11318,7 @@ snapshots:
       tinybench: 6.2.2
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
-      vite: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      vite: 8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       why-is-node-running: 3.2.1
     optionalDependencies:
       '@types/node': 26.6.5

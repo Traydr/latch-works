@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type ConfigStore, createConfigStore } from "./config.js";
-import { getMissingFields, type MissingField, parseArgv, resolveOptions } from "./options.js";
-import type { CliOptions } from "./types.js";
+import { getMissingFields, parseArgv, resolveOptions } from "./options.js";
+import type { CliOptions, MergedOptions, MissingField } from "./types.js";
 
 describe("config persistence", () => {
   let tempDir: string;
@@ -134,7 +134,7 @@ describe("parseArgv value flags", () => {
 });
 
 describe("getMissingFields", () => {
-  const base: CliOptions = {
+  const base: MergedOptions = {
     apiTokenEnv: "LOCKSTEP_API_TOKEN",
     command: "plan",
     hashFiles: false,
@@ -166,17 +166,14 @@ describe("getMissingFields", () => {
     ).toEqual(["apiUrl"]);
   });
 
-  it("does not require push confirmation for scripted push", () => {
+  it("asks for nothing more for push once the source and API URL are set", () => {
     expect(
-      getMissingFields(
-        {
-          ...base,
-          command: "push",
-          source: "D:\\media",
-          apiUrl: "http://localhost:3000",
-        },
-        {},
-      ),
+      getMissingFields({
+        ...base,
+        command: "push",
+        source: "D:\\media",
+        apiUrl: "http://localhost:3000",
+      }),
     ).toEqual([]);
   });
 });

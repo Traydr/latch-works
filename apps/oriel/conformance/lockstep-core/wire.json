@@ -1,0 +1,313 @@
+{
+  "about": "Written by packages/lockstep-core/src/conformance.test.ts; ORIEL_UPDATE_VECTORS=1 rewrites it.",
+  "constants": {
+    "createRunCancelGraceMs": 10000,
+    "finalizeAttemptTimeoutMs": 5000,
+    "finalizeRetryDelaysMs": [250, 1000],
+    "maxUploadBytes": 5368709120,
+    "routes": {
+      "completeObject": "/api/sync/complete-object",
+      "runs": "/api/sync/runs",
+      "snapshot": "/api/sync/snapshot",
+      "uploadUrl": "/api/sync/upload-url",
+      "completeRun": "/api/sync/runs/{syncRunId}/complete"
+    }
+  },
+  "registrations": [
+    {
+      "name": "an upload registers at its own path",
+      "item": {
+        "path": "a.jpg",
+        "size": 1234,
+        "mtimeMs": 1700000000000,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "logicalPath": "a.jpg",
+      "uploadUrl": {
+        "contentType": "image/jpeg",
+        "filename": "a.jpg",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234
+      },
+      "completeObject": {
+        "contentType": "image/jpeg",
+        "extension": "jpg",
+        "filename": "a.jpg",
+        "logicalPath": "a.jpg",
+        "mediaType": "image",
+        "mtimeMs": 1700000000000,
+        "objectKey": "originals/sha256/aa/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234,
+        "syncRunId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "name": "an update registers at the remote spelling",
+      "item": {
+        "path": "Photos/IMG_1.JPEG",
+        "size": 1234,
+        "mtimeMs": 1700000000000,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "logicalPath": "photos/img_1.jpg",
+      "uploadUrl": {
+        "contentType": "image/jpeg",
+        "filename": "img_1.jpg",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234
+      },
+      "completeObject": {
+        "contentType": "image/jpeg",
+        "extension": "jpg",
+        "filename": "img_1.jpg",
+        "logicalPath": "photos/img_1.jpg",
+        "mediaType": "image",
+        "mtimeMs": 1700000000000,
+        "objectKey": "originals/sha256/aa/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234,
+        "syncRunId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "name": "a PDF",
+      "item": {
+        "path": "docs/Manual.pdf",
+        "size": 1234,
+        "mtimeMs": 1700000000000,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "logicalPath": "docs/Manual.pdf",
+      "uploadUrl": {
+        "contentType": "application/pdf",
+        "filename": "Manual.pdf",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234
+      },
+      "completeObject": {
+        "contentType": "application/pdf",
+        "extension": "pdf",
+        "filename": "Manual.pdf",
+        "logicalPath": "docs/Manual.pdf",
+        "mediaType": "pdf",
+        "mtimeMs": 1700000000000,
+        "objectKey": "originals/sha256/aa/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234,
+        "syncRunId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "name": "an MKV uploads as bytes",
+      "item": {
+        "path": "clips/take.mkv",
+        "size": 1234,
+        "mtimeMs": 1700000000000,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "logicalPath": "clips/take.mkv",
+      "uploadUrl": {
+        "contentType": "application/octet-stream",
+        "filename": "take.mkv",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234
+      },
+      "completeObject": {
+        "contentType": "application/octet-stream",
+        "extension": "mkv",
+        "filename": "take.mkv",
+        "logicalPath": "clips/take.mkv",
+        "mediaType": "video",
+        "mtimeMs": 1700000000000,
+        "objectKey": "originals/sha256/aa/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mkv",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234,
+        "syncRunId": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "name": "a Unicode path",
+      "item": {
+        "path": "Caf\u00e9/r\u00e9sum\u00e9.webp",
+        "size": 1234,
+        "mtimeMs": 1700000000000,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "logicalPath": "Caf\u00e9/r\u00e9sum\u00e9.webp",
+      "uploadUrl": {
+        "contentType": "image/webp",
+        "filename": "r\u00e9sum\u00e9.webp",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234
+      },
+      "completeObject": {
+        "contentType": "image/webp",
+        "extension": "webp",
+        "filename": "r\u00e9sum\u00e9.webp",
+        "logicalPath": "Caf\u00e9/r\u00e9sum\u00e9.webp",
+        "mediaType": "image",
+        "mtimeMs": 1700000000000,
+        "objectKey": "originals/sha256/aa/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webp",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234,
+        "syncRunId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  ],
+  "delete": {
+    "action": "delete",
+    "logicalPath": "gone.jpg",
+    "syncRunId": "00000000-0000-4000-8000-000000000001"
+  },
+  "createRun": {
+    "counts": { "upload": 1, "update": 1, "keep": 1, "delete": 1 },
+    "sourceRoot": "/Volumes/Archive"
+  },
+  "finalize": [
+    {
+      "name": "a push that applied everything",
+      "action": "push",
+      "outcome": { "applied": 2, "capped": 2, "failed": 0, "skipped": 0 },
+      "body": {
+        "counts": {
+          "upload": 1,
+          "update": 1,
+          "keep": 1,
+          "delete": 1,
+          "capped": 2,
+          "failed": 0,
+          "planned": 3,
+          "pushed": 2
+        },
+        "status": "completed"
+      }
+    },
+    {
+      "name": "a push with failed items",
+      "action": "push",
+      "outcome": { "applied": 1, "capped": 2, "failed": 1, "skipped": 0 },
+      "body": {
+        "counts": {
+          "upload": 1,
+          "update": 1,
+          "keep": 1,
+          "delete": 1,
+          "capped": 2,
+          "failed": 1,
+          "planned": 3,
+          "pushed": 1
+        },
+        "error": "1 item(s) failed during push",
+        "status": "failed"
+      }
+    },
+    {
+      "name": "a cancelled push",
+      "action": "push",
+      "outcome": {
+        "applied": 1,
+        "capped": 2,
+        "failed": 0,
+        "skipped": 0,
+        "interruption": "cancelled"
+      },
+      "body": {
+        "counts": {
+          "upload": 1,
+          "update": 1,
+          "keep": 1,
+          "delete": 1,
+          "capped": 2,
+          "failed": 0,
+          "planned": 3,
+          "pushed": 1
+        },
+        "error": "Run cancelled by user",
+        "status": "cancelled"
+      }
+    },
+    {
+      "name": "a prune with a failed delete",
+      "action": "prune",
+      "outcome": { "applied": 0, "capped": 1, "failed": 1, "skipped": 0 },
+      "body": {
+        "counts": {
+          "upload": 1,
+          "update": 1,
+          "keep": 1,
+          "delete": 1,
+          "capped": 1,
+          "failed": 1,
+          "planned": 3,
+          "pushed": 0
+        },
+        "error": "1 delete(s) failed during prune",
+        "status": "failed"
+      }
+    },
+    {
+      "name": "a prune stopped by an error",
+      "action": "prune",
+      "outcome": { "applied": 0, "capped": 1, "failed": 0, "skipped": 0, "interruption": "failed" },
+      "body": {
+        "counts": {
+          "upload": 1,
+          "update": 1,
+          "keep": 1,
+          "delete": 1,
+          "capped": 1,
+          "failed": 0,
+          "planned": 3,
+          "pushed": 0
+        },
+        "error": "Source folder is not available: /Volumes/Archive.",
+        "status": "failed"
+      }
+    }
+  ],
+  "snapshots": [
+    {
+      "name": "entries with and without hashes",
+      "body": "{\"entries\":[{\"path\":\"a.jpg\",\"size\":1,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},{\"path\":\"b.png\",\"size\":2}]}",
+      "entries": [
+        {
+          "path": "a.jpg",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 1
+        },
+        { "path": "b.png", "size": 2 }
+      ]
+    },
+    {
+      "name": "extra fields are ignored",
+      "body": "{\"entries\":[{\"path\":\"a.jpg\",\"size\":1,\"mediaType\":\"image\"}],\"status\":\"ok\"}",
+      "entries": [{ "path": "a.jpg", "size": 1 }]
+    },
+    {
+      "name": "a null or numeric hash is dropped",
+      "body": "{\"entries\":[{\"path\":\"a.jpg\",\"size\":1,\"sha256\":null},{\"path\":\"b.jpg\",\"size\":2,\"sha256\":5}]}",
+      "entries": [{ "path": "a.jpg", "size": 1 }, { "path": "b.jpg", "size": 2 }]
+    },
+    {
+      "name": "no entries array",
+      "body": "{\"status\":\"ok\"}",
+      "error": "Remote sync snapshot response must include an entries array."
+    },
+    {
+      "name": "entries that are not an array",
+      "body": "{\"entries\":{}}",
+      "error": "Remote sync snapshot response must include an entries array."
+    },
+    {
+      "name": "an entry without a size",
+      "body": "{\"entries\":[{\"path\":\"a.jpg\"}]}",
+      "error": "Remote snapshot entries must include path and size."
+    },
+    {
+      "name": "an entry that is not an object",
+      "body": "{\"entries\":[\"a.jpg\"]}",
+      "error": "Remote snapshot entries must include path and size."
+    }
+  ]
+}

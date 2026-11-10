@@ -1,9 +1,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { UPLOAD_CONCURRENCY } from "@latch-works/lockstep-core";
 import { LATCH_WORKS_DIRECTORY_NAME } from "@latch-works/media-domain";
 import { z } from "zod";
-import type { LockstepConfig, LockstepConfigDefaults, RememberedSettings } from "./types.js";
+import {
+  type LockstepConfig,
+  type LockstepConfigDefaults,
+  type RememberedSettings,
+  WIZARD_COMMANDS,
+} from "./types.js";
 
 const CONFIG_FILE_NAME = "lockstep.json";
 
@@ -26,14 +32,23 @@ const LockstepConfigDefaultsSchema = z.object({
   hashFiles: z.boolean().optional().catch(undefined),
   maxChanges: z.number().int().optional().catch(undefined),
   showSkipped: z.boolean().optional().catch(undefined),
-  uploadConcurrency: z.number().int().min(1).max(8).optional().catch(undefined),
+  uploadConcurrency: z
+    .number()
+    .int()
+    .min(UPLOAD_CONCURRENCY.min)
+    .max(UPLOAD_CONCURRENCY.max)
+    .optional()
+    .catch(undefined),
 }) satisfies z.ZodType<LockstepConfigDefaults, unknown>;
 
 const LockstepConfigSchema = z
   .object({
     apiUrl: z.string().min(1).optional().catch(undefined),
     defaults: LockstepConfigDefaultsSchema.optional().catch(undefined),
-    lastCommand: z.enum(["doctor", "plan", "push", "verify"]).optional().catch(undefined),
+    lastCommand: z
+      .enum(WIZARD_COMMANDS.map((command) => command.value))
+      .optional()
+      .catch(undefined),
     source: z.string().min(1).optional().catch(undefined),
   })
   .catch(() => ({})) satisfies z.ZodType<LockstepConfig, unknown>;

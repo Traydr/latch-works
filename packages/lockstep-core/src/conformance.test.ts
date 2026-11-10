@@ -1,7 +1,8 @@
 /*
  * Conformance vectors for lockstep-core. Oriel's Rust port (apps/oriel/crates/core-sync)
- * must produce the same, so a plan, a hash cache, a scan and the doctor's checks cannot drift
- * between the Lockstep CLI and Oriel's Sync (plan 063, "Keeping two implementations honest").
+ * must produce the same, so a plan, a hash cache, a scan, prune's safety check, the doctor's
+ * checks and the requests cannot drift between the Lockstep CLI and Oriel's Sync (plan 063,
+ * "Keeping two implementations honest").
  *
  * This suite checks that the TypeScript still makes the committed vectors in
  * apps/oriel/conformance/lockstep-core, and `cargo test -p oriel-core-sync` checks the Rust
@@ -9,75 +10,70 @@
  *
  *   ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/lockstep-core test
  */
-import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join, sep } from "node:path";
+import { committedVectors, expectCommitted } from "@latch-works/conformance";
 import {
   detectMediaType,
   getBaseName,
   getExtension,
   getParentPath,
+  ImageExtensions,
   type MediaItem,
+  PdfExtensions,
+  VideoExtensions,
 } from "@latch-works/media-domain";
 import {
-  type ArchiveFileFingerprint,
-  createSyncPlan,
-  type DirectoryEntry,
-  fingerprintsMatch,
-  type RemoteEntrySnapshot,
-  scanArchive,
-} from "@latch-works/media-index";
+  CompleteObjectRequestSchema,
+  CompleteSyncRunRequestSchema,
+  CreateSyncRunRequestSchema,
+  completeSyncRunRoute,
+  contentTypeForExtension,
+  DeleteObjectRequestSchema,
+  MAX_SYNC_UPLOAD_BYTES,
+  originalObjectKey,
+  type RemoteEntry,
+  SYNC_ROUTES,
+  UploadUrlRequestSchema,
+} from "@latch-works/sync-protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { isListingReusable } from "./directory-alias-index.js";
 import { doctor } from "./doctor.js";
 import { HashCache, hashCachePath, loadHashCache } from "./hash-cache.js";
 import { selectPlanningHashPaths } from "./plan-sync.js";
-import { resolveUploadConcurrency } from "./push-changes.js";
+import { pruneDeleted } from "./prune-deleted.js";
 import {
-  resolveHashMode,
+  plannedDeletes,
+  plannedUploads,
   resolveLocalFilePath,
-  selectChangedItems,
-  selectDeleteItems,
-  selectUploadUpdateItems,
+  resolveUploadConcurrency,
 } from "./push-helpers.js";
-import { contentTypeForExtension } from "./remote-api.js";
-import type { HashMode } from "./types.js";
+import {
+  CREATE_SYNC_RUN_CANCEL_GRACE_MS,
+  completeObjectBody,
+  createSyncRunBody,
+  FINALIZE_ATTEMPT_TIMEOUT_MS,
+  FINALIZE_RETRY_DELAYS_MS,
+  uploadUrlBody,
+} from "./remote-api.js";
+import { parseSnapshotResponse } from "./remote-snapshot.js";
+import {
+  type ArchiveFileFingerprint,
+  escapesRoot,
+  fingerprintsMatch,
+  type ScanArchiveResult,
+  scanArchive,
+} from "./scan.js";
+import { createSyncPlan } from "./sync-plan.js";
+import { outcomeBody, type RunAction, type RunOutcome } from "./sync-run.js";
+import { type FakePaneView, startFakePaneView } from "./testing.js";
+import type { LockstepPlan, LockstepRunEvent } from "./types.js";
 
-const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
-
-const vectorDirectory = fileURLToPath(
-  new URL("../../../apps/oriel/conformance/lockstep-core/", import.meta.url),
-);
-
-const updating = process.env.ORIEL_UPDATE_VECTORS === "1";
-
-/* Non-ASCII written as escapes, so the files survive any editor's normalization. */
-function writeVectors(file: string, json: string) {
-  const ascii = json.replace(
-    /[\u007f-￿]/g,
-    (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`,
-  );
-
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, `${ascii}\n`);
-  execFileSync("pnpm", ["exec", "biome", "format", "--write", file], {
-    cwd: repositoryRoot,
-    stdio: "inherit",
-  });
-}
-
-/* Rewrites the file first when updating, then parses what is committed. */
-function committedVectors<T>(fileName: string, schema: z.ZodType<T>, vectors: T): T {
-  const file = join(vectorDirectory, fileName);
-
-  if (updating) {
-    writeVectors(file, JSON.stringify(vectors));
-  }
-
-  return schema.parse(JSON.parse(readFileSync(file, "utf8")));
+function vectorFile(name: string) {
+  return { name, set: "lockstep-core" };
 }
 
 const ABOUT =
@@ -124,6 +120,7 @@ const PlanItemSchema = z.object({
   action: z.enum(["delete", "keep", "update", "upload"]),
   path: z.string(),
   localPath: z.string().optional(),
+  localSize: z.number().optional(),
   remotePath: z.string().optional(),
 });
 
@@ -155,6 +152,7 @@ const PlanVectorsSchema = z.object({ about: z.string(), cases: z.array(PlanCaseS
 type PlanCase = z.infer<typeof PlanCaseSchema>;
 
 const PLAN_INPUTS: Array<Pick<PlanCase, "local" | "name" | "remote">> = [
+  { name: "nothing on either side", local: [], remote: [] },
   {
     name: "a first push uploads everything",
     local: [
@@ -257,6 +255,51 @@ const PLAN_INPUTS: Array<Pick<PlanCase, "local" | "name" | "remote">> = [
       { path: "r3.jpg", size: 8 },
     ],
   },
+  {
+    name: "case, extension aliases and separators pair",
+    local: [
+      { path: "Photos/IMG_1.JPG", size: 1 },
+      { path: "clips/Clip.MP4", size: 2 },
+      { path: "a.jpeg", size: 3 },
+    ],
+    remote: [
+      { path: "photos/img_1.jpg", size: 1 },
+      { path: "Clips\\clip.mp4", size: 2 },
+      { path: "a.jpg", size: 3 },
+    ],
+  },
+  {
+    name: "a case twin left after its sibling paired is deleted",
+    local: [{ path: "x.jpg", size: 1 }],
+    remote: [
+      { path: "x.jpg", size: 1 },
+      { path: "X.JPG", size: 1 },
+    ],
+  },
+  {
+    name: "an exact path wins over an alias",
+    local: [
+      { path: "p.jpg", size: 1 },
+      { path: "p.jpeg", size: 2 },
+    ],
+    remote: [
+      { path: "p.jpeg", size: 2 },
+      { path: "p.jpg", size: 1 },
+    ],
+  },
+  {
+    name: "a path listed twice locally",
+    local: [
+      { path: "dup.jpg", size: 1 },
+      { path: "dup.jpg", size: 2 },
+    ],
+    remote: [{ path: "dup.jpg", size: 2 }],
+  },
+  {
+    name: "a trailing slash and a leading slash",
+    local: [{ path: "folder/a.jpg", size: 1 }],
+    remote: [{ path: "/folder/a.jpg/", size: 1 }],
+  },
 ];
 
 function selection(
@@ -271,9 +314,8 @@ function selection(
 
 function makePlanCase({ local, name, remote }: Pick<PlanCase, "local" | "name" | "remote">) {
   const localItems = local.map((entry) => mediaItem(entry.path, entry.size, entry.sha256));
-  const remoteEntries: RemoteEntrySnapshot[] = remote;
+  const remoteEntries: RemoteEntry[] = remote;
   const plan = createSyncPlan(localItems, remoteEntries);
-  const changed = selectChangedItems(plan.items);
 
   return {
     name,
@@ -283,6 +325,7 @@ function makePlanCase({ local, name, remote }: Pick<PlanCase, "local" | "name" |
       action: item.action,
       path: item.path,
       localPath: item.local?.path,
+      localSize: item.local?.size,
       remotePath: item.remote?.path,
     })),
     counts: plan.counts,
@@ -290,8 +333,8 @@ function makePlanCase({ local, name, remote }: Pick<PlanCase, "local" | "name" |
       all: [...selectPlanningHashPaths("all", localItems, remoteEntries)],
       remoteAware: [...selectPlanningHashPaths("remote-aware", localItems, remoteEntries)],
     },
-    push: selection((maxChanges) => selectUploadUpdateItems(changed, maxChanges)),
-    prune: selection((maxChanges) => selectDeleteItems(changed, maxChanges)),
+    push: selection((maxChanges) => plannedUploads(plan, maxChanges)),
+    prune: selection((maxChanges) => plannedDeletes(plan, maxChanges)),
     plannedLocalPaths: plan.items
       .filter((item) => item.action !== "delete")
       .map((item) => item.path),
@@ -314,33 +357,16 @@ const RulesVectorsSchema = z.object({
   uploadConcurrency: z.array(
     z.object({ value: z.number().optional(), resolved: z.number().nullable() }),
   ),
-  hashModes: z.array(
-    z.object({
-      hashFiles: z.boolean().optional(),
-      hashMode: z.enum(["all", "none", "remote-aware"]).optional(),
-      defaultMode: z.enum(["all", "none", "remote-aware"]).optional(),
-      resolved: z.enum(["all", "none", "remote-aware"]),
-    }),
-  ),
   localPaths: z.array(z.object({ archivePath: z.string(), resolved: z.string().nullable() })),
 });
 
 type RulesVectors = z.infer<typeof RulesVectorsSchema>;
 
+/* Every media extension, plus a spelling and an extension the table does not hold. */
 const CONTENT_TYPE_EXTENSIONS = [
-  "jpg",
-  "jpeg",
-  "png",
-  "webp",
-  "gif",
-  "avif",
-  "mp4",
-  "m4v",
-  "webm",
-  "mov",
-  "pdf",
-  "mkv",
-  "bmp",
+  ...ImageExtensions,
+  ...VideoExtensions,
+  ...PdfExtensions,
   "JPG",
   "",
 ];
@@ -356,20 +382,6 @@ const REGISTRATION_PATHS = [
 ];
 
 const UPLOAD_CONCURRENCIES = [undefined, 1, 3, 8, 0, 9, 2.5, -1];
-
-const HASH_MODE_INPUTS: Array<{
-  defaultMode?: HashMode;
-  hashFiles?: boolean;
-  hashMode?: HashMode;
-}> = [
-  {},
-  { hashFiles: true },
-  { hashFiles: false },
-  { hashMode: "remote-aware" },
-  { hashMode: "none", hashFiles: true },
-  { defaultMode: "remote-aware" },
-  { defaultMode: "all", hashFiles: false },
-];
 
 const LOCAL_PATH_ROOT = "/archive/root";
 
@@ -406,7 +418,6 @@ function makeRulesVectors(): RulesVectors {
         return { value, resolved: null };
       }
     }),
-    hashModes: HASH_MODE_INPUTS.map((input) => ({ ...input, resolved: resolveHashMode(input) })),
     localPaths: LOCAL_PATHS.map((archivePath) => {
       try {
         return { archivePath, resolved: resolveLocalFilePath(LOCAL_PATH_ROOT, archivePath) };
@@ -566,6 +577,14 @@ const FINGERPRINT_PAIRS: Array<[ArchiveFileFingerprint, ArchiveFileFingerprint]>
     { mtimeMs: 10, size: 1 },
     { mtimeMs: 10, size: 2 },
   ],
+  [
+    { ctimeMs: 5, mtimeMs: 10, size: 1 },
+    { mtimeMs: 10, size: 1 },
+  ],
+  [
+    { mtimeMs: -1500.5, size: 0 },
+    { mtimeMs: -1500.2, size: 0 },
+  ],
 ];
 
 async function makeHashCacheVectors(scratch: string): Promise<HashCacheVectors> {
@@ -678,125 +697,186 @@ async function makeHashCacheVectors(scratch: string): Promise<HashCacheVectors> 
   };
 }
 
-/* scan.json: what the scan lists and skips, in its order. */
+/*
+ * scan.json: what the scan lists, skips and fingerprints, in its order, over a tree on disk that
+ * exercises every rule: system folders and junk files, unsupported extensions, symlinks to files
+ * and folders and to nothing, names that sort differently by code point, by natural order and by
+ * locale, dotfiles, and folders named like media. Names differ by more than case, since macOS
+ * volumes fold it.
+ */
 
-const TreeEntrySchema = z.object({
-  path: z.string(),
-  kind: z.enum(["directory", "file", "symlink"]),
-  size: z.number().optional(),
-  mtimeMs: z.number().optional(),
-});
+type ScanTreeEntry =
+  | { kind: "file"; path: string; content: string; minutes: number }
+  | { kind: "directory"; path: string }
+  | { kind: "symlink"; path: string; target: string };
 
-const ScanVectorsSchema = z.object({
-  about: z.string(),
-  tree: z.array(TreeEntrySchema),
-  items: z.array(
-    z.object({
-      path: z.string(),
-      parentPath: z.string(),
-      name: z.string(),
-      extension: z.string(),
-      mediaType: z.string(),
-      size: z.number(),
-      mtimeMs: z.number(),
-    }),
-  ),
-  skippedEntries: z.array(z.object({ path: z.string(), reason: z.string() })),
-  skipped: z.number(),
-});
+/* Every file's mtime is this plus its minutes, three quarters into a second, so truncation shows. */
+const SCAN_TREE_EPOCH_SECONDS = Date.UTC(2026, 0, 1, 12, 0, 0) / 1000;
 
-type ScanVectors = z.infer<typeof ScanVectorsSchema>;
+function treeFile(entryPath: string, minutes: number, content = entryPath): ScanTreeEntry {
+  return { kind: "file", path: entryPath, content, minutes };
+}
 
-const SCAN_TREE: z.infer<typeof TreeEntrySchema>[] = [
-  { path: "b.jpg", kind: "file", size: 3, mtimeMs: 1_700_000_001_000 },
-  { path: "a.jpg", kind: "file", size: 2, mtimeMs: 1_700_000_002_000 },
-  { path: "A.png", kind: "file", size: 4, mtimeMs: 1_700_000_003_000 },
-  { path: "10.jpg", kind: "file", size: 5, mtimeMs: 1_700_000_004_000 },
-  { path: "2.jpg", kind: "file", size: 6, mtimeMs: 1_700_000_005_000 },
-  { path: "clip.MP4", kind: "file", size: 7, mtimeMs: 1_700_000_006_000 },
-  { path: "doc.pdf", kind: "file", size: 8, mtimeMs: 1_700_000_007_000 },
-  { path: "notes.txt", kind: "file", size: 9, mtimeMs: 1_700_000_008_000 },
-  { path: ".DS_Store", kind: "file", size: 1, mtimeMs: 1_700_000_009_000 },
-  { path: "._a.jpg", kind: "file", size: 1, mtimeMs: 1_700_000_009_000 },
-  { path: "Thumbs.db", kind: "file", size: 1, mtimeMs: 1_700_000_009_000 },
-  { path: ".hidden.webp", kind: "file", size: 10, mtimeMs: 1_700_000_010_000 },
-  { path: "link.jpg", kind: "symlink" },
-  { path: "folder", kind: "directory" },
-  { path: "folder/x.gif", kind: "file", size: 11, mtimeMs: 1_700_000_011_000 },
-  { path: "folder/Y.avif", kind: "file", size: 12, mtimeMs: 1_700_000_012_000 },
-  { path: "folder/desktop.ini", kind: "file", size: 1, mtimeMs: 1_700_000_012_000 },
-  { path: "folder/sub", kind: "directory" },
-  { path: "folder/sub/deep.mov", kind: "file", size: 13, mtimeMs: 1_700_000_013_000 },
-  { path: "folder-2", kind: "directory" },
-  { path: "folder-2/z.jpeg", kind: "file", size: 14, mtimeMs: 1_700_000_014_000 },
-  // Distinct in more than case, since the Rust side builds this tree on a case-insensitive disk.
-  { path: "Folder B", kind: "directory" },
-  { path: "Folder B/upper.jpg", kind: "file", size: 15, mtimeMs: 1_700_000_015_000 },
-  { path: "été", kind: "directory" },
-  { path: "été/plage.jpg", kind: "file", size: 16, mtimeMs: 1_700_000_016_000 },
-  { path: "zz", kind: "directory" },
-  { path: "zz/a b.jpg", kind: "file", size: 17, mtimeMs: 1_700_000_017_000 },
-  { path: "zz/a-b.jpg", kind: "file", size: 18, mtimeMs: 1_700_000_018_000 },
-  { path: "zz/a_b.jpg", kind: "file", size: 19, mtimeMs: 1_700_000_019_000 },
-  { path: "zz/ab.jpg", kind: "file", size: 20, mtimeMs: 1_700_000_020_000 },
-  { path: ".latch-works", kind: "directory" },
-  { path: ".latch-works/held.jpg", kind: "file", size: 21, mtimeMs: 1_700_000_021_000 },
-  { path: "__MACOSX", kind: "directory" },
-  { path: "__MACOSX/a.jpg", kind: "file", size: 22, mtimeMs: 1_700_000_022_000 },
-  { path: "empty", kind: "directory" },
+const SCAN_TREE: ScanTreeEntry[] = [
+  treeFile("root-image.png", 1),
+  treeFile("b.jpg", 2),
+  treeFile("img10.jpg", 3),
+  treeFile("img2.jpg", 4),
+  treeFile("Img1.jpg", 5),
+  treeFile("Zeta.mp4", 6),
+  treeFile("zebra.jpg", 7),
+  treeFile("\u00e9clair.webp", 8),
+  treeFile("eclair.png", 9),
+  treeFile("\u00dcn\u00efcode.jpg", 10),
+  treeFile("photo.JPEG", 11),
+  treeFile("movie.M4V", 12),
+  treeFile("anim.GIF", 13),
+  treeFile("scan.pdf", 14),
+  treeFile("still.avif", 15),
+  treeFile("raw.bmp", 16),
+  treeFile("clip.webm", 17),
+  treeFile("clip.mov", 18),
+  treeFile("photo.heic", 19),
+  treeFile(".hidden.jpg", 20),
+  treeFile("..cover.jpg", 21),
+  treeFile("100%_done.png", 22),
+  treeFile("space name.jpg", 23),
+  treeFile("comma,name.jpg", 24),
+  treeFile("._b.jpg", 25),
+  treeFile(".DS_Store", 26),
+  treeFile("Thumbs.db", 27),
+  treeFile("desktop.ini", 28),
+  treeFile("ehthumbs.db", 29),
+  treeFile("notes.txt", 30),
+  treeFile("README", 31),
+  treeFile("archive.zip", 32),
+  treeFile("trailing.", 33),
+  treeFile("series/01/page-1.jpg", 34, "a much longer page, so sizes differ"),
+  treeFile("series/01/page-10.jpg", 35),
+  treeFile("series/01/page-2.jpg", 36),
+  treeFile("series/02/cover.avif", 37),
+  treeFile("series/02/.DS_Store", 38),
+  treeFile("deep/a/b/c/clip.mkv", 39),
+  treeFile("dir.mp4/inner.png", 40),
+  treeFile(".latch-works/view/thumb.webp", 41),
+  treeFile("__MACOSX/._x.jpg", 42),
+  treeFile(".glazier-holding/held.png", 43),
+  treeFile("$RECYCLE.BIN/r.jpg", 44),
+  treeFile(".Trashes/t.jpg", 45),
+  treeFile("System Volume Information/s.jpg", 46),
+  treeFile(".Spotlight-V100/x.png", 47),
+  treeFile("10.jpg", 48),
+  treeFile("2.jpg", 49),
+  treeFile("a.jpg", 50),
+  treeFile("A.png", 51),
+  treeFile("folder/x.gif", 52),
+  treeFile("folder/desktop.ini", 53),
+  treeFile("folder/sub/deep.mov", 54),
+  treeFile("folder-2/z.jpeg", 55),
+  treeFile("Folder B/upper.jpg", 56),
+  treeFile("\u00e9t\u00e9/plage.jpg", 57),
+  treeFile("zz/a b.jpg", 58),
+  treeFile("zz/a-b.jpg", 59),
+  treeFile("zz/a_b.jpg", 60),
+  treeFile("zz/ab.jpg", 61),
+  { kind: "directory", path: "empty" },
+  { kind: "symlink", path: "link.jpg", target: "b.jpg" },
+  { kind: "symlink", path: "linked-series", target: "series" },
+  { kind: "symlink", path: "dangling.png", target: "missing.png" },
 ];
 
-const SCAN_ROOT = "/scan-root";
+async function buildScanTree(root: string): Promise<void> {
+  for (const entry of SCAN_TREE) {
+    const target = join(root, ...entry.path.split("/"));
 
-async function makeScanVectors(): Promise<ScanVectors> {
-  const byPath = new Map(SCAN_TREE.map((entry) => [`${SCAN_ROOT}/${entry.path}`, entry]));
+    switch (entry.kind) {
+      case "directory":
+        await mkdir(target, { recursive: true });
+        break;
+      case "file": {
+        await mkdir(dirname(target), { recursive: true });
+        await writeFile(target, entry.content);
+        const seconds = SCAN_TREE_EPOCH_SECONDS + entry.minutes * 60 + 0.75;
+        await utimes(target, seconds, seconds);
+        break;
+      }
 
-  const children = (directory: string): DirectoryEntry[] =>
-    SCAN_TREE.flatMap((entry) =>
-      dirname(`${SCAN_ROOT}/${entry.path}`) === directory
-        ? [
-            {
-              isDirectory: () => entry.kind === "directory",
-              isFile: () => entry.kind === "file",
-              name: entry.path.split("/").at(-1) ?? entry.path,
-            },
-          ]
-        : [],
-    );
+      case "symlink":
+        await mkdir(dirname(target), { recursive: true });
+        await symlink(entry.target, target);
+        break;
+      default: {
+        const exhaustive: never = entry;
+        throw new Error(`Unknown tree entry ${JSON.stringify(exhaustive)}`);
+      }
+    }
+  }
+}
 
-  const result = await scanArchive({
-    operations: {
-      createReadStream: () => {
-        throw new Error("The scan vectors hash nothing.");
-      },
-      readdir: async (directory) => children(directory),
-      stat: async (file) => {
-        const entry = byPath.get(file);
-
-        return { ctimeMs: entry?.mtimeMs, mtimeMs: entry?.mtimeMs ?? 0, size: entry?.size ?? 0 };
-      },
-    },
-    sourceRoot: SCAN_ROOT,
-  });
-
+/* What a scan found, without the root (a temp folder) or the change times (the clock's). */
+function describeScan(result: ScanArchiveResult) {
   return {
-    about: ABOUT,
-    tree: SCAN_TREE,
-    items: result.items.map((item) => ({
-      path: item.path,
-      parentPath: item.parentPath,
-      name: item.name,
-      extension: item.extension,
-      mediaType: item.mediaType,
-      size: item.size,
-      mtimeMs: item.mtimeMs,
-    })),
-    skippedEntries: result.skippedEntries,
+    items: result.items,
     skipped: result.skipped,
+    skippedEntries: result.skippedEntries,
+    fingerprints: [...result.fingerprints]
+      .map(([fingerprintPath, { mtimeMs, size }]) => ({ path: fingerprintPath, mtimeMs, size }))
+      .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0)),
   };
 }
 
-/* doctor.json: the doctor's checks that need no server, with the temp folder as `<root>`. */
+async function makeScanVectors(scratch: string) {
+  const root = join(scratch, "scan");
+
+  await buildScanTree(root);
+
+  const plain = describeScan(await scanArchive({ sourceRoot: root }));
+
+  const narrow = describeScan(
+    await scanArchive({ sourceRoot: root, directoryConcurrency: 1, fileConcurrency: 1 }),
+  );
+
+  const wide = describeScan(
+    await scanArchive({ sourceRoot: root, directoryConcurrency: 16, fileConcurrency: 16 }),
+  );
+
+  // The pools' widths change only how fast a scan goes, never what it finds.
+  expect(narrow).toEqual(plain);
+  expect(wide).toEqual(plain);
+
+  return {
+    about: ABOUT,
+    treeEpochSeconds: SCAN_TREE_EPOCH_SECONDS,
+    tree: SCAN_TREE,
+    scan: plain,
+    hashed: describeScan(await scanArchive({ sourceRoot: root, hashFiles: true })),
+    escapesRoot: [
+      "",
+      "a.jpg",
+      "..",
+      "../a.jpg",
+      "../../a",
+      "..cover.jpg",
+      "...",
+      "a/../b",
+      "/abs/a.jpg",
+      `..${sep}`,
+    ].map((relative) => ({ relative, escapes: escapesRoot(relative) })),
+  };
+}
+
+/*
+ * doctor.json: the doctor's checks, with the temp folder as `<root>`. A case with `api` points the
+ * doctor at a loopback port, written `<address>`: one nothing listens on, or one that answers the
+ * snapshot request with `status` and `body`.
+ */
+
+const DoctorApiSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("closed") }),
+  z.object({ kind: z.literal("answer"), status: z.number(), body: z.string() }),
+]);
+
+type DoctorApi = z.infer<typeof DoctorApiSchema>;
 
 const DoctorVectorsSchema = z.object({
   about: z.string(),
@@ -808,6 +888,7 @@ const DoctorVectorsSchema = z.object({
         apiUrl: z.string().optional(),
         apiToken: z.string().optional(),
       }),
+      api: DoctorApiSchema.optional(),
       checks: z.array(
         z.object({ label: z.string(), ok: z.boolean(), detail: z.string().optional() }),
       ),
@@ -822,6 +903,7 @@ type DoctorVectors = z.infer<typeof DoctorVectorsSchema>;
 const DOCTOR_CASES: Array<{
   name: string;
   options: { apiToken?: string; apiUrl?: string; sourceRoot?: string };
+  api?: DoctorApi;
 }> = [
   { name: "nothing configured", options: {} },
   { name: "a source folder alone", options: { sourceRoot: "<root>/archive" } },
@@ -830,7 +912,61 @@ const DOCTOR_CASES: Array<{
   { name: "a source under a file", options: { sourceRoot: "<root>/file.jpg/inner" } },
   { name: "a URL without a token", options: { apiUrl: "http://127.0.0.1:3100" } },
   { name: "a token without a URL", options: { apiToken: "secret" } },
+  {
+    name: "a port nothing listens on",
+    options: { apiUrl: "http://<address>", apiToken: "secret" },
+    api: { kind: "closed" },
+  },
+  {
+    name: "a token Pane View refuses",
+    options: { apiUrl: "http://<address>", apiToken: "wrong" },
+    api: { kind: "answer", status: 401, body: "Unauthorized" },
+  },
+  {
+    name: "everything answers",
+    options: { sourceRoot: "<root>/archive", apiUrl: "http://<address>", apiToken: "secret" },
+    api: {
+      kind: "answer",
+      status: 200,
+      body: '{"entries":[{"path":"a.jpg","size":1},{"path":"b.png","size":2}],"status":"ok"}',
+    },
+  },
 ];
+
+/** `Server.address()` widens to a pipe name or null; only a bound TCP address is usable. */
+const TcpAddressSchema = z.object({ port: z.number() });
+
+async function listenOnLoopback(server: Server): Promise<string> {
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  return `127.0.0.1:${TcpAddressSchema.parse(server.address()).port}`;
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+}
+
+/** A loopback address for `api`, and how to stop serving it once the case has run. */
+async function serveDoctorApi(
+  api: DoctorApi,
+): Promise<{ address: string; stop: () => Promise<void> }> {
+  if (api.kind === "closed") {
+    const server = createServer();
+    const address = await listenOnLoopback(server);
+    await closeServer(server);
+
+    return { address, stop: async () => {} };
+  }
+
+  const server = createServer((_request, response) => {
+    response.writeHead(api.status, { "content-type": "text/plain" });
+    response.end(api.body);
+  });
+
+  return { address: await listenOnLoopback(server), stop: () => closeServer(server) };
+}
 
 async function makeDoctorVectors(scratch: string): Promise<DoctorVectors> {
   const root = join(scratch, "doctor");
@@ -839,37 +975,495 @@ async function makeDoctorVectors(scratch: string): Promise<DoctorVectors> {
 
   const cases = [];
 
-  for (const { name, options } of DOCTOR_CASES) {
-    let summary = { failed: -1, message: "", status: "" };
+  for (const { api, name, options } of DOCTOR_CASES) {
+    const served = api ? await serveDoctorApi(api) : undefined;
+    const address = served?.address ?? "<address>";
 
-    const result = await doctor(
-      { ...options, sourceRoot: options.sourceRoot?.replace("<root>", root) },
-      {
-        onEvent: (event) => {
-          if (event.type === "complete") {
-            summary = {
-              failed: event.summary.failed,
-              message: event.summary.message ?? "",
-              status: event.summary.status,
-            };
-          }
+    try {
+      const result = await doctor({
+        apiToken: options.apiToken,
+        apiUrl: options.apiUrl?.replace("<address>", address),
+        sourceRoot: options.sourceRoot?.replace("<root>", root),
+      });
+
+      cases.push({
+        name,
+        options,
+        api,
+        checks: result.checks.map((check) => ({
+          ...check,
+          detail: check.detail?.replaceAll(root, "<root>").replaceAll(address, "<address>"),
+        })),
+        ok: result.ok,
+        summary: {
+          failed: result.summary.failed,
+          message: result.summary.message ?? "",
+          status: result.summary.status,
         },
-      },
-    );
-
-    cases.push({
-      name,
-      options,
-      checks: result.checks.map((check) => ({
-        ...check,
-        detail: check.detail?.replaceAll(root, "<root>"),
-      })),
-      ok: result.ok,
-      summary,
-    });
+      });
+    } finally {
+      await served?.stop();
+    }
   }
 
   return { about: ABOUT, cases };
+}
+
+/*
+ * prune.json: prune's safety check. Each case plans `local` against `remote`, leaves `tree` in the
+ * source folder, and runs the plan's deletes: a delete goes ahead only while its file is still
+ * gone. The outcomes hold on any disk, case- or Unicode-sensitive or not: a case never depends on
+ * whether the disk tells two spellings apart. `racyListings` pins when a folder listing may be
+ * reused.
+ */
+
+const PruneTreeEntrySchema = z.object({
+  path: z.string(),
+  kind: z.enum(["directory", "file", "symlink"]),
+});
+
+const PruneVectorsSchema = z.object({
+  about: z.string(),
+  cases: z.array(
+    z.object({
+      name: z.string(),
+      local: z.array(z.string()),
+      remote: z.array(z.string()),
+      tree: z.array(PruneTreeEntrySchema),
+      deletes: z.array(
+        z.object({
+          path: z.string(),
+          outcome: z.enum(["deleted", "skipped"]),
+          reason: z.string().optional(),
+        }),
+      ),
+    }),
+  ),
+  racyListings: z.array(
+    z.object({
+      name: z.string(),
+      listedAtNs: z.string(),
+      modifiedNs: z.string(),
+      changedNs: z.string(),
+      reused: z.boolean(),
+    }),
+  ),
+});
+
+type PruneVectors = z.infer<typeof PruneVectorsSchema>;
+
+type PruneCase = PruneVectors["cases"][number];
+
+const PRUNE_INPUTS: Array<Pick<PruneCase, "local" | "name" | "remote" | "tree">> = [
+  {
+    name: "a file still gone is deleted",
+    local: ["keep.jpg"],
+    remote: ["keep.jpg", "gone/a.jpg"],
+    tree: [{ path: "keep.jpg", kind: "file" }],
+  },
+  {
+    name: "a file back at its path is skipped",
+    local: [],
+    remote: ["back.jpg"],
+    tree: [{ path: "back.jpg", kind: "file" }],
+  },
+  {
+    name: "a folder or a link at the path is skipped",
+    local: [],
+    remote: ["now-folder.jpg", "now-link.jpg"],
+    tree: [
+      { path: "now-folder.jpg", kind: "directory" },
+      { path: "now-link.jpg", kind: "symlink" },
+    ],
+  },
+  {
+    name: "a file back in another case is skipped",
+    local: [],
+    remote: ["Photos/IMG_1.jpg", "Trip/a.png"],
+    tree: [
+      { path: "photos/img_1.jpg", kind: "file" },
+      { path: "TRIP/a.png", kind: "file" },
+    ],
+  },
+  {
+    name: "a file back in another Unicode form is skipped",
+    local: [],
+    remote: ["caf\u00e9.jpg", "\u00c9t\u00e9/plage.jpg"],
+    tree: [
+      { path: "cafe\u0301.jpg", kind: "file" },
+      { path: "E\u0301te\u0301/plage.jpg", kind: "file" },
+    ],
+  },
+  {
+    name: "the jpeg twin of a planned jpg is deleted",
+    local: ["x.jpg"],
+    remote: ["x.jpeg", "x.jpg"],
+    tree: [{ path: "x.jpg", kind: "file" }],
+  },
+  {
+    name: "a jpg back for a deleted jpeg is skipped",
+    local: [],
+    remote: ["y.jpeg", "z.JPG"],
+    tree: [
+      { path: "y.jpg", kind: "file" },
+      { path: "Z.jpeg", kind: "file" },
+    ],
+  },
+  {
+    name: "a new twin beside a planned one is skipped",
+    local: ["w.jpg"],
+    remote: ["w.jpeg", "w.jpg"],
+    tree: [
+      { path: "w.jpg", kind: "file" },
+      { path: "W.JPEG", kind: "file" },
+    ],
+  },
+  {
+    name: "folders do not pair across jpeg and jpg",
+    local: [],
+    remote: ["album.jpeg/a.jpg"],
+    tree: [{ path: "album.jpg/a.jpg", kind: "file" }],
+  },
+  {
+    name: "a file in place of its folder does not count",
+    local: [],
+    remote: ["was-folder/a.jpg"],
+    tree: [{ path: "was-folder", kind: "file" }],
+  },
+];
+
+const RACY_LISTED_AT_NS = 1_700_000_010_000_000_000n;
+
+const RACY_LISTINGS: Array<{ name: string; modifiedAgoNs: bigint; changedAgoNs: bigint }> = [
+  {
+    name: "a folder unchanged for 10 s",
+    modifiedAgoNs: 10_000_000_000n,
+    changedAgoNs: 10_000_000_000n,
+  },
+  {
+    name: "a change exactly 3 s before",
+    modifiedAgoNs: 3_000_000_000n,
+    changedAgoNs: 3_000_000_000n,
+  },
+  {
+    name: "a change just over 3 s before",
+    modifiedAgoNs: 3_000_000_001n,
+    changedAgoNs: 3_000_000_001n,
+  },
+  { name: "a change 2.999 s before", modifiedAgoNs: 2_999_000_000n, changedAgoNs: 2_999_000_000n },
+  { name: "a recent change time", modifiedAgoNs: 10_000_000_000n, changedAgoNs: 1_000_000_000n },
+  { name: "a recent modified time", modifiedAgoNs: 1_000_000_000n, changedAgoNs: 10_000_000_000n },
+  {
+    name: "times ahead of the clock",
+    modifiedAgoNs: -5_000_000_000n,
+    changedAgoNs: -5_000_000_000n,
+  },
+];
+
+async function makePruneTree(root: string, tree: PruneCase["tree"]): Promise<void> {
+  const outside = join(dirname(root), "outside.jpg");
+  await mkdir(root, { recursive: true });
+  await writeFile(outside, "x");
+
+  for (const entry of tree) {
+    const path = join(root, entry.path);
+    await mkdir(entry.kind === "directory" ? path : dirname(path), { recursive: true });
+
+    if (entry.kind === "file") {
+      await writeFile(path, "x");
+    } else if (entry.kind === "symlink") {
+      await symlink(outside, path);
+    }
+  }
+}
+
+/* Pane View accepts every delete, so only the safety check decides each one. */
+async function makePruneCase(
+  paneView: FakePaneView,
+  caseRoot: string,
+  { local, name, remote, tree }: Pick<PruneCase, "local" | "name" | "remote" | "tree">,
+): Promise<PruneCase> {
+  const sourceRoot = join(caseRoot, "source");
+  await makePruneTree(sourceRoot, tree);
+
+  const plan: LockstepPlan = {
+    ...createSyncPlan(
+      local.map((path) => mediaItem(path, 1)),
+      remote.map((path) => ({ path, size: 1 })),
+    ),
+    skippedEntries: [],
+    sourceRoot,
+    totalBytes: local.length,
+    totalFiles: local.length,
+  };
+
+  const outcomes = new Map<string, PruneCase["deletes"][number]>();
+
+  const record = (event: LockstepRunEvent) => {
+    if (event.type === "item-success") {
+      outcomes.set(event.path, { path: event.path, outcome: "deleted" });
+    } else if (event.type === "item-skipped") {
+      outcomes.set(event.path, { path: event.path, outcome: "skipped", reason: event.reason });
+    }
+  };
+
+  await pruneDeleted(
+    { apiToken: paneView.apiToken, apiUrl: paneView.apiUrl, plan },
+    { onEvent: record },
+  );
+
+  const deletes = plan.items.flatMap((item) => (item.action === "delete" ? [item.path] : []));
+
+  return {
+    name,
+    local,
+    remote,
+    tree,
+    deletes: deletes.map((path) => {
+      const outcome = outcomes.get(path);
+
+      if (!outcome) {
+        throw new Error(`Prune neither deleted nor skipped ${path}.`);
+      }
+
+      return outcome;
+    }),
+  };
+}
+
+async function makePruneVectors(scratch: string): Promise<PruneVectors> {
+  const cases = [];
+  const paneView = await startFakePaneView();
+
+  try {
+    for (const [index, input] of PRUNE_INPUTS.entries()) {
+      cases.push(await makePruneCase(paneView, join(scratch, "prune", String(index)), input));
+    }
+  } finally {
+    await paneView.close();
+  }
+
+  return {
+    about: ABOUT,
+    cases,
+    racyListings: RACY_LISTINGS.map(({ name, modifiedAgoNs, changedAgoNs }) => {
+      const mtimeNs = RACY_LISTED_AT_NS - modifiedAgoNs;
+      const ctimeNs = RACY_LISTED_AT_NS - changedAgoNs;
+
+      return {
+        name,
+        listedAtNs: RACY_LISTED_AT_NS.toString(),
+        modifiedNs: mtimeNs.toString(),
+        changedNs: ctimeNs.toString(),
+        reused: isListingReusable(RACY_LISTED_AT_NS, { ctimeNs, mtimeNs }),
+      };
+    }),
+  };
+}
+
+/*
+ * wire.json: the bodies a client posts for fixed plan items and outcomes, and what it makes of
+ * sample snapshot answers. Pane View's route schemas must accept every body, and a Rust client must
+ * post the same.
+ */
+
+const WireVectorsSchema = z.object({
+  about: z.string(),
+  constants: z.object({
+    createRunCancelGraceMs: z.number(),
+    finalizeAttemptTimeoutMs: z.number(),
+    finalizeRetryDelaysMs: z.array(z.number()),
+    maxUploadBytes: z.number(),
+    routes: z.object({
+      completeObject: z.string(),
+      completeRun: z.string(),
+      runs: z.string(),
+      snapshot: z.string(),
+      uploadUrl: z.string(),
+    }),
+  }),
+  registrations: z.array(
+    z.object({
+      name: z.string(),
+      item: z.object({
+        path: z.string(),
+        size: z.number(),
+        mtimeMs: z.number(),
+        sha256: z.string(),
+      }),
+      logicalPath: z.string(),
+      uploadUrl: UploadUrlRequestSchema,
+      completeObject: CompleteObjectRequestSchema,
+    }),
+  ),
+  delete: DeleteObjectRequestSchema,
+  createRun: CreateSyncRunRequestSchema,
+  finalize: z.array(
+    z.object({
+      name: z.string(),
+      action: z.enum(["prune", "push"]),
+      outcome: z.object({
+        applied: z.number(),
+        capped: z.number(),
+        failed: z.number(),
+        skipped: z.number(),
+        interruption: z.enum(["cancelled", "failed"]).optional(),
+      }),
+      body: CompleteSyncRunRequestSchema,
+    }),
+  ),
+  snapshots: z.array(
+    z.object({
+      name: z.string(),
+      body: z.string(),
+      entries: z
+        .array(z.object({ path: z.string(), size: z.number(), sha256: z.string().optional() }))
+        .optional(),
+      error: z.string().optional(),
+    }),
+  ),
+});
+
+type WireVectors = z.infer<typeof WireVectorsSchema>;
+
+const WIRE_SYNC_RUN_ID = "00000000-0000-4000-8000-000000000001";
+
+const WIRE_REGISTRATIONS = [
+  { name: "an upload registers at its own path", path: "a.jpg", remotePath: undefined },
+  {
+    name: "an update registers at the remote spelling",
+    path: "Photos/IMG_1.JPEG",
+    remotePath: "photos/img_1.jpg",
+  },
+  { name: "a PDF", path: "docs/Manual.pdf", remotePath: undefined },
+  { name: "an MKV uploads as bytes", path: "clips/take.mkv", remotePath: undefined },
+  { name: "a Unicode path", path: "Café/résumé.webp", remotePath: undefined },
+];
+
+const WIRE_PLAN: LockstepPlan = {
+  ...createSyncPlan(
+    [mediaItem("a.jpg", 10), mediaItem("b.png", 20), mediaItem("kept.mp4", 30)],
+    [
+      { path: "b.png", size: 21 },
+      { path: "kept.mp4", size: 30 },
+      { path: "gone.jpg", size: 40 },
+    ],
+  ),
+  skippedEntries: [],
+  sourceRoot: "/Volumes/Archive",
+  totalBytes: 60,
+  totalFiles: 3,
+};
+
+const WIRE_OUTCOMES: Array<{
+  name: string;
+  action: RunAction;
+  outcome: Omit<RunOutcome, "interruption"> & { interruption?: "cancelled" | "failed" };
+}> = [
+  {
+    name: "a push that applied everything",
+    action: "push",
+    outcome: { applied: 2, capped: 2, failed: 0, skipped: 0 },
+  },
+  {
+    name: "a push with failed items",
+    action: "push",
+    outcome: { applied: 1, capped: 2, failed: 1, skipped: 0 },
+  },
+  {
+    name: "a cancelled push",
+    action: "push",
+    outcome: { applied: 1, capped: 2, failed: 0, skipped: 0, interruption: "cancelled" },
+  },
+  {
+    name: "a prune with a failed delete",
+    action: "prune",
+    outcome: { applied: 0, capped: 1, failed: 1, skipped: 0 },
+  },
+  {
+    name: "a prune stopped by an error",
+    action: "prune",
+    outcome: { applied: 0, capped: 1, failed: 0, skipped: 0, interruption: "failed" },
+  },
+];
+
+const WIRE_SNAPSHOTS = [
+  {
+    name: "entries with and without hashes",
+    body: `{"entries":[{"path":"a.jpg","size":1,"sha256":"${SHA_A}"},{"path":"b.png","size":2}]}`,
+  },
+  {
+    name: "extra fields are ignored",
+    body: '{"entries":[{"path":"a.jpg","size":1,"mediaType":"image"}],"status":"ok"}',
+  },
+  {
+    name: "a null or numeric hash is dropped",
+    body: '{"entries":[{"path":"a.jpg","size":1,"sha256":null},{"path":"b.jpg","size":2,"sha256":5}]}',
+  },
+  { name: "no entries array", body: '{"status":"ok"}' },
+  { name: "entries that are not an array", body: '{"entries":{}}' },
+  { name: "an entry without a size", body: '{"entries":[{"path":"a.jpg"}]}' },
+  { name: "an entry that is not an object", body: '{"entries":["a.jpg"]}' },
+];
+
+function makeWireVectors(): WireVectors {
+  return {
+    about: ABOUT,
+    constants: {
+      createRunCancelGraceMs: CREATE_SYNC_RUN_CANCEL_GRACE_MS,
+      finalizeAttemptTimeoutMs: FINALIZE_ATTEMPT_TIMEOUT_MS,
+      finalizeRetryDelaysMs: FINALIZE_RETRY_DELAYS_MS,
+      maxUploadBytes: MAX_SYNC_UPLOAD_BYTES,
+      routes: { ...SYNC_ROUTES, completeRun: completeSyncRunRoute("{syncRunId}") },
+    },
+    registrations: WIRE_REGISTRATIONS.map(({ name, path, remotePath }) => {
+      const item = { ...mediaItem(path, 1234, SHA_A), sha256: SHA_A };
+      const logicalPath = remotePath ?? path;
+      const uploadUrl = uploadUrlBody(item, logicalPath);
+
+      return {
+        name,
+        item: { path: item.path, size: item.size, mtimeMs: item.mtimeMs, sha256: item.sha256 },
+        logicalPath,
+        uploadUrl,
+        completeObject: completeObjectBody({
+          item,
+          logicalPath,
+          objectKey: originalObjectKey({
+            extension: getExtension(uploadUrl.filename),
+            sha256: item.sha256,
+          }),
+          syncRunId: WIRE_SYNC_RUN_ID,
+        }),
+      };
+    }),
+    delete: { action: "delete", logicalPath: "gone.jpg", syncRunId: WIRE_SYNC_RUN_ID },
+    createRun: createSyncRunBody(WIRE_PLAN),
+    finalize: WIRE_OUTCOMES.map(({ name, action, outcome }) => ({
+      name,
+      action,
+      outcome,
+      body: outcomeBody(action, WIRE_PLAN, {
+        ...outcome,
+        interruption:
+          outcome.interruption === "cancelled"
+            ? { reason: new Error("Cancelled by SIGINT."), status: "cancelled" }
+            : outcome.interruption === "failed"
+              ? {
+                  error: new Error("Source folder is not available: /Volumes/Archive."),
+                  status: "failed",
+                }
+              : undefined,
+      }),
+    })),
+    snapshots: WIRE_SNAPSHOTS.map(({ name, body }) => {
+      try {
+        return { name, body, entries: parseSnapshotResponse(body) };
+      } catch (error) {
+        return { name, body, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+  };
 }
 
 describe("lockstep-core conformance vectors", () => {
@@ -885,35 +1479,46 @@ describe("lockstep-core conformance vectors", () => {
 
   it("plans as the committed plan.json", () => {
     const vectors = { about: ABOUT, cases: PLAN_INPUTS.map(makePlanCase) };
-    expect(committedVectors("plan.json", PlanVectorsSchema, vectors)).toEqual(
+    expect(committedVectors(vectorFile("plan.json"), PlanVectorsSchema, vectors)).toEqual(
       PlanVectorsSchema.parse(vectors),
     );
   });
 
   it("applies the rules in the committed rules.json", () => {
     const vectors = makeRulesVectors();
-    expect(committedVectors("rules.json", RulesVectorsSchema, vectors)).toEqual(
+    expect(committedVectors(vectorFile("rules.json"), RulesVectorsSchema, vectors)).toEqual(
       RulesVectorsSchema.parse(vectors),
     );
   });
 
   it("keeps hash caches as the committed hash-cache.json", async () => {
     const vectors = await makeHashCacheVectors(scratch);
-    expect(committedVectors("hash-cache.json", HashCacheVectorsSchema, vectors)).toEqual(
-      HashCacheVectorsSchema.parse(vectors),
-    );
+    expect(
+      committedVectors(vectorFile("hash-cache.json"), HashCacheVectorsSchema, vectors),
+    ).toEqual(HashCacheVectorsSchema.parse(vectors));
   });
 
   it("scans as the committed scan.json", async () => {
-    const vectors = await makeScanVectors();
-    expect(committedVectors("scan.json", ScanVectorsSchema, vectors)).toEqual(
-      ScanVectorsSchema.parse(vectors),
+    expectCommitted(vectorFile("scan.json"), await makeScanVectors(scratch));
+  });
+
+  it("posts the bodies in the committed wire.json", () => {
+    const vectors = makeWireVectors();
+    expect(committedVectors(vectorFile("wire.json"), WireVectorsSchema, vectors)).toEqual(
+      WireVectorsSchema.parse(vectors),
+    );
+  });
+
+  it("prunes as the committed prune.json", async () => {
+    const vectors = await makePruneVectors(scratch);
+    expect(committedVectors(vectorFile("prune.json"), PruneVectorsSchema, vectors)).toEqual(
+      PruneVectorsSchema.parse(vectors),
     );
   });
 
   it("checks as the committed doctor.json", async () => {
     const vectors = await makeDoctorVectors(scratch);
-    expect(committedVectors("doctor.json", DoctorVectorsSchema, vectors)).toEqual(
+    expect(committedVectors(vectorFile("doctor.json"), DoctorVectorsSchema, vectors)).toEqual(
       DoctorVectorsSchema.parse(vectors),
     );
   });
