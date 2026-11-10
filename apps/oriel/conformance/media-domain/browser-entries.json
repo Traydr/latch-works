@@ -1,6 +1,6 @@
 {
   "about": "Frozen Rust fixture: only Oriel View builds its gallery entries this way (Pane View has its own grid entries), so no TypeScript makes this file any more (it was made from media-domain's browser-entries.ts, since deleted). Change it together with apps/oriel/crates/core-domain. Non-ASCII characters are escaped.",
-  "generatedWith": { "node": "24.18.0", "icu": "78.3", "unicode": "17.0" },
+  "generatedWith": { "icu": "78.3", "unicode": "17.0" },
   "cases": [
     {
       "about": "folders sort by name alone and only name-desc reverses them, ties included",

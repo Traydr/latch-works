@@ -57,7 +57,6 @@ const NamedPathSchema = z.object({ name: z.string(), path: z.string() });
 const SortVectorsSchema = z.object({
   about: z.string(),
   generatedWith: z.object({
-    node: z.string(),
     icu: z.string(),
     unicode: z.string(),
     cldr: z.string(),
@@ -491,7 +490,6 @@ function makeVectors(): SortVectors {
     about:
       "Made by packages/media-domain/src/conformance.test.ts from sort.ts; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test. Non-ASCII characters are escaped. naturalOrder.classes lists the names in order, names that compare equal sharing a class. Where Rust knowingly differs is listed in apps/oriel/crates/core-domain/tests/conformance.rs.",
     generatedWith: {
-      node: process.versions.node,
       icu: process.versions.icu ?? "none",
       unicode: process.versions.unicode ?? "none",
       cldr: process.versions.cldr ?? "none",
@@ -560,14 +558,13 @@ describe("media-domain sort conformance vectors", () => {
  * files scans skip. Each module has its own file beside sort.json.
  */
 
-const RuntimeSchema = z.object({ node: z.string(), icu: z.string(), unicode: z.string() });
+const RuntimeSchema = z.object({ icu: z.string(), unicode: z.string() });
 
 type Runtime = z.infer<typeof RuntimeSchema>;
 
 /* Case mapping, NFC and collation follow the runtime's Unicode data, so each file says which. */
 function runtimeVersions(): Runtime {
   return {
-    node: process.versions.node,
     icu: process.versions.icu ?? "none",
     unicode: process.versions.unicode ?? "none",
   };

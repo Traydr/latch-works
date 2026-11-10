@@ -10,7 +10,6 @@ use serde::{Deserialize, de::DeserializeOwned};
 /// The runtime that made a file. Case mapping, NFC and collation follow its Unicode data.
 #[derive(Deserialize)]
 pub struct GeneratedWith {
-    pub node: String,
     pub icu: String,
     pub unicode: String,
 }
@@ -21,9 +20,9 @@ impl GeneratedWith {
     pub fn versions(&self) -> String {
         let (major, minor, update) = char::UNICODE_VERSION;
         format!(
-            "vectors from Node {} (ICU {}, Unicode {}); Rust's char tables are Unicode \
+            "vectors from ICU {}, Unicode {}; Rust's char tables are Unicode \
              {major}.{minor}.{update}",
-            self.node, self.icu, self.unicode
+            self.icu, self.unicode
         )
     }
 }

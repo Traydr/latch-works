@@ -1,6 +1,6 @@
 {
   "about": "Made by packages/media-domain/src/conformance.test.ts from system-files.ts; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test. Non-ASCII characters are escaped.",
-  "generatedWith": { "node": "24.18.0", "icu": "78.3", "unicode": "17.0" },
+  "generatedWith": { "icu": "78.3", "unicode": "17.0" },
   "latchWorksDirectoryName": ".latch-works",
   "glazierHoldingDirectoryName": ".glazier-holding",
   "names": [
