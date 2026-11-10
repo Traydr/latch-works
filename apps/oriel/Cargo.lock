@@ -5050,7 +5050,7 @@ dependencies = [
 
 [[package]]
 name = "oriel"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "embed-resource",
  "futures",
@@ -5079,7 +5079,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-avif"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "libloading",
  "oriel-core-format",
@@ -5089,7 +5089,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-core-domain"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "icu_collator",
  "icu_normalizer",
@@ -5102,7 +5102,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-core-format"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5110,7 +5110,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-core-paths"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "oriel-core-domain",
  "serde",
@@ -5119,7 +5119,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-core-sync"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -5138,7 +5138,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-core-tidy"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -5164,14 +5164,14 @@ dependencies = [
 
 [[package]]
 name = "oriel-launch"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "oriel-core-paths",
 ]
 
 [[package]]
 name = "oriel-media"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "gpui-kit",
@@ -5193,7 +5193,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-mode-sync"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -5216,7 +5216,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-mode-tidy"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -5240,7 +5240,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-mode-view"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -5262,7 +5262,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-runtime"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -5276,7 +5276,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-test-archive"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "image",
  "oriel-avif",
@@ -5286,7 +5286,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-tools"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "libc",
  "oriel-core-domain",
@@ -5299,7 +5299,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-ui"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -5315,7 +5315,7 @@ dependencies = [
 
 [[package]]
 name = "oriel-vips"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "libloading",
  "log",
@@ -9383,7 +9383,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "libc",
