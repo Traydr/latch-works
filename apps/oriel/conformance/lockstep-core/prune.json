@@ -1,0 +1,187 @@
+{
+  "about": "Written by packages/lockstep-core/src/conformance.test.ts; ORIEL_UPDATE_VECTORS=1 rewrites it.",
+  "cases": [
+    {
+      "name": "a file still gone is deleted",
+      "local": ["keep.jpg"],
+      "remote": ["keep.jpg", "gone/a.jpg"],
+      "tree": [{ "path": "keep.jpg", "kind": "file" }],
+      "deletes": [{ "path": "gone/a.jpg", "outcome": "deleted" }]
+    },
+    {
+      "name": "a file back at its path is skipped",
+      "local": [],
+      "remote": ["back.jpg"],
+      "tree": [{ "path": "back.jpg", "kind": "file" }],
+      "deletes": [
+        {
+          "path": "back.jpg",
+          "outcome": "skipped",
+          "reason": "the file is back in the source folder"
+        }
+      ]
+    },
+    {
+      "name": "a folder or a link at the path is skipped",
+      "local": [],
+      "remote": ["now-folder.jpg", "now-link.jpg"],
+      "tree": [
+        { "path": "now-folder.jpg", "kind": "directory" },
+        { "path": "now-link.jpg", "kind": "symlink" }
+      ],
+      "deletes": [
+        {
+          "path": "now-folder.jpg",
+          "outcome": "skipped",
+          "reason": "the file is back in the source folder"
+        },
+        {
+          "path": "now-link.jpg",
+          "outcome": "skipped",
+          "reason": "the file is back in the source folder"
+        }
+      ]
+    },
+    {
+      "name": "a file back in another case is skipped",
+      "local": [],
+      "remote": ["Photos/IMG_1.jpg", "Trip/a.png"],
+      "tree": [
+        { "path": "photos/img_1.jpg", "kind": "file" },
+        { "path": "TRIP/a.png", "kind": "file" }
+      ],
+      "deletes": [
+        {
+          "path": "Photos/IMG_1.jpg",
+          "outcome": "skipped",
+          "reason": "the file is back in the source folder"
+        },
+        {
+          "path": "Trip/a.png",
+          "outcome": "skipped",
+          "reason": "the file is back in the source folder"
+        }
+      ]
+    },
+    {
+      "name": "a file back in another Unicode form is skipped",
+      "local": [],
+      "remote": ["caf\u00e9.jpg", "\u00c9t\u00e9/plage.jpg"],
+      "tree": [
+        { "path": "cafe\u0301.jpg", "kind": "file" },
+        { "path": "E\u0301te\u0301/plage.jpg", "kind": "file" }
+      ],
+      "deletes": [
+        {
+          "path": "caf\u00e9.jpg",
+          "outcome": "skipped",
+          "reason": "the file is back in the source folder"
+        },
+        {
+          "path": "\u00c9t\u00e9/plage.jpg",
+          "outcome": "skipped",
+          "reason": "the file is back in the source folder"
+        }
+      ]
+    },
+    {
+      "name": "the jpeg twin of a planned jpg is deleted",
+      "local": ["x.jpg"],
+      "remote": ["x.jpeg", "x.jpg"],
+      "tree": [{ "path": "x.jpg", "kind": "file" }],
+      "deletes": [{ "path": "x.jpeg", "outcome": "deleted" }]
+    },
+    {
+      "name": "a jpg back for a deleted jpeg is skipped",
+      "local": [],
+      "remote": ["y.jpeg", "z.JPG"],
+      "tree": [{ "path": "y.jpg", "kind": "file" }, { "path": "Z.jpeg", "kind": "file" }],
+      "deletes": [
+        {
+          "path": "y.jpeg",
+          "outcome": "skipped",
+          "reason": "the file is back in the source folder"
+        },
+        { "path": "z.JPG", "outcome": "skipped", "reason": "the file is back in the source folder" }
+      ]
+    },
+    {
+      "name": "a new twin beside a planned one is skipped",
+      "local": ["w.jpg"],
+      "remote": ["w.jpeg", "w.jpg"],
+      "tree": [{ "path": "w.jpg", "kind": "file" }, { "path": "W.JPEG", "kind": "file" }],
+      "deletes": [
+        {
+          "path": "w.jpeg",
+          "outcome": "skipped",
+          "reason": "the file is back in the source folder"
+        }
+      ]
+    },
+    {
+      "name": "folders do not pair across jpeg and jpg",
+      "local": [],
+      "remote": ["album.jpeg/a.jpg"],
+      "tree": [{ "path": "album.jpg/a.jpg", "kind": "file" }],
+      "deletes": [{ "path": "album.jpeg/a.jpg", "outcome": "deleted" }]
+    },
+    {
+      "name": "a file in place of its folder does not count",
+      "local": [],
+      "remote": ["was-folder/a.jpg"],
+      "tree": [{ "path": "was-folder", "kind": "file" }],
+      "deletes": [{ "path": "was-folder/a.jpg", "outcome": "deleted" }]
+    }
+  ],
+  "racyListings": [
+    {
+      "name": "a folder unchanged for 10 s",
+      "listedAtNs": "1700000010000000000",
+      "modifiedNs": "1700000000000000000",
+      "changedNs": "1700000000000000000",
+      "reused": true
+    },
+    {
+      "name": "a change exactly 3 s before",
+      "listedAtNs": "1700000010000000000",
+      "modifiedNs": "1700000007000000000",
+      "changedNs": "1700000007000000000",
+      "reused": false
+    },
+    {
+      "name": "a change just over 3 s before",
+      "listedAtNs": "1700000010000000000",
+      "modifiedNs": "1700000006999999999",
+      "changedNs": "1700000006999999999",
+      "reused": true
+    },
+    {
+      "name": "a change 2.999 s before",
+      "listedAtNs": "1700000010000000000",
+      "modifiedNs": "1700000007001000000",
+      "changedNs": "1700000007001000000",
+      "reused": false
+    },
+    {
+      "name": "a recent change time",
+      "listedAtNs": "1700000010000000000",
+      "modifiedNs": "1700000000000000000",
+      "changedNs": "1700000009000000000",
+      "reused": false
+    },
+    {
+      "name": "a recent modified time",
+      "listedAtNs": "1700000010000000000",
+      "modifiedNs": "1700000009000000000",
+      "changedNs": "1700000000000000000",
+      "reused": false
+    },
+    {
+      "name": "times ahead of the clock",
+      "listedAtNs": "1700000010000000000",
+      "modifiedNs": "1700000015000000000",
+      "changedNs": "1700000015000000000",
+      "reused": false
+    }
+  ]
+}

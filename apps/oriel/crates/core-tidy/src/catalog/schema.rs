@@ -1,6 +1,5 @@
-//! The catalog's schema, which is Oriel's own. It began as glazier-core's
-//! `catalog/database.ts`, so a catalog Electron Oriel left opens and upgrades in place; with
-//! glazier-core gone, nothing else has to match it.
+//! The catalog's schema, which is Oriel's own. A catalog Electron Oriel left opens and upgrades
+//! in place; nothing else has to match it.
 
 /// Each entry upgrades the catalog by one version (`PRAGMA user_version`). Entries only append,
 /// and an existing catalog replays the ones past its version, so a shipped entry never changes:
@@ -210,17 +209,36 @@ pub const MIGRATIONS: &[&str] = &[
     DELETE FROM file_comparisons WHERE left_id = NEW.id OR right_id = NEW.id;
   END;
   ",
+    "
+  CREATE TABLE print_generation (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    generation INTEGER NOT NULL
+  );
+  INSERT INTO print_generation (id, generation) VALUES (1, 0);
+  ALTER TABLE plan_steps ADD COLUMN reason TEXT;
+  UPDATE plan_steps SET reason = 'kept-file-changed'
+    WHERE status = 'skipped' AND message = 'The file kept instead has changed since the scan.';
+  UPDATE plan_steps SET reason = 'kept-file-gone'
+    WHERE status = 'skipped' AND message = 'The file kept instead is no longer there.';
+  DROP TRIGGER file_changed_forget_details;
+  CREATE TRIGGER file_changed_forget_details
+    AFTER UPDATE OF fingerprint ON files
+    WHEN OLD.fingerprint IS NOT NULL AND NEW.fingerprint IS NULL
+  BEGIN
+    DELETE FROM file_details WHERE file_id = NEW.id;
+    DELETE FROM file_comparisons WHERE left_id = NEW.id OR right_id = NEW.id;
+  END;
+  ",
 ];
 
-/// The catalog's version once every migration ran.
-pub const USER_VERSION: i64 = MIGRATIONS.len() as i64;
-
 /// Per-connection tables rebuilt from the catalog on demand. `convertible_files` holds the files
-/// the Convert step would change, so Library queries can filter and count by it.
+/// the Convert step would change, so Library queries can filter and count by it. Writing it is
+/// no change to the catalog: see [`super::state`].
 pub const TEMP_TABLES: &str = "
   CREATE TEMP TABLE IF NOT EXISTS convertible_files (
     id INTEGER PRIMARY KEY,
-    root_id INTEGER NOT NULL
+    root_id INTEGER NOT NULL,
+    category TEXT NOT NULL
   );
 
   CREATE INDEX IF NOT EXISTS temp.convertible_files_root ON convertible_files (root_id);

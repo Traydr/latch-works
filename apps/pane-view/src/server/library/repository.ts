@@ -1,71 +1,31 @@
 import type { FolderNode, GallerySortMode } from "@latch-works/media-domain";
-import { buildBrowserEntries, getParentPath } from "@latch-works/media-domain";
+import { getParentPath } from "@latch-works/media-domain";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import type {
+  GalleryBrowseEntry,
+  GalleryListingPage,
+  GalleryListingRequest,
+  GalleryRandomSeed,
+  LibrarySnapshot,
+  LibrarySnapshotRequest,
+  SnapshotFolder,
+} from "@/features/library/listing-contract";
 import { type Database, db } from "../db";
+import { guardLibraryChange } from "../db/library-guards";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import {
   cursorRandomKey,
-  DEFAULT_GALLERY_LISTING_LIMIT,
   decodeGalleryListingCursor,
   encodeGalleryListingCursor,
   type GalleryListingCursorPayload,
-  type GalleryListingPage,
 } from "./gallery-listing";
-import {
-  type GalleryRandomSeed,
-  galleryRandomOrderKey,
-  galleryRandomOrderKeySql,
-  naturalOrder,
-} from "./gallery-order";
+import { galleryRandomOrderKey, galleryRandomOrderKeySql, naturalOrder } from "./gallery-order";
 import { type KeysetColumn, keysetAfter, keysetOrderBy } from "./keyset-order";
 import {
   buildLibraryConditions,
   buildMediaVisibilityConditions,
-  mapMediaRowsToLibraryItems,
+  mapMediaRows,
 } from "./library-conditions";
-
-/**
- * A snapshot's `folders` and `siblings` feed the sidebar, the exclude dialog,
- * and sibling navigation, none of which shows whether a folder has children,
- * so the snapshot skips that lookup.
- */
-export type SnapshotFolderNode = Omit<FolderNode, "hasChildren">;
-
-export interface DatabaseLibrarySnapshot {
-  allFolders: FolderNode[];
-  folders: SnapshotFolderNode[];
-  /**
-   * Non-deleted folders that share `currentPath`'s parent, `currentPath`
-   * itself included; empty at the root. Unordered: callers sort. Feeds
-   * previous/next sibling navigation, which `folders` (the children) cannot.
-   */
-  siblings: SnapshotFolderNode[];
-}
-
-export interface LibrarySnapshotReadRequest {
-  currentPath: string;
-  includeAllFolders?: boolean;
-  query?: string;
-  recursive?: boolean;
-}
-
-export interface GalleryListingReadRequest {
-  currentPath: string;
-  cursor?: string;
-  /** Direct-child subtrees to subtract in recursive mode (Plan 054). */
-  excludedPaths?: readonly string[];
-  limit?: number;
-  query?: string;
-  randomSeed: GalleryRandomSeed;
-  recursive?: boolean;
-  showImages: boolean;
-  showVideos: boolean;
-  sortMode: GallerySortMode;
-}
-
-// ---------------------------------------------------------------------------
-// Query builders, used only by the readDatabase* functions below.
-// ---------------------------------------------------------------------------
 
 /** Most folders one search returns. */
 const FOLDER_SEARCH_LIMIT = 200;
@@ -75,17 +35,13 @@ const FOLDER_SEARCH_LIMIT = 200;
  * capped to the first FOLDER_SEARCH_LIMIT in natural name order.
  */
 function buildLibraryFolderQuery(
-  {
-    currentPath,
-    query,
-    recursive = false,
-  }: Pick<LibrarySnapshotReadRequest, "currentPath" | "query" | "recursive">,
-  database: Database = db,
+  { currentPath, query }: { currentPath: string; query: string | undefined },
+  database: Database,
 ) {
   const { folderConditions, searching } = buildLibraryConditions({
     currentPath,
     query,
-    recursive,
+    recursive: false,
   });
 
   const folderQuery = database
@@ -102,24 +58,15 @@ function buildLibraryFolderQuery(
 
 /** Listing media page: sorted, filtered, keyset-continued, overfetched by one. */
 function buildGalleryListingMediaQuery(
-  {
-    currentPath,
-    cursor,
-    excludedPaths,
-    limit = DEFAULT_GALLERY_LISTING_LIMIT,
-    query,
-    randomSeed,
-    recursive = false,
-    showImages,
-    showVideos,
-    sortMode,
-  }: Omit<GalleryListingReadRequest, "cursor"> & {
-    cursor: MediaCursor | null;
-  },
-  database: Database = db,
+  request: GalleryListingRequest,
+  cursor: MediaCursor | null,
+  database: Database,
 ) {
+  const { excludedPaths, limit, path, query, randomSeed, recursive, showImages, showVideos } =
+    request;
+
   const { mediaConditions } = buildLibraryConditions({
-    currentPath,
+    currentPath: path,
     excludedPaths,
     query,
     recursive,
@@ -127,7 +74,7 @@ function buildGalleryListingMediaQuery(
 
   mediaConditions.push(...buildMediaVisibilityConditions({ showImages, showVideos }));
 
-  const order = galleryListingOrder(sortMode, randomSeed);
+  const order = galleryListingOrder(request.sortMode, randomSeed);
 
   if (cursor) {
     mediaConditions.push(keysetAfter(order, cursor));
@@ -213,57 +160,63 @@ function galleryListingOrder(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Reads
-// ---------------------------------------------------------------------------
-
 export async function readDatabaseLibrarySnapshot(
-  { currentPath, includeAllFolders = false, query, recursive = false }: LibrarySnapshotReadRequest,
+  { includeAllFolders, path, query }: LibrarySnapshotRequest,
   database: Database = db,
-): Promise<DatabaseLibrarySnapshot> {
+): Promise<LibrarySnapshot> {
   const [folderRows, allFolderRows, siblingRows] = await Promise.all([
-    buildLibraryFolderQuery({ currentPath, query, recursive }, database),
+    buildLibraryFolderQuery({ currentPath: path, query }, database),
     includeAllFolders
       ? database.select().from(folders).where(isNull(folders.deletedAt))
       : Promise.resolve([]),
-    currentPath
+    path
       ? database
           .select()
           .from(folders)
-          .where(and(isNull(folders.deletedAt), eq(folders.parentPath, getParentPath(currentPath))))
+          .where(and(isNull(folders.deletedAt), eq(folders.parentPath, getParentPath(path))))
       : Promise.resolve([]),
   ]);
 
-  const folderParentPathsWithChildFolders = new Set(
-    allFolderRows
-      .map((folder) => folder.parentPath)
-      .filter((parentPath): parentPath is string => Boolean(parentPath)),
-  );
+  // Here "has children" means child folders: the folder picker expands folders only.
+  const parentPathsWithChildFolders = new Set(allFolderRows.map((folder) => folder.parentPath));
 
   return {
-    allFolders: allFolderRows.map((folder) =>
-      mapFolderRow(folder, folderParentPathsWithChildFolders),
-    ),
+    allFolders: allFolderRows.map((folder) => mapFolderRow(folder, parentPathsWithChildFolders)),
+    currentPath: path,
     folders: folderRows.map(mapSnapshotFolderRow),
     siblings: siblingRows.map(mapSnapshotFolderRow),
   };
 }
 
+/** Folder cards in display order: natural name order, reversed for name-desc. */
+function folderEntries(
+  folderNodes: readonly FolderNode[],
+  sortMode: GallerySortMode,
+): GalleryBrowseEntry[] {
+  const sorted = [...folderNodes].sort((left, right) =>
+    left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }),
+  );
+
+  if (sortMode === "name-desc") {
+    sorted.reverse();
+  }
+
+  return sorted.map((folder) => ({
+    hasChildren: folder.hasChildren,
+    key: `folder:${folder.path}`,
+    kind: "folder",
+    name: folder.name,
+    path: folder.path,
+  }));
+}
+
 export async function readDatabaseGalleryListing(
-  {
-    currentPath,
-    cursor,
-    excludedPaths,
-    limit = DEFAULT_GALLERY_LISTING_LIMIT,
-    query,
-    randomSeed,
-    recursive = false,
-    showImages,
-    showVideos,
-    sortMode,
-  }: GalleryListingReadRequest,
+  request: GalleryListingRequest,
+  cursor: string | undefined,
   database: Database = db,
 ): Promise<GalleryListingPage> {
+  const { limit, path, query, randomSeed, recursive, sortMode } = request;
+
   const decodedCursor = decodeGalleryListingCursor(cursor, {
     randomSeed,
     sortMode,
@@ -274,21 +227,11 @@ export async function readDatabaseGalleryListing(
 
   const [folderRows, mediaRows] = await Promise.all([
     includeFolders
-      ? buildLibraryFolderQuery({ currentPath, query, recursive }, database)
+      ? buildLibraryFolderQuery({ currentPath: path, query }, database)
       : Promise.resolve([]),
     buildGalleryListingMediaQuery(
-      {
-        currentPath,
-        cursor: decodedCursor?.subjectKind === "media" ? decodedCursor : null,
-        excludedPaths,
-        limit,
-        query,
-        randomSeed,
-        recursive,
-        showImages,
-        showVideos,
-        sortMode,
-      },
+      request,
+      decodedCursor?.subjectKind === "media" ? decodedCursor : null,
       database,
     ),
   ]);
@@ -296,26 +239,23 @@ export async function readDatabaseGalleryListing(
   const hasMore = mediaRows.length > limit;
   const pageMediaRows = hasMore ? mediaRows.slice(0, limit) : mediaRows;
 
-  const visibleFolderPaths = [...new Set(folderRows.map((folder) => folder.path))];
-
+  // A folder card "has children" when anything lives beneath it, folders or entries.
   const visibleParentPathsWithChildren = includeFolders
-    ? await readParentPathsWithChildren(visibleFolderPaths, database)
+    ? await readParentPathsWithChildren(
+        [...new Set(folderRows.map((folder) => folder.path))],
+        database,
+      )
     : new Set<string>();
 
-  const folderNodes = folderRows.map((folder) =>
-    mapFolderRow(folder, visibleParentPathsWithChildren),
-  );
-
-  const media = mapMediaRowsToLibraryItems(pageMediaRows);
-
-  const entries = buildBrowserEntries({
-    folders: folderNodes,
-    comics: [],
-    items: media,
-    recursive,
-    comicMode: false,
-    sortMode,
-  });
+  const entries: GalleryBrowseEntry[] = [
+    ...folderEntries(
+      folderRows.map((folder) => mapFolderRow(folder, visibleParentPathsWithChildren)),
+      sortMode,
+    ),
+    ...mapMediaRows(pageMediaRows).map(
+      (media): GalleryBrowseEntry => ({ key: `media:${media.id}`, kind: "media", media }),
+    ),
+  ];
 
   const lastRow = pageMediaRows.at(-1);
 
@@ -337,34 +277,29 @@ export async function readDatabaseGalleryListing(
       : null;
 
   return {
-    comics: [],
     entries,
-    media,
-    page: {
-      cursor: nextCursor,
-      hasMore,
-      limit,
-    },
+    page: { cursor: nextCursor, hasMore, limit },
     subjectKind: "media",
   };
 }
 
+/** Soft-delete one entry, behind the same guard as a folder delete. */
 export async function softDeleteLibraryEntry(
   { entryId }: { entryId: string },
   database: Database = db,
 ): Promise<boolean> {
-  const [deleted] = await database
-    .update(libraryEntries)
-    .set({ deletedAt: new Date() })
-    .where(and(eq(libraryEntries.id, entryId), isNull(libraryEntries.deletedAt)))
-    .returning({ id: libraryEntries.id });
+  return database.transaction(async (tx) => {
+    await guardLibraryChange(tx);
 
-  return Boolean(deleted);
+    const [deleted] = await tx
+      .update(libraryEntries)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(libraryEntries.id, entryId), isNull(libraryEntries.deletedAt)))
+      .returning({ id: libraryEntries.id });
+
+    return Boolean(deleted);
+  });
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 type FolderRow = typeof folders.$inferSelect;
 
@@ -372,7 +307,7 @@ function mapFolderRow(folder: FolderRow, parentPathsWithChildren: ReadonlySet<st
   return { ...mapSnapshotFolderRow(folder), hasChildren: parentPathsWithChildren.has(folder.path) };
 }
 
-function mapSnapshotFolderRow(folder: FolderRow): SnapshotFolderNode {
+function mapSnapshotFolderRow(folder: FolderRow): SnapshotFolder {
   return {
     name: folder.name,
     parentId: folder.parentId,

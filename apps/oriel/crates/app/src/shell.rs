@@ -1,16 +1,12 @@
-//! The window's root: the shell's state, the three modes, and the one Settings page. Only the
-//! mode on screen is drawn; the others keep their state in their entities.
+//! The window's root: the shell's state, the modes, and the one Settings page. Only the mode on
+//! screen is drawn; the others keep their state in their entities.
 //!
-//! The shell does for every mode what Electron Oriel's main process and `ShellProvider` do: the
-//! window's title and the menu bar follow the mode; the mode, the sidebar's form and the window's
-//! bounds are remembered; the Dock shows running work; closing the window waits for it; and paths
-//! the system hands the app open in View.
-//!
-//! It also links the modes. Each mode says what it wants of another with an event (View's Show
-//! in Tidy, Tidy's Open in View and Sync this folder, Sync's Open in View and Tidy this folder),
-//! and the shell shows the other mode and hands the file or folder over (`handOff`). The folders
-//! each mode works on are gathered on the shell's state, for the others' empty states to offer.
-//! On the owner's first start the welcome sets one folder up for them all.
+//! The shell does for every mode alike, through [`Mode`]: the window's title and the menu bar
+//! follow the mode; the mode, the sidebar's form and the window's bounds are remembered; the Dock
+//! shows running work; closing the window waits for it; and paths the system hands the app open in
+//! View. It passes on what one mode hands another ([`HandOffRequest`]), and gathers the folders
+//! each mode works on onto the shell's state, for the others' empty states to offer. On the
+//! owner's first start the welcome sets one folder up for them all.
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -18,41 +14,38 @@ use std::time::Duration;
 
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
 use gpui_kit::{
-    AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable, InteractiveElement as _,
+    App, AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable, InteractiveElement as _,
     IntoElement, KeyDownEvent, ParentElement as _, Pixels, Render, Styled as _, Subscription, Task,
-    Window, WindowBounds, div, px,
+    Window, div, px,
 };
 use oriel_core_paths::DataRoot;
-use oriel_mode_sync::{SyncEvent, SyncMode};
-use oriel_mode_tidy::{NotYet, TidyEvent, TidyMode};
-use oriel_mode_view::{ViewEvent, ViewMode};
-use oriel_ui::commands::shell_key_context;
+use oriel_launch::{Launch, storage_keys};
+use oriel_mode_sync::SyncMode;
+use oriel_mode_tidy::TidyMode;
+use oriel_mode_view::ViewMode;
 use oriel_ui::settings::SettingsFrame;
+use oriel_ui::shortcuts::{Line, ShowShortcuts};
 use oriel_ui::{
-    ActivityIndicator, HandOff, KnownFolder, LocalStorage, ModeId, SettingsSection, ShellState,
-    Toast, ToastExt as _,
+    AnyMode, Foot, HandOff, HandOffRequest, KnownFolder, LocalStorage, Mode, ModeId, ModeMap,
+    SettingsSection, ShellState, shell_key_context,
 };
 
 use crate::actions::{
-    About, CloseSettings, CloseWindow, Minimize, OpenSettings, SETTINGS_CONTEXT, ShowSync,
-    ShowTidy, ShowView, ToggleFullScreen, ToggleRail, Zoom,
+    About, CloseSettings, CloseWindow, Minimize, OpenSettings, SETTINGS_CONTEXT, ShellCommand,
+    ShowMode, ToggleFullScreen, ToggleRail, Zoom,
 };
+use crate::check::ShellChecks;
 use crate::general::GeneralSettings;
-use crate::quit::{QuitGuard, QuitPlatform, SystemQuit};
-use crate::welcome::{Welcome, WelcomeEvent, WelcomeModes};
+use crate::quit::{QuitGuard, QuitPlatform};
+use crate::welcome::{Welcome, WelcomeEvent};
 use crate::window_state::WindowState;
 use crate::{about, dock, menus, welcome, window_state};
 
-/// Where the mode shown last is kept, Electron Oriel's `localStorage` key.
-pub const MODE_KEY: &str = "oriel.mode";
-/// Where the sidebar's form is kept: `rail` or `full`.
-pub const SIDEBAR_KEY: &str = "oriel.sidebar";
+/// The stored sidebar's form: `rail` or `full`.
+const SIDEBAR_KEY: &str = "oriel.sidebar";
 
-/// How long the window's bounds must stay put before they are written, as Electron Oriel waits.
+/// How long the window's bounds must stay put before they are written.
 const SAVE_WINDOW_DELAY: Duration = Duration::from_millis(250);
-
-/// How long after the window draws `ORIEL_TOAST`'s toast shows, in milliseconds.
-const TOAST_AT_START_AFTER: u64 = 2000;
 
 /// What fills the window: a mode, or the Settings page over it.
 #[derive(Clone, Copy, PartialEq)]
@@ -73,14 +66,12 @@ struct Applied {
 pub struct Shell {
     data: DataRoot,
     state: Entity<ShellState>,
-    view: Entity<ViewMode>,
-    tidy: Entity<TidyMode>,
-    sync: Entity<SyncMode>,
+    modes: ModeMap<AnyMode>,
     quit: Entity<QuitGuard>,
     focus_handle: FocusHandle,
     settings_focus: FocusHandle,
     /// Where each hidden mode's focus was when it was last on screen.
-    mode_focus: [Option<FocusHandle>; 3],
+    mode_focus: ModeMap<Option<FocusHandle>>,
     /// What the last frame drew: a mode, or Settings.
     drawn: Option<Drawn>,
     applied: Applied,
@@ -90,88 +81,60 @@ pub struct Shell {
     /// window keeps for when it is restored.
     normal_bounds: Option<Bounds<Pixels>>,
     save_window: Option<Task<()>>,
-    /// What the modes last said they work on: View's folder, Tidy's, Sync's. The known folders
-    /// are gathered again only when this changes, or when another mode comes on screen.
-    folder_sources: Option<[Vec<PathBuf>; 3]>,
+    /// What the modes last said they work on. The known folders are gathered again only when this
+    /// changes, or when another mode comes on screen.
+    folder_sources: Option<ModeMap<Vec<PathBuf>>>,
     /// The first start's welcome while it shows, and whether its dialog is open yet.
     welcome: Option<(Entity<Welcome>, bool, Subscription)>,
-    /// `ORIEL_ABOUT=1` asked for the About dialog at start, which opens once the window draws.
-    about_at_start: bool,
-    /// `ORIEL_ACTIVITY_PANEL=1` asked for the activity panel open whenever work runs.
+    /// The launch's check opens the activity panel whenever work runs.
     open_activity_on_work: bool,
-    /// `ORIEL_TOAST` asked for a toast, which shows once the window draws.
-    toast_at_start: Option<Toast>,
-    /// The shell's measurements, when `ORIEL_SPIKE_SHELL` asks for them.
     pub(crate) spike: Option<crate::spike::ShellSpike>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl Shell {
-    /// The app's shell over `data`: the modes as the environment configures them (View opens
-    /// `ORIEL_OPEN`, the Phase 0 spikes run when asked), quitting for real.
-    pub fn new(data: DataRoot, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let mut this = Self::build(data, Rc::new(SystemQuit), true, window, cx);
-        crate::check::apply_from_environment(&this.state, cx);
-        this.about_at_start = crate::check::about_from_environment();
-        this.open_activity_on_work = crate::check::activity_panel_from_environment();
-        this.toast_at_start = crate::check::toast_from_environment();
-        crate::check::start_script(window, cx);
-        this.spike = crate::spike::ShellSpike::from_environment();
-        if this.spike.is_some() {
-            crate::spike::start(window, cx);
-        }
-        if welcome::allowed_from_environment() {
-            this.offer_welcome(window, cx);
-        }
-        this
-    }
-
-    /// A shell over `data` alone, as tests open it: View opens nothing at start, and `quit`
-    /// stands in for hiding and quitting the app.
-    pub fn with_data(
-        data: DataRoot,
+    /// The shell as `launch` sets it up, its modes made here and nowhere else; `quit` hides and
+    /// quits the app.
+    pub fn new(
+        launch: &Launch,
         quit: Rc<dyn QuitPlatform>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        Self::build(data, quit, false, window, cx)
-    }
-
-    fn build(
-        data: DataRoot,
-        quit: Rc<dyn QuitPlatform>,
-        from_environment: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let mode = LocalStorage::get(cx, MODE_KEY)
-            .and_then(ModeId::from_key)
-            .unwrap_or(ModeId::View);
+        let data = launch.data.clone();
+        let mode = Self::starting_mode(launch, cx);
         let rail = LocalStorage::get(cx, SIDEBAR_KEY) == Some("rail");
         let state = cx.new(|cx| ShellState::new(mode, rail, cx));
-        let view = if from_environment {
-            cx.new(|cx| ViewMode::new(&state, window, cx))
-        } else {
-            cx.new(|cx| ViewMode::with_data(&state, &data, window, cx))
-        };
-        let tidy = if from_environment {
-            cx.new(|cx| TidyMode::new(&state, window, cx))
-        } else {
-            cx.new(|cx| TidyMode::with_data(&state, &data, Rc::new(NotYet), window, cx))
-        };
-        let sync = if from_environment {
-            cx.new(|cx| SyncMode::new(&state, window, cx))
-        } else {
-            cx.new(|cx| SyncMode::with_data(&state, &data, window, cx))
-        };
+        let modes = ModeMap::from_fn(|mode| -> AnyMode {
+            match mode {
+                ModeId::View => cx
+                    .new(|cx| ViewMode::new(&state, launch, window, cx))
+                    .into(),
+                ModeId::Tidy => cx
+                    .new(|cx| TidyMode::new(&state, launch, window, cx))
+                    .into(),
+                ModeId::Sync => cx
+                    .new(|cx| SyncMode::new(&state, launch, window, cx))
+                    .into(),
+            }
+        });
+        let checks = ShellChecks::from_variables(&launch.variables);
+        crate::actions::bind_mode_keys(&modes, cx);
         let quit = QuitGuard::install(&state, quit, cx);
-        let tidy_state = tidy.read(cx).state().clone();
         let jobs = state.read(cx).jobs().clone();
 
-        let subscriptions = vec![
+        let shell = cx.weak_entity();
+        let mut subscriptions = vec![
             cx.observe_in(&state, window, |this, _, window, cx| {
                 this.apply_state(window, cx);
             }),
+            cx.subscribe_in(
+                &state,
+                window,
+                |this, _, request: &HandOffRequest, window, cx| {
+                    this.modes[request.to].show_hand_off(request.target.clone(), window, cx);
+                },
+            ),
             cx.observe_window_appearance(window, |_, window, cx| {
                 oriel_ui::theme::follow_system_appearance(window, cx);
             }),
@@ -192,44 +155,6 @@ impl Shell {
                 oriel_tools::kill_running_tools();
                 async {}
             }),
-            // What the modes ask of each other.
-            cx.subscribe_in(
-                &view,
-                window,
-                |this, _, event: &ViewEvent, window, cx| match event {
-                    ViewEvent::ShowInTidy(file) => {
-                        this.hand_off(ModeId::Tidy, HandOff::File(file.clone()), window, cx);
-                    }
-                },
-            ),
-            cx.subscribe_in(
-                &tidy,
-                window,
-                |this, _, event: &TidyEvent, window, cx| match event {
-                    TidyEvent::OpenInView(path) => {
-                        this.hand_off(ModeId::View, HandOff::File(path.clone()), window, cx);
-                    }
-                    TidyEvent::SyncFolder(folder) => {
-                        this.hand_off(ModeId::Sync, HandOff::Folder(folder.clone()), window, cx);
-                    }
-                },
-            ),
-            cx.subscribe_in(
-                &sync,
-                window,
-                |this, _, event: &SyncEvent, window, cx| match event {
-                    SyncEvent::OpenInView(folder) => {
-                        this.hand_off(ModeId::View, HandOff::Folder(folder.clone()), window, cx);
-                    }
-                    SyncEvent::TidyFolder(folder) => {
-                        this.hand_off(ModeId::Tidy, HandOff::Folder(folder.clone()), window, cx);
-                    }
-                },
-            ),
-            // The folders each mode works on, for the others to offer.
-            cx.observe(&view, |this, _, cx| this.gather_folders(false, cx)),
-            cx.observe(&tidy_state, |this, _, cx| this.gather_folders(false, cx)),
-            cx.observe(&sync, |this, _, cx| this.gather_folders(false, cx)),
             // What every mode is doing, drawn once at the window's bottom right.
             cx.observe(&jobs, |this, jobs, cx| {
                 if this.open_activity_on_work && !jobs.read(cx).is_idle() {
@@ -238,7 +163,18 @@ impl Shell {
                 cx.notify();
             }),
         ];
-        let shell = cx.weak_entity();
+        // The folders each mode works on, for the others to offer.
+        subscriptions.extend(modes.values().map(|mode| {
+            let shell = shell.clone();
+            mode.observe(
+                move |cx| {
+                    shell
+                        .update(cx, |this, cx| this.gather_folders(false, cx))
+                        .ok();
+                },
+                cx,
+            )
+        }));
         window.on_window_should_close(cx, move |window, cx| {
             shell
                 .update(cx, |shell, cx| shell.allows_close(window, cx))
@@ -251,30 +187,34 @@ impl Shell {
             progress: None,
         };
         let mut this = Self {
-            normal_bounds: WindowState::read(&data.shell()).map(|state| state.bounds()),
+            normal_bounds: WindowState::read(&data.window_state()).map(|state| state.bounds()),
             data,
             state,
-            view,
-            tidy,
-            sync,
+            modes,
             quit,
             focus_handle: cx.focus_handle(),
             settings_focus: cx.focus_handle(),
-            mode_focus: Default::default(),
+            mode_focus: ModeMap::default(),
             drawn: None,
             applied,
             window_state: None,
             save_window: None,
             folder_sources: None,
             welcome: None,
-            about_at_start: false,
-            open_activity_on_work: false,
-            toast_at_start: None,
-            spike: None,
+            open_activity_on_work: checks.activity_panel,
+            spike: crate::spike::ShellSpike::open(&launch.variables),
             _subscriptions: subscriptions,
         };
         this.show_mode(mode, window, cx);
         this.gather_folders(true, cx);
+        crate::check::apply(&checks, &this.state, cx);
+        crate::check::play_script(&checks, &this.state, window, cx);
+        if this.spike.is_some() {
+            crate::spike::start(&launch.variables, window, cx);
+        }
+        if welcome::allowed(&this.data, checks.welcome) {
+            this.offer_welcome(window, cx);
+        }
         this
     }
 
@@ -282,86 +222,53 @@ impl Shell {
         &self.state
     }
 
-    pub fn view(&self) -> &Entity<ViewMode> {
-        &self.view
-    }
-
-    pub fn tidy(&self) -> &Entity<TidyMode> {
-        &self.tidy
-    }
-
-    pub fn sync(&self) -> &Entity<SyncMode> {
-        &self.sync
+    /// The mode `M`.
+    pub fn mode<M: Mode>(&self) -> &Entity<M> {
+        self.modes[M::ID]
+            .downcast()
+            .expect("each mode is the type its id names")
     }
 
     pub fn quit(&self) -> &Entity<QuitGuard> {
         &self.quit
     }
 
-    /// The window's title for `mode`: "View – Oriel", as Electron Oriel's "View – Oriel".
-    pub fn title(mode: ModeId) -> String {
-        format!("{} – {}", mode.label(), crate::APP_NAME)
+    /// The mode the window opens in: View for a launch that opens a path, else the mode last
+    /// shown.
+    pub fn starting_mode(launch: &Launch, cx: &App) -> ModeId {
+        if launch.open.is_some() {
+            return ModeId::View;
+        }
+        LocalStorage::get(cx, storage_keys::MODE)
+            .and_then(ModeId::from_key)
+            .unwrap_or(ModeId::View)
     }
 
-    /// Shows `path` in View, as Electron Oriel's `openInView` does for a path the system hands
-    /// the app: a folder opens as it is, a file through its folder and then in the viewer. The
-    /// window comes forward.
+    /// The window's title for `mode`: "View – Oriel".
+    pub fn title(mode: ModeId) -> String {
+        format!("{} – {}", mode.label(), oriel_core_paths::APP_NAME)
+    }
+
+    /// Shows `path`, which the system hands the app, in View: a folder opens as it is, a file
+    /// through its folder and then in the viewer. The window comes forward.
     pub fn open_in_view(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         let path = path.to_path_buf();
-        self.view
-            .update(cx, |view, cx| view.open_path(path, window, cx));
-        self.state
-            .update(cx, |state, cx| state.go(ModeId::View, cx));
+        let target = if path.is_dir() {
+            HandOff::Folder(path)
+        } else {
+            HandOff::File(path)
+        };
+        self.modes[ModeId::View].show_hand_off(target, window, cx);
         self.show_window(window, cx);
     }
 
-    /// Shows `target` in mode `to`, as Electron Oriel's `handOff` does: View opens a file in its
-    /// viewer (once its folder is listed) or a folder; Tidy and Sync take it themselves. A path
-    /// that is no longer there is not shown, and a toast says so.
-    pub fn hand_off(
-        &mut self,
-        to: ModeId,
-        target: HandOff,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match to {
-            ModeId::View => {
-                let path = target.path().to_path_buf();
-                if path.exists() {
-                    self.open_in_view(&path, window, cx);
-                } else {
-                    window.show_toast(
-                        Toast::error("View could not open it").detail(path.display().to_string()),
-                        cx,
-                    );
-                }
-            }
-            ModeId::Tidy => {
-                self.go(ModeId::Tidy, cx);
-                self.tidy
-                    .update(cx, |tidy, cx| tidy.show_hand_off(target, window, cx));
-            }
-            ModeId::Sync => {
-                self.go(ModeId::Sync, cx);
-                self.sync
-                    .update(cx, |sync, cx| sync.show_hand_off(target, window, cx));
-            }
-        }
-    }
-
-    /// Shows the first start's welcome over the window, unless the owner has been through it
-    /// (`WelcomeGate`). The app offers it at launch; tests ask for it.
+    /// Shows the first start's welcome over the window, unless the owner has been through it.
+    /// The app offers it at launch; tests ask for it.
     pub fn offer_welcome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.welcome.is_some() || welcome::welcomed(&self.data) {
             return;
         }
-        let modes = WelcomeModes {
-            view: self.view.clone(),
-            tidy: self.tidy.clone(),
-            sync: self.sync.clone(),
-        };
-        let (state, data) = (self.state.clone(), self.data.clone());
+        let (state, data, modes) = (self.state.clone(), self.data.clone(), self.modes.clone());
         let entity = cx.new(|cx| Welcome::new(&state, data, modes, window, cx));
         let subscription = cx.subscribe_in(
             &entity,
@@ -379,7 +286,7 @@ impl Shell {
         self.welcome.as_ref().map(|(welcome, _, _)| welcome)
     }
 
-    /// The welcome is done: it shows no more, and View is on screen (`finish`).
+    /// The welcome is done: it shows no more, and View is on screen.
     fn finish_welcome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.welcome.take().is_none() {
             return;
@@ -413,39 +320,26 @@ impl Shell {
         });
     }
 
-    /// Gathers the folders the modes work on onto the shell's state
-    /// (`knownFolders`), when what the modes say changed, or always when `force`: a folder since
-    /// moved or deleted is not offered, so another look at the disk is due when a mode comes on
-    /// screen.
+    /// Gathers the folders the modes work on onto the shell's state, when what the modes say
+    /// changed, or always when `force`: a folder since moved or deleted is not offered, so another
+    /// look at the disk is due when a mode comes on screen.
     fn gather_folders(&mut self, force: bool, cx: &mut Context<Self>) {
-        let sources = [
-            self.view.read(cx).opened_folder().into_iter().collect(),
-            self.tidy
-                .read(cx)
-                .state()
-                .read(cx)
-                .roots()
-                .iter()
-                .map(|root| PathBuf::from(&root.path))
-                .collect(),
-            self.sync.read(cx).source_roots(),
-        ];
+        let sources = ModeMap::from_fn(|mode| self.modes[mode].folders(cx));
         if !force && self.folder_sources.as_ref() == Some(&sources) {
             return;
         }
         // Symlinks resolved, so two spellings of one folder meet; one that is gone drops out.
-        let resolve = |folders: &[PathBuf]| -> Vec<PathBuf> {
-            folders
+        let resolved = ModeMap::from_fn(|mode| -> Vec<PathBuf> {
+            sources[mode]
                 .iter()
                 .filter_map(|folder| oriel_runtime::paths::canonicalize(folder).ok())
                 .filter(|folder| folder.is_dir())
                 .collect()
-        };
-        let resolved: Vec<Vec<PathBuf>> = sources.iter().map(|folders| resolve(folders)).collect();
+        });
         let known = KnownFolder::collect(
-            ModeId::ALL
-                .into_iter()
-                .zip(resolved.iter().map(Vec::as_slice)),
+            resolved
+                .iter()
+                .map(|(mode, folders)| (mode, folders.as_slice())),
         );
         self.folder_sources = Some(sources);
         self.state
@@ -486,7 +380,7 @@ impl Shell {
 
         if now.mode != before.mode {
             self.show_mode(now.mode, window, cx);
-            LocalStorage::set(cx, MODE_KEY, now.mode.key());
+            LocalStorage::set(cx, storage_keys::MODE, now.mode.key());
             // Read again each time a mode comes on screen: a folder may have gone meanwhile.
             self.gather_folders(true, cx);
         }
@@ -525,69 +419,45 @@ impl Shell {
             return;
         }
         if let (Drawn::Mode(mode), Some(focus)) = (from, focused) {
-            self.mode_focus[mode.index()] = Some(focus).filter(|focus| *focus != self.focus_handle);
+            self.mode_focus[mode] = Some(focus).filter(|focus| *focus != self.focus_handle);
         }
         let target = match to {
             Drawn::Settings => Some(self.settings_focus.clone()),
-            Drawn::Mode(mode) => self.mode_focus[mode.index()]
+            Drawn::Mode(mode) => self.mode_focus[mode]
                 .take()
-                .or_else(|| self.own_focus(mode, cx)),
+                .or_else(|| Some(self.modes[mode].focus_handle(cx))),
         }
         .unwrap_or_else(|| self.focus_handle.clone());
         // Not during render: the focus moves once this frame is done.
         cx.defer_in(window, move |_, window, cx| target.focus(window, cx));
     }
 
-    /// The focus a mode takes when it comes on screen with none of its own kept: View's gallery
-    /// (or its open viewer), Tidy's root, which hands it on to the page on screen, and Sync's
-    /// page, so their keys (⌘L, Space) and menu commands (Open Folder…, Refresh) reach them at
-    /// once, before a click.
-    fn own_focus(&self, mode: ModeId, cx: &gpui_kit::App) -> Option<FocusHandle> {
-        match mode {
-            ModeId::View => Some(self.view.focus_handle(cx)),
-            ModeId::Tidy => Some(self.tidy.focus_handle(cx)),
-            ModeId::Sync => Some(self.sync.focus_handle(cx)),
-        }
-    }
-
-    /// Where the keyboard starts as the window opens: in the mode on screen where it has a place
-    /// of its own, else on the shell.
+    /// Where the keyboard starts as the window opens: in the mode on screen.
     pub fn initial_focus(&self, cx: &gpui_kit::App) -> FocusHandle {
-        self.own_focus(self.state.read(cx).mode(), cx)
-            .unwrap_or_else(|| self.focus_handle.clone())
+        self.modes[self.state.read(cx).mode()].focus_handle(cx)
     }
 
     /// The window's title and the menu bar for `mode`.
     fn show_mode(&mut self, mode: ModeId, window: &mut Window, cx: &mut Context<Self>) {
         window.set_window_title(&Self::title(mode));
-        menus::set(mode, cx);
+        menus::set(mode, &self.modes[mode].commands(), cx);
     }
 
     /// Notes the window's bounds as the file keeps them: GPUI reports them relative to the
-    /// window's display, and the file keeps them across every display, as Electron does.
+    /// window's display, and the file keeps them across every display, as Electron Oriel wrote
+    /// them.
     fn note_window_bounds(&mut self, window: &mut Window, cx: &gpui_kit::App) {
         let origin = window
             .display(cx)
             .map(|display| window_state::display_origin(display.id()))
             .unwrap_or_default();
-        let across_displays =
-            |bounds: Bounds<Pixels>| Bounds::new(bounds.origin + origin, bounds.size);
         let maximized = window.is_maximized();
-        let state = match window.window_bounds() {
-            WindowBounds::Windowed(bounds) if !maximized => {
-                let bounds = across_displays(bounds);
-                self.normal_bounds = Some(bounds);
-                WindowState::new(bounds, false)
-            }
-            // macOS reports a zoomed window as windowed at its zoomed size, so the size it
-            // returns to is the one noted before.
-            WindowBounds::Windowed(bounds) | WindowBounds::Maximized(bounds) => {
-                WindowState::new(self.normal_bounds.unwrap_or(across_displays(bounds)), true)
-            }
-            // Electron Oriel does not keep full screen either; the window comes back at the
-            // size it left full screen from.
-            WindowBounds::Fullscreen(bounds) => WindowState::new(across_displays(bounds), false),
-        };
+        let state = WindowState::noting(
+            window.window_bounds(),
+            maximized,
+            &mut self.normal_bounds,
+            origin,
+        );
         self.window_state = Some(state);
     }
 
@@ -601,17 +471,30 @@ impl Shell {
     fn write_window_state(&mut self) {
         self.save_window = None;
         if let Some(state) = &self.window_state {
-            state.write(&self.data.shell());
+            state.write(&self.data.window_state());
         }
     }
 
-    /// Opens the shortcut sheet of the mode on screen.
+    /// Opens the shortcut sheet of the mode on screen: the keys every mode shares and its
+    /// commands', then its own.
     fn show_shortcuts(&self, window: &mut Window, cx: &mut Context<Self>) {
-        match self.state.read(cx).mode() {
-            ModeId::View => oriel_mode_view::show_shortcuts(window, cx),
-            ModeId::Tidy => oriel_mode_tidy::show_shortcuts(window, cx),
-            ModeId::Sync => oriel_mode_sync::show_shortcuts(window, cx),
-        }
+        let mode = &self.modes[self.state.read(cx).mode()];
+        let sheet = mode.sheet();
+        let switch = ModeId::ALL.map(ModeId::keys).join(" ");
+        let mut lines = vec![Line::new("View, Tidy, Sync", &switch)];
+        lines.extend(
+            mode.commands()
+                .into_iter()
+                .filter_map(|command| Some(Line::new(command.sheet?, command.keys?))),
+        );
+        lines.extend(sheet.everywhere.iter().map(Line::from_shortcut));
+        lines.extend(
+            crate::actions::shell_commands(cfg!(target_os = "macos"))
+                .iter()
+                .filter_map(ShellCommand::sheet_line),
+        );
+        lines.push(Line::new("Shortcuts", "?"));
+        oriel_ui::shortcuts::open_sheet(lines, &sheet, window, cx);
     }
 
     fn render_settings(
@@ -624,15 +507,7 @@ impl Shell {
             SettingsSection::General => {
                 GeneralSettings::new(self.data.root().to_path_buf()).into_any_element()
             }
-            SettingsSection::Mode(ModeId::View) => self
-                .view
-                .update(cx, |view, cx| view.settings_section(window, cx)),
-            SettingsSection::Mode(ModeId::Tidy) => self
-                .tidy
-                .update(cx, |tidy, cx| tidy.settings_section(window, cx)),
-            SettingsSection::Mode(ModeId::Sync) => self
-                .sync
-                .update(cx, |sync, cx| sync.settings_section(window, cx)),
+            SettingsSection::Mode(mode) => self.modes[mode].settings_section(window, cx),
         };
         div()
             .id("settings")
@@ -675,52 +550,20 @@ impl Render for Shell {
             spike.on_render(screen, window);
         }
         self.open_welcome_dialog(window, cx);
-        if let Some(toast) = self.toast_at_start.take() {
-            // Late enough that the page has its commands and its slot, as when something is done.
-            cx.spawn_in(window, async move |_, cx| {
-                cx.background_executor()
-                    .timer(std::time::Duration::from_millis(TOAST_AT_START_AFTER))
-                    .await;
-                cx.update(|window, cx| window.show_toast(toast, cx)).ok();
-            })
-            .detach();
-        }
-        if std::mem::take(&mut self.about_at_start) {
-            cx.defer_in(window, |_, window, cx| {
-                about::show(about::LicenceIndex::of_running_app(), window, cx);
-            });
-        }
         let width = f32::from(window.viewport_size().width);
         self.state
             .update(cx, |state, cx| state.set_window_width(width, cx));
         // What the page keeps at the window's foot, which the activity panel and toasts stand on.
-        let foot = match (settings, mode) {
-            (Some(_), _) => px(0.),
-            (None, ModeId::Sync) => self.sync.read(cx).foot_height(),
-            (None, ModeId::View) => self.view.read(cx).foot_height(cx),
-            (None, ModeId::Tidy) => self.tidy.read(cx).foot_height(cx),
+        let foot = match settings {
+            Some(_) => Foot::default(),
+            None => self.modes[mode].foot(cx),
         };
         let jobs = self.state.read(cx).jobs().clone();
-        let standing = foot + jobs.read(cx).footprint();
-        let slot = match (settings, mode) {
-            (None, ModeId::Tidy) => self.tidy.read(cx).toast_slot(cx),
-            _ => None,
-        };
-        oriel_ui::toast::dock_toasts(standing, window.viewport_size(), slot, cx);
-        let room = match (settings, mode) {
-            (None, ModeId::Tidy) => self.tidy.read(cx).activity_room(cx),
-            _ => None,
-        };
         let content = match settings {
             Some(section) => self.render_settings(section, window, cx).into_any_element(),
-            None => match mode {
-                ModeId::View => self.view.clone().into_any_element(),
-                ModeId::Tidy => self.tidy.clone().into_any_element(),
-                ModeId::Sync => self.sync.clone().into_any_element(),
-            },
+            None => self.modes[mode].view().into_any_element(),
         };
-
-        div()
+        let shell = div()
             .id("shell")
             .key_context(shell_key_context(mode))
             .track_focus(&self.focus_handle)
@@ -734,14 +577,10 @@ impl Render for Shell {
                     cx.stop_propagation();
                 }
             }))
-            .on_action(
-                cx.listener(|this, _: &oriel_ui::commands::ShowShortcuts, window, cx| {
-                    this.show_shortcuts(window, cx);
-                }),
-            )
-            .on_action(cx.listener(|this, _: &ShowView, _, cx| this.go(ModeId::View, cx)))
-            .on_action(cx.listener(|this, _: &ShowTidy, _, cx| this.go(ModeId::Tidy, cx)))
-            .on_action(cx.listener(|this, _: &ShowSync, _, cx| this.go(ModeId::Sync, cx)))
+            .on_action(cx.listener(|this, _: &ShowShortcuts, window, cx| {
+                this.show_shortcuts(window, cx);
+            }))
+            .on_action(cx.listener(|this, ShowMode(mode): &ShowMode, _, cx| this.go(*mode, cx)))
             .on_action(cx.listener(|this, _: &ToggleRail, _, cx| {
                 this.state.update(cx, |state, cx| state.toggle_rail(cx));
             }))
@@ -754,15 +593,16 @@ impl Render for Shell {
             .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
             .on_action(|_: &Minimize, window, _| window.minimize_window())
             .on_action(|_: &Zoom, window, _| window.zoom_window())
-            .on_action(|_: &About, window, cx| {
-                about::show(about::LicenceIndex::of_running_app(), window, cx);
-            })
+            .on_action(cx.listener(|this, _: &About, window, cx| {
+                let licences = about::LicenceIndex::of_running_app();
+                about::show(this.data.root(), licences, window, cx);
+            }))
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 if this.allows_close(window, cx) {
                     window.remove_window();
                 }
             }))
-            .child(content)
-            .child(ActivityIndicator::new(&jobs, foot).room(room))
+            .child(content);
+        oriel_ui::stand_on_foot(shell, foot, &jobs, window, cx)
     }
 }

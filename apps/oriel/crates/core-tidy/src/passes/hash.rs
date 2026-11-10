@@ -1,4 +1,4 @@
-//! The hash pass, from glazier-core's `passes/hash-pass.ts`: hashes only what could be a
+//! The hash pass: hashes only what could be a
 //! duplicate. Files sharing a size get a hash of their first and last 64 KiB; files that still
 //! collide get a full SHA-256, the same content id Sync uploads under. A small file is read once
 //! and gets both. Most of an archive is never read in full.
@@ -15,7 +15,7 @@ use oriel_runtime::Cancelled;
 use oriel_runtime::fs_meta::{MetadataExt as _, change_time};
 use sha2::{Digest as _, Sha256};
 
-use crate::catalog::files::SqlParams;
+use crate::catalog::files::{SqlParams, record_edge_hash, record_sha256};
 use crate::catalog::rows::to_absolute_path;
 use crate::contract::FileId;
 use crate::passes::{PassContext, Progress, for_each_concurrent};
@@ -89,17 +89,7 @@ pub fn run_hash_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
             };
             let id = file.id;
             context.catalog.blocking(move |connection| {
-                match sha256 {
-                    Some(sha256) => connection.execute(
-                        "UPDATE files SET head_hash = ?1, sha256 = ?2 WHERE id = ?3",
-                        rusqlite::params![edge, sha256, id],
-                    )?,
-                    None => connection.execute(
-                        "UPDATE files SET head_hash = ?1 WHERE id = ?2",
-                        rusqlite::params![edge, id],
-                    )?,
-                };
-                Ok(())
+                record_edge_hash(connection, id, &edge, sha256.as_deref())
             })
         },
     )?;
@@ -125,13 +115,9 @@ pub fn run_hash_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
                 Err(HashError::Unreadable) => return Ok(()),
             };
             let id = file.id;
-            context.catalog.blocking(move |connection| {
-                connection.execute(
-                    "UPDATE files SET sha256 = ?1 WHERE id = ?2",
-                    rusqlite::params![sha256, id],
-                )?;
-                Ok(())
-            })
+            context
+                .catalog
+                .blocking(move |connection| record_sha256(connection, id, &sha256))
         },
     )
 }

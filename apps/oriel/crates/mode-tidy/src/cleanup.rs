@@ -1,4 +1,4 @@
-//! Clean up (`views/CleanupView.tsx`): silent soundtracks, junk files, empty folders and wrong
+//! Clean up: silent soundtracks, junk files, empty folders and wrong
 //! extensions, each a card with its own action and its first rows, and Clean up N (⌘↩) for all
 //! of them as one change.
 
@@ -7,87 +7,32 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _};
 use gpui_kit::{
     AnyElement, App, ClickEvent, Context, Entity, FocusHandle, Focusable, FontWeight,
-    InteractiveElement as _, IntoElement, KeyDownEvent, ObjectFit, ParentElement as _, Render,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _,
-    Window, div, prelude::FluentBuilder as _, px,
+    InteractiveElement as _, IntoElement, ObjectFit, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
+    prelude::FluentBuilder as _, px,
 };
+use oriel_core_domain::format;
 use oriel_core_tidy::contract::{
-    AudioState, FileFilter, FileFlag, FileFormat, FileKind, FilePage, FileQuery, FileRow,
-    FileSortColumn, RootId,
+    AudioState, FileFilter, FileFlag, FileKind, FilePage, FileQuery, FileSortColumn,
 };
 use oriel_ui::TextRole as _;
 use oriel_ui::focus::FocusReveal;
 use oriel_ui::{ControlSize as _, TopBar};
 
-use crate::actions::{PerformOptions, TidyStep};
-use crate::changes::{PlanRequest, Rename};
-use crate::format;
-use crate::loaded::Loaded;
+use crate::actions::PerformOptions;
+use crate::loaded::{Loaded, PageReads, Read};
 use crate::pages::TidyPage;
 use crate::sidebar::cleanup_count;
 use crate::state::{LibraryPreset, TidyState};
 use crate::thumbs::{self, Thumbs};
 use crate::widgets;
+use oriel_core_tidy::TidyStep;
+use oriel_core_tidy::contract::{ExtensionFix, PlanRequest, Rename};
 
 const SOURCE: &str = "cleanup";
 
 /// Rows shown per section; the rest are a link to the Library.
 const ROW_LIMIT: u32 = 50;
-
-/// The extension a file of each format is renamed to, as the engine's Clean up names them.
-fn preferred_extension(format: FileFormat) -> Option<&'static str> {
-    Some(match format {
-        FileFormat::Png => "png",
-        FileFormat::Jpeg => "jpg",
-        FileFormat::Gif => "gif",
-        FileFormat::Webp => "webp",
-        FileFormat::Bmp => "bmp",
-        FileFormat::Tiff => "tif",
-        FileFormat::Avif => "avif",
-        FileFormat::Heic => "heic",
-        FileFormat::Psd => "psd",
-        FileFormat::Svg => "svg",
-        FileFormat::Mp4 => "mp4",
-        FileFormat::Mov => "mov",
-        FileFormat::Matroska => "mkv",
-        FileFormat::Webm => "webm",
-        FileFormat::Mpegts => "ts",
-        FileFormat::Avi => "avi",
-        FileFormat::Flv => "flv",
-        FileFormat::Asf => "wmv",
-        FileFormat::Mp3 => "mp3",
-        FileFormat::M4a => "m4a",
-        FileFormat::Wav => "wav",
-        FileFormat::Flac => "flac",
-        FileFormat::Ogg => "ogg",
-        FileFormat::Pdf => "pdf",
-        FileFormat::Zip => "zip",
-        FileFormat::Rar => "rar",
-        FileFormat::SevenZ => "7z",
-        FileFormat::Empty | FileFormat::Unknown => return None,
-    })
-}
-
-fn with_extension(name: &str, extension: &str) -> String {
-    match name.rfind('.') {
-        Some(dot) if dot > 0 => format!("{}.{extension}", &name[..dot]),
-        _ => format!("{name}.{extension}"),
-    }
-}
-
-/// The name Clean up gives a file: AVIF and MP4 always under their own extension, anything else
-/// under its format's when the one it has is wrong (`fixedName`).
-pub fn fixed_name(row: &FileRow) -> Option<String> {
-    let ext = row.ext.to_lowercase();
-    if let Some(format @ (FileFormat::Avif | FileFormat::Mp4)) = row.format
-        && ext != format.as_str()
-    {
-        return Some(with_extension(&row.name, format.as_str()));
-    }
-    let preferred = row.format.and_then(preferred_extension)?;
-    row.extension_mismatch
-        .then(|| with_extension(&row.name, preferred))
-}
 
 fn first_page(filter: FileFilter) -> FileQuery {
     FileQuery {
@@ -99,6 +44,39 @@ fn first_page(filter: FileFilter) -> FileQuery {
     }
 }
 
+/// Clean up N in the folder on screen: junk, empty folders and extensions as one plan, then
+/// silent soundtracks, as one change with one Undo, unless Clean up's change already runs or
+/// waits.
+pub(crate) fn clean_up(state: &mut TidyState, window: &mut Window, cx: &mut Context<TidyState>) {
+    let (Some(root), Some(tidy)) = (state.root().cloned(), state.overview().cloned()) else {
+        return;
+    };
+    if state.change_status(SOURCE, cx).is_some() {
+        return;
+    }
+    let mut steps = Vec::new();
+    if tidy.cleanup.count() > 0 {
+        steps.push(TidyStep::Plan(PlanRequest::Cleanup { root_id: root.id }));
+    }
+    if tidy.silent_tracks.files > 0 {
+        steps.push(TidyStep::SilentVideos(root.id));
+    }
+    match steps.as_slice() {
+        [TidyStep::Plan(request)] => {
+            state.perform(request.clone(), PerformOptions::from(SOURCE), window, cx);
+        }
+        [] => {}
+        _ => state.perform_steps(
+            "Clean up",
+            steps,
+            format!("Cleaned up {}", root.name),
+            SOURCE,
+            window,
+            cx,
+        ),
+    }
+}
+
 pub struct CleanupPage {
     state: Entity<TidyState>,
     thumbs: Entity<Thumbs>,
@@ -106,9 +84,9 @@ pub struct CleanupPage {
     silent: Loaded<FilePage>,
     junk: Loaded<FilePage>,
     folders: Loaded<Vec<String>>,
-    mismatched: Loaded<FilePage>,
-    renamed: Loaded<FilePage>,
-    seen: (Option<RootId>, u64),
+    /// Every extension Clean up would fix, with the name it gives each file.
+    fixes: Loaded<Vec<ExtensionFix>>,
+    reads: PageReads,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -125,113 +103,49 @@ impl CleanupPage {
             silent: Loaded::default(),
             junk: Loaded::default(),
             folders: Loaded::default(),
-            mismatched: Loaded::default(),
-            renamed: Loaded::default(),
-            seen: (None, 0),
+            fixes: Loaded::default(),
+            reads: PageReads::default(),
             _subscriptions: subscriptions,
         }
     }
 
     fn sync(&mut self, cx: &mut Context<Self>) {
-        let state = self.state.read(cx);
-        let key = (state.root_id(), state.catalog_version());
-        if state.page() != TidyPage::CleanUp || key == self.seen {
-            cx.notify();
-            return;
-        }
-        self.seen = key;
-        let (Some(engine), Some(root_id)) = (state.engine().cloned(), state.root_id()) else {
-            return;
-        };
-        let root = FileFilter::root(Some(root_id));
-        self.silent.load(
-            engine.list_files(first_page(FileFilter {
-                kinds: vec![FileKind::Video],
-                audio_states: vec![AudioState::Silent],
-                ..root.clone()
-            })),
-            |this| &mut this.silent,
-            cx,
-        );
-        self.junk.load(
-            engine.list_files(first_page(FileFilter {
-                flags: vec![FileFlag::Junk],
-                ..root.clone()
-            })),
-            |this| &mut this.junk,
-            cx,
-        );
-        self.folders.load(
-            engine.list_empty_folders(root_id),
-            |this| &mut this.folders,
-            cx,
-        );
-        self.mismatched.load(
-            engine.list_files(first_page(FileFilter {
-                flags: vec![FileFlag::ExtensionMismatch],
-                ..root.clone()
-            })),
-            |this| &mut this.mismatched,
-            cx,
-        );
-        // AVIF and MP4 files under another extension the format accepts, such as .m4v.
-        self.renamed.load(
-            engine.list_files(first_page(FileFilter {
-                formats: vec![FileFormat::Avif, FileFormat::Mp4],
-                flags: vec![FileFlag::Convertible],
-                ..root
-            })),
-            |this| &mut this.renamed,
-            cx,
-        );
         cx.notify();
-    }
-
-    fn extension_rows(&self) -> Vec<(FileRow, String)> {
-        let mut seen = std::collections::HashSet::new();
-        self.mismatched
-            .data()
-            .into_iter()
-            .chain(self.renamed.data())
-            .flat_map(|page| page.rows.iter())
-            .filter(|row| row.kind != FileKind::Junk && seen.insert(row.id))
-            .filter_map(|row| fixed_name(row).map(|name| (row.clone(), name)))
-            .collect()
-    }
-
-    /// Clean up N: junk, empty folders and extensions as one plan, then silent soundtracks, as
-    /// one change with one Undo.
-    pub fn clean_up(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let state = self.state.read(cx);
-        let (Some(root), Some(tidy)) = (state.root().cloned(), state.overview.data().cloned())
+        let Some(Read {
+            engine, root_id, ..
+        }) = self.reads.due(TidyPage::CleanUp, self.state.read(cx))
         else {
             return;
         };
-        if state.change_status(SOURCE).is_some() {
-            return;
-        }
-        let cleanup = tidy.cleanup;
-        let mut steps = Vec::new();
-        if cleanup.junk + cleanup.empty_folders + cleanup.extensions > 0 {
-            steps.push(TidyStep::Planned(PlanRequest::Cleanup { root_id: root.id }));
-        }
-        if tidy.silent_tracks.files > 0 {
-            steps.push(TidyStep::SilentVideos(root.id));
-        }
-        self.state.update(cx, |state, cx| match steps.as_slice() {
-            [TidyStep::Planned(request)] => {
-                state.perform(request.clone(), PerformOptions::from(SOURCE), window, cx);
-            }
-            [] => {}
-            _ => state.perform_all(
-                "Clean up",
-                steps,
-                format!("Cleaned up {}", root.name),
-                SOURCE,
-                window,
-                cx,
-            ),
+        let root = FileFilter::root(Some(root_id));
+        let silent = first_page(FileFilter {
+            kinds: vec![FileKind::Video],
+            audio_states: vec![AudioState::Silent],
+            ..root.clone()
         });
+        let silent = engine.ask(|engine| engine.list_files(silent), cx);
+        self.silent.load(silent, |this| &mut this.silent, cx);
+        let junk = first_page(FileFilter {
+            flags: vec![FileFlag::Junk],
+            ..root.clone()
+        });
+        let junk = engine.ask(|engine| engine.list_files(junk), cx);
+        self.junk.load(junk, |this| &mut this.junk, cx);
+        let folders = engine.ask(move |engine| engine.list_empty_folders(root_id), cx);
+        self.folders.load(folders, |this| &mut this.folders, cx);
+        let fixes = engine.ask(move |engine| engine.extension_fixes(root_id), cx);
+        self.fixes.load(fixes, |this| &mut this.fixes, cx);
+        cx.notify();
+    }
+
+    fn extension_rows(&self) -> &[ExtensionFix] {
+        self.fixes.data().map_or(&[], Vec::as_slice)
+    }
+
+    /// Clean up N.
+    pub fn clean_up(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.state
+            .update(cx, |state, cx| clean_up(state, window, cx));
     }
 
     fn remove_sound(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -239,7 +153,7 @@ impl CleanupPage {
             return;
         };
         self.state.update(cx, |state, cx| {
-            state.perform_all(
+            state.perform_steps(
                 "Remove silent soundtracks",
                 vec![TidyStep::SilentVideos(root_id)],
                 "Removed silent soundtracks".into(),
@@ -255,53 +169,42 @@ impl CleanupPage {
         let (Some(engine), Some(root_id)) = (state.engine().cloned(), state.root_id()) else {
             return;
         };
-        let extensions = state
-            .overview
-            .data()
-            .map_or(0, |tidy| tidy.cleanup.extensions);
+        let extensions = state.overview().map_or(0, |tidy| tidy.cleanup.extensions);
         // Renames the mismatch fix leaves alone: AVIF and MP4 under an extension their format
         // allows.
         let renames: Vec<Rename> = self
-            .renamed
-            .data()
-            .map(|page| {
-                page.rows
-                    .iter()
-                    .filter(|row| !row.extension_mismatch)
-                    .filter_map(|row| {
-                        fixed_name(row).map(|name| Rename {
-                            file_id: row.id,
-                            name,
-                        })
-                    })
-                    .collect()
+            .extension_rows()
+            .iter()
+            .filter(|fix| !fix.file.extension_mismatch)
+            .map(|fix| Rename {
+                file_id: fix.file.id,
+                name: fix.name.clone(),
             })
-            .unwrap_or_default();
-        let ids = engine.list_file_ids(FileFilter {
+            .collect();
+        let filter = FileFilter {
             flags: vec![FileFlag::ExtensionMismatch],
             ..FileFilter::root(Some(root_id))
-        });
+        };
+        let ids = engine.ask(|engine| engine.list_file_ids(filter), cx);
         cx.spawn_in(window, async move |this, cx| {
             let ids = ids.await.map(|list| list.ids).unwrap_or_default();
             this.update_in(cx, |this, window, cx| {
                 let mut steps = Vec::new();
                 if !ids.is_empty() {
-                    steps.push(TidyStep::Planned(PlanRequest::FixExtension {
-                        file_ids: ids,
-                    }));
+                    steps.push(TidyStep::Plan(PlanRequest::FixExtension { file_ids: ids }));
                 }
                 if !renames.is_empty() {
-                    steps.push(TidyStep::Planned(PlanRequest::Rename { renames }));
+                    steps.push(TidyStep::Plan(PlanRequest::Rename { renames }));
                 }
                 this.state.update(cx, |state, cx| match steps.as_slice() {
-                    [TidyStep::Planned(request)] => state.perform(
+                    [TidyStep::Plan(request)] => state.perform(
                         request.clone(),
                         PerformOptions::from("cleanup:extensions"),
                         window,
                         cx,
                     ),
                     [] => {}
-                    _ => state.perform_all(
+                    _ => state.perform_steps(
                         "Fix extensions",
                         steps,
                         format!("Fixed {}", format::plural(extensions, "extension")),
@@ -314,19 +217,6 @@ impl CleanupPage {
             .ok();
         })
         .detach();
-    }
-
-    fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        // It is the open menu's, or nothing's; the page must not act on it behind the menu.
-        if oriel_ui::popups::popup_open(window, cx) {
-            return;
-        }
-        if oriel_ui::keys::command_held(&event.keystroke.modifiers)
-            && event.keystroke.key == "enter"
-        {
-            self.clean_up(window, cx);
-            cx.stop_propagation();
-        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -346,7 +236,7 @@ impl CleanupPage {
             return None;
         }
         let shown = rows.len() as i64;
-        let status = self.state.read(cx).change_status(source);
+        let status = self.state.read(cx).change_status(source, cx);
         let theme = cx.theme();
         let border = theme.border;
         let muted = theme.muted_foreground;
@@ -454,10 +344,10 @@ impl Focusable for CleanupPage {
 impl Render for CleanupPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let shell = state.shell.clone();
-        let tidy = state.overview.data().cloned();
-        let error = state.overview.error().cloned();
-        let status = state.change_status(SOURCE);
+        let shell = state.shell().clone();
+        let tidy = state.overview().cloned();
+        let error = state.overview_error().cloned();
+        let status = state.change_status(SOURCE, cx);
         let changing = state.is_changing();
         let Some(tidy) = tidy else {
             let body = match error {
@@ -479,7 +369,7 @@ impl Render for CleanupPage {
                 .flex()
                 .flex_col()
                 .size_full()
-                .child(TopBar::new(&shell, "Clean up"))
+                .child(TopBar::new(&shell, TidyPage::CleanUp.label()))
                 .child(body);
         };
         let total = cleanup_count(&tidy);
@@ -492,7 +382,7 @@ impl Render for CleanupPage {
                 widgets::primary_action(
                     "cleanup-run-all",
                     format!("Clean up {}", format::count(total)),
-                    "⌘↩",
+                    widgets::MAIN_ACTION_KEYS,
                 )
                 .disabled(total == 0)
                 .on_click(cx.listener(|this, _, window, cx| this.clean_up(window, cx))),
@@ -500,7 +390,7 @@ impl Render for CleanupPage {
             )
             .into_any_element()
         });
-        let top_bar = TopBar::new(&shell, "Clean up")
+        let top_bar = TopBar::new(&shell, TidyPage::CleanUp.label())
             .when(total > 0, |bar| {
                 bar.trailing(
                     widgets::caption(format::plural(total, "item"), cx)
@@ -549,7 +439,7 @@ impl Render for CleanupPage {
                         thumbs::picture(&self.thumbs, row, 160, ObjectFit::Cover, px(6.), cx);
                     let id = row.id;
                     let source: SharedString = format!("cleanup:silent:{id}").into();
-                    let busy = self.state.read(cx).change_status(&source);
+                    let busy = self.state.read(cx).change_status(&source, cx);
                     div()
                         .flex()
                         .flex_row()
@@ -650,9 +540,9 @@ impl Render for CleanupPage {
             let warning = cx.theme().warning;
             let extension_rows: Vec<AnyElement> = self
                 .extension_rows()
-                .into_iter()
+                .iter()
                 .take(ROW_LIMIT as usize)
-                .map(|(row, name)| {
+                .map(|ExtensionFix { file: row, name }| {
                     div()
                         .flex()
                         .flex_col()
@@ -667,7 +557,7 @@ impl Render for CleanupPage {
                                 .text_body()
                                 .child(row.name.clone())
                                 .child(div().text_color(muted).child("→"))
-                                .child(div().text_color(warning).child(name)),
+                                .child(div().text_color(warning).child(name.clone())),
                         )
                         .when(!row.dir.is_empty(), |this| {
                             this.child(widgets::caption(row.dir.clone(), cx).truncate())
@@ -815,24 +705,11 @@ impl Render for CleanupPage {
             .id("cleanup")
             .track_focus(&self.focus)
             .key_context("TidyCleanup")
-            .on_key_down(cx.listener(Self::on_key_down))
             .flex()
             .flex_col()
             .size_full()
             .min_h_0()
             .child(top_bar)
             .child(body)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fixes_names_as_clean_up_does() {
-        assert_eq!(with_extension("cover.jpg", "avif"), "cover.avif");
-        assert_eq!(with_extension("README", "txt"), "README.txt");
-        assert_eq!(with_extension(".hidden", "png"), ".hidden.png");
     }
 }

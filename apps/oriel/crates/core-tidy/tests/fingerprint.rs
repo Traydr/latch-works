@@ -3,15 +3,20 @@
 //! of its original, and another picture lands past Loose's. Bit-for-bit agreement with sharp is
 //! not asked for; what Duplicates relies on is that copies come out close and pictures apart.
 //!
-//! Needs libvips (`cargo run -p xtask -- vendor`); without it, it says so and passes.
+//! Needs libvips (`cargo run -p xtask -- vendor`): see [`support::media`].
 
 use std::path::{Path, PathBuf};
 
 use oriel_core_tidy::contract::SimilarityLevel;
-use oriel_core_tidy::similarity::{Fingerprint, Hash64, Vips, fingerprint_still, still_threshold};
+use oriel_core_tidy::internals::{
+    Fingerprint, Hash64, fingerprint_still, open_libvips, still_threshold,
+};
 use oriel_test_archive::image::codecs::png::CompressionType;
 use oriel_test_archive::image::imageops::{self, FilterType};
 use oriel_test_archive::{save_jpeg, save_png, variant_picture};
+use oriel_vips::Vips;
+
+use crate::support;
 
 struct Scratch(PathBuf);
 
@@ -30,10 +35,10 @@ fn hash(vips: &Vips, path: &Path) -> Hash64 {
 
 #[test]
 fn copies_of_a_still_hash_close_and_other_pictures_apart() {
-    let Ok((vips, _, _)) = Vips::open_located() else {
-        eprintln!("skipped: fingerprints need libvips (cargo run -p xtask -- vendor)");
+    if support::media().is_none() {
         return;
-    };
+    }
+    let vips = open_libvips().unwrap();
     let scratch = Scratch(
         std::env::temp_dir().join(format!("oriel-tidy-fingerprint-{}", std::process::id())),
     );
@@ -85,15 +90,13 @@ fn copies_of_a_still_hash_close_and_other_pictures_apart() {
 #[test]
 fn the_hardware_route_makes_what_libvips_makes() {
     use oriel_avif::{Channels, Libavif, Samples, Still};
-    use oriel_core_tidy::similarity::hardware_avif::Declined;
+    use oriel_vips::hardware_avif::Declined;
 
-    let (Ok((hardware, _, _)), Ok((software, _, _)), Ok(libavif)) =
-        (Vips::open_located(), Vips::open_located(), Libavif::get())
-    else {
-        eprintln!("no libvips or libavif: skipped");
+    if support::media().is_none() {
         return;
-    };
-    let software = software.without_hardware_decoder();
+    }
+    let (hardware, libavif) = (open_libvips().unwrap(), Libavif::get().unwrap());
+    let software = open_libvips().unwrap().without_hardware_decoder();
     let folder = std::env::temp_dir().join(format!("oriel-hardware-avif-{}", std::process::id()));
     std::fs::create_dir_all(&folder).unwrap();
     let scratch = Scratch(folder);

@@ -15,8 +15,6 @@ use std::path::Path;
 use gpui_kit::{App, Bounds, DisplayId, Pixels, Point, WindowBounds, point, px, size};
 use serde::{Deserialize, Serialize};
 
-pub const FILE_NAME: &str = "window-state.json";
-
 /// Electron Oriel's first window: 1320 × 860.
 pub const DEFAULT_SIZE: (f32, f32) = (1320., 860.);
 
@@ -98,14 +96,32 @@ pub fn display_origin(display: DisplayId) -> Point<Pixels> {
 }
 
 impl WindowState {
-    /// What to keep of the window's bounds as GPUI reports them.
-    pub fn from_window_bounds(bounds: WindowBounds) -> Self {
+    /// What to keep of the window's bounds as GPUI reports them (`bounds`, on the display whose
+    /// top left is at `origin`), with `maximized` as the window says. `normal` holds the bounds
+    /// the window last had when neither maximised nor full screen: a windowed window notes them,
+    /// and a maximised one returns to them.
+    pub fn noting(
+        bounds: WindowBounds,
+        maximized: bool,
+        normal: &mut Option<Bounds<Pixels>>,
+        origin: Point<Pixels>,
+    ) -> Self {
+        let across_displays =
+            |bounds: Bounds<Pixels>| Bounds::new(bounds.origin + origin, bounds.size);
         match bounds {
-            WindowBounds::Windowed(bounds) => Self::new(bounds, false),
-            WindowBounds::Maximized(bounds) => Self::new(bounds, true),
-            // Electron Oriel does not keep full screen either; the window comes back at the
-            // size it left full screen from.
-            WindowBounds::Fullscreen(bounds) => Self::new(bounds, false),
+            WindowBounds::Windowed(bounds) if !maximized => {
+                let bounds = across_displays(bounds);
+                *normal = Some(bounds);
+                Self::new(bounds, false)
+            }
+            // macOS reports a zoomed window as windowed at its zoomed size, so the size it
+            // returns to is the one noted before.
+            WindowBounds::Windowed(bounds) | WindowBounds::Maximized(bounds) => {
+                Self::new(normal.unwrap_or(across_displays(bounds)), true)
+            }
+            // Full screen is not kept, as Electron Oriel did not keep it; the window comes back
+            // at the size it left full screen from.
+            WindowBounds::Fullscreen(bounds) => Self::new(across_displays(bounds), false),
         }
     }
 
@@ -141,19 +157,17 @@ impl WindowState {
 
     /// The window's last state, or `None` before the first one is saved or when the file is not
     /// one Electron Oriel would accept (whole numbers, a positive size).
-    pub fn read(folder: &Path) -> Option<Self> {
-        let text = std::fs::read_to_string(folder.join(FILE_NAME)).ok()?;
+    pub fn read(file: &Path) -> Option<Self> {
+        let text = std::fs::read_to_string(file).ok()?;
         let state: Self = serde_json::from_str(&text).ok()?;
         (state.bounds.width > 0 && state.bounds.height > 0).then_some(state)
     }
 
     /// Saves the state for [`Self::read`] to find next start. A failure is logged, as Electron
     /// Oriel logs it: the window then opens where it did before.
-    pub fn write(&self, folder: &Path) {
+    pub fn write(&self, file: &Path) {
         let text = serde_json::to_string(self).expect("the window state serializes");
-        if let Err(error) =
-            oriel_ui::storage::write_atomically(&folder.join(FILE_NAME), text.as_bytes())
-        {
+        if let Err(error) = oriel_ui::storage::write_atomically(file, text.as_bytes()) {
             log::warn!("window state: {error}");
         }
     }
@@ -220,18 +234,21 @@ mod tests {
 
     #[test]
     fn writes_electron_oriels_file_and_reads_it_back() {
-        let folder = scratch("round-trip");
-        let state = WindowState::from_window_bounds(WindowBounds::Maximized(bounds(
-            40., 25.4, 1400., 900.,
-        )));
-        state.write(&folder);
+        let file = scratch("round-trip").join("window-state.json");
+        let state = WindowState::noting(
+            WindowBounds::Maximized(bounds(40., 25.4, 1400., 900.)),
+            true,
+            &mut None,
+            Point::default(),
+        );
+        state.write(&file);
 
-        let text = std::fs::read_to_string(folder.join(FILE_NAME)).unwrap();
+        let text = std::fs::read_to_string(&file).unwrap();
         assert_eq!(
             text,
             r#"{"bounds":{"x":40,"y":25,"width":1400,"height":900},"maximized":true}"#
         );
-        let read = WindowState::read(&folder).expect("the state just written");
+        let read = WindowState::read(&file).expect("the state just written");
         assert_eq!(read, state);
         assert!(read.is_maximized());
         assert_eq!(read.bounds(), bounds(40., 25., 1400., 900.));
@@ -239,16 +256,16 @@ mod tests {
 
     #[test]
     fn refuses_what_electron_oriel_would_refuse() {
-        let folder = scratch("refuses");
-        assert_eq!(WindowState::read(&folder), None, "no file yet");
+        let file = scratch("refuses").join("window-state.json");
+        assert_eq!(WindowState::read(&file), None, "no file yet");
         for text in [
             r#"{"bounds":{"x":0,"y":0,"width":0,"height":900},"maximized":false}"#,
             r#"{"bounds":{"x":0.5,"y":0,"width":800,"height":900},"maximized":false}"#,
             r#"{"bounds":{"x":0,"y":0,"width":800,"height":900}}"#,
             "not json",
         ] {
-            std::fs::write(folder.join(FILE_NAME), text).unwrap();
-            assert_eq!(WindowState::read(&folder), None, "{text}");
+            std::fs::write(&file, text).unwrap();
+            assert_eq!(WindowState::read(&file), None, "{text}");
         }
     }
 
@@ -270,7 +287,8 @@ mod tests {
     }
 
     fn saved(x: f32, y: f32, width: f32, height: f32) -> WindowState {
-        WindowState::from_window_bounds(WindowBounds::Windowed(bounds(x, y, width, height)))
+        let windowed = WindowBounds::Windowed(bounds(x, y, width, height));
+        WindowState::noting(windowed, false, &mut None, Point::default())
     }
 
     #[test]

@@ -1,12 +1,10 @@
 //! Oriel › About Oriel: the app's name and version, what it is, and the licences of what
-//! it carries, as Electron Oriel's About panel names its version and its bundle carries
-//! Electron's and Chromium's licences.
+//! it carries.
 //!
-//! The bundle keeps the notices in `Contents/Resources/licenses/`, one folder each for Oriel,
-//! the libmpv, libvips and libavif sets, ffmpeg and ffprobe, and the Rust crates, with
-//! `index.json` listing them (`cargo run -p xtask -- bundle` writes it). The dialog lists that
-//! index and Show Licences opens the folder in Finder. A development build has no bundle, so it
-//! says where the notices will be.
+//! The package keeps the notices in [`Package::licenses`], one folder each for Oriel, the libmpv,
+//! libvips and libavif sets, ffmpeg and ffprobe, and the Rust crates, with the index xtask writes
+//! listing them ([`NoticeIndex`]). The dialog lists that index and Show Licences opens the folder.
+//! A development build has no package, so it says where the notices will be.
 
 use std::path::{Path, PathBuf};
 
@@ -18,69 +16,43 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
     prelude::FluentBuilder as _, px,
 };
+use oriel_core_paths::{Notice, NoticeIndex, Package};
 use oriel_ui::ControlSize as _;
 use oriel_ui::TextRole as _;
-use serde::Deserialize;
 
 /// The app's version: the workspace's, which the bundle's `Info.plist` carries too.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// One folder of notices, as `index.json` lists it.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct Notice {
-    pub folder: String,
-    pub name: String,
-    pub version: String,
-    pub licence: String,
-}
-
-/// The bundle's licence notices: where they are and what `index.json` lists.
+/// The package's licence notices: where they are and what their index lists.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LicenceIndex {
     pub folder: PathBuf,
     pub notices: Vec<Notice>,
 }
 
-#[derive(Deserialize)]
-struct IndexFile {
-    notices: Vec<Notice>,
-}
-
 impl LicenceIndex {
-    /// The notices of the bundle the app runs from (`Contents/MacOS/oriel` →
-    /// `Contents/Resources/licenses`), or `None` for a development build.
+    /// The notices of the package the app runs from, or `None` for a development build.
     pub fn of_running_app() -> Option<Self> {
-        let executable = std::env::current_exe().ok()?;
-        // Windows' installed app keeps them in `licenses` beside its executable.
-        #[cfg(windows)]
-        return Self::read(&executable.parent()?.join("licenses"));
-        #[cfg(not(windows))]
-        {
-            let contents = executable.parent()?.parent()?;
-            Self::read(&contents.join("Resources").join("licenses"))
-        }
+        Self::read(&Package::of_running_app()?.licenses())
     }
 
-    /// The notices in `folder`, if its `index.json` reads.
+    /// The notices in `folder`, if its index reads.
     pub fn read(folder: &Path) -> Option<Self> {
-        let text = std::fs::read_to_string(folder.join("index.json")).ok()?;
-        let index: IndexFile = serde_json::from_str(&text).ok()?;
         Some(Self {
             folder: folder.to_path_buf(),
-            notices: index.notices,
+            notices: NoticeIndex::read(folder)?.notices,
         })
     }
 }
 
-/// The dialog's text about the app.
-fn summary() -> String {
-    "A desktop app for a local Latch Works archive: view it, tidy it and sync it. Its data \
-     stays in your home folder, under .latch-works/oriel."
-        .to_owned()
-}
-
-/// Opens the About dialog, listing `licences` when the app carries them.
-pub fn show(licences: Option<LicenceIndex>, window: &mut Window, cx: &mut App) {
+/// Opens the About dialog, saying the app keeps its data in `data`, and listing `licences` when
+/// the app carries them.
+pub fn show(data: &Path, licences: Option<LicenceIndex>, window: &mut Window, cx: &mut App) {
+    let summary = format!(
+        "A desktop app for a local Latch Works archive: view it, tidy it and sync it. Its data \
+         stays in {}.",
+        data.display()
+    );
     window.open_dialog(cx, move |dialog, _, cx| {
         let theme = cx.theme();
         let muted = theme.muted_foreground;
@@ -154,7 +126,7 @@ pub fn show(licences: Option<LicenceIndex>, window: &mut Window, cx: &mut App) {
                             .font_weight(gpui_kit::FontWeight::MEDIUM)
                             .child(format!("Version {VERSION}")),
                     )
-                    .child(div().text_color(muted).child(summary()))
+                    .child(div().text_color(muted).child(summary.clone()))
                     .child(
                         div()
                             .pt_1()
@@ -204,12 +176,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&folder);
         std::fs::create_dir_all(&folder).unwrap();
         assert_eq!(LicenceIndex::read(&folder), None, "no index yet");
+        let notice = |folder: &str, name: &str, licence: &str| Notice {
+            folder: folder.into(),
+            name: name.into(),
+            version: "0.0.1".into(),
+            licence: licence.into(),
+        };
+        let written = NoticeIndex {
+            app: oriel_core_paths::APP_NAME.into(),
+            version: "0.0.1".into(),
+            notices: vec![
+                notice("oriel", "Oriel", "MIT"),
+                notice("media-tools", "ffmpeg and ffprobe", "GPL-3.0-or-later"),
+            ],
+        };
         std::fs::write(
-            folder.join("index.json"),
-            r#"{"app":"Oriel","version":"0.0.1","notices":[
-                {"folder":"oriel","name":"Oriel","version":"0.0.1","licence":"MIT"},
-                {"folder":"media-tools","name":"ffmpeg and ffprobe","version":"9.0.2",
-                 "licence":"GPL-3.0-or-later"}]}"#,
+            folder.join(oriel_core_paths::NOTICE_INDEX_FILE),
+            serde_json::to_string(&written).unwrap(),
         )
         .unwrap();
         let index = LicenceIndex::read(&folder).expect("the index reads");

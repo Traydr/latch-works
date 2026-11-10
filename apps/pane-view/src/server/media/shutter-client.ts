@@ -1,41 +1,30 @@
-import { createSignedGetUrl } from "@latch-works/media-storage";
+import { originalObjectKeySegments, SHA256_PATTERN } from "@latch-works/sync-protocol";
 import {
   createShutterClient,
   type PreviewJobResult,
   type ShutterClient,
   ShutterClientError,
 } from "@shutter/client";
-import { env } from "../../env/server";
-import type { MediaThumbnailContext } from "./repository";
-import { type CapabilityEnvironment, shutterCapabilityKeyConfig } from "./shutter-capability";
-import { validateCapabilityKeyConfig } from "./shutter-capability-config";
-import { getPaneViewStorageClient } from "./storage-client";
-
-const SHUTTER_WIDTHS = [320, 640, 750, 828, 960, 1080, 1280, 1668, 1920, 2048, 2560, 3200, 3840];
+import { normalizeWidth } from "@shutter/protocol";
+import { DELIVERY_URL_LIFETIME_SECONDS } from "@/features/delivery/delivery-contract";
+import type { ShutterConfig } from "./shutter-config";
+import { createSignedGetUrl } from "./storage-client";
 
 const SHUTTER_QUALITY = 75;
 
-const SOURCE_LOCATOR_LIFETIME_SECONDS = 24 * 60 * 60 + 5 * 60;
+/** A locator outlives the capability sealing it, so Shutter can still fetch near expiry. */
+const SOURCE_LOCATOR_LIFETIME_SECONDS = DELIVERY_URL_LIFETIME_SECONDS + 5 * 60;
 
-const CAPABILITY_LIFETIME_SECONDS = 24 * 60 * 60;
+/** Shutter's retry hint when Control gives none (or the network failed). */
+const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
-/** Originals live under this prefix; the resolver's key template names the rest. */
-const ORIGINALS_KEY_PREFIX = "originals/sha256/";
+export type EnabledShutter = Extract<ShutterConfig, { mode: "on" }>;
 
-/** Two shard labels and `{sha256}.{extension}` (see originalObjectKey in media-storage). */
-const ORIGINALS_KEY_SEGMENTS = 3;
-
-export type ShutterPreviewResult =
-  | { status: "pending"; retryAfterMs: number }
-  | { status: "ready"; url: string }
-  | { action?: string; code?: string; status: "failed" };
-
-/** The Shutter configuration this client reads; the process environment by default. */
-export type ShutterEnvironment = CapabilityEnvironment &
-  Pick<
-    typeof env,
-    "SHUTTER_CONTROL_URL" | "SHUTTER_EDGE_URL" | "SHUTTER_RESOLVER_ID" | "SHUTTER_SPACE_API_TOKEN"
-  >;
+/** An original as Shutter names it: by its object key (v2) or its SHA-256 (v1). */
+export interface ShutterSource {
+  objectKey: string;
+  sha256: string;
+}
 
 /** What the purge queue keeps for a source: its v1 Source ID and, when known, its object key. */
 export interface ShutterPurgeSource {
@@ -43,101 +32,23 @@ export interface ShutterPurgeSource {
   sha256: string;
 }
 
+export type ShutterPreviewResult =
+  | { status: "pending"; retryAfterMs: number }
+  | { status: "ready"; url: string }
+  | { action?: string; code?: string; status: "failed" };
+
 /**
- * What the Shutter client needs from outside its own module: the Shutter
- * configuration and a signed URL for the original object, which Shutter
- * fetches the source from on the v1 path. The default instance reads the
- * real environment and the real bucket.
+ * A signed URL for the original, which Shutter fetches the source from on the
+ * v1 path; the bucket by default. `fetch` overrides the Control calls.
  */
 export interface ShutterClientDependencies {
   createSourceLocator(request: { expiresInSeconds: number; key: string }): Promise<string>;
-  environment: ShutterEnvironment;
-  /** Fetch override for the Control calls; the global fetch by default. */
   fetch?: typeof globalThis.fetch | undefined;
 }
 
-const shutterClientDependencies: ShutterClientDependencies = {
-  createSourceLocator: (request) =>
-    createSignedGetUrl({ ...request, storage: getPaneViewStorageClient() }),
-  environment: env,
+const defaultDependencies: ShutterClientDependencies = {
+  createSourceLocator: (request) => createSignedGetUrl(request),
 };
-
-function normalizeShutterWidth(width: number): number {
-  if (width <= 24) return 24;
-
-  return SHUTTER_WIDTHS.find((candidate) => candidate >= width) ?? 3840;
-}
-
-export function getShutterCapabilityKeyStatus(environment: ShutterEnvironment = env) {
-  return validateCapabilityKeyConfig({
-    capabilityKeys: environment.SHUTTER_CAPABILITY_KEYS,
-    capabilityKid: environment.SHUTTER_CAPABILITY_KID,
-    spaceId: environment.SHUTTER_SPACE_ID,
-  });
-}
-
-/**
- * v2 is opt-in per deployment: with a resolver ID, Shutter reads the
- * originals bucket itself through the resolver configured on the Space and
- * every URL names the object by its key. Without one, the v1 path presigns a
- * locator here and seals it into a Source Capability.
- */
-export function isShutterResolverConfigured(environment: ShutterEnvironment = env): boolean {
-  return environment.SHUTTER_RESOLVER_ID !== "";
-}
-
-/**
- * Whether maintenance can purge what Shutter cached. A purge is a Control call
- * and needs the Control URL, the Space ID, and the Space API token.
- * - `ready`: all three are set.
- * - `off`: no Shutter at all (no edge URL, Control URL, or token), so Shutter
- *   holds nothing of this archive and there is nothing to purge.
- * - `incomplete`: Shutter may hold cached copies (delivery needs only the edge
- *   URL) but a purge cannot run. Wipes and purges refuse to start rather than
- *   delete the rows that are the only record of those copies.
- */
-export type ShutterPurgeReadiness = "incomplete" | "off" | "ready";
-
-export const SHUTTER_PURGE_INCOMPLETE_MESSAGE =
-  "Shutter is partly configured: purging its cached copies needs SHUTTER_CONTROL_URL, SHUTTER_SPACE_ID, and SHUTTER_SPACE_API_TOKEN. Set them before wiping the library or purging Shutter sources.";
-
-export function shutterPurgeReadiness(
-  environment: ShutterEnvironment = env,
-): ShutterPurgeReadiness {
-  const purgeValues = [
-    environment.SHUTTER_CONTROL_URL,
-    environment.SHUTTER_SPACE_ID,
-    environment.SHUTTER_SPACE_API_TOKEN,
-  ];
-
-  if (purgeValues.every((value) => value !== "")) return "ready";
-
-  const shutterInUse = [
-    environment.SHUTTER_EDGE_URL,
-    environment.SHUTTER_CONTROL_URL,
-    environment.SHUTTER_SPACE_API_TOKEN,
-  ].some((value) => value !== "");
-
-  return shutterInUse ? "incomplete" : "off";
-}
-
-/**
- * The reference a v2 Delivery URL carries: the object key's segments after
- * the originals prefix, or nothing for a key outside that layout. The
- * resolver's key template in Shutter's admin is
- * `originals/sha256/{shard_a}/{shard_b}/{object}`, so the two stay in step
- * only as long as originalObjectKey keeps that layout.
- */
-function shutterSourceReference(objectKey: string): readonly string[] | undefined {
-  if (!objectKey.startsWith(ORIGINALS_KEY_PREFIX)) return undefined;
-  const segments = objectKey.slice(ORIGINALS_KEY_PREFIX.length).split("/");
-
-  if (segments.length !== ORIGINALS_KEY_SEGMENTS || segments.some((part) => part === "")) {
-    return undefined;
-  }
-
-  return segments;
-}
 
 interface ResolverSource {
   resolverId: string;
@@ -149,84 +60,63 @@ interface ResolverSource {
  * originals layout. Anything else takes the v1 path, so one legacy row can
  * neither break its own tile nor a maintenance batch.
  */
-function resolverSource(
-  environment: ShutterEnvironment,
-  objectKey: string,
-): ResolverSource | undefined {
-  if (!isShutterResolverConfigured(environment)) return undefined;
-  const reference = shutterSourceReference(objectKey);
+function resolverSource(shutter: EnabledShutter, objectKey: string): ResolverSource | undefined {
+  if (shutter.resolverId === null) return undefined;
+  const reference = originalObjectKeySegments(objectKey);
 
-  return reference === undefined
-    ? undefined
-    : { resolverId: environment.SHUTTER_RESOLVER_ID, reference };
+  return reference === undefined ? undefined : { resolverId: shutter.resolverId, reference };
 }
 
-async function sourceLocator(
-  context: Pick<MediaThumbnailContext, "originalObjectKey">,
+function sourceLocator(
+  source: ShutterSource,
   dependencies: ShutterClientDependencies,
 ): Promise<string> {
   return dependencies.createSourceLocator({
     expiresInSeconds: SOURCE_LOCATOR_LIFETIME_SECONDS,
-    key: context.originalObjectKey,
+    key: source.objectKey,
   });
 }
 
-/**
- * Built per call rather than memoized: the environment is mutable in tests and
- * the Capability Key registry must stay evaluated lazily (see
- * `ensureStartupCapabilityStatus`).
- */
-function shutterClient(options: {
-  capability: boolean;
-  dependencies: ShutterClientDependencies;
-}): ShutterClient {
-  const { environment } = options.dependencies;
-
+function shutterClient(
+  shutter: EnabledShutter,
+  dependencies: ShutterClientDependencies,
+): ShutterClient {
   return createShutterClient({
-    spaceId: environment.SHUTTER_SPACE_ID,
-    controlBaseUrl: environment.SHUTTER_CONTROL_URL,
-    edgeBaseUrl: environment.SHUTTER_EDGE_URL,
-    spaceApiToken: environment.SHUTTER_SPACE_API_TOKEN || undefined,
-    capabilityKey: options.capability ? shutterCapabilityKeyConfig(environment) : undefined,
-    capabilityLifetimeSeconds: CAPABILITY_LIFETIME_SECONDS,
-    fetch: options.dependencies.fetch,
+    spaceId: shutter.spaceId,
+    controlBaseUrl: shutter.controlUrl,
+    edgeBaseUrl: shutter.edgeUrl,
+    spaceApiToken: shutter.spaceApiToken,
+    capabilityKey: shutter.capabilityKey,
+    capabilityLifetimeSeconds: DELIVERY_URL_LIFETIME_SECONDS,
+    fetch: dependencies.fetch,
   });
 }
 
 function assertSourceId(sha256: string): void {
-  if (!/^[a-f0-9]{64}$/i.test(sha256)) {
+  if (!SHA256_PATTERN.test(sha256)) {
     throw new Error("Shutter source ID must be a SHA-256 hex digest");
   }
 }
 
 export async function resolveShutterImageUrl(
-  context: MediaThumbnailContext,
+  source: ShutterSource,
   width: number,
-  dependencies: ShutterClientDependencies = shutterClientDependencies,
+  shutter: EnabledShutter,
+  dependencies: ShutterClientDependencies = defaultDependencies,
 ): Promise<string> {
-  const { environment } = dependencies;
-  ensureStartupCapabilityStatus(environment);
-  const parameters = { width: normalizeShutterWidth(width), quality: SHUTTER_QUALITY };
-  const source = resolverSource(environment, context.originalObjectKey);
+  const client = shutterClient(shutter, dependencies);
+  const parameters = { width: normalizeWidth(width), quality: SHUTTER_QUALITY };
+  const resolver = resolverSource(shutter, source.objectKey);
 
-  if (source !== undefined) {
-    return shutterClient({ capability: true, dependencies }).v2PrivateDeliveryUrl(
-      source,
-      parameters,
-    );
-  }
+  if (resolver !== undefined) return client.v2PrivateDeliveryUrl(resolver, parameters);
 
-  assertSourceId(context.sha256);
-  const client = shutterClient({ capability: true, dependencies });
+  assertSourceId(source.sha256);
 
   return client.privateSourceUrl(
-    { sourceId: context.sha256, locator: await sourceLocator(context, dependencies) },
+    { sourceId: source.sha256, locator: await sourceLocator(source, dependencies) },
     parameters,
   );
 }
-
-/** What Source Delivery of an original needs: its key for the reference and its SHA-256 for v1. */
-export type ShutterOriginalSource = Pick<MediaThumbnailContext, "originalObjectKey" | "sha256">;
 
 /**
  * The original's own bytes through Shutter, so playback, the PDF viewer, and
@@ -234,13 +124,12 @@ export type ShutterOriginalSource = Pick<MediaThumbnailContext, "originalObjectK
  * `source_delivery`, which the Edge accepts for no other operation.
  */
 export async function resolveShutterOriginalUrl(
-  source: ShutterOriginalSource,
-  dependencies: ShutterClientDependencies = shutterClientDependencies,
+  source: ShutterSource,
+  shutter: EnabledShutter,
+  dependencies: ShutterClientDependencies = defaultDependencies,
 ): Promise<string> {
-  const { environment } = dependencies;
-  ensureStartupCapabilityStatus(environment);
-  const client = shutterClient({ capability: true, dependencies });
-  const resolver = resolverSource(environment, source.originalObjectKey);
+  const client = shutterClient(shutter, dependencies);
+  const resolver = resolverSource(shutter, source.objectKey);
 
   if (resolver !== undefined) return client.v2PrivateDeliveryUrl(resolver);
 
@@ -252,7 +141,7 @@ export async function resolveShutterOriginalUrl(
   });
 }
 
-/** Maps a Preview Job submission outcome onto the redirect's retry, ready, and failed states. */
+/** Maps a Preview Job submission outcome onto the retry, ready, and failed states. */
 async function previewResult(
   submit: () => Promise<PreviewJobResult>,
   readyUrl: () => Promise<string>,
@@ -264,14 +153,17 @@ async function previewResult(
   } catch (error) {
     if (error instanceof ShutterClientError && error.status !== undefined) {
       return error.status === 408 || error.status === 429 || error.status >= 500
-        ? { status: "pending", retryAfterMs: (error.retryAfterSeconds ?? 5) * 1_000 }
+        ? {
+            status: "pending",
+            retryAfterMs: (error.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS) * 1_000,
+          }
         : { status: "failed" };
     }
 
     if (error instanceof ShutterClientError) throw error;
 
     // Network-level failures are retryable, matching Control 5xx handling.
-    return { status: "pending", retryAfterMs: 5_000 };
+    return { status: "pending", retryAfterMs: DEFAULT_RETRY_AFTER_SECONDS * 1_000 };
   }
 
   if (job.status === "pending" || job.status === "processing") {
@@ -286,43 +178,33 @@ async function previewResult(
 }
 
 export async function resolveShutterPreview(
-  context: MediaThumbnailContext,
+  source: ShutterSource,
+  kind: "pdf" | "video",
   width: number,
-  dependencies: ShutterClientDependencies = shutterClientDependencies,
+  shutter: EnabledShutter,
+  dependencies: ShutterClientDependencies = defaultDependencies,
 ): Promise<ShutterPreviewResult> {
-  const { environment } = dependencies;
-  ensureStartupCapabilityStatus(environment);
+  const client = shutterClient(shutter, dependencies);
+  const parameters = { width: normalizeWidth(width), quality: SHUTTER_QUALITY };
+  const resolver = resolverSource(shutter, source.objectKey);
 
-  if (context.mediaType !== "video" && context.mediaType !== "pdf") return { status: "failed" };
-
-  if (!environment.SHUTTER_SPACE_API_TOKEN) {
-    throw new Error("Shutter Space API is not configured");
-  }
-
-  const kind = context.mediaType;
-  const parameters = { width: normalizeShutterWidth(width), quality: SHUTTER_QUALITY };
-  const source = resolverSource(environment, context.originalObjectKey);
-
-  if (source !== undefined) {
-    const client = shutterClient({ capability: true, dependencies });
-
+  if (resolver !== undefined) {
     return previewResult(
-      () => client.submitV2PreviewJob({ ...source, kind }),
-      () => client.v2PrivateDeliveryUrl(source, { ...parameters, preview: kind }),
+      () => client.submitV2PreviewJob({ ...resolver, kind }),
+      () => client.v2PrivateDeliveryUrl(resolver, { ...parameters, preview: kind }),
     );
   }
 
-  assertSourceId(context.sha256);
-  const client = shutterClient({ capability: true, dependencies });
+  assertSourceId(source.sha256);
 
   return previewResult(
     async () =>
       client.submitPreviewJob({
-        sourceId: context.sha256,
+        sourceId: source.sha256,
         kind,
-        locator: await sourceLocator(context, dependencies),
+        locator: await sourceLocator(source, dependencies),
       }),
-    () => client.privateMasterUrl({ sourceId: context.sha256, kind }, parameters),
+    () => client.privateMasterUrl({ sourceId: source.sha256, kind }, parameters),
   );
 }
 
@@ -334,37 +216,14 @@ export async function resolveShutterPreview(
  */
 export async function purgeShutterSource(
   source: ShutterPurgeSource,
-  dependencies: ShutterClientDependencies = shutterClientDependencies,
+  shutter: EnabledShutter,
+  dependencies: ShutterClientDependencies = defaultDependencies,
 ): Promise<void> {
-  const client = shutterClient({ capability: false, dependencies });
+  const client = shutterClient(shutter, dependencies);
 
   const resolver =
-    source.objectKey === null
-      ? undefined
-      : resolverSource(dependencies.environment, source.objectKey);
+    source.objectKey === null ? undefined : resolverSource(shutter, source.objectKey);
 
   if (resolver !== undefined) await client.purgeV2Source(resolver);
   await client.purgeSource(source.sha256);
-}
-
-let startupCapabilityStatusChecked = false;
-
-/**
- * Reports misconfigured capability keys once, on first use rather than at
- * import. Evaluating this at module load is what previously forced test hooks
- * into this file, so the check is deliberately lazy.
- *
- * The tradeoff is that a bad key is no longer surfaced at boot — it surfaces on
- * the first media request instead. `/api/health` calls
- * `getShutterCapabilityKeyStatus()` directly, so deploy-time checks should read
- * health rather than rely on startup logs.
- */
-function ensureStartupCapabilityStatus(environment: ShutterEnvironment): void {
-  if (startupCapabilityStatusChecked) return;
-  startupCapabilityStatusChecked = true;
-  const status = getShutterCapabilityKeyStatus(environment);
-
-  if (!status.ok) {
-    console.error(`[pane-view] Shutter capability keys misconfigured: ${status.error}`);
-  }
 }

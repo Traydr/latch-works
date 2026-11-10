@@ -10,6 +10,7 @@ use gpui_kit::{
     AnyWindowHandle, AppContext as _, Bounds, ElementId, Pixels, Role, TestAppContext, px, size,
 };
 use oriel_core_paths::DataRoot;
+use oriel_mode_view::ViewMode;
 
 const FLOOR: Pixels = px(32.);
 
@@ -152,7 +153,7 @@ fn every_control_in_view_sync_and_settings_meets_the_floor(cx: &mut TestAppConte
         cx.simulate_window_resize(handle, size(px(width), px(height)));
         press(cx, handle, "secondary-1");
         cx.update(|cx| {
-            let view = opened.shell.read(cx).view().clone();
+            let view = opened.shell.read(cx).mode::<ViewMode>().clone();
             view.update(cx, |view, cx| view.open_folder(archive.clone(), cx));
         });
         wait_until(cx, handle, "the folder", |cx| {

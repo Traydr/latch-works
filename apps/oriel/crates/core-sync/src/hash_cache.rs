@@ -1,59 +1,60 @@
 //! The hash cache, from `hash-cache.ts`: each source folder's SHA-256s by archive path, kept with
 //! the size and times they were taken at, so a plan or a push hashes only what changed.
 //!
-//! The file format is lockstep-core's, as Electron Oriel wrote it: one
-//! JSON file per source folder, `<root>/v1/<sha256 of the folder's path>.json`, holding
+//! The file format is lockstep-core's: one JSON file per source folder,
+//! `<folder>/v1/<sha256 of the source folder's path>.json`, holding
 //! `{ entries, sourceRoot, version: 1 }`, the entries sorted by path as `localeCompare` sorts
 //! them. Oriel keeps its own under `DataRoot::hash_cache()`.
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use oriel_core_domain::MediaItem;
-use oriel_core_index::{ArchiveFileFingerprint, fingerprints_match, locale_compare};
-use serde::de::{self, Deserializer, IgnoredAny, MapAccess, Visitor};
+use oriel_core_domain::collation::Collation;
+use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
 use crate::format::{serialize_js_number, serialize_optional_js_number};
 use crate::rules::resolve;
+use crate::scan::{ArchiveFileFingerprint, fingerprints_match};
 
-/// The cache format's version, and the folder its files sit in.
-pub const CACHE_VERSION: u32 = 1;
+/// The cache format's version, and the subfolder of the cache's folder its files sit in.
+const CACHE_VERSION: u32 = 1;
 
-/// The folder a hash cache root keeps its version-1 files in: `<hash-cache>/v1`.
-pub fn cache_root(hash_cache_folder: &Path) -> PathBuf {
-    hash_cache_folder.join(format!("v{CACHE_VERSION}"))
+fn version_folder(hash_cache: &Path) -> PathBuf {
+    hash_cache.join(format!("v{CACHE_VERSION}"))
 }
 
 /// One cached hash, `HashCacheEntry`.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HashCacheEntry {
+pub(crate) struct HashCacheEntry {
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "serialize_optional_js_number"
     )]
-    pub ctime_ms: Option<f64>,
+    ctime_ms: Option<f64>,
     #[serde(serialize_with = "serialize_js_number")]
-    pub mtime_ms: f64,
-    pub path: String,
-    pub sha256: String,
-    pub size: u64,
+    mtime_ms: f64,
+    path: String,
+    sha256: String,
+    size: u64,
 }
 
 impl HashCacheEntry {
-    fn fingerprint(&self) -> ArchiveFileFingerprint {
-        ArchiveFileFingerprint {
+    /// The hash, if the file still has the fingerprint it was taken at.
+    pub(crate) fn hash_at(&self, fingerprint: &ArchiveFileFingerprint) -> Option<&str> {
+        let taken_at = ArchiveFileFingerprint {
             ctime_ms: self.ctime_ms,
             mtime_ms: self.mtime_ms,
             size: self.size,
-        }
+        };
+        fingerprints_match(&taken_at, fingerprint).then_some(self.sha256.as_str())
     }
 }
 
@@ -68,7 +69,7 @@ struct PersistedHashCache<'a> {
 /// One source folder's cache. Entries keep the order they were added in, as a JavaScript `Map`
 /// does, so names the collation ranks equal save in the same order in both apps.
 #[derive(Clone, Debug)]
-pub struct HashCache {
+pub(crate) struct HashCache {
     file_path: PathBuf,
     source_root: String,
     entries: Vec<HashCacheEntry>,
@@ -76,7 +77,7 @@ pub struct HashCache {
 }
 
 impl HashCache {
-    pub fn new(file_path: PathBuf, source_root: String, entries: Vec<HashCacheEntry>) -> Self {
+    fn new(file_path: PathBuf, source_root: String, entries: Vec<HashCacheEntry>) -> Self {
         let mut cache = Self {
             file_path,
             source_root,
@@ -89,22 +90,8 @@ impl HashCache {
         cache
     }
 
-    pub fn file_path(&self) -> &Path {
-        &self.file_path
-    }
-
-    pub fn source_root(&self) -> &str {
-        &self.source_root
-    }
-
-    pub fn entries(&self) -> &[HashCacheEntry] {
-        &self.entries
-    }
-
-    /// The cached hash of `path`, if the file still has the fingerprint it was hashed at.
-    pub fn get(&self, path: &str, fingerprint: &ArchiveFileFingerprint) -> Option<&str> {
-        let entry = &self.entries[*self.index.get(path)?];
-        fingerprints_match(&entry.fingerprint(), fingerprint).then_some(entry.sha256.as_str())
+    pub(crate) fn entry(&self, path: &str) -> Option<&HashCacheEntry> {
+        Some(&self.entries[*self.index.get(path)?])
     }
 
     /// Records a hash. The modified time is truncated and the hash lower-cased; a value that is
@@ -119,6 +106,11 @@ impl HashCache {
             is_sha256(sha256),
             "Invalid SHA-256 for hash cache entry: {path}"
         );
+        self.record(path, fingerprint, sha256);
+        Ok(())
+    }
+
+    fn record(&mut self, path: &str, fingerprint: &ArchiveFileFingerprint, sha256: &str) {
         self.insert(HashCacheEntry {
             ctime_ms: fingerprint.ctime_ms,
             mtime_ms: fingerprint.mtime_ms.trunc(),
@@ -126,7 +118,6 @@ impl HashCache {
             sha256: sha256.to_ascii_lowercase(),
             size: fingerprint.size,
         });
-        Ok(())
     }
 
     fn insert(&mut self, entry: HashCacheEntry) {
@@ -150,9 +141,10 @@ impl HashCache {
         let items = items
             .into_iter()
             .map(|mut item| {
-                let cached = fingerprints
-                    .get(&item.path)
-                    .and_then(|fingerprint| self.get(&item.path, fingerprint));
+                let cached = fingerprints.get(&item.path).and_then(|fingerprint| {
+                    self.entry(&item.path)
+                        .and_then(|entry| entry.hash_at(fingerprint))
+                });
                 if let Some(sha256) = cached {
                     hits += 1;
                     item.id = sha256.to_owned();
@@ -165,7 +157,7 @@ impl HashCache {
     }
 
     /// Records the hash of every item that has one.
-    pub fn update_from_items(
+    pub(crate) fn update_from_items(
         &mut self,
         items: &[MediaItem],
         fingerprints: &HashMap<String, ArchiveFileFingerprint>,
@@ -179,8 +171,8 @@ impl HashCache {
                 if self.holds(&item.path, fingerprint, sha256) {
                     continue;
                 }
-                // A scan's hashes are always well formed, so this cannot be refused.
-                let _ = self.set(&item.path, fingerprint, sha256);
+                // A scan's hashes are its own or the cache's, so always well formed.
+                self.record(&item.path, fingerprint, sha256);
             }
         }
     }
@@ -197,18 +189,10 @@ impl HashCache {
         })
     }
 
-    /// Forgets every path not in `paths`.
-    pub fn retain(&mut self, paths: &HashSet<String>) {
-        self.entries.retain(|entry| paths.contains(&entry.path));
-        self.reindex();
-    }
-
-    /// Forgets every path that is not one of `items`', as [`retain`](Self::retain) does with
-    /// their paths, without collecting them first.
-    pub(crate) fn retain_items(&mut self, items: &[MediaItem]) {
+    pub fn retain<'a>(&mut self, paths: impl IntoIterator<Item = &'a str>) {
         let mut keep = vec![false; self.entries.len()];
-        for item in items {
-            if let Some(&at) = self.index.get(&item.path) {
+        for path in paths {
+            if let Some(&at) = self.index.get(path) {
                 keep[at] = true;
             }
         }
@@ -233,7 +217,7 @@ impl HashCache {
     /// them, with a final newline.
     pub fn to_json(&self) -> String {
         let mut entries: Vec<&HashCacheEntry> = self.entries.iter().collect();
-        entries.sort_by(|left, right| locale_compare(&left.path, &right.path));
+        entries.sort_by(|left, right| Collation::Locale.compare(&left.path, &right.path));
         let persisted = PersistedHashCache {
             entries,
             source_root: &self.source_root,
@@ -286,7 +270,7 @@ fn is_sha256(value: &str) -> bool {
 }
 
 /// `canonicalSourceRoot`: the folder's absolute path, folded, lower-cased on Windows.
-pub fn canonical_source_root(source_root: &Path) -> String {
+fn canonical_source_root(source_root: &Path) -> String {
     let resolved = resolve(source_root).to_string_lossy().into_owned();
     if cfg!(windows) {
         resolved.to_lowercase()
@@ -295,25 +279,27 @@ pub fn canonical_source_root(source_root: &Path) -> String {
     }
 }
 
-/// `hashCachePath`: `<cache root>/<sha256 of the canonical folder path>.json`.
-pub fn hash_cache_path(source_root: &Path, cache_root: &Path) -> PathBuf {
+/// `hashCachePath`: the cache file of `source_root` in the cache's folder,
+/// `<hash_cache>/v1/<sha256 of the canonical folder path>.json`.
+pub fn hash_cache_path(source_root: &Path, hash_cache: &Path) -> PathBuf {
     let key = Sha256::digest(canonical_source_root(source_root).as_bytes());
     let hex: String = key.iter().map(|byte| format!("{byte:02x}")).collect();
-    cache_root.join(format!("{hex}.json"))
+    version_folder(hash_cache).join(format!("{hex}.json"))
 }
 
 /// A cache as `loadHashCache` reads it, with the warning it gives when it had to start over.
 #[derive(Debug)]
-pub struct HashCacheLoad {
+pub(crate) struct HashCacheLoad {
     pub cache: HashCache,
     pub warning: Option<String>,
 }
 
-/// `loadHashCache`: the folder's cache, or an empty one when there is none. A file that does not
-/// read as a version-1 cache of this folder is replaced on the next save, with a warning.
-pub fn load_hash_cache(source_root: &Path, cache_root: &Path) -> HashCacheLoad {
+/// `loadHashCache`: the source folder's cache in the cache's folder, or an empty one when there is
+/// none. A file that does not read as a version-1 cache of this source folder is replaced on the
+/// next save, with a warning.
+pub(crate) fn load_hash_cache(source_root: &Path, hash_cache: &Path) -> HashCacheLoad {
     let canonical = canonical_source_root(source_root);
-    let file_path = hash_cache_path(Path::new(&canonical), cache_root);
+    let file_path = hash_cache_path(Path::new(&canonical), hash_cache);
     let empty = |file_path: PathBuf| HashCache::new(file_path, canonical.clone(), Vec::new());
 
     let raw = match fs::read_to_string(&file_path) {
@@ -349,267 +335,96 @@ fn rebuilt(reason: &str) -> String {
 }
 
 /// `PersistedHashCacheSchema` and the source check: the entries, or why the file is refused.
-///
-/// A cache holds an entry per file, so the usual, valid file is read straight into entries
-/// ([`read_valid`]); any file that does not read that way is read again as a JSON value, which
-/// says why it is refused.
 fn parse_persisted(raw: &str, canonical_root: &str) -> Result<Vec<HashCacheEntry>, String> {
-    match read_valid(raw, canonical_root) {
-        Some(entries) => Ok(entries),
-        None => parse_value(raw, canonical_root),
-    }
-}
-
-/// [`parse_persisted`] through a JSON value, naming what is wrong with a file it refuses.
-fn parse_value(raw: &str, canonical_root: &str) -> Result<Vec<HashCacheEntry>, String> {
-    let document: Value = serde_json::from_str(raw).map_err(|error| error.to_string())?;
-    let object = document.as_object().ok_or("the cache is not an object")?;
-    if object.get("version").and_then(Value::as_f64) != Some(f64::from(CACHE_VERSION)) {
-        return Err("the cache has another version".to_owned());
-    }
-    let source_root = object
-        .get("sourceRoot")
-        .and_then(Value::as_str)
-        .ok_or("the cache has no source folder")?;
-    let entries = object
-        .get("entries")
-        .and_then(Value::as_array)
-        .ok_or("the cache has no entries")?
-        .iter()
-        .map(parse_entry)
-        .collect::<Result<Vec<_>, _>>()?;
-    if canonical_source_root(Path::new(source_root)) != canonical_root {
+    let stored: StoredCache = serde_json::from_str(raw).map_err(|error| error.to_string())?;
+    if canonical_source_root(Path::new(stored.source_root.as_ref())) != canonical_root {
         return Err("cache source root does not match".to_owned());
     }
-    Ok(entries)
-}
-
-fn parse_entry(value: &Value) -> Result<HashCacheEntry, String> {
-    let entry = value.as_object().ok_or("an entry is not an object")?;
-    let finite = |name: &str| {
-        entry
-            .get(name)
-            .and_then(Value::as_f64)
-            .filter(|number| number.is_finite())
-    };
-    let ctime_ms = match entry.get("ctimeMs") {
-        None => None,
-        Some(_) => Some(finite("ctimeMs").ok_or("an entry's ctimeMs is not a number")?),
-    };
-    let mtime_ms = finite("mtimeMs").ok_or("an entry's mtimeMs is not a number")?;
-    let path = entry
-        .get("path")
-        .and_then(Value::as_str)
-        .ok_or("an entry has no path")?;
-    let sha256 = entry
-        .get("sha256")
-        .and_then(Value::as_str)
-        .filter(|sha256| is_sha256(sha256))
-        .ok_or("an entry's sha256 is not a SHA-256")?;
-    let size = finite("size")
-        .filter(|size| *size >= 0.0 && size.fract() == 0.0)
-        .ok_or("an entry's size is not a whole number")?;
-    Ok(HashCacheEntry {
-        ctime_ms,
-        mtime_ms: mtime_ms.trunc(),
-        path: path.to_owned(),
-        sha256: sha256.to_ascii_lowercase(),
-        size: size as u64,
-    })
-}
-
-/// The entries of a cache file that `parse_persisted` accepts, read without building a JSON
-/// value first; `None` for any file it might refuse, which it then reads the slow way. So this
-/// is never more lenient: a top level or an entry that is not an object, a `null` or a string
-/// where a number goes, and every check `parse_entry` makes all give `None`. A key named twice
-/// keeps its last value, as a JSON value does.
-fn read_valid(raw: &str, canonical_root: &str) -> Option<Vec<HashCacheEntry>> {
-    let document: FastDocument = serde_json::from_str(raw).ok()?;
-    if document.version != Some(f64::from(CACHE_VERSION))
-        || canonical_source_root(Path::new(document.source_root?.as_ref())) != canonical_root
-    {
-        return None;
-    }
-    document
-        .entries?
+    Ok(stored
+        .entries
         .into_iter()
-        .map(|entry| {
-            let FastEntry {
-                ctime_ms,
-                mtime_ms,
-                path,
-                sha256,
-                size,
-            } = entry;
-            let finite = |number: f64| number.is_finite().then_some(number);
-            let ctime_ms = match ctime_ms {
-                None => None,
-                Some(number) => Some(finite(number)?),
-            };
-            let mtime_ms = finite(mtime_ms?)?;
-            let sha256 = sha256.filter(|sha256| is_sha256(sha256))?;
-            let size = finite(size?).filter(|size| *size >= 0.0 && size.fract() == 0.0)?;
-            Some(HashCacheEntry {
-                ctime_ms,
-                mtime_ms: mtime_ms.trunc(),
-                path: path?.into_owned(),
-                sha256: sha256.to_ascii_lowercase(),
-                size: size as u64,
-            })
+        .map(|entry| HashCacheEntry {
+            ctime_ms: entry.ctime_ms,
+            mtime_ms: entry.mtime_ms.trunc(),
+            path: entry.path.into_owned(),
+            sha256: entry.sha256.to_ascii_lowercase(),
+            size: entry.size,
         })
-        .collect()
+        .collect())
 }
 
-/// A cache file's top level, as [`read_valid`] reads it.
-struct FastDocument<'a> {
-    entries: Option<Vec<FastEntry<'a>>>,
-    source_root: Option<Cow<'a, str>>,
-    version: Option<f64>,
+/// A cache file as it is read: straight into its entries, each field checked as it is read.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredCache<'a> {
+    #[serde(borrow)]
+    entries: Vec<StoredEntry<'a>>,
+    #[serde(borrow)]
+    source_root: Cow<'a, str>,
+    #[serde(rename = "version", deserialize_with = "version_one")]
+    _version: (),
 }
 
-/// One entry, as [`read_valid`] reads it: each field as it was written, checked afterwards.
-struct FastEntry<'a> {
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredEntry<'a> {
+    #[serde(default, deserialize_with = "present_number")]
     ctime_ms: Option<f64>,
-    mtime_ms: Option<f64>,
-    path: Option<Cow<'a, str>>,
-    sha256: Option<Cow<'a, str>>,
-    size: Option<f64>,
+    mtime_ms: f64,
+    #[serde(borrow)]
+    path: Cow<'a, str>,
+    #[serde(borrow, deserialize_with = "sha256")]
+    sha256: Cow<'a, str>,
+    #[serde(deserialize_with = "whole_size")]
+    size: u64,
 }
 
-/// A string, borrowed from the file when it has no escapes.
-struct Text<'a>(Cow<'a, str>);
+fn version_one<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+    if f64::deserialize(deserializer)? == f64::from(CACHE_VERSION) {
+        Ok(())
+    } else {
+        Err(de::Error::custom("the cache has another version"))
+    }
+}
 
-impl<'de: 'a, 'a> Deserialize<'de> for Text<'a> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct TextVisitor;
-        impl<'de> Visitor<'de> for TextVisitor {
-            type Value = Text<'de>;
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a string")
-            }
-            fn visit_borrowed_str<E: de::Error>(self, value: &'de str) -> Result<Self::Value, E> {
-                Ok(Text(Cow::Borrowed(value)))
-            }
-            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
-                Ok(Text(Cow::Owned(value.to_owned())))
-            }
-            fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
-                Ok(Text(Cow::Owned(value)))
-            }
+/// A number, where `null` is refused rather than read as absent.
+fn present_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<f64>, D::Error> {
+    f64::deserialize(deserializer).map(Some)
+}
+
+/// A SHA-256, borrowed from the file when it has no escapes.
+fn sha256<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Cow<'de, str>, D::Error> {
+    struct Text;
+
+    impl<'de> Visitor<'de> for Text {
+        type Value = Cow<'de, str>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a string")
         }
-        deserializer.deserialize_str(TextVisitor)
-    }
-}
 
-/// Reads only a JSON object, never an array, into the fields `F` names.
-macro_rules! object_visitor {
-    ($visitor:ident, $value:ident, $expecting:literal, { $($key:literal => $field:ident: $kind:ty),* $(,)? }) => {
-        struct $visitor;
-        impl<'de> Visitor<'de> for $visitor {
-            type Value = $value<'de>;
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str($expecting)
-            }
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-                $(let mut $field = None;)*
-                while let Some(key) = map.next_key::<Text<'de>>()? {
-                    match key.0.as_ref() {
-                        $($key => $field = Some(map.next_value::<$kind>()?.into()),)*
-                        _ => {
-                            map.next_value::<IgnoredAny>()?;
-                        }
-                    }
-                }
-                Ok($value { $($field),* })
-            }
+        fn visit_borrowed_str<E>(self, value: &'de str) -> Result<Self::Value, E> {
+            Ok(Cow::Borrowed(value))
         }
-    };
-}
 
-object_visitor!(DocumentVisitor, FastDocument, "a hash cache", {
-    "entries" => entries: Vec<FastEntry<'de>>,
-    "sourceRoot" => source_root: Text<'de>,
-    "version" => version: f64,
-});
-
-object_visitor!(EntryVisitor, FastEntry, "a hash cache entry", {
-    "ctimeMs" => ctime_ms: f64,
-    "mtimeMs" => mtime_ms: f64,
-    "path" => path: Text<'de>,
-    "sha256" => sha256: Text<'de>,
-    "size" => size: f64,
-});
-
-impl<'a> From<Text<'a>> for Cow<'a, str> {
-    fn from(text: Text<'a>) -> Self {
-        text.0
-    }
-}
-
-impl<'de: 'a, 'a> Deserialize<'de> for FastDocument<'a> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_map(DocumentVisitor)
-    }
-}
-
-impl<'de: 'a, 'a> Deserialize<'de> for FastEntry<'a> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_map(EntryVisitor)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The direct read accepts a file only when the JSON value read accepts it, with the same
-    /// entries; anything else falls through to the value read and its reason.
-    #[test]
-    fn reads_a_valid_file_directly_and_nothing_the_value_read_refuses() {
-        let root = "/Volumes/Archive";
-        let sha = "AB".repeat(32);
-        let entry = |fields: &str| {
-            format!(r#"{{"entries":[{{{fields}}}],"sourceRoot":"{root}","version":1}}"#)
-        };
-        let valid = format!(r#""mtimeMs":5.9,"path":"a/b.jpg","sha256":"{sha}","size":3"#);
-        let documents = [
-            entry(&valid),
-            entry(&format!(r#""ctimeMs":7.25,{valid}"#)),
-            entry(&format!(r#"{valid},"extra":[1,{{"x":null}}]"#)),
-            entry(&format!(r#"{valid},"size":4"#)),
-            entry(&format!(r#""path":"a\u002fc.jpg",{valid}"#)),
-            entry(&format!(r#""ctimeMs":null,{valid}"#)),
-            entry(&format!(r#""ctimeMs":"7",{valid}"#)),
-            entry(&format!(r#"{valid},"size":-1"#)),
-            entry(&format!(r#"{valid},"size":1.5"#)),
-            entry(&format!(r#"{valid},"sha256":"abc""#)),
-            entry(r#""mtimeMs":5,"path":"a.jpg","size":3"#),
-            format!(r#"{{"entries":[[1,2,"a.jpg","{sha}",3]],"sourceRoot":"{root}","version":1}}"#),
-            format!(r#"[[],"{root}",1]"#),
-            format!(r#"{{"entries":[],"sourceRoot":"{root}","version":1.0}}"#),
-            format!(r#"{{"entries":[],"sourceRoot":"{root}","version":2}}"#),
-            format!(r#"{{"entries":[],"sourceRoot":"{root}","version":"1"}}"#),
-            r#"{"entries":[],"sourceRoot":"/elsewhere","version":1}"#.to_owned(),
-            r#"{"entries":[],"version":1}"#.to_owned(),
-            format!(r#"{{"entries":{{}},"sourceRoot":"{root}","version":1}}"#),
-            format!(r#"{{"entries":[1],"entries":[],"sourceRoot":"{root}","version":1}}"#),
-            "not json".to_owned(),
-        ];
-        let mut direct = 0;
-        for document in &documents {
-            // The root as the cache compares it: resolved, so `C:\Volumes\Archive` on Windows.
-            let canonical = canonical_source_root(Path::new(root));
-            let by_value = parse_value(document, &canonical);
-            if let Some(entries) = read_valid(document, &canonical) {
-                direct += 1;
-                assert_eq!(Ok(entries), by_value, "{document}");
-            }
-            assert_eq!(
-                parse_persisted(document, &canonical),
-                by_value,
-                "{document}"
-            );
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
+            Ok(Cow::Owned(value.to_owned()))
         }
-        assert_eq!(direct, 6, "the valid files read directly");
+    }
+
+    let value = deserializer.deserialize_str(Text)?;
+    if is_sha256(&value) {
+        Ok(value)
+    } else {
+        Err(de::Error::custom("an entry's sha256 is not a SHA-256"))
+    }
+}
+
+fn whole_size<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    let size = f64::deserialize(deserializer)?;
+    if size >= 0.0 && size.fract() == 0.0 {
+        Ok(size as u64)
+    } else {
+        Err(de::Error::custom("an entry's size is not a whole number"))
     }
 }

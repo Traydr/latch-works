@@ -1,4 +1,4 @@
-//! Roots and settings, from glazier-core's `catalog/roots.ts`.
+//! Roots and settings.
 
 use std::path::{Path, PathBuf};
 
@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::now_ms;
 use crate::contract::{PreferredFolder, Root, RootId, Settings, SimilarityLevel, VideoQuality};
-use crate::plans::planner::is_within;
+use crate::paths::{roots_overlap, sandbox_rule};
 
 /// Every root, in path order without regard to case, with its file count and bytes.
 pub fn list_roots(connection: &Connection) -> anyhow::Result<Vec<Root>> {
@@ -62,7 +62,7 @@ impl std::fmt::Display for RootError {
 
 impl std::error::Error for RootError {}
 
-/// Resolves a folder the way glazier-core's `addRoot` does (absolute, symlinks resolved), refusing
+/// Resolves a folder (absolute, symlinks resolved), refusing
 /// a missing folder or a file as it does. In a sandboxed run (`ORIEL_DATA_DIR` set) it also
 /// refuses a folder outside [`DataRoot::sandbox`] and the temp folder; the resolved path is what
 /// is checked, so a symlink in the sandbox pointing elsewhere is refused too.
@@ -87,10 +87,9 @@ pub fn resolve_root_folder(data: &DataRoot, folder: &Path) -> Result<PathBuf, Ro
     }
     if !data.admits_tidy_root(&resolved) {
         return Err(RootError(format!(
-            "{} is outside Tidy's sandbox. With ORIEL_DATA_DIR set, Tidy looks after \
-             folders only under {} or the temp folder.",
+            "{} is outside Tidy's sandbox. {}",
             resolved.display(),
-            data.sandbox().display()
+            sandbox_rule(data)
         )));
     }
     Ok(resolved)
@@ -103,14 +102,7 @@ pub fn add_root(connection: &Connection, resolved: &Path) -> anyhow::Result<Root
         .to_str()
         .with_context(|| format!("{} is not a Unicode path", resolved.display()))?;
     for existing in list_roots(connection)? {
-        let other = Path::new(&existing.path);
-        // On Windows `path.relative` ignores case, as NTFS does, so the check does too.
-        let overlaps = if cfg!(windows) {
-            is_within(resolved, other) || is_within(other, resolved)
-        } else {
-            resolved.starts_with(other) || other.starts_with(resolved)
-        };
-        if overlaps {
+        if roots_overlap(resolved, Path::new(&existing.path)) {
             bail!(RootError(format!(
                 "{path} overlaps the root {}.",
                 existing.path
@@ -125,9 +117,10 @@ pub fn add_root(connection: &Connection, resolved: &Path) -> anyhow::Result<Root
     find_root(connection, id)?.ok_or_else(|| RootError("The root was not saved.".into()).into())
 }
 
-/// Forgets a root and its catalog. Files on disk are untouched.
+/// Forgets a root and every row of its files, their prints with them.
 pub fn remove_root(connection: &Connection, root_id: RootId) -> anyhow::Result<()> {
     connection.execute("DELETE FROM roots WHERE id = ?1", [root_id])?;
+    super::state::prints_changed(connection)?;
     Ok(())
 }
 
@@ -152,7 +145,7 @@ pub fn read_settings(connection: &Connection) -> anyhow::Result<Settings> {
     Ok(stored.map_or_else(Settings::default, |text| parse_settings(&text)))
 }
 
-/// glazier-core's `StoredSettingsSchema`, by hand: anything but a JSON object is the defaults.
+/// The stored settings' shape, by hand: anything but a JSON object is the defaults.
 pub fn parse_settings(text: &str) -> Settings {
     let defaults = Settings::default();
     let Ok(Value::Object(stored)) = serde_json::from_str::<Value>(text) else {
@@ -197,7 +190,8 @@ fn folder_list(value: &Value) -> Option<Vec<PreferredFolder>> {
         .collect()
 }
 
-/// Stores the settings as glazier-core does: one JSON row, its keys in the contract's order.
+/// Stores the settings as one JSON row, its keys in the contract's order, as Electron Oriel's
+/// catalogs hold them.
 pub fn write_settings(connection: &Connection, settings: &Settings) -> anyhow::Result<()> {
     connection.execute(
         "INSERT INTO settings (key, value) VALUES ('settings', ?1)

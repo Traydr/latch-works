@@ -1,6 +1,5 @@
-//! Electron Oriel's e2e Sync spec as GPUI tests: five cases in order against
-//! one Pane View, driven through Sync's real views with clicks and typing, and checked on screen,
-//! in Pane View's snapshot and on disk. `sync.rs` runs them against a small Pane View on a local
+//! The Sync spec as GPUI tests: five cases in order against one Pane View, driven through Sync's
+//! real views with clicks and typing, and checked on screen, in Pane View's snapshot and on disk. `sync.rs` runs them against a small Pane View on a local
 //! port; `stack.rs` against the local compose stack.
 
 use std::path::{Path, PathBuf};
@@ -13,8 +12,10 @@ use gpui_kit::{
 };
 use oriel_core_paths::DataRoot;
 use oriel_core_sync::{ApiTarget, PaneViewClient};
+use oriel_launch::Launch;
 use oriel_mode_sync::{PruneAvailability, Screen, SyncMode};
 use oriel_runtime::{CancelToken, TokioRuntime};
+use oriel_ui::test_window::TestWindow;
 use oriel_ui::{ModeId, ShellState};
 
 pub const PROFILE_NAME: &str = "E2E archive";
@@ -49,7 +50,7 @@ pub fn open_sync(cx: &mut TestAppContext, data: &DataRoot) -> (AnyWindowHandle, 
             cx,
             |window, cx| {
                 let shell = cx.new(|cx| ShellState::new(ModeId::Sync, false, cx));
-                cx.new(|cx| SyncMode::with_data(&shell, &data, window, cx))
+                cx.new(|cx| SyncMode::new(&shell, &Launch::of(data.clone()), window, cx))
             },
         )
         .expect("open the test window")
@@ -57,9 +58,7 @@ pub fn open_sync(cx: &mut TestAppContext, data: &DataRoot) -> (AnyWindowHandle, 
 }
 
 fn frame(cx: &mut TestAppContext, handle: AnyWindowHandle) {
-    cx.run_until_parked();
-    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
-        .unwrap();
+    TestWindow::new(handle).render(cx);
 }
 
 /// Waits for the run on screen to end: its HTTP and file work run on other threads.
@@ -86,20 +85,11 @@ fn type_into(cx: &mut TestAppContext, handle: AnyWindowHandle, id: &'static str,
 }
 
 fn label(cx: &mut TestAppContext, handle: AnyWindowHandle, id: &str) -> Option<String> {
-    let id = gpui_kit::SharedString::from(id.to_owned());
-    cx.update_window(handle, move |_, window, _| {
-        window
-            .try_find(id)
-            .and_then(|found| found.label().map(str::to_owned))
-    })
-    .unwrap()
+    TestWindow::new(handle).label(cx, gpui_kit::SharedString::from(id.to_owned()))
 }
 
 fn click(cx: &mut TestAppContext, handle: AnyWindowHandle, id: &str) {
-    let id = gpui_kit::SharedString::from(id.to_owned());
-    cx.update_window(handle, move |_, window, cx| window.click(id, cx))
-        .unwrap();
-    frame(cx, handle);
+    TestWindow::new(handle).click(cx, gpui_kit::SharedString::from(id.to_owned()));
 }
 
 /// A run panel figure, such as "pushed 2 / 2": the count before any "/ total".
@@ -263,7 +253,7 @@ pub fn run_sync_spec(cx: &mut TestAppContext, target: &Target, data_folder: &Pat
     }
 
     // The sync token never reaches the settings file in the clear.
-    let settings = std::fs::read_to_string(data.sync().join("lockstep-settings.json")).unwrap();
+    let settings = std::fs::read_to_string(data.sync_settings()).unwrap();
     assert!(settings.contains(PROFILE_NAME));
     assert!(!settings.contains(&target.token));
 }

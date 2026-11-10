@@ -24,6 +24,7 @@ use gpui_kit::{
     TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
 
+use crate::arming::Arming;
 use crate::controls::{ControlSize as _, TextRole as _};
 
 /// A toast's width: room for a name on one line beside Undo.
@@ -377,7 +378,11 @@ impl Toast {
         };
         let detail = detail.filter(|_| !one_line);
         let long_for_snug = shown.chars().count() > SNUG_WITH_MARK;
-        let armed_at = cx.background_executor().now() + ACTION_ARM_DELAY;
+        // It can appear under a pointer aimed at what was there before it: the end of a run closes
+        // the activity panel and puts Undo where Stop was, and a late click on Stop must not undo
+        // the whole run.
+        let mut arming = Arming::default();
+        arming.arm(cx);
         Notification::new()
             .id::<OrielToast>()
             .placement(Anchor::BottomRight)
@@ -467,7 +472,7 @@ impl Toast {
                                 .when(snug, |button| button.px_2())
                                 .label(label)
                                 .on_click(move |_, window, cx| {
-                                    if cx.background_executor().now() < armed_at {
+                                    if arming.holds(cx) {
                                         return;
                                     }
                                     run(window, cx);
@@ -481,11 +486,6 @@ impl Toast {
     }
 }
 
-/// How long a toast's action ignores clicks after it appears. It can appear under a pointer aimed
-/// at what was there before it: the end of a run closes the activity panel and puts Undo where
-/// Stop was, and a late click on Stop must not undo the whole run.
-const ACTION_ARM_DELAY: Duration = Duration::from_millis(600);
-
 /// The one id every toast shares, so a new one replaces the last.
 struct OrielToast;
 
@@ -497,6 +497,8 @@ pub trait ToastExt {
 
 impl ToastExt for Window {
     fn show_toast(&mut self, toast: Toast, cx: &mut App) {
+        #[cfg(feature = "test-support")]
+        cx.set_global(LastToast(toast.message().clone()));
         note_toast(toast.takes_one_line(), toast.needs_in_slot(), cx);
         let notification = toast.into_notification(cx);
         self.push_notification(notification, cx);
@@ -505,6 +507,19 @@ impl ToastExt for Window {
     fn dismiss_toast(&mut self, cx: &mut App) {
         self.remove_notification::<OrielToast>(cx);
     }
+}
+
+/// The last toast shown, kept for checks: GPUI Kit's notifications do not say what they read.
+#[cfg(feature = "test-support")]
+struct LastToast(SharedString);
+
+#[cfg(feature = "test-support")]
+impl Global for LastToast {}
+
+/// What the last toast shown said.
+#[cfg(feature = "test-support")]
+pub fn last_toast(cx: &App) -> Option<SharedString> {
+    cx.try_global::<LastToast>().map(|last| last.0.clone())
 }
 
 #[cfg(test)]

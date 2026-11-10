@@ -1,30 +1,14 @@
 //! Natural order and the gallery's sort orders, ported from `media-domain`'s `sort.ts`.
 //!
-//! The TypeScript compares names with `Intl.Collator(undefined, { numeric: true, sensitivity:
-//! "base" })`. Runs of decimal digits compare by their value, and only base letters count, so
-//! case, accents and width do not. Here the same rule is ICU4X's collator, numeric and at primary
-//! strength, which is what `sensitivity: "base"` asks of ICU4C.
-//!
-//! `undefined` is the app's locale, which Electron Oriel takes from the system's languages. CLDR
-//! collates English by the root order, which is the order used here. A user whose first language
-//! has its own collation (Lithuanian puts `č` after `c`, Swedish `å` after `z`) gets that order in
-//! Electron Oriel; following them is later work.
-//!
-//! Han ideographs from different blocks follow Chromium's ICU, which Electron Oriel sorts with,
-//! rather than Node's. ICU4X's compiled data orders the blocks and then code points, as
-//! Chromium's does, where Node's orders all Han by radical and stroke. The conformance test lists
-//! the pairs this changes.
+//! Names compare in [`Collation::Natural`] order. Han ideographs from different blocks follow
+//! ICU4X's compiled data, which orders the blocks and then code points (as Chromium's ICU does),
+//! where Node's orders all Han by radical and stroke. The conformance test lists the pairs this
+//! changes.
 
 use std::cmp::{Ordering, Reverse};
-use std::sync::LazyLock;
-
-use icu_collator::{
-    CollatorBorrowed, CollatorPreferences,
-    options::{CollatorOptions, Strength},
-    preferences::CollationNumericOrdering,
-};
 
 use crate::GallerySortMode;
+use crate::collation::Collation;
 
 /// Something with a display name and a path, which [`compare_by_name`] orders.
 pub trait NamedPath {
@@ -53,18 +37,6 @@ impl<T: SortableMediaItem + ?Sized> SortableMediaItem for &T {
         (**self).mtime_ms()
     }
 }
-
-/// The root collator, numeric, at primary strength. The other options stay at the locale's
-/// defaults, as the TypeScript leaves them: punctuation and spaces count, and case is not a
-/// level of its own.
-static NAME_COLLATOR: LazyLock<CollatorBorrowed<'static>> = LazyLock::new(|| {
-    let mut preferences = CollatorPreferences::default();
-    preferences.numeric_ordering = Some(CollationNumericOrdering::True);
-    let mut options = CollatorOptions::default();
-    options.strength = Some(Strength::Primary);
-    CollatorBorrowed::try_new(preferences, options)
-        .expect("the compiled collation data has the root locale")
-});
 
 /// Orders by name in natural order, then by path in the same order when the names are equal.
 ///
@@ -115,14 +87,15 @@ pub fn name_ranks<T: NamedPath>(items: &[T]) -> Vec<u32> {
     }
     let mut order: Vec<u32> = (0..count).collect();
     order.sort_by(|a, b| compare(*a, *b));
-    // A sort through the collator is in the collator's order, so this never falls through.
-    ranks_in(&order, &compare, 1).unwrap_or_else(|| {
-        let mut ranks = vec![0; order.len()];
-        for (rank, index) in order.iter().enumerate() {
-            ranks[*index as usize] = rank as u32;
+    let mut ranks = vec![0; order.len()];
+    let mut rank = 0;
+    for (at, pair) in order.windows(2).enumerate() {
+        if compare(pair[0], pair[1]) == Ordering::Less {
+            rank += 1;
         }
-        ranks
-    })
+        ranks[order[at + 1] as usize] = rank;
+    }
+    ranks
 }
 
 /// Orders each run of `order` whose names share a key by path, as [`compare_by_name`] breaks
@@ -143,7 +116,7 @@ fn order_ties_by_path(order: &mut [u32], keys: &SortKeys, paths: &[&str]) {
     if tied < KEYED_FROM {
         for run in ties {
             order[run]
-                .sort_by(|a, b| NAME_COLLATOR.compare(paths[*a as usize], paths[*b as usize]));
+                .sort_by(|a, b| Collation::Natural.compare(paths[*a as usize], paths[*b as usize]));
         }
         return;
     }
@@ -167,11 +140,10 @@ fn order_ties_by_path(order: &mut [u32], keys: &SortKeys, paths: &[&str]) {
     }
 }
 
-/// [`compare_by_name`] on a name and a path each.
 fn compare_names_then_paths(a: (&str, &str), b: (&str, &str)) -> Ordering {
-    NAME_COLLATOR
+    Collation::Natural
         .compare(a.0, b.0)
-        .then_with(|| NAME_COLLATOR.compare(a.1, b.1))
+        .then_with(|| Collation::Natural.compare(a.1, b.1))
 }
 
 /// The threads to rank `count` items on.
@@ -272,7 +244,7 @@ impl SortKeys {
         let mut bytes = Vec::with_capacity(names.len() * 16);
         let mut ends = Vec::with_capacity(names.len());
         for name in names {
-            let Ok(()) = NAME_COLLATOR.write_sort_key_to(name, &mut bytes);
+            Collation::Natural.write_sort_key(name, &mut bytes);
             ends.push(bytes.len());
         }
         Self { bytes, ends }
@@ -311,12 +283,6 @@ impl SortKeys {
             *index = sorted;
         }
     }
-}
-
-/// Orders two names in natural order alone, as `localeCompare` with the same options does, which
-/// is how the gallery sorts folders.
-pub(crate) fn compare_names(a: &str, b: &str) -> Ordering {
-    NAME_COLLATOR.compare(a, b)
 }
 
 const FNV_OFFSET_BASIS: u32 = 2_166_136_261;
@@ -427,7 +393,8 @@ mod tests {
         let shared = SortKeys::of(&names, 4);
         assert_eq!((&one.bytes, &one.ends), (&shared.bytes, &shared.ends));
 
-        let compare = |a: u32, b: u32| NAME_COLLATOR.compare(names[a as usize], names[b as usize]);
+        let compare =
+            |a: u32, b: u32| Collation::Natural.compare(names[a as usize], names[b as usize]);
         let mut order: Vec<u32> = (0..names.len() as u32).collect();
         order.sort_by(|a, b| compare(*a, *b));
         let ranks = ranks_in(&order, &compare, 1).expect("in the collator's order");

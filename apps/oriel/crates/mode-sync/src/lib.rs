@@ -3,21 +3,22 @@
 //! The profiles are in the sidebar; the active profile's plan is the page, as a tree of what to
 //! upload, update and delete; Push and Prune run with the run panel floating over the plan's
 //! lower right, and the run log (⌘L) along the bottom. The engine is `oriel-core-sync`, run on
-//! the app's tokio thread; profiles and tokens are kept in `DataRoot::sync()` in Electron Oriel's
-//! formats ([`profiles`], [`secrets`]), and the hash cache in `DataRoot::hash_cache()`.
+//! the app's tokio thread; profiles and tokens are kept in `DataRoot::sync()` in the formats
+//! Electron Oriel wrote ([`profiles`], [`secrets`]), and the hash cache in
+//! `DataRoot::hash_cache()`.
 //!
-//! As in Electron Oriel's `runService.ts`, one run goes at a time, a run holds the profile it
-//! started with, Plan compares sizes alone, Push plans again with hashes where they tell files
-//! apart, and Prune applies the deletes of the plan on screen once.
+//! One run goes at a time, and a run holds the profile it started with. Plan compares sizes
+//! alone, Push plans again with hashes where they tell files apart, and Prune applies the deletes
+//! of the plan on screen once.
 //!
-//! The profile menu's Open in View and Tidy this folder go to the shell as [`SyncEvent`]s; a
-//! folder another mode hands Sync arrives through [`SyncMode::show_hand_off`].
+//! The profile menu's Open in View and Tidy this folder go to the shell as hand-off requests; a
+//! folder another mode hands Sync arrives through its `show_hand_off`.
 
 mod check;
-pub mod plan_tree;
-pub mod profiles;
-pub mod run;
-pub mod secrets;
+mod plan_tree;
+mod profiles;
+mod run;
+mod secrets;
 mod shortcuts;
 mod view;
 
@@ -29,30 +30,35 @@ use std::time::{Instant, SystemTime};
 use futures::StreamExt as _;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    Global, IntoElement as _, KeyBinding, PathPromptOptions, Render, SharedString, Subscription,
-    Task, UniformListScrollHandle, Window, actions,
+    AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable, IntoElement as _,
+    PathPromptOptions, Render, SharedString, Subscription, Task, UniformListScrollHandle, Window,
+    actions,
 };
-use oriel_core_domain::format_bytes;
-use oriel_core_index::SyncPlanAction;
+use oriel_core_domain::format;
 use oriel_core_paths::DataRoot;
+use oriel_core_sync::SyncPlanAction;
 use oriel_core_sync::{
     ApiTarget, DoctorOptions, DoctorResult, HashMode, LockstepPlan, Observer, PaneViewClient,
     PlanOptions, PruneOptions, PushOptions, RunAction, RunEvent, RunStatus, RunSummary,
-    UnfinalizedSyncRun, cache_root, doctor, format_count, plan_sync, prune_deleted, push_changes,
+    UnfinalizedSyncRun, doctor, plan_sync, prune_deleted, push_changes,
 };
-use oriel_runtime::{CancelToken, Cancelled, TokioHandle, TokioRuntime};
+use oriel_launch::Launch;
+use oriel_runtime::{CancelToken, Cancelled, TokioRuntime};
 use oriel_ui::folders::closest_folder;
-use oriel_ui::{ActivityJob, HandOff, JobCommand, JobControl, ModeActivity, ModeId, ShellState};
+use oriel_ui::shortcuts::Sheet;
+use oriel_ui::{
+    ActivityJob, Command, FolderSetUp, Foot, HandOff, JobCommand, JobControl, Mode, ModeActivity,
+    ModeId, ModeReporter, ShellState, Work,
+};
 
-pub use plan_tree::{PlanFolder, PlanRow};
-pub use profiles::{Profile, ProfileInput, ProfilePatch, ProfileStore, TokenState};
-pub use run::{ItemState, PruneAvailability, RunPhase, RunState};
+use plan_tree::PlanRow;
+use profiles::ProfilePatch;
+use run::{ItemState, PathIndex, RunPhase, RunState};
+
+pub use check::SYNC_CHECK;
+pub use profiles::{LastRun, Profile, ProfileInput, ProfileStore, TokenState};
+pub use run::PruneAvailability;
 pub use secrets::FileSecretStorage;
-pub use shortcuts::open as show_shortcuts;
-
-/// The key context of Sync's page.
-pub const KEY_CONTEXT: &str = "Sync";
 
 /// How much of the window's foot the run log takes while it is open.
 const LOG_FOOT: gpui_kit::Pixels = gpui_kit::px(276.);
@@ -60,8 +66,8 @@ const LOG_FOOT: gpui_kit::Pixels = gpui_kit::px(276.);
 /// The run's key in the shell's activity panel: Sync runs one thing at a time.
 const RUN_JOB: &str = "run";
 
-/// `ORIEL_SYNC_PLAN=1` plans the active profile at start.
-pub const PLAN_VARIABLE: &str = "ORIEL_SYNC_PLAN";
+/// The run log's keys.
+const RUN_LOG_KEYS: &str = oriel_ui::cmd_or_ctrl!("l");
 
 actions!(
     sync,
@@ -73,55 +79,6 @@ actions!(
     ]
 );
 
-/// Marks Sync's keys as bound, so a second window does not bind them twice.
-struct SyncKeys;
-
-impl Global for SyncKeys {}
-
-/// Binds Sync's keys. `SyncMode::new` calls it, so the app shell need not.
-pub fn init(cx: &mut App) {
-    if cx.has_global::<SyncKeys>() {
-        return;
-    }
-    cx.set_global(SyncKeys);
-    // `/` reaches the plan's filter through the page's key handler instead, since a binding
-    // would also take it from a text field.
-    cx.bind_keys([KeyBinding::new(
-        oriel_ui::cmd_or_ctrl!("l"),
-        ToggleRunLog,
-        Some(KEY_CONTEXT),
-    )]);
-}
-
-/// The name of the app's tokio thread, where Sync's HTTP runs.
-pub const HTTP_THREAD: &str = "oriel-http";
-
-/// Starts the app's tokio thread, once: `oriel::run` calls it at launch, so a failure to start
-/// it shows then, not at the first push. Later calls do nothing.
-pub fn start_http(cx: &mut App) -> std::io::Result<()> {
-    if !cx.has_global::<TokioRuntime>() {
-        cx.set_global(TokioRuntime::start(HTTP_THREAD)?);
-    }
-    Ok(())
-}
-
-/// The app's tokio thread. The app starts it at launch; a window opened without the app's
-/// start (the GPUI tests) gets it here on its first run.
-fn http(cx: &mut App) -> TokioHandle {
-    start_http(cx).expect("Oriel could not start its HTTP thread");
-    cx.global::<TokioRuntime>().handle()
-}
-
-/// What Sync asks of the rest of the app: the profile menu's links to the other modes.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SyncEvent {
-    /// Open in View, for the profile's source folder.
-    OpenInView(PathBuf),
-    /// Tidy this folder, for the profile's source folder.
-    TidyFolder(PathBuf),
-}
-
-/// What the page shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Screen {
     /// The active profile's plan, or the welcome before any profile.
@@ -130,12 +87,11 @@ pub enum Screen {
     Form { editing: Option<String> },
 }
 
-/// The plan on screen and what it was made against, so Prune applies what the user reviewed
-/// (`ReviewedPlan` in `runService.ts`).
+/// The plan on screen and what it was made against, so Prune applies what the user reviewed.
 #[derive(Clone, Debug)]
 pub struct ReviewedPlan {
     pub id: String,
-    pub plan: LockstepPlan,
+    pub plan: Arc<LockstepPlan>,
     pub profile_id: String,
     pub api_url: String,
     pub source_root: String,
@@ -151,7 +107,6 @@ pub enum RunFilter {
     Failed,
 }
 
-/// The profile form's fields.
 pub(crate) struct ProfileForm {
     name: Entity<InputState>,
     api_url: Entity<InputState>,
@@ -180,6 +135,8 @@ pub(crate) enum RowModel {
         name: String,
         action: SyncPlanAction,
         size: Option<u64>,
+        /// Its place in the plan.
+        item: usize,
     },
     More {
         depth: usize,
@@ -191,87 +148,22 @@ pub(crate) enum RowModel {
 
 /// What the page needs of the plan on screen at each keystroke and frame, worked out once, off
 /// the main thread, when the plan arrives.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct PlanFacts {
     /// Each item's path in lower case, for the path filter; empty for a keep, never listed.
     lower_paths: Vec<String>,
     /// Each item's [`plan_tree::TreeInput::name_rank`] among the changes; 0 for a keep.
     name_ranks: Vec<u32>,
-    /// The bytes of the uploads, the updates and the deletes, as [`PlanFacts::bytes`] reads them.
-    bytes_by_action: [u64; 3],
-    /// [`LockstepPlan::push_bytes`].
-    pub(crate) push_bytes: u64,
+    /// The bytes of the items of each action: their local sizes, or the remote ones.
+    bytes: HashMap<SyncPlanAction, u64>,
     /// How many items are not keeps.
     pub(crate) changes: usize,
     /// The changes by path, for the run's events, which name their items by path.
-    paths: PathIndex,
-}
-
-/// The plan's changes by path, without a copy of each path: each path's hash leads to the last
-/// change with that hash, and each change to the one before it with the same hash. A lookup walks
-/// the chain and keeps the changes whose path is the one asked for.
-#[derive(Clone, Debug, Default)]
-struct PathIndex {
-    hasher: std::hash::RandomState,
-    last: HashMap<u64, usize>,
-    previous: Vec<usize>,
-}
-
-impl PathIndex {
-    const END: usize = usize::MAX;
-
-    fn of(plan: &LockstepPlan, changes: &[usize]) -> Self {
-        let hasher = std::hash::RandomState::new();
-        let mut last = HashMap::with_capacity(changes.len());
-        let mut previous = vec![Self::END; plan.items.len()];
-        for &at in changes {
-            let hash = std::hash::BuildHasher::hash_one(&hasher, plan.items[at].path.as_str());
-            previous[at] = last.insert(hash, at).unwrap_or(Self::END);
-        }
-        Self {
-            hasher,
-            last,
-            previous,
-        }
-    }
-
-    /// The changes of `plan` at `path`.
-    fn find<'a>(
-        &'a self,
-        plan: &'a LockstepPlan,
-        path: &'a str,
-    ) -> impl Iterator<Item = usize> + 'a {
-        let hash = std::hash::BuildHasher::hash_one(&self.hasher, path);
-        let mut at = self.last.get(&hash).copied().unwrap_or(Self::END);
-        std::iter::from_fn(move || {
-            while at != Self::END {
-                let this = at;
-                at = self.previous[this];
-                if plan.items[this].path == path {
-                    return Some(this);
-                }
-            }
-            None
-        })
-    }
-}
-
-/// What the run made of one of the plan's items, as a frame counts it: still to come (or under
-/// way), done or skipped, or failed.
-pub(crate) const ITEM_REMAINING: u8 = 0;
-pub(crate) const ITEM_SETTLED: u8 = 1;
-pub(crate) const ITEM_FAILED: u8 = 2;
-
-fn item_code(state: Option<&ItemState>) -> u8 {
-    match state {
-        Some(state) if state.is_settled() => ITEM_SETTLED,
-        Some(ItemState::Failed(_)) => ITEM_FAILED,
-        _ => ITEM_REMAINING,
-    }
+    paths: Arc<PathIndex>,
 }
 
 impl PlanFacts {
-    fn of(plan: &LockstepPlan) -> Self {
+    fn of(plan: &Arc<LockstepPlan>) -> Self {
         let changes: Vec<usize> = (0..plan.items.len())
             .filter(|&at| plan.items[at].action != SyncPlanAction::Keep)
             .collect();
@@ -282,39 +174,31 @@ impl PlanFacts {
             name_ranks[at] = *rank;
             lower_paths[at] = plan.items[at].path.to_lowercase();
         }
-        let mut bytes_by_action = [0; 3];
+        let mut bytes = HashMap::new();
         for item in &plan.items {
-            if let Some(slot) = Self::slot(item.action) {
-                bytes_by_action[slot] += item_size(item).unwrap_or(0);
-            }
+            *bytes.entry(item.action).or_default() += item_size(item).unwrap_or(0);
         }
         Self {
             lower_paths,
             name_ranks,
-            bytes_by_action,
-            push_bytes: plan.push_bytes(),
+            bytes,
             changes: changes.len(),
-            paths: PathIndex::of(plan, &changes),
+            paths: Arc::new(PathIndex::of(plan.clone(), &changes)),
         }
     }
 
-    fn slot(action: SyncPlanAction) -> Option<usize> {
-        match action {
-            SyncPlanAction::Upload => Some(0),
-            SyncPlanAction::Update => Some(1),
-            SyncPlanAction::Delete => Some(2),
-            SyncPlanAction::Keep => None,
-        }
-    }
-
-    /// The bytes of the plan's items of `action`: their local sizes, or the remote ones.
     pub(crate) fn bytes(&self, action: SyncPlanAction) -> u64 {
-        Self::slot(action).map_or(0, |slot| self.bytes_by_action[slot])
+        self.bytes.get(&action).copied().unwrap_or(0)
+    }
+
+    /// The bytes a push would send: the uploads' and the updates'.
+    pub(crate) fn push_bytes(&self) -> u64 {
+        self.bytes(SyncPlanAction::Upload) + self.bytes(SyncPlanAction::Update)
     }
 }
 
 /// The bytes an item moves or names: its local size, else its remote one.
-fn item_size(item: &oriel_core_index::SyncPlanItem) -> Option<u64> {
+fn item_size(item: &oriel_core_sync::SyncPlanItem) -> Option<u64> {
     item.local
         .as_ref()
         .map(|local| local.size)
@@ -323,6 +207,7 @@ fn item_size(item: &oriel_core_index::SyncPlanItem) -> Option<u64> {
 
 pub struct SyncMode {
     shell: Entity<ShellState>,
+    reporter: ModeReporter,
     data: DataRoot,
     store: ProfileStore,
     screen: Screen,
@@ -330,9 +215,7 @@ pub struct SyncMode {
     session_token: Entity<InputState>,
     filter: Entity<InputState>,
     plan: Option<ReviewedPlan>,
-    plan_facts: PlanFacts,
-    /// Each plan item's [`item_code`] for the run's states, kept as the run reports them.
-    plan_states: Vec<u8>,
+    plan_facts: Option<PlanFacts>,
     rows: Vec<RowModel>,
     open_overrides: HashMap<String, bool>,
     show_all_files: HashSet<String>,
@@ -361,31 +244,19 @@ pub struct SyncMode {
     _subscriptions: Vec<Subscription>,
 }
 
-impl EventEmitter<SyncEvent> for SyncMode {}
-
 impl SyncMode {
-    /// Sync for the shell, keeping its profiles in this run's data folder.
-    /// Plans the active profile at start when [`PLAN_VARIABLE`] is set, for runs without input
-    /// (measurements and screenshots).
-    pub fn new(shell: &Entity<ShellState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let data = DataRoot::from_environment().expect("Oriel needs a data folder");
-        let mut sync = Self::with_data(shell, &data, window, cx);
-        if std::env::var_os(PLAN_VARIABLE).is_some_and(|value| value == "1") {
-            sync.plan_now(window, cx);
-        }
-        sync.apply_check(window, cx);
-        sync
-    }
-
-    /// Sync keeping its profiles under `data`.
-    pub fn with_data(
+    /// Sync keeping its profiles under the launch's data root, set up for the checks the launch
+    /// asks for.
+    pub fn new(
         shell: &Entity<ShellState>,
-        data: &DataRoot,
+        launch: &Launch,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        init(cx);
-        let (store, error) = ProfileStore::open(&data.sync());
+        let data = &launch.data;
+        let checks = check::SyncChecks::of(launch);
+        let reporter = ModeReporter::new(shell, ModeId::Sync);
+        let (store, error) = ProfileStore::open(data);
         let input = |placeholder: &'static str,
                      masked: bool,
                      window: &mut Window,
@@ -407,10 +278,9 @@ impl SyncMode {
         let filter = input("Filter paths", false, window, cx);
         let subscriptions = vec![
             cx.observe(shell, |_, _, cx| cx.notify()),
-            cx.subscribe(
-                &shell.read(cx).jobs().clone(),
-                |this, _, command: &JobCommand, cx| this.on_job_command(command, cx),
-            ),
+            reporter.on_command(window, cx, |this, command, _, cx| {
+                this.on_job_command(command, cx);
+            }),
             cx.subscribe_in(&filter, window, |this, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.rebuild_rows(cx);
@@ -418,16 +288,16 @@ impl SyncMode {
             }),
             // Sync takes the keys when it comes on screen, so ⌘L and / reach it.
             cx.observe_in(shell, window, |this, shell, window, cx| {
-                if shell.read(cx).mode() == ModeId::Sync
-                    && shell.read(cx).settings().is_none()
+                if shell.read(cx).shows(ModeId::Sync)
                     && !this.focus_handle.contains_focused(window, cx)
                 {
                     this.focus_handle.focus(window, cx);
                 }
             }),
         ];
-        Self {
+        let mut sync = Self {
             shell: shell.clone(),
+            reporter,
             data: data.clone(),
             store,
             screen: Screen::Workspace,
@@ -435,8 +305,7 @@ impl SyncMode {
             session_token,
             filter,
             plan: None,
-            plan_facts: PlanFacts::default(),
-            plan_states: Vec::new(),
+            plan_facts: None,
             rows: Vec::new(),
             open_overrides: HashMap::new(),
             show_all_files: HashSet::new(),
@@ -459,7 +328,14 @@ impl SyncMode {
             band_height: gpui_kit::px(0.),
             panel_height: gpui_kit::px(0.),
             _subscriptions: subscriptions,
+        };
+        if checks.plan {
+            sync.plan_now(window, cx);
         }
+        if let Some(check) = checks.check {
+            sync.apply_check(check, window, cx);
+        }
+        sync
     }
 
     /// The folders Sync pushes, its profiles' sources, for the other modes to be offered.
@@ -473,10 +349,10 @@ impl SyncMode {
     }
 
     /// Shows what another mode handed Sync (Sync this folder): the profile whose source holds
-    /// it, or a new profile's form with the folder and its name filled in (`useSyncHandOff`).
-    /// A run holds the profile it started with, so a hand-off during one waits for it to end.
-    pub fn show_hand_off(&mut self, target: HandOff, window: &mut Window, cx: &mut Context<Self>) {
-        if self.run.running {
+    /// it, or a new profile's form with the folder and its name filled in. A run holds the
+    /// profile it started with, so a hand-off during one waits for it to end.
+    fn take_hand_off(&mut self, target: HandOff, window: &mut Window, cx: &mut Context<Self>) {
+        if self.run_holds_profile() {
             self.pending_hand_off = Some(target);
             return;
         }
@@ -496,12 +372,9 @@ impl SyncMode {
         let Some(profile) = self.store.active_profile() else {
             return;
         };
-        let folder = PathBuf::from(&profile.source_root);
-        match to {
-            ModeId::View => cx.emit(SyncEvent::OpenInView(folder)),
-            ModeId::Tidy => cx.emit(SyncEvent::TidyFolder(folder)),
-            ModeId::Sync => {}
-        }
+        let target = HandOff::Folder(PathBuf::from(&profile.source_root));
+        self.shell
+            .update(cx, |shell, cx| shell.hand_off(to, target, cx));
     }
 
     /// Adds a profile in one step, as the first start's welcome sets Sync up: the profile, and
@@ -518,25 +391,17 @@ impl SyncMode {
         Ok(())
     }
 
-    /// The new or edited profile's name, as its form shows it.
     pub fn form_name(&self, cx: &App) -> SharedString {
         self.form.name.read(cx).value()
     }
 
-    /// The new or edited profile's source folder, as its form shows it.
     pub fn form_source_root(&self, cx: &App) -> SharedString {
         self.form.source_root.read(cx).value()
     }
 
-    /// This mode's section of the one Settings page (⌘,): the profiles, each opening the form,
-    /// and where their tokens are kept.
-    pub fn settings_section(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        self.render_settings(window, cx).into_any_element()
-    }
-
     /// How much of the window's foot Sync keeps for its own: the token's band, and the run panel
     /// and the log, which float over the plan's lower part.
-    pub fn foot_height(&self) -> gpui_kit::Pixels {
+    fn foot_height(&self) -> gpui_kit::Pixels {
         use gpui_kit::px;
         let band = match self.store.active_profile() {
             Some(profile)
@@ -564,28 +429,18 @@ impl SyncMode {
         &self.screen
     }
 
-    pub fn plan(&self) -> Option<&ReviewedPlan> {
-        self.plan.as_ref()
-    }
-
-    pub fn run_state(&self) -> &RunState {
-        &self.run
-    }
-
     pub fn is_running(&self) -> bool {
+        self.run.running
+    }
+
+    /// Whether a run holds the profile it started with: while it goes, no other profile may
+    /// become active, and its profile may not be edited, deleted or run again.
+    pub(crate) fn run_holds_profile(&self) -> bool {
         self.run.running
     }
 
     pub fn error(&self) -> Option<&str> {
         self.error.as_deref()
-    }
-
-    pub fn doctor_result(&self) -> Option<&DoctorResult> {
-        self.doctor_result.as_ref()
-    }
-
-    pub fn is_log_open(&self) -> bool {
-        self.log_open
     }
 
     /// The question an open confirmation asks, such as Prune's "Delete 96 remote entries from …?".
@@ -632,32 +487,31 @@ impl SyncMode {
             && self.run.progress.queued_at.is_some()
     }
 
+    /// What the shell shows of Sync's run: a ring once a push or prune knows its list, else a
+    /// dot. A push or prune changes the server, so quitting waits for it.
     fn report_activity(&self, cx: &mut Context<Self>) {
-        let activity = self.run.running.then(|| match self.run.progress.kind {
-            Some(RunAction::Push | RunAction::Prune) => self
-                .run
+        let changes_server = matches!(
+            self.run.progress.kind,
+            Some(RunAction::Push | RunAction::Prune)
+        );
+        let shown = self.run.running.then(|| {
+            self.run
                 .ratio()
-                .map_or(ModeActivity::Working, ModeActivity::Progress),
-            _ => ModeActivity::Working,
+                .filter(|_| changes_server)
+                .map_or(ModeActivity::Working, ModeActivity::Progress)
         });
-        // A push or prune changes the server, so even before its list is known it counts as
-        // work quitting waits for.
-        let activity = match (activity, self.run.progress.kind) {
-            (Some(ModeActivity::Working), Some(RunAction::Push | RunAction::Prune)) => {
-                Some(ModeActivity::Progress(0.0))
-            }
-            (activity, _) => activity,
-        };
-        self.shell.update(cx, |shell, cx| {
-            shell.set_activity(ModeId::Sync, activity, cx)
-        });
-        let jobs = self.activity_job().into_iter().collect();
-        let board = self.shell.read(cx).jobs().clone();
-        board.update(cx, |board, cx| board.set_jobs(ModeId::Sync, jobs, cx));
+        self.reporter.report(
+            Work {
+                shown,
+                holds_quit: self.run.running && changes_server,
+                jobs: self.activity_job().into_iter().collect(),
+            },
+            cx,
+        );
     }
 
     /// The run as the shell's activity panel lists it, while it runs: what it does, how far it
-    /// has got, and Stop, which cancels it as Cancel did (`ownRun`).
+    /// has got, and Stop, which cancels it.
     fn activity_job(&self) -> Option<ActivityJob> {
         if !self.run.running {
             return None;
@@ -666,7 +520,7 @@ impl SyncMode {
         let item_run = matches!(progress.kind, Some(RunAction::Push | RunAction::Prune));
         let label = match progress.kind {
             Some(RunAction::Plan) => "Planning".to_owned(),
-            Some(RunAction::Doctor) => "Running doctor".to_owned(),
+            Some(RunAction::Doctor) => "Checking connection".to_owned(),
             Some(RunAction::Push) if progress.queued_at.is_some() => "Pushing".to_owned(),
             Some(RunAction::Prune) if progress.queued_at.is_some() => "Pruning".to_owned(),
             Some(kind) => format!("Preparing {}", kind.as_str()),
@@ -678,18 +532,18 @@ impl SyncMode {
             let done = if progress.bytes_total > 0 {
                 format!(
                     "{} of {}",
-                    format_bytes((progress.bytes_done + progress.bytes_failed) as f64),
-                    format_bytes(progress.bytes_total as f64)
+                    format::bytes(progress.bytes_done + progress.bytes_failed),
+                    format::bytes(progress.bytes_total)
                 )
             } else {
                 format!(
                     "{} of {} items",
-                    format_count(processed),
-                    format_count(progress.item_total)
+                    format::count(processed),
+                    format::count(progress.item_total)
                 )
             };
             let left = match self.run.remaining_ms() {
-                Some(left) => format!("{} left", run::format_clock(left)),
+                Some(left) => format!("{} left", format::duration(Some(left))),
                 None => "Estimating…".to_owned(),
             };
             job = job
@@ -698,8 +552,8 @@ impl SyncMode {
         } else if progress.scan_files_found > 0 {
             job = job.detail(format!(
                 "{} files · {} hashed",
-                format_count(progress.scan_files_found),
-                format_bytes(progress.bytes_hashed as f64)
+                format::count(progress.scan_files_found),
+                format::bytes(progress.bytes_hashed)
             ));
         } else if !self.run.label.is_empty() {
             job = job.detail(self.run.label.clone());
@@ -707,12 +561,8 @@ impl SyncMode {
         Some(job)
     }
 
-    /// Stop pressed on the run in the shell's activity panel.
     fn on_job_command(&mut self, command: &JobCommand, cx: &mut Context<Self>) {
-        if command.mode() == ModeId::Sync
-            && command.key() == RUN_JOB
-            && command.control() == JobControl::Stop
-        {
+        if command.key() == RUN_JOB && command.control() == JobControl::Stop {
             self.cancel_run(cx);
         }
     }
@@ -729,9 +579,8 @@ impl SyncMode {
         cx.notify();
     }
 
-    /// Opens the form on a saved profile.
     pub fn start_edit_profile(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if self.run.running {
+        if self.run_holds_profile() {
             return;
         }
         let Some(profile) = self.store.profile(id).cloned() else {
@@ -843,7 +692,6 @@ impl SyncMode {
         cx.notify();
     }
 
-    /// Saves the form: a new profile, or the edit.
     pub fn submit_profile(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.error = None;
         let read = |input: &Entity<InputState>, cx: &App| input.read(cx).value().trim().to_owned();
@@ -883,25 +731,15 @@ impl SyncMode {
                         }
                     })
             }
-            _ => {
-                if [&name, &api_url, &source_root]
-                    .iter()
-                    .any(|value| value.is_empty())
-                {
-                    Err(anyhow::anyhow!(
-                        "A profile needs a name, a Pane View API URL and a source folder."
-                    ))
-                } else {
-                    self.store
-                        .create(ProfileInput {
-                            name,
-                            api_url,
-                            source_root,
-                            token,
-                        })
-                        .map(drop)
-                }
-            }
+            _ => self
+                .store
+                .create(ProfileInput {
+                    name,
+                    api_url,
+                    source_root,
+                    token,
+                })
+                .map(drop),
         };
         match saved {
             Ok(()) => {
@@ -913,7 +751,6 @@ impl SyncMode {
         cx.notify();
     }
 
-    /// Asks for the source folder with the system's picker.
     pub(crate) fn pick_source_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let chosen = cx.prompt_for_paths(PathPromptOptions {
             files: false,
@@ -940,7 +777,7 @@ impl SyncMode {
 
     /// Makes `id` the active profile, unless a run holds the current one.
     pub fn select_profile(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if self.run.running {
+        if self.run_holds_profile() {
             return;
         }
         let changed = self.store.active_profile_id() != Some(id);
@@ -953,7 +790,6 @@ impl SyncMode {
         cx.notify();
     }
 
-    /// Asks before deleting a profile, naming it.
     pub(crate) fn confirm_delete_profile(
         &mut self,
         id: &str,
@@ -963,7 +799,7 @@ impl SyncMode {
         let Some(profile) = self.store.profile(id).cloned() else {
             return;
         };
-        if self.run.running {
+        if self.run_holds_profile() {
             return;
         }
         let this = cx.entity();
@@ -983,9 +819,8 @@ impl SyncMode {
         );
     }
 
-    /// Deletes a profile and its token.
     pub fn delete_profile(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if self.run.running {
+        if self.run_holds_profile() {
             return;
         }
         self.error = None;
@@ -1012,8 +847,8 @@ impl SyncMode {
     /// Drops the plan and the doctor's result, which describe one profile's folder and server.
     fn clear_plan_state(&mut self, cx: &mut Context<Self>) {
         self.plan = None;
-        self.plan_facts = PlanFacts::default();
-        self.plan_states.clear();
+        self.plan_facts = None;
+        self.run.track(None);
         self.doctor_result = None;
         self.push_completed = false;
         self.action_filter.clear();
@@ -1033,84 +868,40 @@ impl SyncMode {
             .update(cx, |input, cx| input.set_value("", window, cx));
         if !self.run.running {
             self.run = RunState::default();
-            self.refresh_plan_states();
         }
     }
 
     /* Plan tree */
 
-    /// Each plan item's code, read afresh from the run's states.
-    fn refresh_plan_states(&mut self) {
-        let Some(reviewed) = &self.plan else {
-            self.plan_states.clear();
-            return;
-        };
-        let states = &self.run.item_states;
-        self.plan_states = reviewed
-            .plan
-            .items
-            .iter()
-            .map(|item| {
-                if item.action == SyncPlanAction::Keep {
-                    ITEM_REMAINING
-                } else {
-                    item_code(states.get(&item.path))
-                }
-            })
-            .collect();
-    }
-
-    /// Folds an event into the plan items' codes, as [`RunState::apply`] folds it into the states.
-    fn note_item_state(&mut self, event: &RunEvent) {
-        let (path, code) = match event {
-            RunEvent::ItemsQueued { .. } => {
-                self.plan_states.fill(ITEM_REMAINING);
-                return;
-            }
-            RunEvent::ItemStart { path, .. } => (path, ITEM_REMAINING),
-            RunEvent::ItemSuccess { path, .. } | RunEvent::ItemSkipped { path, .. } => {
-                (path, ITEM_SETTLED)
-            }
-            RunEvent::ItemFailure { path, .. } => (path, ITEM_FAILED),
-            _ => return,
-        };
-        let Some(reviewed) = &self.plan else {
-            return;
-        };
-        for at in self.plan_facts.paths.find(&reviewed.plan, path) {
-            if let Some(slot) = self.plan_states.get_mut(at) {
-                *slot = code;
-            }
-        }
-    }
-
-    /// The plan's changes the run has settled and failed, by [`item_code`].
-    pub(crate) fn run_tally(&self) -> (usize, usize) {
-        self.plan_states
-            .iter()
-            .fold((0, 0), |(settled, failed), code| match *code {
-                ITEM_SETTLED => (settled + 1, failed),
-                ITEM_FAILED => (settled, failed + 1),
-                _ => (settled, failed),
-            })
+    /// Puts a new plan on screen, with what the page needs of it, and the filters and folders
+    /// back as a new plan starts.
+    fn show_plan(&mut self, reviewed: ReviewedPlan, facts: PlanFacts, cx: &mut Context<Self>) {
+        self.run.track(Some(facts.paths.clone()));
+        self.plan_facts = Some(facts);
+        self.plan = Some(reviewed);
+        self.push_completed = false;
+        self.action_filter.clear();
+        self.run_filter = RunFilter::All;
+        self.open_overrides.clear();
+        self.show_all_files.clear();
+        self.rebuild_rows(cx);
     }
 
     /// Rebuilds the list's rows from the plan, the filters and the folders opened.
     pub(crate) fn rebuild_rows(&mut self, cx: &mut Context<Self>) {
-        let Some(reviewed) = &self.plan else {
+        let (Some(reviewed), Some(facts)) = (&self.plan, &self.plan_facts) else {
             self.rows.clear();
             cx.notify();
             return;
         };
         let query = self.filter.read(cx).value().trim().to_lowercase();
         let showing_run = self.shows_run_state();
-        let states = &self.run.item_states;
-        let facts = &self.plan_facts;
+        let run = &self.run;
         let items = reviewed.plan.items.iter().enumerate().filter(|(at, item)| {
             item.action != SyncPlanAction::Keep
                 && (query.is_empty() || facts.lower_paths[*at].contains(&query))
                 && if showing_run {
-                    let state = states.get(&item.path);
+                    let state = run.item(*at);
                     match self.run_filter {
                         RunFilter::All => true,
                         RunFilter::Done => state.is_some_and(ItemState::is_settled),
@@ -1152,6 +943,7 @@ impl SyncMode {
                     name: file.name.clone(),
                     action: file.action,
                     size: file.size,
+                    item: file.item,
                 },
                 PlanRow::More {
                     depth,
@@ -1212,14 +1004,23 @@ impl SyncMode {
 
     /* Runs */
 
-    /// The active profile's server and folder, with a token: the saved one, or the one typed
-    /// under the plan, which is saved (encrypted) first, as `ensureSessionToken` does.
-    fn credentials(
+    /// The active profile's server and folder, with a token, for a run about to start: the saved
+    /// token, or the one typed under the plan, which is saved (encrypted) first. None while a
+    /// run holds the profile, or without a usable token.
+    fn begin_run(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<(Profile, ApiTarget)> {
+        if self.run_holds_profile() {
+            return None;
+        }
         let profile = self.store.active_profile()?.clone();
+        if let Some(error) = self.store.key_error() {
+            self.error = Some(error.to_owned());
+            cx.notify();
+            return None;
+        }
         if self.store.token_state(&profile.id) != TokenState::Saved {
             let typed = self.session_token.read(cx).value().trim().to_owned();
             if typed.is_empty() {
@@ -1252,123 +1053,103 @@ impl SyncMode {
         Some((profile, target))
     }
 
-    fn hash_cache_root(&self) -> PathBuf {
-        cache_root(&self.data.hash_cache())
-    }
-
     /// Plan: the source folder against Pane View's snapshot, by size, as Sync's Plan button does.
     pub fn plan_now(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.run.running {
-            return;
-        }
-        let Some((profile, target)) = self.credentials(window, cx) else {
+        let Some((profile, target)) = self.begin_run(window, cx) else {
             return;
         };
         let options = PlanOptions {
             source_root: PathBuf::from(&profile.source_root),
-            hash_cache_root: self.hash_cache_root(),
+            hash_cache: self.data.hash_cache(),
             hash_mode: HashMode::None,
-            directory_concurrency: None,
-            file_concurrency: None,
         };
         self.start(
             RunAction::Plan,
             "Planning sync...",
+            profile.id.clone(),
+            window,
             cx,
             move |observer, cancel| async move {
                 let client = PaneViewClient::new(target)?;
-                let plan = plan_sync(options, Some(&client), Some(&observer), &cancel).await?;
+                let planned = plan_sync(options, Some(&client), Some(&observer), &cancel).await?;
+                let plan = Arc::new(planned.plan);
                 let facts = PlanFacts::of(&plan);
-                Ok((plan, facts))
+                Ok((plan, facts, planned.summary))
             },
-            move |this, result, cx| {
-                let (plan, facts) = result?;
-                let mut summary = RunSummary::now(RunAction::Plan, RunStatus::Completed);
-                summary.plan_counts = Some(plan.counts);
-                this.record_last_run(&profile.id, summary);
-                this.plan_facts = facts;
-                this.plan = Some(ReviewedPlan {
+            move |this, (plan, facts, summary), cx| {
+                this.record_last_run(&profile.id, &summary);
+                let reviewed = ReviewedPlan {
                     id: uuid::Uuid::new_v4().to_string(),
                     plan,
                     profile_id: profile.id.clone(),
                     api_url: profile.api_url.clone(),
                     source_root: profile.source_root.clone(),
                     planned_at: SystemTime::now(),
-                });
-                this.refresh_plan_states();
-                this.push_completed = false;
-                this.action_filter.clear();
-                this.run_filter = RunFilter::All;
-                this.open_overrides.clear();
-                this.show_all_files.clear();
+                };
                 this.run.finish(RunPhase::Done, None);
-                this.rebuild_rows(cx);
-                Ok(())
+                this.show_plan(reviewed, facts, cx);
             },
         );
     }
 
     /// Push: the profile's uploads and updates, planned again with hashes where they tell files
-    /// apart (`hashMode: "remote-aware"`), through the bounded upload queue.
+    /// apart, through the bounded upload queue. The plan on screen is by size alone, and a push
+    /// again after failures sends only what is still to send, so the push plans first, as the
+    /// Lockstep CLI's does.
     pub fn push_now(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.run.running {
-            return;
-        }
-        let Some((profile, target)) = self.credentials(window, cx) else {
+        let Some((profile, target)) = self.begin_run(window, cx) else {
             return;
         };
-        let options = PushOptions {
-            api: target.clone(),
+        let hash_cache = self.data.hash_cache();
+        let plan_options = PlanOptions {
             source_root: PathBuf::from(&profile.source_root),
-            hash_cache_root: self.hash_cache_root(),
-            hash_mode: Some(HashMode::RemoteAware),
-            max_changes: None,
-            plan: None,
-            upload_concurrency: None,
+            hash_cache: hash_cache.clone(),
+            hash_mode: HashMode::RemoteAware,
         };
         self.start(
             RunAction::Push,
             "Pushing uploads and updates...",
+            profile.id.clone(),
+            window,
             cx,
             move |observer, cancel| async move {
-                let client = PaneViewClient::new(target)?;
+                let client = PaneViewClient::new(target.clone())?;
+                let plan = plan_sync(plan_options, Some(&client), Some(&observer), &cancel)
+                    .await?
+                    .plan;
+                let options = PushOptions {
+                    api: target,
+                    hash_cache,
+                    max_changes: None,
+                    plan,
+                    upload_concurrency: None,
+                };
                 push_changes(options, &client, Some(&observer), &cancel).await
             },
-            move |this, result, cx| {
-                let pushed = result?;
-                let status = if pushed.failed > 0 {
-                    RunStatus::Failed
-                } else {
-                    RunStatus::Completed
-                };
-                let mut summary = RunSummary::now(RunAction::Push, status);
-                summary.failed = pushed.failed;
-                summary.pushed = pushed.pushed;
-                summary.plan_counts = Some(pushed.plan.counts);
-                this.record_last_run(&profile.id, summary);
-                if status == RunStatus::Completed {
+            move |this, pushed, cx| {
+                let summary = pushed.summary;
+                this.record_last_run(&profile.id, &summary);
+                if summary.status == RunStatus::Completed {
                     this.push_completed = true;
                 }
                 this.run.finish(
                     RunPhase::Done,
                     Some(format!(
                         "Push {}: {} item(s).",
-                        status.as_str(),
-                        pushed.pushed
+                        summary.status.as_str(),
+                        summary.applied
                     )),
                 );
                 cx.notify();
-                Ok(())
             },
         );
     }
 
-    /// Asks before pruning, naming the count and the server, as Electron Oriel's Prune does.
     pub fn confirm_prune(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let PruneAvailability::Enabled { delete_count } = self.prune_availability() else {
             return;
         };
-        if self.run.running {
+        if self.run_holds_profile() {
             return;
         }
         let (Some(profile), Some(reviewed)) = (self.store.active_profile(), &self.plan) else {
@@ -1398,12 +1179,10 @@ impl SyncMode {
 
     /// Prune: the deletes of the plan `plan_id` names, once. A second Prune needs a new Plan.
     pub fn prune_now(&mut self, plan_id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if self.run.running
-            || !matches!(self.prune_availability(), PruneAvailability::Enabled { .. })
-        {
+        if !matches!(self.prune_availability(), PruneAvailability::Enabled { .. }) {
             return;
         }
-        let Some((profile, target)) = self.credentials(window, cx) else {
+        let Some((profile, target)) = self.begin_run(window, cx) else {
             return;
         };
         let Some(reviewed) = self.plan.clone().filter(|reviewed| reviewed.id == plan_id) else {
@@ -1426,54 +1205,42 @@ impl SyncMode {
         let options = PruneOptions {
             api: target.clone(),
             max_changes: None,
-            plan: reviewed.plan,
+            plan: LockstepPlan::clone(&reviewed.plan),
         };
         self.start(
             RunAction::Prune,
             "Applying remote deletes...",
+            profile.id.clone(),
+            window,
             cx,
             move |observer, cancel| async move {
                 let client = PaneViewClient::new(target)?;
                 prune_deleted(options, &client, Some(&observer), &cancel).await
             },
-            move |this, result, cx| {
-                let pruned = result?;
-                let status = if pruned.failed > 0 {
-                    RunStatus::Failed
-                } else {
-                    RunStatus::Completed
-                };
-                let mut summary = RunSummary::now(RunAction::Prune, status);
-                summary.failed = pruned.failed;
-                summary.pushed = pruned.pruned;
-                summary.skipped = Some(pruned.skipped);
-                summary.plan_counts = Some(pruned.plan.counts);
-                this.record_last_run(&profile.id, summary);
-                let skipped = if pruned.skipped > 0 {
-                    format!(", {} skipped (back in the source folder)", pruned.skipped)
-                } else {
-                    String::new()
+            move |this, summary, cx| {
+                this.record_last_run(&profile.id, &summary);
+                let skipped = match summary.skipped {
+                    Some(skipped) if skipped > 0 => {
+                        format!(", {skipped} skipped (back in the source folder)")
+                    }
+                    _ => String::new(),
                 };
                 this.run.finish(
                     RunPhase::Done,
                     Some(format!(
                         "Prune {}: {} deleted{skipped}.",
-                        status.as_str(),
-                        pruned.pruned
+                        summary.status.as_str(),
+                        summary.applied
                     )),
                 );
                 cx.notify();
-                Ok(())
             },
         );
     }
 
     /// Check connection: the profile's folder, URL, token and snapshot.
     pub fn check_connection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.run.running {
-            return;
-        }
-        let Some((profile, target)) = self.credentials(window, cx) else {
+        let Some((profile, target)) = self.begin_run(window, cx) else {
             return;
         };
         self.doctor_result = None;
@@ -1484,7 +1251,9 @@ impl SyncMode {
         };
         self.start(
             RunAction::Doctor,
-            "Running doctor...",
+            "Checking connection...",
+            profile.id.clone(),
+            window,
             cx,
             move |observer, cancel| async move {
                 let result = doctor(options, Some(&observer), &cancel).await;
@@ -1492,44 +1261,26 @@ impl SyncMode {
                 Ok(result)
             },
             move |this, result, cx| {
-                let result = result?;
-                let mut summary = RunSummary::now(
-                    RunAction::Doctor,
-                    if result.ok {
-                        RunStatus::Completed
-                    } else {
-                        RunStatus::Failed
-                    },
-                );
-                summary.failed = usize::from(!result.ok);
-                summary.message = Some(
-                    if result.ok {
-                        "All checks passed."
-                    } else {
-                        "Some checks failed."
-                    }
-                    .to_owned(),
-                );
-                this.record_last_run(&profile.id, summary);
+                this.record_last_run(&profile.id, &result.summary);
                 this.run.finish(
                     RunPhase::Done,
                     Some(
                         if result.ok {
-                            "Doctor passed."
+                            "Connection check passed."
                         } else {
-                            "Doctor found issues."
+                            "Connection check found issues."
                         }
                         .to_owned(),
                     ),
                 );
                 this.doctor_result = Some(result);
                 cx.notify();
-                Ok(())
             },
         );
     }
 
-    /// Cancel: the run stops, finalizing its sync run as cancelled.
+    /// Cancel: the run's token is tripped; a push or prune then finalizes its sync run as
+    /// cancelled.
     pub fn cancel_run(&mut self, cx: &mut Context<Self>) {
         if let Some(cancel) = &self.cancel {
             cancel.cancel();
@@ -1537,45 +1288,47 @@ impl SyncMode {
         cx.notify();
     }
 
-    fn record_last_run(&mut self, profile_id: &str, summary: RunSummary) {
+    fn record_last_run(&mut self, profile_id: &str, summary: &RunSummary) {
         if let Err(error) = self.store.record_last_run(profile_id, summary) {
             log::warn!("Sync could not save the last run: {error}");
         }
     }
 
-    /// Runs `work` on the tokio thread with an observer whose events fold into the run on
-    /// screen, then `finish` with its result. A failure or a cancel ends the run as Electron
-    /// Oriel's `ownRun` does.
+    /// Runs `work` on the tokio thread for the profile `profile_id`, with an observer whose events
+    /// fold into the run on screen, then `finish` with what it returned. A failure or a cancel
+    /// ends the run through [`Self::fail_run`]. A hand-off that waited for the run is shown once
+    /// it ends.
+    #[allow(clippy::too_many_arguments)]
     fn start<T, Fut>(
         &mut self,
         kind: RunAction,
         label: &str,
+        profile_id: String,
+        window: &mut Window,
         cx: &mut Context<Self>,
         work: impl FnOnce(Observer, CancelToken) -> Fut,
-        finish: impl FnOnce(&mut Self, anyhow::Result<T>, &mut Context<Self>) -> anyhow::Result<()>
-        + 'static,
+        finish: impl FnOnce(&mut Self, T, &mut Context<Self>) + 'static,
     ) where
         T: Send + 'static,
         Fut: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
     {
         self.error = None;
         self.run.begin(kind, label);
-        self.refresh_plan_states();
         self.dismissed_run = None;
         let cancel = CancelToken::new();
         self.cancel = Some(cancel.clone());
         let (sender, mut events) = futures::channel::mpsc::unbounded::<RunEvent>();
         let observer: Observer = Arc::new(move |event| {
+            // The window may be gone; the run then reports to no one.
             let _ = sender.unbounded_send(event);
         });
-        let task = http(cx).spawn(work(observer, cancel.clone()));
+        let task = TokioRuntime::shared()
+            .expect("Oriel could not start its HTTP thread")
+            .spawn(work(observer, cancel.clone()));
         self.report_activity(cx);
         self.rebuild_rows(cx);
 
-        self.run_task = Some(cx.spawn(async move |this, cx| {
-            // The run's own failed completion, which an unfinalized sync run reports before its
-            // error.
-            let mut reported = None;
+        self.run_task = Some(cx.spawn_in(window, async move |this, cx| {
             // The run's future holds the observer until it ends, so the events end with it.
             while let Some(event) = events.next().await {
                 let mut batch = vec![event];
@@ -1587,13 +1340,6 @@ impl SyncMode {
                         .iter()
                         .any(|event| matches!(event, RunEvent::ItemsQueued { .. }));
                     for event in batch {
-                        if let RunEvent::Complete(summary) = &event
-                            && summary.action == kind
-                            && summary.status == RunStatus::Failed
-                        {
-                            reported = Some(summary.clone());
-                        }
-                        this.note_item_state(&event);
                         this.run.apply(event);
                     }
                     this.report_activity(cx);
@@ -1607,50 +1353,45 @@ impl SyncMode {
                 }
             }
             let result = task.await.and_then(|result| result);
-            let _ = this.update(cx, |this, cx| {
+            let ended = this.update_in(cx, |this, window, cx| {
                 this.cancel = None;
                 let cancelled = cancel.is_cancelled()
                     && result
                         .as_ref()
                         .err()
                         .is_none_or(|error| error.downcast_ref::<UnfinalizedSyncRun>().is_none());
-                let outcome = if cancelled {
-                    Err(anyhow::Error::new(Cancelled))
-                } else {
-                    finish(this, result, cx)
-                };
-                if let Err(error) = outcome {
-                    this.fail_run(reported, &error, cx);
+                match result {
+                    Ok(_) if cancelled => {
+                        this.fail_run(&profile_id, &anyhow::Error::new(Cancelled), cx);
+                    }
+                    Ok(value) => finish(this, value, cx),
+                    Err(error) => this.fail_run(&profile_id, &error, cx),
                 }
-                this.run.running = false;
                 this.report_activity(cx);
                 this.rebuild_rows(cx);
+                if let Some(target) = this.pending_hand_off.take() {
+                    this.take_hand_off(target, window, cx);
+                }
             });
+            if ended.is_err() {
+                log::warn!("Sync's window closed before its run ended");
+            }
         }));
     }
 
-    /// Ends a run that failed or was cancelled. As in `runService.ts`, the profile's last run
-    /// changes only for a push or prune whose sync run could not be finalized: that failure,
-    /// naming the run, is the one the user must act on. Any other failure shows on the page and
-    /// leaves the last run as it was.
-    fn fail_run(
-        &mut self,
-        reported: Option<RunSummary>,
-        error: &anyhow::Error,
-        cx: &mut Context<Self>,
-    ) {
+    /// Ends a run that failed or was cancelled. The profile's last run changes only for a push or
+    /// prune whose sync run could not be finalized: that failure, naming the run, is the one the
+    /// user must act on. Any other failure shows on the page and leaves the last run as it was.
+    fn fail_run(&mut self, profile_id: &str, error: &anyhow::Error, cx: &mut Context<Self>) {
         if error.chain().any(|cause| cause.is::<Cancelled>()) {
             self.run
-                .finish(RunPhase::Cancelled, Some("Run cancelled.".to_owned()));
+                .finish(RunPhase::Cancelled, Some(run::CANCELLED_LABEL.to_owned()));
             return;
         }
-        let message = error.to_string();
-        if let (Some(summary), Some(profile_id)) = (
-            reported.filter(|_| error.downcast_ref::<UnfinalizedSyncRun>().is_some()),
-            self.store.active_profile_id().map(str::to_owned),
-        ) {
-            self.record_last_run(&profile_id, summary);
+        if let Some(unfinalized) = error.downcast_ref::<UnfinalizedSyncRun>() {
+            self.record_last_run(profile_id, &unfinalized.summary);
         }
+        let message = error.to_string();
         self.run.finish(RunPhase::Error, Some(message.clone()));
         self.error = Some(message);
         cx.notify();
@@ -1672,14 +1413,64 @@ impl Render for SyncMode {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl gpui_kit::IntoElement {
-        // A hand-off that waited for a run is shown once the run has ended.
-        if !self.run.running && self.pending_hand_off.is_some() {
-            cx.defer_in(window, |this, window, cx| {
-                if let Some(target) = this.pending_hand_off.take() {
-                    this.show_hand_off(target, window, cx);
-                }
-            });
-        }
         self.render_mode(window, cx)
+    }
+}
+
+impl Mode for SyncMode {
+    const ID: ModeId = ModeId::Sync;
+
+    fn commands() -> Vec<Command> {
+        vec![
+            Command::new(ToggleRunLog)
+                .keys(RUN_LOG_KEYS)
+                .sheet("Show or hide the run log"),
+        ]
+    }
+
+    fn sheet() -> Sheet {
+        shortcuts::SHEET
+    }
+
+    fn folders(&self, _: &App) -> Vec<PathBuf> {
+        self.source_roots()
+    }
+
+    fn foot(&self, _: &App) -> Foot {
+        Foot::height(self.foot_height())
+    }
+
+    /// The profiles, each opening the form, and where their tokens are kept.
+    fn settings_section(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        self.render_settings(window, cx).into_any_element()
+    }
+
+    fn show_hand_off(&mut self, target: HandOff, window: &mut Window, cx: &mut Context<Self>) {
+        self.shell
+            .update(cx, |shell, cx| shell.go(ModeId::Sync, cx));
+        self.take_hand_off(target, window, cx);
+    }
+
+    /// A profile for the folder, named after it, when the welcome was given a server.
+    fn set_up(
+        &mut self,
+        set_up: &FolderSetUp,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<(), SharedString>> {
+        let Some(server) = &set_up.server else {
+            return Task::ready(Ok(()));
+        };
+        let folder = &set_up.folder;
+        let input = ProfileInput {
+            name: folder
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| folder.display().to_string()),
+            api_url: server.api_url.clone(),
+            source_root: folder.to_string_lossy().into_owned(),
+            token: server.token.clone(),
+        };
+        Task::ready(self.add_profile(input, cx).map_err(SharedString::from))
     }
 }

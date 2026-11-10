@@ -18,11 +18,12 @@ mod check {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{Instant, UNIX_EPOCH};
 
-    use oriel_core_tidy::catalog::rows::to_absolute_path;
-    use oriel_core_tidy::similarity::hardware_avif::Declined;
-    use oriel_core_tidy::similarity::{
-        DETAIL_VERSION, StillLook, Vips, detail_of_still, fingerprint_still,
+    use oriel_core_tidy::internals::to_absolute_path;
+    use oriel_core_tidy::internals::{
+        DETAIL_VERSION, StillLook, detail_of_still, fingerprint_still, open_libvips,
     };
+    use oriel_vips::Vips;
+    use oriel_vips::hardware_avif::Declined;
     use rusqlite::{Connection, OpenFlags};
 
     struct Still {
@@ -112,8 +113,8 @@ mod check {
 
     fn check(catalog: &str, count: usize, every: usize) {
         let all = stills(catalog, every);
-        let (hardware, _, _) = Vips::open_located().unwrap();
-        let (software, _, _) = Vips::open_located().unwrap();
+        let hardware = open_libvips().unwrap();
+        let software = open_libvips().unwrap();
         let software = software.without_hardware_decoder();
         let counts = Counts::default();
         let done = AtomicUsize::new(0);
@@ -233,8 +234,8 @@ mod check {
 
     fn time(catalog: &str, count: usize, every: usize, rounds: usize) {
         let all = stills(catalog, every);
-        let (hardware, _, _) = Vips::open_located().unwrap();
-        let (software, _, _) = Vips::open_located().unwrap();
+        let hardware = open_libvips().unwrap();
+        let software = open_libvips().unwrap();
         let software = software.without_hardware_decoder();
         let mut by_kind: BTreeMap<String, Vec<&Still>> = BTreeMap::new();
         for still in &all {

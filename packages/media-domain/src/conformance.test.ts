@@ -1,38 +1,24 @@
 /*
- * Conformance vectors for media-domain. Oriel's Rust port (apps/oriel/crates/core-domain)
- * must produce the same, so the order of names, the paths and the gallery's entries cannot drift
- * between the two apps (plan 063, "Keeping two implementations honest").
- *
- * This suite checks that the TypeScript still makes the committed vectors, one file per module in
- * apps/oriel/conformance/media-domain, and `cargo test -p oriel-core-domain` checks the Rust
- * against the same files. After a deliberate change to a module, regenerate them and port the
- * change:
+ * Conformance vectors for media-domain. Oriel's Rust port (apps/oriel/crates/core-domain) reads
+ * them, one file per module in apps/oriel/conformance/media-domain, so the order of names, the
+ * paths and the gallery's entries cannot drift between the two apps. This suite checks that the
+ * TypeScript still makes them; after a deliberate change to a module, regenerate them and port
+ * the change:
  *
  *   ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test
+ *
+ * comics.json and sort.json's `hashString` and `sortMediaItems` are frozen: only Oriel View runs
+ * those rules (Pane View orders comics and random sorts in SQL).
  */
-import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { committedVectors as committedVectorFile } from "@latch-works/conformance";
 import { beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { type BrowserEntry, buildBrowserEntries } from "./browser-entries.js";
-import {
-  type BuildComicEntriesOptions,
-  buildComicEntries,
-  type ComicEntry,
-  type ComicMediaItem,
-  sortComicEntries,
-} from "./comics.js";
 import {
   detectMediaType,
-  FolderNodeSchema,
   GallerySortModeSchema,
   getExtension,
   ImageExtensions,
   isSupportedMediaFile,
-  type MediaItem,
-  MediaItemSchema,
   MediaTypeSchema,
   PdfExtensions,
   VideoExtensions,
@@ -40,7 +26,6 @@ import {
 import {
   canonicalizeExtension,
   displayNameFromPath,
-  formatBytes,
   getBaseName,
   getParentPath,
   joinArchivePath,
@@ -49,28 +34,29 @@ import {
   toArchivePath,
   trimTrailingSlash,
 } from "./paths.js";
-import { compareByName, hashString, type NamedPath, sortMediaItems } from "./sort.js";
+import { compareByName, type NamedPath } from "./sort.js";
 import {
-  GLAZIER_HOLDING_DIRECTORY_NAME,
   isSystemJunkDirectory,
   isSystemJunkFile,
   LATCH_WORKS_DIRECTORY_NAME,
+  LEGACY_HOLDING_DIRECTORY_NAME,
 } from "./system-files.js";
 
-const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
-
-const vectorFile = fileURLToPath(
-  new URL("../../../apps/oriel/conformance/media-domain/sort.json", import.meta.url),
-);
-
-const updating = process.env.ORIEL_UPDATE_VECTORS === "1";
+/* Rewrites the file first when updating, then parses what is committed. */
+function committedVectors<T extends object>(
+  name: string,
+  schema: z.ZodType<T>,
+  vectors: T,
+  options: { frozen?: readonly string[]; indented?: boolean } = {},
+): T {
+  return committedVectorFile({ set: "media-domain", name }, schema, vectors, options);
+}
 
 const NamedPathSchema = z.object({ name: z.string(), path: z.string() });
 
 const SortVectorsSchema = z.object({
   about: z.string(),
   generatedWith: z.object({
-    node: z.string(),
     icu: z.string(),
     unicode: z.string(),
     cldr: z.string(),
@@ -93,15 +79,6 @@ const SortVectorsSchema = z.object({
       order: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
     }),
   ),
-  hashString: z.array(z.object({ value: z.string(), hash: z.number().int().nonnegative() })),
-  sortMediaItems: z.object({
-    items: z.array(
-      z.object({ id: z.string(), name: z.string(), path: z.string(), mtimeMs: z.number() }),
-    ),
-    orders: z.array(
-      z.object({ mode: GallerySortModeSchema, seed: z.number().int(), ids: z.array(z.string()) }),
-    ),
-  }),
 });
 
 type SortVectors = z.infer<typeof SortVectorsSchema>;
@@ -471,105 +448,6 @@ const compareByNamePairs: [NamedPath, NamedPath][] = [
   ],
 ];
 
-const hashStringValues = [
-  "",
-  "a",
-  "abc",
-  "0:/archive/image-1.png",
-  "42:C:\\archive\\image-1.png",
-  "4294967295:/archive/image-1.png",
-  "-1:/archive/image-1.png",
-  "9007199254740991:/archive/image-1.png",
-  "caf\u00e9",
-  "cafe\u0301",
-  "\u4e2d\u6587",
-  "\ud83d\ude00",
-  "\ud840\udc00",
-  "\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67",
-  "\ud83c\uddf1\ud83c\uddf9",
-  "\u0000",
-  "\ud7ff",
-  "\ue000",
-  "\uffff",
-  "\udbff\udfff",
-  "0123456789".repeat(100),
-  "\u00e9\ud83d\ude00".repeat(200),
-];
-
-/*
- * Items for the gallery's modes: tied names and dates, an exact duplicate (m06 of m05), a shared
- * path so random scores tie (m20 to m23), fractional and far-future dates, Windows paths.
- */
-const sortItems = [
-  { id: "m01", name: "img10.jpg", path: "/archive/2024/img10.jpg", mtimeMs: 1_700_000_000_000 },
-  { id: "m02", name: "img2.jpg", path: "/archive/2024/img2.jpg", mtimeMs: 1_700_000_000_000 },
-  { id: "m03", name: "img02.jpg", path: "/archive/2024/img02.jpg", mtimeMs: 1_700_000_000_000.5 },
-  { id: "m04", name: "Photo.jpg", path: "/archive/b/Photo.jpg", mtimeMs: 1_600_000_000_000 },
-  { id: "m05", name: "photo.jpg", path: "/archive/a/photo.jpg", mtimeMs: 1_600_000_000_000 },
-  { id: "m06", name: "photo.jpg", path: "/archive/a/photo.jpg", mtimeMs: 1_600_000_000_000 },
-  { id: "m07", name: "PHOTO.JPG", path: "/archive/a/PHOTO.JPG", mtimeMs: 1_650_000_000_000.25 },
-  { id: "m08", name: "caf\u00e9.jpg", path: "/archive/caf\u00e9.jpg", mtimeMs: 0 },
-  { id: "m09", name: "cafe\u0301.jpg", path: "/archive/cafe\u0301.jpg", mtimeMs: 0 },
-  { id: "m10", name: "cafe.jpg", path: "/archive/cafe.jpg", mtimeMs: 0 },
-  {
-    id: "m11",
-    name: "IMG_0001.JPG",
-    path: "C:\\archive\\IMG_0001.JPG",
-    mtimeMs: 1_234_567_890_123.456,
-  },
-  {
-    id: "m12",
-    name: "IMG_0010.JPG",
-    path: "C:\\archive\\IMG_0010.JPG",
-    mtimeMs: 1_234_567_890_123.457,
-  },
-  {
-    id: "m13",
-    name: "IMG_10.JPG",
-    path: "C:\\archive\\IMG_10.JPG",
-    mtimeMs: 1_234_567_890_123.456,
-  },
-  {
-    id: "m14",
-    name: "\u4e2d\u6587.png",
-    path: "/archive/\u4e2d\u6587.png",
-    mtimeMs: 4_102_444_800_000,
-  },
-  {
-    id: "m15",
-    name: "\ud83d\ude00.gif",
-    path: "/archive/\ud83d\ude00.gif",
-    mtimeMs: 4_102_444_800_000,
-  },
-  { id: "m16", name: "a (1).jpg", path: "/archive/a (1).jpg", mtimeMs: 1_500_000_000_000 },
-  { id: "m17", name: "a (10).jpg", path: "/archive/a (10).jpg", mtimeMs: 1_500_000_000_000 },
-  { id: "m18", name: "a (2).jpg", path: "/archive/a (2).jpg", mtimeMs: 1_500_000_000_001 },
-  { id: "m19", name: "a copy.jpg", path: "/archive/a copy.jpg", mtimeMs: 1_500_000_000_000 },
-  { id: "m20", name: "image-1", path: "/same-path", mtimeMs: 0 },
-  { id: "m21", name: "image-10", path: "/same-path", mtimeMs: 0 },
-  { id: "m22", name: "Image-2", path: "/same-path", mtimeMs: 0 },
-  { id: "m23", name: "image-2", path: "/same-path", mtimeMs: 0 },
-  { id: "m24", name: "", path: "/archive/.hidden", mtimeMs: 1 },
-  { id: "m25", name: "\u0160iauliai.jpg", path: "/archive/\u0160iauliai.jpg", mtimeMs: 2 },
-  { id: "m26", name: "Siauliai.jpg", path: "/archive/Siauliai.jpg", mtimeMs: 2 },
-  { id: "m27", name: "18446744073709551616.jpg", path: "/archive/2^64.jpg", mtimeMs: 3 },
-  { id: "m28", name: "18446744073709551615.jpg", path: "/archive/2^64-1.jpg", mtimeMs: 3 },
-  { id: "m29", name: "\uff11\uff10.jpg", path: "/archive/\uff11\uff10.jpg", mtimeMs: 3 },
-  { id: "m30", name: "9.jpg", path: "/archive/9.jpg", mtimeMs: 3 },
-];
-
-/* Seeds as View's settings may hold them: createRandomSeed's u32 range, and any safe integer. */
-const randomSeeds = [
-  0,
-  1,
-  42,
-  123_456_789,
-  4_294_967_295,
-  -1,
-  Number.MAX_SAFE_INTEGER,
-  Number.MIN_SAFE_INTEGER,
-];
-
 function nameOnly(name: string): NamedPath {
   return { name, path: "" };
 }
@@ -612,7 +490,6 @@ function makeVectors(): SortVectors {
     about:
       "Made by packages/media-domain/src/conformance.test.ts from sort.ts; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test. Non-ASCII characters are escaped. naturalOrder.classes lists the names in order, names that compare equal sharing a class. Where Rust knowingly differs is listed in apps/oriel/crates/core-domain/tests/conformance.rs.",
     generatedWith: {
-      node: process.versions.node,
       icu: process.versions.icu ?? "none",
       unicode: process.versions.unicode ?? "none",
       cldr: process.versions.cldr ?? "none",
@@ -629,37 +506,7 @@ function makeVectors(): SortVectors {
       { a, b, order: orderOf(compareByName(a, b)) },
       { a: b, b: a, order: orderOf(compareByName(b, a)) },
     ]),
-    hashString: hashStringValues.map((value) => ({ value, hash: hashString(value) })),
-    sortMediaItems: {
-      items: sortItems,
-      orders: GallerySortModeSchema.options.flatMap((mode) =>
-        (mode === "random" ? randomSeeds : [0]).map((seed) => ({
-          mode,
-          seed,
-          ids: sortMediaItems(sortItems, mode, seed).map((item) => item.id),
-        })),
-      ),
-    },
   };
-}
-
-/*
- * Writes JSON as ASCII, which Biome then formats as the repository does. sort.json is written
- * indented, which keeps its objects expanded; the other files are written compact, so Biome puts
- * each case that fits on one line.
- */
-function writeVectors(file: string, json: string) {
-  const ascii = json.replace(
-    /[\u007f-\uffff]/g,
-    (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`,
-  );
-
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, `${ascii}\n`);
-  execFileSync("pnpm", ["exec", "biome", "format", "--write", file], {
-    cwd: repositoryRoot,
-    stdio: "inherit",
-  });
 }
 
 describe("media-domain sort conformance vectors", () => {
@@ -667,11 +514,10 @@ describe("media-domain sort conformance vectors", () => {
   let committed: SortVectors;
 
   beforeAll(() => {
-    if (updating) {
-      writeVectors(vectorFile, JSON.stringify(vectors, null, 2));
-    }
-
-    committed = SortVectorsSchema.parse(JSON.parse(readFileSync(vectorFile, "utf8")));
+    committed = committedVectors("sort.json", SortVectorsSchema, vectors, {
+      frozen: ["hashString", "sortMediaItems"],
+      indented: true,
+    });
   });
 
   it("orders the names as the committed natural order", () => {
@@ -705,31 +551,20 @@ describe("media-domain sort conformance vectors", () => {
   it("breaks name ties by path as the committed pairs do", () => {
     expect(vectors.compareByName).toEqual(committed.compareByName);
   });
-
-  it("hashes strings as the committed hashes", () => {
-    expect(vectors.hashString).toEqual(committed.hashString);
-  });
-
-  it("sorts media items in every mode as the committed orders", () => {
-    expect(vectors.sortMediaItems).toEqual(committed.sortMediaItems);
-  });
 });
 
 /*
- * The rest of media-domain: media kinds, archive paths, comics, the gallery's entries and the
- * system files scans skip. Each module has its own file beside sort.json.
+ * The rest of media-domain: media kinds, archive paths, the gallery's entries and the system
+ * files scans skip. Each module has its own file beside sort.json.
  */
 
-const vectorDirectory = dirname(vectorFile);
-
-const RuntimeSchema = z.object({ node: z.string(), icu: z.string(), unicode: z.string() });
+const RuntimeSchema = z.object({ icu: z.string(), unicode: z.string() });
 
 type Runtime = z.infer<typeof RuntimeSchema>;
 
 /* Case mapping, NFC and collation follow the runtime's Unicode data, so each file says which. */
 function runtimeVersions(): Runtime {
   return {
-    node: process.versions.node,
     icu: process.versions.icu ?? "none",
     unicode: process.versions.unicode ?? "none",
   };
@@ -737,17 +572,6 @@ function runtimeVersions(): Runtime {
 
 function aboutModule(source: string): string {
   return `Made by packages/media-domain/src/conformance.test.ts from ${source}; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test. Non-ASCII characters are escaped.`;
-}
-
-/* Rewrites the file first when updating, then parses what is committed. */
-function committedVectors<T>(fileName: string, schema: z.ZodType<T>, vectors: T): T {
-  const file = join(vectorDirectory, fileName);
-
-  if (updating) {
-    writeVectors(file, JSON.stringify(vectors));
-  }
-
-  return schema.parse(JSON.parse(readFileSync(file, "utf8")));
 }
 
 function requireUnique(corpus: readonly string[], what: string): readonly string[] {
@@ -934,7 +758,6 @@ const PathVectorsSchema = z.object({
       pairs: z.array(z.tuple([z.string(), z.string()])),
     }),
   ),
-  formatBytes: z.array(z.object({ bytes: z.number(), formatted: z.string() })),
 });
 
 type PathVectors = z.infer<typeof PathVectorsSchema>;
@@ -1202,68 +1025,6 @@ const pairScenarios: readonly PairScenario[] = [
   scrambledPairScenario(),
 ];
 
-const kibibyte = 1024;
-
-const byteCounts: readonly number[] = [
-  // Bytes, and the ties toFixed rounds up where Rust's formatting rounds to even.
-  0,
-  1,
-  2,
-  2.5,
-  3.5,
-  51.2,
-  512,
-  1000,
-  1023,
-  1023.4,
-  1023.5,
-  1023.96,
-  // Each unit's boundaries, its ties (1.25 and 1.75 of a unit) and values that round up to 1024.
-  kibibyte,
-  kibibyte + 1,
-  1075,
-  1075.2,
-  1126.4,
-  1280,
-  1331.2,
-  1536,
-  1792,
-  2304,
-  10240,
-  kibibyte ** 2 - 1,
-  kibibyte ** 2,
-  kibibyte ** 2 + 1,
-  1.05 * kibibyte ** 2,
-  1.25 * kibibyte ** 2,
-  123_456_789,
-  kibibyte ** 3 - 1,
-  kibibyte ** 3,
-  kibibyte ** 3 + 1,
-  1.75 * kibibyte ** 3,
-  5 * kibibyte ** 3,
-  kibibyte ** 4 - 1,
-  kibibyte ** 4,
-  kibibyte ** 4 + 1,
-  // Past TB the unit is missing from the table.
-  kibibyte ** 5 - 2,
-  kibibyte ** 5 - 1,
-  kibibyte ** 5,
-  kibibyte ** 6,
-  2 ** 53,
-  2 ** 53 + 2,
-  2 ** 64,
-  1e300,
-  Number.MAX_VALUE,
-  // Below one byte the unit is missing too, and negative counts are not a number.
-  1 - Number.EPSILON / 2,
-  0.5,
-  0.001,
-  1e-310,
-  Number.MIN_VALUE,
-  -1,
-  -1024,
-];
-
 function makePathVectors(): PathVectors {
   return {
     about: aboutModule("paths.ts"),
@@ -1287,7 +1048,6 @@ function makePathVectors(): PathVectors {
       ...scenario,
       pairs: [...pairSyncPaths(scenario.locals, scenario.remotes)],
     })),
-    formatBytes: byteCounts.map((bytes) => ({ bytes, formatted: formatBytes(bytes) })),
   };
 }
 
@@ -1310,475 +1070,6 @@ describe("media-domain paths conformance vectors", () => {
 
   it("pairs local and remote paths, in the committed order", () => {
     expect(vectors.pairs).toEqual(committed.pairs);
-  });
-
-  it("formats byte counts as committed", () => {
-    expect(vectors.formatBytes).toEqual(committed.formatBytes);
-  });
-});
-
-/* comics.ts */
-
-const ComicItemSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  path: z.string(),
-  mtimeMs: z.number(),
-  mediaType: MediaTypeSchema,
-});
-
-type ComicItem = z.infer<typeof ComicItemSchema>;
-
-const ComicSummarySchema = z.object({
-  id: z.string(),
-  folderPath: z.string(),
-  name: z.string(),
-  coverId: z.string(),
-  pageIds: z.array(z.string()),
-});
-
-type ComicSummary = z.infer<typeof ComicSummarySchema>;
-
-const ComicOrderSchema = z.object({
-  mode: GallerySortModeSchema,
-  seed: z.number().int(),
-  ids: z.array(z.string()),
-});
-
-const ComicVectorsSchema = z.object({
-  about: z.string(),
-  generatedWith: RuntimeSchema,
-  cases: z.array(
-    z.object({
-      about: z.string(),
-      items: z.array(ComicItemSchema),
-      rootPath: z.string().nullable(),
-      leafFoldersOnly: z.boolean(),
-      folders: z.array(z.object({ parentPath: z.string() })).nullable(),
-      comics: z.array(ComicSummarySchema),
-      orders: z.array(ComicOrderSchema),
-    }),
-  ),
-});
-
-type ComicVectors = z.infer<typeof ComicVectorsSchema>;
-
-interface ComicScenario {
-  about: string;
-  items: ComicItem[];
-  rootPath: string | null;
-  leafFoldersOnly: boolean;
-  folders: { parentPath: string }[] | null;
-}
-
-function page(id: string, path: string, mtimeMs = 0): ComicItem {
-  return { id, name: getBaseName(path), path, mtimeMs, mediaType: "image" };
-}
-
-function comicScenario(
-  about: string,
-  items: ComicItem[],
-  rootPath: string | null = "comics",
-): ComicScenario {
-  return { about, items, rootPath, leafFoldersOnly: false, folders: null };
-}
-
-const comicScenarios: readonly ComicScenario[] = [
-  comicScenario("pages sort in natural order, then by path, and the first is the cover", [
-    page("p10", "comics/vol-1/10.jpg"),
-    page("p2", "comics/vol-1/2.jpg"),
-    page("p01", "comics/vol-1/01.jpg"),
-    page("p1", "comics/vol-1/1.jpg"),
-    page("p1-capital", "comics/vol-1/1.JPG"),
-    page("p1-copy", "comics/vol-1/1.jpg"),
-    page("p1a", "comics/vol-1/1a.jpg"),
-  ]),
-  comicScenario("only images and GIFs are pages", [
-    { ...page("video", "comics/a/0.mp4"), mediaType: "video" },
-    { ...page("pdf", "comics/a/0.pdf"), mediaType: "pdf" },
-    { ...page("unknown", "comics/a/0.txt"), mediaType: "unknown" },
-    { ...page("gif", "comics/a/2.gif"), mediaType: "gif" },
-    page("image", "comics/a/3.jpg"),
-    { ...page("only-video", "comics/b/0.mp4"), mediaType: "video" },
-  ]),
-  comicScenario("files in the root, or in no folder, are not comics", [
-    page("root", "comics/root.jpg"),
-    page("top", "top.jpg"),
-    page("slash", "/top.jpg"),
-    page("backslash", "\\top.jpg"),
-    page("kept", "comics/kept/1.jpg"),
-  ]),
-  comicScenario(
-    "the root matches across case, NFC, separators and a trailing slash",
-    [
-      page("nfd", "comics/cafe\u0301/1.jpg"),
-      page("windows", "comics\\cafe\u0301\\2.jpg"),
-      page("leading", "/Comics/Caf\u00e9/3.jpg"),
-      page("child", "comics/caf\u00e9/sub/4.jpg"),
-    ],
-    "Comics/Caf\u00e9/",
-  ),
-  comicScenario("no root excludes nothing", [page("a", "a/1.jpg"), page("b", "b/c/2.jpg")], null),
-  comicScenario(
-    "an empty root excludes nothing",
-    [page("a", "a/1.jpg"), page("b", "b/c/2.jpg")],
-    "",
-  ),
-  comicScenario(
-    "a root of slashes excludes nothing",
-    [page("a", "a/1.jpg"), page("b", "b/2.jpg")],
-    "//",
-  ),
-  comicScenario("folders are keyed as written once separators fold, so case twins are two", [
-    page("upper", "Series/A/1.jpg"),
-    page("lower", "series/a/2.jpg"),
-    page("windows", "series\\a\\3.jpg"),
-    page("trailing", "series/a/4.jpg"),
-  ]),
-  comicScenario("display names turn underscores and hyphens into spaces", [
-    page("title", "comics/my_comic-title/1.jpg"),
-    page("dunder", "comics/__x__/1.jpg"),
-    page("spaced", "comics/a - b/1.jpg"),
-    page("dashes", "comics/--/1.jpg"),
-  ]),
-  comicScenario(
-    "comics sort by name in natural order, then by path",
-    [
-      page("z", "z/Vol 10/1.jpg", 5),
-      page("a", "a/Vol 2/1.jpg", 4),
-      page("b", "b/vol 2/1.jpg", 4),
-      page("top", "Vol 1/1.jpg", 3),
-      page("c", "c/Vol 02/1.jpg", 2),
-      page("d", "d/vol_2/1.jpg", 1),
-    ],
-    null,
-  ),
-  {
-    about: "leaf folders only skips folders that hold folders, matching parent paths as written",
-    items: [
-      page("series-cover", "comics/series/cover.jpg"),
-      page("chapter", "comics/series/ch-1/001.jpg"),
-      page("other", "comics/other/x.jpg"),
-      page("third", "comics/third/y.jpg"),
-      page("leaf", "comics/leaf/z.jpg"),
-    ],
-    rootPath: "comics",
-    leafFoldersOnly: true,
-    folders: [
-      { parentPath: "" },
-      { parentPath: "comics" },
-      { parentPath: "comics/series" },
-      { parentPath: "comics\\other" },
-      { parentPath: "/comics/third" },
-    ],
-  },
-  {
-    about: "leaf folders only without a folder list skips nothing",
-    items: [page("cover", "comics/series/cover.jpg"), page("chapter", "comics/series/ch-1/1.jpg")],
-    rootPath: "comics",
-    leafFoldersOnly: true,
-    folders: null,
-  },
-  {
-    about: "a folder list without leaf folders only skips nothing",
-    items: [page("cover", "comics/series/cover.jpg"), page("chapter", "comics/series/ch-1/1.jpg")],
-    rootPath: "comics",
-    leafFoldersOnly: false,
-    folders: [{ parentPath: "comics/series" }],
-  },
-  comicScenario(
-    "covers that share an id all map to the last comic with that id",
-    [page("shared", "x/1.jpg", 1), page("shared", "y/1.jpg", 2), page("own", "z/1.jpg", 3)],
-    null,
-  ),
-  comicScenario(
-    "Unicode, Windows and long folder names",
-    [
-      page("kanji", "\u5199\u771f/\u7b2c1\u5dfb/001.jpg", 10),
-      page("windows", "C:\\Comics\\Vol 1\\001.jpg", 20),
-      page("emoji", "\ud83d\udcda/\ud83d\udcd6/1.jpg", 30),
-      page("long", `${"\u00e9".repeat(120)}/${"x".repeat(200)}/1.jpg`, 40),
-      page("nfc", "caf\u00e9/1.jpg", 50),
-      page("nfd", "cafe\u0301/1.jpg", 50),
-    ],
-    null,
-  ),
-  comicScenario(
-    "dates order the covers, and names break ties",
-    [
-      page("old", "b/1.jpg", 1_600_000_000_000),
-      page("new", "a/1.jpg", 1_700_000_000_000.5),
-      page("same-1", "d/1.jpg", 1_650_000_000_000),
-      page("same-2", "c/1.jpg", 1_650_000_000_000),
-      page("late-page", "c/2.jpg", 1_800_000_000_000),
-    ],
-    null,
-  ),
-];
-
-const comicSeeds = [0, 42, 4_294_967_295, -1];
-
-function summarizeComic(comic: ComicEntry<ComicItem>): ComicSummary {
-  return {
-    id: comic.id,
-    folderPath: comic.folderPath,
-    name: comic.name,
-    coverId: comic.cover.id,
-    pageIds: comic.pages.map((comicPage) => comicPage.id),
-  };
-}
-
-function comicOptions(scenario: ComicScenario): BuildComicEntriesOptions {
-  const options: BuildComicEntriesOptions = { leafFoldersOnly: scenario.leafFoldersOnly };
-
-  if (scenario.folders !== null) {
-    options.folders = scenario.folders;
-  }
-
-  return options;
-}
-
-function sortOrders<T extends ComicMediaItem>(
-  comics: readonly ComicEntry<T>[],
-): z.infer<typeof ComicOrderSchema>[] {
-  return GallerySortModeSchema.options.flatMap((mode) =>
-    (mode === "random" ? comicSeeds : [0]).map((seed) => ({
-      mode,
-      seed,
-      ids: sortComicEntries(comics, mode, seed).map((comic) => comic.id),
-    })),
-  );
-}
-
-function makeComicVectors(): ComicVectors {
-  return {
-    about: aboutModule("comics.ts"),
-    generatedWith: runtimeVersions(),
-    cases: comicScenarios.map((scenario) => {
-      const comics = buildComicEntries(scenario.items, scenario.rootPath, comicOptions(scenario));
-
-      return { ...scenario, comics: comics.map(summarizeComic), orders: sortOrders(comics) };
-    }),
-  };
-}
-
-describe("media-domain comics conformance vectors", () => {
-  const vectors = makeComicVectors();
-  let committed: ComicVectors;
-
-  beforeAll(() => {
-    committed = committedVectors("comics.json", ComicVectorsSchema, vectors);
-  });
-
-  it("groups pages into comics as committed", () => {
-    expect(vectors.cases.map(({ orders: _orders, ...rest }) => rest)).toEqual(
-      committed.cases.map(({ orders: _orders, ...rest }) => rest),
-    );
-  });
-
-  it("sorts comics in every mode as committed", () => {
-    expect(vectors.cases.map((entry) => entry.orders)).toEqual(
-      committed.cases.map((entry) => entry.orders),
-    );
-  });
-});
-
-/* browser-entries.ts */
-
-const BrowserEntrySummarySchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("folder"),
-    key: z.string(),
-    path: z.string(),
-    name: z.string(),
-    hasChildren: z.boolean(),
-  }),
-  z.object({ kind: z.literal("comic"), key: z.string(), comicId: z.string() }),
-  z.object({
-    kind: z.literal("media"),
-    key: z.string(),
-    mediaId: z.string(),
-    mediaIndex: z.number().int(),
-  }),
-]);
-
-type BrowserEntrySummary = z.infer<typeof BrowserEntrySummarySchema>;
-
-const BrowserVectorsSchema = z.object({
-  about: z.string(),
-  generatedWith: RuntimeSchema,
-  cases: z.array(
-    z.object({
-      about: z.string(),
-      folders: z.array(FolderNodeSchema),
-      items: z.array(MediaItemSchema),
-      comics: z.array(ComicSummarySchema),
-      views: z.array(
-        z.object({
-          recursive: z.boolean(),
-          comicMode: z.boolean(),
-          sortMode: GallerySortModeSchema,
-          entries: z.array(BrowserEntrySummarySchema),
-        }),
-      ),
-    }),
-  ),
-});
-
-type BrowserVectors = z.infer<typeof BrowserVectorsSchema>;
-
-type FolderNode = z.infer<typeof FolderNodeSchema>;
-
-interface BrowserScenario {
-  about: string;
-  folders: FolderNode[];
-  items: MediaItem[];
-  rootPath: string;
-  everyMode: boolean;
-}
-
-function folder(path: string, hasChildren = false): FolderNode {
-  return { path, parentPath: getParentPath(path), name: getBaseName(path), hasChildren };
-}
-
-function mediaItem(
-  id: string,
-  path: string,
-  mediaType: MediaItem["mediaType"] = "image",
-): MediaItem {
-  return {
-    id,
-    path,
-    parentPath: getParentPath(path),
-    name: getBaseName(path),
-    extension: getExtension(path),
-    mediaType,
-    size: 1,
-    mtimeMs: 0,
-  };
-}
-
-const browserScenarios: readonly BrowserScenario[] = [
-  {
-    about: "folders sort by name alone and only name-desc reverses them, ties included",
-    folders: [
-      folder("root/Folder 10", true),
-      folder("root/folder 2"),
-      folder("root/Folder 2", true),
-      folder("root/Folder 1"),
-      { ...folder("root/a"), parentId: null },
-      { ...folder("root/B"), parentId: "6f1c3c1e-8a2b-4c3d-9e4f-5a6b7c8d9e0f" },
-      folder("root/\u00e9"),
-      folder("root/e"),
-      { path: "root/", parentPath: "root", name: "", hasChildren: false },
-    ],
-    items: [
-      mediaItem("loose-2", "root/2.jpg"),
-      mediaItem("loose-10", "root/10.mp4", "video"),
-      mediaItem("page-b", "root/comic/b.jpg"),
-      mediaItem("page-a", "root/comic/a.jpg"),
-      mediaItem("other", "root/other/1.gif", "gif"),
-    ],
-    rootPath: "root",
-    everyMode: true,
-  },
-  {
-    about: "nothing to show",
-    folders: [],
-    items: [],
-    rootPath: "root",
-    everyMode: false,
-  },
-  {
-    about: "media keep their index among all items, and keys use ids as written",
-    folders: [folder("x/y:z")],
-    items: [
-      mediaItem("same", "x/1.jpg"),
-      mediaItem("same", "x/2.jpg"),
-      mediaItem("media:nested", "x/3.jpg"),
-      mediaItem("\u5199\u771f", "x/4.jpg"),
-      mediaItem("", "x/5.jpg"),
-    ],
-    rootPath: "x",
-    everyMode: false,
-  },
-];
-
-function summarizeEntry(entry: BrowserEntry): BrowserEntrySummary {
-  switch (entry.kind) {
-    case "folder":
-      return {
-        kind: "folder",
-        key: entry.key,
-        path: entry.path,
-        name: entry.name,
-        hasChildren: entry.hasChildren,
-      };
-    case "comic":
-      return { kind: "comic", key: entry.key, comicId: entry.comic.id };
-    case "media":
-      return {
-        kind: "media",
-        key: entry.key,
-        mediaId: entry.media.id,
-        mediaIndex: entry.mediaIndex,
-      };
-    default: {
-      const _exhaustive: never = entry;
-
-      return _exhaustive;
-    }
-  }
-}
-
-function makeBrowserVectors(): BrowserVectors {
-  return {
-    about: aboutModule("browser-entries.ts"),
-    generatedWith: runtimeVersions(),
-    cases: browserScenarios.map((scenario) => {
-      const comics = buildComicEntries(scenario.items, scenario.rootPath);
-
-      const modes = scenario.everyMode
-        ? GallerySortModeSchema.options
-        : (["name-asc", "name-desc"] as const);
-
-      return {
-        about: scenario.about,
-        folders: scenario.folders,
-        items: scenario.items,
-        comics: comics.map(summarizeComic),
-        views: [false, true].flatMap((recursive) =>
-          [false, true].flatMap((comicMode) =>
-            modes.map((sortMode) => ({
-              recursive,
-              comicMode,
-              sortMode,
-              entries: buildBrowserEntries({
-                folders: scenario.folders,
-                comics,
-                items: scenario.items,
-                recursive,
-                comicMode,
-                sortMode,
-              }).map(summarizeEntry),
-            })),
-          ),
-        ),
-      };
-    }),
-  };
-}
-
-describe("media-domain browser entries conformance vectors", () => {
-  const vectors = makeBrowserVectors();
-  let committed: BrowserVectors;
-
-  beforeAll(() => {
-    committed = committedVectors("browser-entries.json", BrowserVectorsSchema, vectors);
-  });
-
-  it("builds the gallery's entries in every view as committed", () => {
-    expect(vectors.cases).toEqual(committed.cases);
   });
 });
 
@@ -1872,7 +1163,7 @@ function makeSystemFileVectors(): SystemFileVectors {
     about: aboutModule("system-files.ts"),
     generatedWith: runtimeVersions(),
     latchWorksDirectoryName: LATCH_WORKS_DIRECTORY_NAME,
-    glazierHoldingDirectoryName: GLAZIER_HOLDING_DIRECTORY_NAME,
+    glazierHoldingDirectoryName: LEGACY_HOLDING_DIRECTORY_NAME,
     names: systemNameCorpus.map((name) => ({
       name,
       junkFile: isSystemJunkFile(name),

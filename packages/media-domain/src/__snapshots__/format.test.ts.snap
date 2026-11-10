@@ -1,0 +1,218 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`formatBytes > formats byte counts as the snapshot 1`] = `
+[
+  {
+    "bytes": 0,
+    "formatted": "0 B",
+  },
+  {
+    "bytes": 1,
+    "formatted": "1 B",
+  },
+  {
+    "bytes": 2,
+    "formatted": "2 B",
+  },
+  {
+    "bytes": 2.5,
+    "formatted": "3 B",
+  },
+  {
+    "bytes": 3.5,
+    "formatted": "4 B",
+  },
+  {
+    "bytes": 51.2,
+    "formatted": "51 B",
+  },
+  {
+    "bytes": 512,
+    "formatted": "512 B",
+  },
+  {
+    "bytes": 1000,
+    "formatted": "1000 B",
+  },
+  {
+    "bytes": 1023,
+    "formatted": "1023 B",
+  },
+  {
+    "bytes": 1023.4,
+    "formatted": "1023 B",
+  },
+  {
+    "bytes": 1023.5,
+    "formatted": "1024 B",
+  },
+  {
+    "bytes": 1023.96,
+    "formatted": "1024 B",
+  },
+  {
+    "bytes": 1024,
+    "formatted": "1.0 KB",
+  },
+  {
+    "bytes": 1025,
+    "formatted": "1.0 KB",
+  },
+  {
+    "bytes": 1075,
+    "formatted": "1.0 KB",
+  },
+  {
+    "bytes": 1075.2,
+    "formatted": "1.1 KB",
+  },
+  {
+    "bytes": 1126.4,
+    "formatted": "1.1 KB",
+  },
+  {
+    "bytes": 1280,
+    "formatted": "1.3 KB",
+  },
+  {
+    "bytes": 1331.2,
+    "formatted": "1.3 KB",
+  },
+  {
+    "bytes": 1536,
+    "formatted": "1.5 KB",
+  },
+  {
+    "bytes": 1792,
+    "formatted": "1.8 KB",
+  },
+  {
+    "bytes": 2304,
+    "formatted": "2.3 KB",
+  },
+  {
+    "bytes": 10240,
+    "formatted": "10.0 KB",
+  },
+  {
+    "bytes": 1048575,
+    "formatted": "1024.0 KB",
+  },
+  {
+    "bytes": 1048576,
+    "formatted": "1.0 MB",
+  },
+  {
+    "bytes": 1048577,
+    "formatted": "1.0 MB",
+  },
+  {
+    "bytes": 1101004.8,
+    "formatted": "1.1 MB",
+  },
+  {
+    "bytes": 1310720,
+    "formatted": "1.3 MB",
+  },
+  {
+    "bytes": 123456789,
+    "formatted": "117.7 MB",
+  },
+  {
+    "bytes": 1073741823,
+    "formatted": "1024.0 MB",
+  },
+  {
+    "bytes": 1073741824,
+    "formatted": "1.0 GB",
+  },
+  {
+    "bytes": 1073741825,
+    "formatted": "1.0 GB",
+  },
+  {
+    "bytes": 1879048192,
+    "formatted": "1.8 GB",
+  },
+  {
+    "bytes": 5368709120,
+    "formatted": "5.0 GB",
+  },
+  {
+    "bytes": 1099511627775,
+    "formatted": "1024.0 GB",
+  },
+  {
+    "bytes": 1099511627776,
+    "formatted": "1.0 TB",
+  },
+  {
+    "bytes": 1099511627777,
+    "formatted": "1.0 TB",
+  },
+  {
+    "bytes": 1125899906842622,
+    "formatted": "1.0 undefined",
+  },
+  {
+    "bytes": 1125899906842623,
+    "formatted": "1.0 undefined",
+  },
+  {
+    "bytes": 1125899906842624,
+    "formatted": "1.0 undefined",
+  },
+  {
+    "bytes": 1152921504606847000,
+    "formatted": "1.0 undefined",
+  },
+  {
+    "bytes": 9007199254740992,
+    "formatted": "8.0 undefined",
+  },
+  {
+    "bytes": 9007199254740994,
+    "formatted": "8.0 undefined",
+  },
+  {
+    "bytes": 18446744073709552000,
+    "formatted": "16.0 undefined",
+  },
+  {
+    "bytes": 1e+300,
+    "formatted": "95.6 undefined",
+  },
+  {
+    "bytes": 1.7976931348623157e+308,
+    "formatted": "16.0 undefined",
+  },
+  {
+    "bytes": 0.9999999999999999,
+    "formatted": "1024.0 undefined",
+  },
+  {
+    "bytes": 0.5,
+    "formatted": "512.0 undefined",
+  },
+  {
+    "bytes": 0.001,
+    "formatted": "1.0 undefined",
+  },
+  {
+    "bytes": 1e-310,
+    "formatted": "1.2 undefined",
+  },
+  {
+    "bytes": 5e-324,
+    "formatted": "Infinity undefined",
+  },
+  {
+    "bytes": -1,
+    "formatted": "NaN undefined",
+  },
+  {
+    "bytes": -1024,
+    "formatted": "NaN undefined",
+  },
+]
+`;

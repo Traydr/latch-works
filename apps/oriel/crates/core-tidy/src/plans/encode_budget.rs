@@ -5,8 +5,7 @@
 //! a quarter of the machine's, and one that would overrun it waits for others to finish. One
 //! encode always runs, however large.
 
-use std::sync::{Condvar, Mutex, PoisonError};
-use std::time::Duration;
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
 use oriel_runtime::Cancelled;
 
@@ -22,41 +21,52 @@ const UNKNOWN_PIXELS: u64 = 12_000_000;
 /// The share of the machine's memory the encodes in flight may hold together.
 const MEMORY_SHARE: u64 = 4;
 
-/// AVIF encodes at once: the cores but two, at least one. Electron Oriel's encoder pool stops at
-/// 4 as well; here [`EncodeBudget`] bounds the memory instead.
-pub fn still_concurrency() -> usize {
+/// AVIF encodes at once: the cores but two, at least one; [`EncodeBudget`] bounds the memory.
+pub(crate) fn still_concurrency() -> usize {
     std::thread::available_parallelism()
         .map_or(2, |cores| cores.get())
         .saturating_sub(2)
         .max(1)
 }
 
-/// The memory the encodes in flight share.
+/// The memory the encodes in flight share, one for the process: Convert's changes and its
+/// estimates draw on the same budget.
 #[derive(Debug)]
-pub struct EncodeBudget {
+pub(crate) struct EncodeBudget {
     limit: u64,
+    shared: Arc<Shared>,
+}
+
+#[derive(Debug, Default)]
+struct Shared {
     used: Mutex<u64>,
     freed: Condvar,
 }
 
+impl Shared {
+    fn wake(&self) {
+        let _used = self.used.lock().unwrap_or_else(PoisonError::into_inner);
+        self.freed.notify_all();
+    }
+}
+
 impl EncodeBudget {
     /// A quarter of this machine's memory.
-    pub fn for_this_machine() -> Self {
+    pub(crate) fn for_this_machine() -> Self {
         Self::with_limit(physical_memory() / MEMORY_SHARE)
     }
 
-    pub fn with_limit(limit: u64) -> Self {
+    pub(crate) fn with_limit(limit: u64) -> Self {
         Self {
             limit,
-            used: Mutex::new(0),
-            freed: Condvar::new(),
+            shared: Arc::default(),
         }
     }
 
     /// Takes the memory an encode of a still this many pixels needs, waiting while encodes in
     /// flight hold too much for it to fit; held until the returned reservation drops. Fails once
     /// the work is stopped.
-    pub fn reserve(
+    pub(crate) fn reserve(
         &self,
         pixels: Option<u64>,
         progress: &dyn Progress,
@@ -64,15 +74,22 @@ impl EncodeBudget {
         let bytes = pixels
             .unwrap_or(UNKNOWN_PIXELS)
             .saturating_mul(ENCODE_BYTES_PER_PIXEL);
-        let mut used = self.used.lock().unwrap_or_else(PoisonError::into_inner);
+        let _wakes_on_stop = progress.cancel_token().map(|token| {
+            let shared = self.shared.clone();
+            token.on_cancel(move || shared.wake())
+        });
+        let mut used = self
+            .shared
+            .used
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         while *used > 0 && used.saturating_add(bytes) > self.limit {
             progress.check()?;
-            // A stop is noticed within a quarter of a second.
             used = self
+                .shared
                 .freed
-                .wait_timeout(used, Duration::from_millis(250))
-                .unwrap_or_else(PoisonError::into_inner)
-                .0;
+                .wait(used)
+                .unwrap_or_else(PoisonError::into_inner);
         }
         *used += bytes;
         Ok(Reservation {
@@ -84,20 +101,17 @@ impl EncodeBudget {
 
 /// Memory an encode holds in an [`EncodeBudget`].
 #[derive(Debug)]
-pub struct Reservation<'a> {
+pub(crate) struct Reservation<'a> {
     budget: &'a EncodeBudget,
     bytes: u64,
 }
 
 impl Drop for Reservation<'_> {
     fn drop(&mut self) {
-        let mut used = self
-            .budget
-            .used
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let shared = &self.budget.shared;
+        let mut used = shared.used.lock().unwrap_or_else(PoisonError::into_inner);
         *used = used.saturating_sub(self.bytes);
-        self.budget.freed.notify_all();
+        shared.freed.notify_all();
     }
 }
 
@@ -130,7 +144,8 @@ fn physical_memory() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::mpsc;
+    use std::time::Duration;
 
     use super::*;
     use crate::passes::Quiet;
@@ -139,20 +154,24 @@ mod tests {
     fn encodes_wait_while_the_ones_in_flight_fill_the_budget() {
         let budget = EncodeBudget::with_limit(10 * ENCODE_BYTES_PER_PIXEL);
         let quiet = Quiet::new();
-        let (most, peak) = (AtomicU64::new(0), AtomicU64::new(0));
+        let first = budget.reserve(Some(4), &quiet).unwrap();
+        let second = budget.reserve(Some(4), &quiet).unwrap();
+        let (started, third_started) = mpsc::channel();
         std::thread::scope(|scope| {
-            for _ in 0..6 {
-                scope.spawn(|| {
-                    let _held = budget.reserve(Some(4), &quiet).unwrap();
-                    let now = most.fetch_add(4, Ordering::AcqRel) + 4;
-                    peak.fetch_max(now, Ordering::AcqRel);
-                    std::thread::sleep(Duration::from_millis(20));
-                    most.fetch_sub(4, Ordering::AcqRel);
-                });
-            }
+            scope.spawn(|| {
+                let _third = budget.reserve(Some(4), &quiet).unwrap();
+                started.send(()).unwrap();
+            });
+            // Two fit in 10, a third does not: it waits until one of them is done.
+            assert!(
+                third_started
+                    .recv_timeout(Duration::from_millis(100))
+                    .is_err()
+            );
+            drop(first);
+            third_started.recv().unwrap();
         });
-        // Two fit in 10, a third would not.
-        assert_eq!(peak.load(Ordering::Acquire), 8);
+        drop(second);
         // One larger than the whole budget still runs, alone.
         drop(budget.reserve(Some(100), &quiet).unwrap());
     }
@@ -162,7 +181,13 @@ mod tests {
         let budget = EncodeBudget::with_limit(ENCODE_BYTES_PER_PIXEL);
         let quiet = Quiet::new();
         let _held = budget.reserve(Some(1), &quiet).unwrap();
-        quiet.token().cancel();
-        assert!(budget.reserve(Some(1), &quiet).is_err());
+        let stopping = quiet.token().clone();
+        std::thread::scope(|scope| {
+            scope.spawn(move || {
+                std::thread::sleep(Duration::from_millis(20));
+                stopping.cancel();
+            });
+            assert!(budget.reserve(Some(1), &quiet).is_err());
+        });
     }
 }

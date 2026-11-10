@@ -1,13 +1,13 @@
-//! The welcome on the owner's first start, over the whole window (Electron Oriel's `Welcome.tsx`
-//! and `first-run.ts`): one archive folder for View, which opens it, and for Tidy, which tidies
-//! it if asked, with a Pane View server for Sync when Sync has no profile yet. Every step can be
-//! skipped; it lands in View, and shows once: a `welcomed` file in the shell's folder says so.
+//! The welcome on the owner's first start, over the whole window: one archive folder for View,
+//! which opens it, and for Tidy, which tidies it if asked, with a Pane View server for Sync when
+//! Sync has no profile yet. Every step can be skipped; it lands in View, and shows once: a
+//! `welcomed` file in the shell's folder says so.
 //!
 //! In a sandboxed run (`ORIEL_DATA_DIR`) Tidy takes only folders in its sandbox, so for a
 //! folder outside it "Tidy it" is off and says why.
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::SystemTime;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -20,38 +20,27 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px,
 };
 use oriel_core_paths::DataRoot;
-use oriel_mode_sync::{ProfileInput, SyncMode};
-use oriel_mode_tidy::TidyMode;
-use oriel_mode_view::ViewMode;
 use oriel_ui::TextRole as _;
-use oriel_ui::{ControlSize as _, ModeId, ShellState};
+use oriel_ui::{AnyMode, ControlSize as _, FolderSetUp, ModeId, ModeMap, PaneServer, ShellState};
 
-/// `ORIEL_WELCOME=1` shows the welcome under `ORIEL_DATA_DIR`, which otherwise never shows
-/// it, as `ORIEL_WELCOME=1` does under Electron Oriel's `--user-data-dir`.
-pub const WELCOME_VARIABLE: &str = "ORIEL_WELCOME";
-
-/// The file whose presence says the welcome has been seen, as Electron Oriel names it.
-const WELCOMED_FILE: &str = "welcomed";
-
-/// How long Start waits for Tidy's catalog to open before saying it has not.
-const TIDY_START_LIMIT: Duration = Duration::from_secs(15);
-
-/// Whether this run may show the welcome: always on the owner's own data, and under another data
-/// folder (a check, a test) only when [`WELCOME_VARIABLE`] asks.
-pub fn allowed_from_environment() -> bool {
-    std::env::var_os(oriel_core_paths::DATA_DIR_VARIABLE).is_none_or(|value| value.is_empty())
-        || std::env::var_os(WELCOME_VARIABLE).is_some_and(|value| value == "1")
+/// Whether this run may show the welcome: always on the owner's own data, and under a sandboxed
+/// data folder (a check, a test) only when the launch asks (`ORIEL_WELCOME=1`).
+pub fn allowed(data: &DataRoot, asked: bool) -> bool {
+    !data.is_sandboxed() || asked
 }
 
 /// Whether the owner has been through the welcome (`welcomed`).
 pub fn welcomed(data: &DataRoot) -> bool {
-    data.shell().join(WELCOMED_FILE).exists()
+    data.welcomed().exists()
 }
 
-/// Notes that the welcome has been seen (`markWelcomed`): the time, as Electron Oriel writes it.
+/// Notes that the welcome has been seen: the time, as Electron Oriel wrote it.
 pub fn mark_welcomed(data: &DataRoot) {
-    let file = data.shell().join(WELCOMED_FILE);
-    let stamp = format!("{}\n", oriel_core_sync::iso_timestamp(SystemTime::now()));
+    let file = data.welcomed();
+    let stamp = format!(
+        "{}\n",
+        oriel_core_domain::format::iso_timestamp(SystemTime::now())
+    );
     if let Err(error) = std::fs::write(&file, stamp) {
         log::warn!("Oriel could not note the welcome as seen: {error}");
     }
@@ -63,18 +52,11 @@ pub enum WelcomeEvent {
     Finished,
 }
 
-/// The modes the welcome sets the folder up in.
-pub struct WelcomeModes {
-    pub view: Entity<ViewMode>,
-    pub tidy: Entity<TidyMode>,
-    pub sync: Entity<SyncMode>,
-}
-
 pub struct Welcome {
     shell: Entity<ShellState>,
     data: DataRoot,
-    modes: WelcomeModes,
-    /// Sync has no profile, so the welcome offers to connect Pane View (`needsServer`).
+    modes: ModeMap<AnyMode>,
+    /// Sync has no profile, so the welcome offers to connect Pane View.
     needs_server: bool,
     folder: Option<PathBuf>,
     tidy_it: bool,
@@ -91,16 +73,20 @@ impl Welcome {
     pub fn new(
         shell: &Entity<ShellState>,
         data: DataRoot,
-        modes: WelcomeModes,
+        modes: ModeMap<AnyMode>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let needs_server = modes.sync.read(cx).source_roots().is_empty();
+        let needs_server = modes[ModeId::Sync].folders(cx).is_empty();
         let api_url =
             cx.new(|cx| InputState::new(window, cx).placeholder("https://pane.example.com"));
+        let placeholder = format!(
+            "Sync API token, saved encrypted in {}",
+            data.root().display()
+        );
         let token = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Sync API token, saved encrypted in ~/.latch-works/oriel")
+                .placeholder(placeholder)
                 .masked(true)
         });
         Self {
@@ -141,13 +127,13 @@ impl Welcome {
         self.data.admits_tidy_root(folder)
     }
 
-    /// No folder any mode uses is there, so the welcome asks for one (`needsFolder`). Once one is
-    /// chosen the question stays, though View then knows the folder.
+    /// No folder any mode uses is there, so the welcome asks for one. Once one is chosen the
+    /// question stays, though View then knows the folder.
     fn needs_folder(&self, cx: &App) -> bool {
         self.folder.is_some() || self.shell.read(cx).known_folders().is_empty()
     }
 
-    /// Asks for the folder with the system's picker (`chooseArchive`).
+    /// Asks for the folder with the system's picker.
     fn choose_folder(&mut self, cx: &mut Context<Self>) {
         let chosen = cx.prompt_for_paths(PathPromptOptions {
             files: false,
@@ -172,9 +158,8 @@ impl Welcome {
         .detach();
     }
 
-    /// Sets the folder up (`setUpArchive`): View opens it, Tidy adds it if asked, Sync gets a
-    /// profile for it if a server was given. Anything that fails is listed, and Start reads
-    /// Continue; otherwise the welcome is done.
+    /// Sets the folder up in every mode, as the owner chose. Anything that fails is listed, and
+    /// Start reads Continue; otherwise the welcome is done.
     fn start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(folder) = self.folder.clone().filter(|_| self.problems.is_empty()) else {
             cx.emit(WelcomeEvent::Finished);
@@ -183,55 +168,28 @@ impl Welcome {
         self.busy = true;
         cx.notify();
 
-        self.modes
-            .view
-            .update(cx, |view, cx| view.open_folder(folder.clone(), cx));
-
-        let mut problems: Vec<SharedString> = Vec::new();
         let api_url = self.api_url.read(cx).value().trim().to_owned();
-        if self.sync_it && self.needs_server && !api_url.is_empty() {
-            let token = self.token.read(cx).value().trim().to_owned();
-            let input = ProfileInput {
-                name: folder_name(&folder),
+        let token = self.token.read(cx).value().trim().to_owned();
+        let server =
+            (self.sync_it && self.needs_server && !api_url.is_empty()).then(|| PaneServer {
                 api_url,
-                source_root: folder.to_string_lossy().into_owned(),
                 token: Some(token).filter(|token| !token.is_empty()),
-            };
-            if let Err(problem) = self
-                .modes
-                .sync
-                .update(cx, |sync, cx| sync.add_profile(input, cx))
-            {
-                problems.push(format!("Sync: {problem}").into());
-            }
-        }
-
-        let tidy = self
-            .tidies()
-            .then(|| self.modes.tidy.read(cx).state().clone());
+            });
+        let set_up = FolderSetUp {
+            tidy: self.tidies(),
+            folder,
+            server,
+        };
+        let setting_up: Vec<_> = self
+            .modes
+            .values()
+            .map(|mode| (mode.id(), mode.set_up(&set_up, window, cx)))
+            .collect();
         cx.spawn_in(window, async move |this, cx| {
-            if let Some(state) = tidy {
-                // The catalog opens in the background at launch; give it a moment.
-                let since = Instant::now();
-                while cx
-                    .update(|_, cx| {
-                        let state = state.read(cx);
-                        !state.is_ready() && state.engine_error().is_none()
-                    })
-                    .unwrap_or(false)
-                    && since.elapsed() < TIDY_START_LIMIT
-                {
-                    cx.background_executor()
-                        .timer(Duration::from_millis(20))
-                        .await;
-                }
-                let added = cx.update(|window, cx| {
-                    state.update(cx, |state, cx| state.add_root(folder.clone(), window, cx))
-                });
-                if let Ok(added) = added
-                    && let Err(problem) = added.await
-                {
-                    problems.push(format!("Tidy: {problem}").into());
+            let mut problems: Vec<SharedString> = Vec::new();
+            for (mode, task) in setting_up {
+                if let Err(problem) = task.await {
+                    problems.push(format!("{}: {problem}", mode.label()).into());
                 }
             }
             this.update(cx, |this, cx| {
@@ -248,7 +206,7 @@ impl Welcome {
         .detach();
     }
 
-    /// The three modes' icons side by side, for Electron Oriel's glyphs gathering into its mark.
+    /// The three modes' icons side by side.
     fn render_mark(&self, cx: &App) -> impl IntoElement {
         let theme = cx.theme();
         div()

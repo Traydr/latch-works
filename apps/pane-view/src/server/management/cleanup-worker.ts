@@ -1,40 +1,36 @@
-import { type ListStoredObjectsPage, listStoredObjectsByPrefix } from "@latch-works/media-storage";
+import { ORIGINALS_PREFIX } from "@latch-works/sync-protocol";
 import { and, eq, inArray, isNotNull, isNull, not, sql } from "drizzle-orm";
+import type { CleanupJobStatus } from "@/features/management/management-contract";
 import type { JsonValue } from "@/lib/json";
+import {
+  ACTIVE_MAINTENANCE_JOB_STATUSES,
+  type LibraryWipeJobProgress,
+  type MaintenanceJobProgress,
+  type MaintenanceJobType,
+  type MaintenanceProgressFor,
+  parseMaintenanceProgress,
+  type ShutterSourcePurgeJobProgress,
+  type SoftDeletedPurgeJobProgress,
+} from "@/lib/library-jobs";
 import { type Database, db } from "../db";
 import { MAINTENANCE_JOB_CLAIM_LOCK_NAMESPACE } from "../db/library-coordination-lock";
 import {
-  favorites,
   folders,
-  type LibraryWipeJobProgress,
   libraryEntries,
-  type MaintenanceJobProgress,
   maintenanceJobs,
   mediaObjects,
-  type ShutterSourcePurgeJobProgress,
-  type SoftDeletedPurgeJobProgress,
   shutterSourceCleanup,
   syncRunItems,
   syncRuns,
-  viewerState,
 } from "../db/schema";
-import { withAncestorPaths } from "../library/folder-path-sql";
+import { occupiedFolderPaths } from "../library/folder-path-sql";
+import { purgeShutterSource, type ShutterPurgeSource } from "../media/shutter-client";
+import { type ShutterConfig, shutterConfig } from "../media/shutter-config";
 import {
-  purgeShutterSource,
-  SHUTTER_PURGE_INCOMPLETE_MESSAGE,
-  type ShutterPurgeReadiness,
-  type ShutterPurgeSource,
-  shutterPurgeReadiness,
-} from "../media/shutter-client";
-import { getPaneViewStorageClient } from "../media/storage-client";
-import {
-  type MaintenanceJobType,
-  MaintenanceJobTypeSchema,
-  type MaintenanceProgressFor,
-  ORPHAN_SWEEP_PREFIX,
-  parseMaintenanceProgress,
-} from "./maintenance-progress";
-import { deleteMaintenanceObjects } from "./maintenance-storage";
+  deleteStoredObjects,
+  type ListStoredObjectsPage,
+  listStoredObjectsByPrefix,
+} from "../media/storage-client";
 import {
   liveShutterSourceCondition,
   orphanedMediaObjectCondition,
@@ -48,7 +44,7 @@ const nextBatchDelayMs = 25;
 /** How long to wait before retrying a job whose claim another worker holds. */
 const contendedRetryDelayMs = 30_000;
 
-const activeJobStatuses = ["pending", "running"] as const;
+const deleteConcurrency = 8;
 
 let resumeStarted = false;
 
@@ -56,9 +52,9 @@ const runningJobs = new Set<string>();
 
 /**
  * Everything a maintenance batch reaches outside its own module: the archive
- * database, the object storage deletes and listing, and the Shutter purge.
- * The default instance wires the real ones; a suite passes a pglite database
- * and fakes for the two external services.
+ * database, the object storage deletes and listing, and Shutter. The default
+ * instance wires the real ones; a suite passes a pglite database and fakes for
+ * the two external services.
  */
 export interface MaintenanceWorkerDependencies {
   /**
@@ -67,83 +63,50 @@ export interface MaintenanceWorkerDependencies {
    */
   claimJobBatch(jobId: string, batch: () => Promise<boolean>): Promise<boolean | "contended">;
   database: Database;
-  deleteObjects(keys: string[]): Promise<{ deleted: number }>;
-  /** Whether this deployment can purge Shutter's copies (see shutterPurgeReadiness). */
-  shutterPurgeReadiness(): ShutterPurgeReadiness;
+  deleteObjects(keys: string[]): Promise<void>;
   listObjectsByPrefix(request: {
     continuationToken?: string;
     limit: number;
     prefix: string;
   }): Promise<ListStoredObjectsPage>;
-  purgeShutterSource(source: ShutterPurgeSource): Promise<void>;
+  /** Purges Shutter's copies of a source; null when Shutter is off and holds none. */
+  purgeShutterSource: ((source: ShutterPurgeSource) => Promise<void>) | null;
+}
+
+function shutterPurger(
+  shutter: ShutterConfig,
+): MaintenanceWorkerDependencies["purgeShutterSource"] {
+  return shutter.mode === "on" ? (source) => purgeShutterSource(source, shutter) : null;
 }
 
 const defaultMaintenanceWorkerDependencies: MaintenanceWorkerDependencies = {
   claimJobBatch: (jobId, batch) => claimMaintenanceJobBatch(db, jobId, batch),
   database: db,
-  deleteObjects: (keys) => deleteMaintenanceObjects(keys),
-  listObjectsByPrefix: (request) =>
-    listStoredObjectsByPrefix({ ...request, storage: getPaneViewStorageClient() }),
-  purgeShutterSource,
-  shutterPurgeReadiness: () => shutterPurgeReadiness(),
+  deleteObjects: (keys) => deleteStoredObjects({ keys, maxConcurrent: deleteConcurrency }),
+  listObjectsByPrefix: (request) => listStoredObjectsByPrefix(request),
+  purgeShutterSource: shutterPurger(shutterConfig),
 };
 
-interface CleanupJobStatusBase {
-  completedAt: string | null;
-  error: string | null;
-  id: string;
-  startedAt: string | null;
-  status: "pending" | "running" | "completed" | "failed" | "cancelled";
-}
-
-type CleanupJobStatusByType = {
-  [Type in MaintenanceJobType]: CleanupJobStatusBase & {
-    progress: MaintenanceProgressFor<Type>;
-    type: Type;
-  };
+type MaintenanceJobRunners = {
+  [Type in MaintenanceJobType]: (
+    jobId: string,
+    progress: MaintenanceProgressFor<Type>,
+    dependencies: MaintenanceWorkerDependencies,
+  ) => Promise<boolean>;
 };
 
-export type CleanupJobStatus = CleanupJobStatusByType[MaintenanceJobType];
-
-/**
- * What each job type does with its parsed progress: `run` advances one batch,
- * `toStatus` reports it. Both lookups go through a generic `Type`, so a type's
- * entry only ever sees progress that parsed for that type.
- */
-type MaintenanceJobHandlers = {
-  [Type in MaintenanceJobType]: {
-    run(
-      jobId: string,
-      progress: MaintenanceProgressFor<Type>,
-      dependencies: MaintenanceWorkerDependencies,
-    ): Promise<boolean>;
-    toStatus(
-      base: CleanupJobStatusBase,
-      progress: MaintenanceProgressFor<Type>,
-      type: Type,
-    ): CleanupJobStatusByType[Type];
-  };
-};
-
-function toCleanupJobStatus<Type extends MaintenanceJobType>(
-  base: CleanupJobStatusBase,
-  progress: MaintenanceProgressFor<Type>,
-  type: Type,
-): CleanupJobStatusBase & { progress: MaintenanceProgressFor<Type>; type: Type } {
-  return { ...base, progress, type };
-}
-
-const maintenanceJobHandlers: MaintenanceJobHandlers = {
-  library_hard_wipe: { run: processLibraryWipeBatch, toStatus: toCleanupJobStatus },
-  shutter_source_purge: { run: processShutterSourcePurgeBatch, toStatus: toCleanupJobStatus },
-  soft_deleted_purge: { run: processSoftDeletedPurgeBatch, toStatus: toCleanupJobStatus },
+/** Each job type's batch; the lookup goes through a generic `Type`, so it only sees its own progress. */
+const maintenanceJobRunners: MaintenanceJobRunners = {
+  library_hard_wipe: processLibraryWipeBatch,
+  shutter_source_purge: processShutterSourcePurgeBatch,
+  soft_deleted_purge: processSoftDeletedPurgeBatch,
 };
 
 export async function readCleanupJobStatus(
   { jobId }: { jobId: string },
-  dependencies: MaintenanceWorkerDependencies = defaultMaintenanceWorkerDependencies,
+  database: Database = db,
 ): Promise<CleanupJobStatus | null> {
-  const [job] = await dependencies.database
+  const [job] = await database
     .select({
       completedAt: maintenanceJobs.completedAt,
       error: maintenanceJobs.error,
@@ -161,32 +124,18 @@ export async function readCleanupJobStatus(
     return null;
   }
 
-  // Retired job types (legacy_derivative_cleanup) can still exist as historical
-  // rows. They have no progress contract we can report, so treat them as
-  // absent; the same goes for a row whose progress does not parse for its type.
-  const type = MaintenanceJobTypeSchema.safeParse(job.type);
+  const parsed = parseMaintenanceProgress(job.type, job.progress);
 
-  if (!type.success) {
-    return null;
-  }
-
-  return cleanupJobStatusFor(type.data, job.progress, {
+  // SAFETY: parseMaintenanceProgress's overload ties the progress to job.type.
+  return {
     completedAt: job.completedAt?.toISOString() ?? null,
     error: job.error,
     id: job.id,
+    progress: parsed.ok ? parsed.progress : null,
     startedAt: job.startedAt?.toISOString() ?? null,
     status: job.status,
-  });
-}
-
-function cleanupJobStatusFor<Type extends MaintenanceJobType>(
-  type: Type,
-  rawProgress: JsonValue,
-  base: CleanupJobStatusBase,
-): CleanupJobStatusByType[Type] | null {
-  const parsed = parseMaintenanceProgress(type, rawProgress);
-
-  return parsed.ok ? maintenanceJobHandlers[type].toStatus(base, parsed.progress, type) : null;
+    type: job.type,
+  } as CleanupJobStatus;
 }
 
 export async function resumePendingMaintenanceJobs(
@@ -204,7 +153,7 @@ export async function resumePendingMaintenanceJobs(
     jobs = await dependencies.database
       .select({ id: maintenanceJobs.id })
       .from(maintenanceJobs)
-      .where(inArray(maintenanceJobs.status, [...activeJobStatuses]));
+      .where(inArray(maintenanceJobs.status, [...ACTIVE_MAINTENANCE_JOB_STATUSES]));
   } catch (error) {
     resumeStarted = false;
     throw error;
@@ -254,7 +203,7 @@ export function processMaintenanceJob(
 /**
  * Run one batch under the job's claim: a transaction-scoped advisory lock
  * keyed by the job id, taken on a connection of its own while the batch runs
- * through the pool as before. The in-memory set only keeps this process from
+ * through the pool. The in-memory set only keeps this process from
  * running a job twice; the claim also keeps a second process from running a
  * batch alongside it. Without the claim this resolves "contended".
  */
@@ -277,11 +226,7 @@ async function claimMaintenanceJobBatch(
   });
 }
 
-/**
- * Run one batch of `jobId`. Resolves true when another batch should follow.
- * Exported as an internal seam for cleanup-worker.test.ts; production drives
- * it through processMaintenanceJob.
- */
+/** Run one batch of `jobId`. Resolves true when another batch should follow. */
 export async function processMaintenanceJobBatch(
   jobId: string,
   dependencies: MaintenanceWorkerDependencies = defaultMaintenanceWorkerDependencies,
@@ -310,13 +255,7 @@ export async function processMaintenanceJobBatch(
       .where(and(eq(maintenanceJobs.id, jobId), eq(maintenanceJobs.status, "pending")));
   }
 
-  const type = MaintenanceJobTypeSchema.safeParse(job.type);
-
-  if (!type.success) {
-    return false;
-  }
-
-  return runJobBatch(type.data, jobId, job.progress, dependencies);
+  return runJobBatch(job.type, jobId, job.progress, dependencies);
 }
 
 /**
@@ -334,7 +273,7 @@ async function runJobBatch<Type extends MaintenanceJobType>(
 
   if (!parsed.ok) return failUnrecognisedProgress(jobId, parsed.reason, dependencies);
 
-  return maintenanceJobHandlers[type].run(jobId, parsed.progress, dependencies);
+  return maintenanceJobRunners[type](jobId, parsed.progress, dependencies);
 }
 
 async function failUnrecognisedProgress(
@@ -370,43 +309,21 @@ async function processSoftDeletedPurgeBatch(
         return true;
       }
 
-      if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
+      if (!(await isMaintenanceJobActive(jobId, dependencies.database))) return false;
 
       await dependencies.deleteObjects(rows.map((row) => row.objectKey));
 
       for (const row of rows) {
-        const entryIds = dependencies.database
-          .select({ id: libraryEntries.id })
-          .from(libraryEntries)
-          .where(eq(libraryEntries.mediaObjectId, row.id));
-
-        // Deleting an unshared media row cascades its soft-deleted library entries. Generic
-        // subject state has no foreign key, so remove it explicitly in the same transaction.
-        // A cancel stops the batch before its next media row.
+        // Deleting the media row cascades its soft-deleted library entries, whose
+        // viewer state goes with them. A cancel stops the batch before its next media row.
         // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Each transaction advances the durable cleanup cursor.
         const active = await dependencies.database.transaction(async (tx) => {
-          if (!(await lockActiveMaintenanceJob(tx, jobId))) return false;
+          if (!(await isMaintenanceJobActive(jobId, tx, { lock: true }))) return false;
 
           await tx
             .insert(shutterSourceCleanup)
             .values({ objectKey: row.objectKey, sha256: row.sha256 })
             .onConflictDoNothing();
-          await tx
-            .delete(favorites)
-            .where(
-              and(
-                eq(favorites.subjectType, "library_entry"),
-                inArray(favorites.subjectId, entryIds),
-              ),
-            );
-          await tx
-            .delete(viewerState)
-            .where(
-              and(
-                eq(viewerState.subjectType, "library_entry"),
-                inArray(viewerState.subjectId, entryIds),
-              ),
-            );
           await tx.delete(mediaObjects).where(eq(mediaObjects.id, row.id));
 
           return true;
@@ -428,45 +345,14 @@ async function processSoftDeletedPurgeBatch(
     }
 
     case "db_hard_delete": {
-      const deletedEntryIds = dependencies.database
-        .select({ id: libraryEntries.id })
-        .from(libraryEntries)
-        .where(isNotNull(libraryEntries.deletedAt));
-
       const active = await dependencies.database.transaction(async (tx) => {
-        if (!(await lockActiveMaintenanceJob(tx, jobId))) return false;
+        if (!(await isMaintenanceJobActive(jobId, tx, { lock: true }))) return false;
 
-        await tx
-          .delete(favorites)
-          .where(
-            and(
-              eq(favorites.subjectType, "library_entry"),
-              inArray(favorites.subjectId, deletedEntryIds),
-            ),
-          );
-        await tx
-          .delete(viewerState)
-          .where(
-            and(
-              eq(viewerState.subjectType, "library_entry"),
-              inArray(viewerState.subjectId, deletedEntryIds),
-            ),
-          );
         await tx.delete(libraryEntries).where(isNotNull(libraryEntries.deletedAt));
 
         // A folder row cascades to its child folders, so a deleted folder that
         // still holds anything live (a re-synced file, a live subfolder) stays.
-        const liveEntryFolders = tx
-          .select({ path: libraryEntries.parentPath })
-          .from(libraryEntries)
-          .where(isNull(libraryEntries.deletedAt));
-
-        const liveFolders = tx
-          .select({ path: folders.path })
-          .from(folders)
-          .where(isNull(folders.deletedAt));
-
-        const occupiedPaths = withAncestorPaths(sql`${liveEntryFolders} union ${liveFolders}`);
+        const occupiedPaths = occupiedFolderPaths(tx, { countLiveFolders: true });
 
         await tx
           .delete(folders)
@@ -583,29 +469,16 @@ async function processLibraryWipeBatch(
         return true;
       }
 
-      // Without Shutter there is nothing to purge. Partly configured, the purge
-      // cannot run, so stop before the originals and the rows naming them go.
-      const shutterPurge = dependencies.shutterPurgeReadiness();
-
-      if (shutterPurge === "incomplete") throw new Error(SHUTTER_PURGE_INCOMPLETE_MESSAGE);
-
-      if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
+      if (!(await isMaintenanceJobActive(jobId, dependencies.database))) return false;
 
       await dependencies.deleteObjects(rows.map((row) => row.objectKey));
 
       for (const row of rows) {
         // react-doctor-disable-next-line react-doctor/async-await-in-loop -- A cancel stops the batch before its next purge and delete.
-        if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
+        if (!(await isMaintenanceJobActive(jobId, dependencies.database))) return false;
 
-        try {
-          if (shutterPurge === "ready") {
-            // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stop at the first purge failure so the durable job cursor remains retry-safe.
-            await dependencies.purgeShutterSource({ objectKey: row.objectKey, sha256: row.sha256 });
-          }
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          throw new Error(`Shutter source purge failed: ${reason}`);
-        }
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stop at the first purge failure so the durable job cursor remains retry-safe.
+        await purgeOrQueueShutterCopies(row, dependencies);
 
         // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Delete only after this row's external source purge succeeds.
         await dependencies.database.delete(mediaObjects).where(eq(mediaObjects.id, row.id));
@@ -627,15 +500,15 @@ async function processLibraryWipeBatch(
       const page = await dependencies.listObjectsByPrefix({
         continuationToken: progress.orphanContinuationToken ?? undefined,
         limit: batchSize,
-        prefix: ORPHAN_SWEEP_PREFIX,
+        prefix: ORIGINALS_PREFIX,
       });
 
       if (page.keys.length > 0) {
-        if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
+        if (!(await isMaintenanceJobActive(jobId, dependencies.database))) return false;
 
         await dependencies.deleteObjects(page.keys);
 
-        if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
+        if (!(await isMaintenanceJobActive(jobId, dependencies.database))) return false;
 
         await updateJobProgress(
           jobId,
@@ -663,10 +536,8 @@ async function processLibraryWipeBatch(
 
     case "db_hard_delete": {
       const active = await dependencies.database.transaction(async (tx) => {
-        if (!(await lockActiveMaintenanceJob(tx, jobId))) return false;
+        if (!(await isMaintenanceJobActive(jobId, tx, { lock: true }))) return false;
 
-        await tx.delete(favorites).where(eq(favorites.subjectType, "library_entry"));
-        await tx.delete(viewerState).where(eq(viewerState.subjectType, "library_entry"));
         await tx.delete(syncRunItems);
         await tx.delete(syncRuns);
         await tx.delete(libraryEntries);
@@ -698,11 +569,7 @@ async function purgeQueuedShutterSourceBatch(
   jobId: string,
   dependencies: MaintenanceWorkerDependencies,
 ): Promise<number | "inactive"> {
-  const shutterPurge = dependencies.shutterPurgeReadiness();
-
-  if (shutterPurge === "off") return 0;
-
-  if (shutterPurge === "incomplete") throw new Error(SHUTTER_PURGE_INCOMPLETE_MESSAGE);
+  if (dependencies.purgeShutterSource === null) return 0;
 
   const rows = await dependencies.database
     .select({ objectKey: shutterSourceCleanup.objectKey, sha256: shutterSourceCleanup.sha256 })
@@ -727,15 +594,10 @@ async function purgeQueuedShutterSources(
 ): Promise<boolean> {
   for (const row of rows) {
     // react-doctor-disable-next-line react-doctor/async-await-in-loop -- A cancel stops the batch before its next purge.
-    if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
+    if (!(await isMaintenanceJobActive(jobId, dependencies.database))) return false;
 
-    try {
-      // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Mark each source only after Shutter confirms its purge.
-      await dependencies.purgeShutterSource(row);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      throw new Error(`Shutter source purge failed: ${reason}`);
-    }
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Mark each source only after Shutter confirms its purge.
+    await purgeShutterCopies(row, dependencies);
 
     // react-doctor-disable-next-line react-doctor/async-await-in-loop -- The durable queue advances one confirmed source at a time.
     await dependencies.database
@@ -747,6 +609,40 @@ async function purgeQueuedShutterSources(
   return true;
 }
 
+/**
+ * Purge Shutter's copies of `source` now, or, with Shutter off, queue it for
+ * the next Shutter source purge: what Shutter cached while it was on outlives
+ * the setting, so the source must not be forgotten with its media row.
+ */
+async function purgeOrQueueShutterCopies(
+  source: ShutterPurgeSource,
+  dependencies: MaintenanceWorkerDependencies,
+): Promise<void> {
+  if (dependencies.purgeShutterSource !== null) {
+    await purgeShutterCopies(source, dependencies);
+
+    return;
+  }
+
+  await dependencies.database
+    .insert(shutterSourceCleanup)
+    .values({ objectKey: source.objectKey, sha256: source.sha256 })
+    .onConflictDoNothing();
+}
+
+/** Purge Shutter's copies of `source`, if Shutter is on; a failure fails the batch. */
+async function purgeShutterCopies(
+  source: ShutterPurgeSource,
+  dependencies: MaintenanceWorkerDependencies,
+): Promise<void> {
+  try {
+    await dependencies.purgeShutterSource?.(source);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Shutter source purge failed: ${reason}`, { cause: error });
+  }
+}
+
 /** Mark an active job completed with its final progress; a no-op once it is no longer active. */
 async function completeMaintenanceJob(
   jobId: string,
@@ -756,9 +652,7 @@ async function completeMaintenanceJob(
   await dependencies.database
     .update(maintenanceJobs)
     .set({ completedAt: new Date(), progress, status: "completed" })
-    .where(
-      and(eq(maintenanceJobs.id, jobId), inArray(maintenanceJobs.status, [...activeJobStatuses])),
-    );
+    .where(activeJob(jobId));
 }
 
 /** Mark an active job failed with `message`; a no-op once it is no longer active. */
@@ -770,9 +664,7 @@ async function failMaintenanceJob(
   await dependencies.database
     .update(maintenanceJobs)
     .set({ completedAt: new Date(), error: message, status: "failed" })
-    .where(
-      and(eq(maintenanceJobs.id, jobId), inArray(maintenanceJobs.status, [...activeJobStatuses])),
-    );
+    .where(activeJob(jobId));
 }
 
 async function updateJobProgress(
@@ -780,44 +672,32 @@ async function updateJobProgress(
   progress: MaintenanceJobProgress,
   dependencies: MaintenanceWorkerDependencies,
 ): Promise<void> {
-  await dependencies.database
-    .update(maintenanceJobs)
-    .set({ progress })
-    .where(
-      and(eq(maintenanceJobs.id, jobId), inArray(maintenanceJobs.status, [...activeJobStatuses])),
-    );
+  await dependencies.database.update(maintenanceJobs).set({ progress }).where(activeJob(jobId));
+}
+
+function activeJob(jobId: string) {
+  return and(
+    eq(maintenanceJobs.id, jobId),
+    inArray(maintenanceJobs.status, [...ACTIVE_MAINTENANCE_JOB_STATUSES]),
+  );
 }
 
 /**
- * Lock the job row until `tx` ends and report whether the job is still active,
- * so a cancel either lands before the transaction's deletes or waits for them.
+ * Whether the job is still active. With `lock`, `client` must be a
+ * transaction: the job row stays locked until it ends, so a cancel either
+ * lands before the transaction's deletes or waits for them.
  */
-async function lockActiveMaintenanceJob(
-  tx: Pick<Database, "select">,
-  jobId: string,
-): Promise<boolean> {
-  const [job] = await tx
-    .select({ id: maintenanceJobs.id })
-    .from(maintenanceJobs)
-    .where(
-      and(eq(maintenanceJobs.id, jobId), inArray(maintenanceJobs.status, [...activeJobStatuses])),
-    )
-    .for("update");
-
-  return Boolean(job);
-}
-
 async function isMaintenanceJobActive(
   jobId: string,
-  dependencies: MaintenanceWorkerDependencies,
+  client: Pick<Database, "select">,
+  { lock = false }: { lock?: boolean } = {},
 ): Promise<boolean> {
-  const [job] = await dependencies.database
+  const query = client
     .select({ id: maintenanceJobs.id })
     .from(maintenanceJobs)
-    .where(
-      and(eq(maintenanceJobs.id, jobId), inArray(maintenanceJobs.status, [...activeJobStatuses])),
-    )
-    .limit(1);
+    .where(activeJob(jobId));
+
+  const [job] = lock ? await query.for("update") : await query.limit(1);
 
   return Boolean(job);
 }

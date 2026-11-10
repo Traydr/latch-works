@@ -5,16 +5,17 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
-use std::time::Duration;
 
 use crate::support::{Opened, click, frame, open_shell, scratch, start, wait_until, write_still};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
-    AnyWindowHandle, AppContext as _, Bounds, ElementId, Pixels, TestAppContext, px, size,
+    AnyWindowHandle, AppContext as _, Bounds, ElementId, Entity, Pixels, TestAppContext, px, size,
 };
 use oriel_core_paths::DataRoot;
-use oriel_mode_tidy::TidyPage;
-use oriel_ui::{ActivityJob, ModeId, Toast, ToastExt as _};
+use oriel_mode_tidy::{TidyMode, TidyPage};
+use oriel_ui::{
+    ARM_DELAY, ActivityJob, ModeId, ModeReporter, ShellState, Toast, ToastExt as _, Work,
+};
 
 /// A one-line toast's padding around its own body, and its rule; then a fault's.
 const ONE_LINE_PADDING: (f32, f32) = (13., 7.);
@@ -59,14 +60,23 @@ fn check(
     padding: (f32, f32),
     commands: &[&'static str],
 ) -> Bounds<Pixels> {
-    // What the toast stands on has been measured, and its slide in has run.
-    for _ in 0..12 {
-        frame(cx, handle);
-        cx.executor()
-            .advance_clock(std::time::Duration::from_millis(100));
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-    frame(cx, handle);
+    // What the toast stands on is drawn and measured, and the toast has stayed put since.
+    let still = Cell::new((None, 0));
+    wait_until(cx, handle, "the toast to settle", |cx| {
+        let drawn = bounds(cx, handle, "toast");
+        let ready = drawn.is_some()
+            && commands
+                .iter()
+                .all(|command| bounds(cx, handle, *command).is_some());
+        let (last, frames) = still.get();
+        let frames = if ready && last == drawn {
+            frames + 1
+        } else {
+            0
+        };
+        still.set((drawn, frames));
+        frames >= 3
+    });
     let toast = the_toast(cx, handle, padding);
     let viewport = cx
         .update_window(handle, |_, window, _| window.viewport_size())
@@ -116,7 +126,7 @@ fn a_toast_action_ignores_clicks_just_after_it_appears(cx: &mut TestAppContext) 
     });
     click(cx, handle, "toast-action");
     assert_eq!(undone.get(), 0, "a click as it appears does nothing");
-    cx.executor().advance_clock(Duration::from_millis(700));
+    cx.executor().advance_clock(ARM_DELAY);
     frame(cx, handle);
     click(cx, handle, "toast-action");
     assert_eq!(undone.get(), 1, "a click once it has settled is an Undo");
@@ -128,29 +138,28 @@ fn a_toast_action_ignores_clicks_just_after_it_appears(cx: &mut TestAppContext) 
 fn a_toast_after_the_panel_keeps_its_action_off_pause_and_stop(cx: &mut TestAppContext) {
     let data = DataRoot::at(scratch("toast-panel").join("data")).unwrap();
     start(cx, &data);
-    let Opened { handle, shell } = open_shell(cx, &data);
+    let Opened { handle, shell, .. } = open_shell(cx, &data);
     let state = cx.update(|cx| shell.read(cx).state().clone());
     let jobs = cx.update(|cx| state.read(cx).jobs().clone());
-    jobs.update(cx, |jobs, cx| {
-        jobs.set_jobs(
-            ModeId::View,
-            vec![
-                ActivityJob::new("one", "Pretend job")
-                    .counts(1, 2)
-                    .pausable(true)
-                    .stoppable(true),
-            ],
-            cx,
-        );
-        jobs.set_open(true, cx);
-    });
+    publish(
+        cx,
+        &state,
+        ModeId::View,
+        vec![
+            ActivityJob::new("one", "Pretend job")
+                .counts(1, 2)
+                .pausable(true)
+                .stoppable(true),
+        ],
+    );
+    jobs.update(cx, |jobs, cx| jobs.set_open(true, cx));
     let pause_id = oriel_ui::activity::job_element_id(ModeId::View, "one", "pause");
     wait_until(cx, handle, "the panel's Pause", |cx| {
         bounds(cx, handle, pause_id.clone()).is_some()
     });
     let pause = bounds(cx, handle, pause_id).unwrap();
 
-    jobs.update(cx, |jobs, cx| jobs.set_jobs(ModeId::View, Vec::new(), cx));
+    publish(cx, &state, ModeId::View, Vec::new());
     cx.update_window(handle, |_, window, cx| {
         let toast = Toast::done("Shrank 6 videos").action("Undo", |_, _| {});
         window.show_toast(toast, cx);
@@ -177,8 +186,8 @@ fn a_toast_stands_clear_of_every_command(cx: &mut TestAppContext) {
     std::fs::copy(archive.join("one/copy.webp"), archive.join("two/copy.webp")).unwrap();
     let data = DataRoot::at(root.join("data")).unwrap();
     start(cx, &data);
-    let Opened { handle, shell } = open_shell(cx, &data);
-    let tidy = cx.update(|cx| shell.read(cx).tidy().clone());
+    let Opened { handle, shell, .. } = open_shell(cx, &data);
+    let tidy = cx.update(|cx| shell.read(cx).mode::<TidyMode>().clone());
     let state = cx.update(|cx| shell.read(cx).state().clone());
     state.update(cx, |state, cx| state.go(ModeId::Tidy, cx));
     wait_until(cx, handle, "Tidy's engine", |cx| {
@@ -208,18 +217,16 @@ fn a_toast_stands_clear_of_every_command(cx: &mut TestAppContext) {
         "toggle-sidebar",
     ];
     // The indicator in the bar's free room keeps its spinner and chevron whole, at any count.
-    let jobs = cx.update(|cx| state.read(cx).jobs().clone());
     for (done, total) in [(10, 100), (1000, 2000)] {
-        jobs.update(cx, |jobs, cx| {
-            jobs.set_jobs(
-                ModeId::Sync,
-                vec![
-                    ActivityJob::new("one", "Pretend job").counts(done, total),
-                    ActivityJob::new("two", "Pretend job").counts(1, 2),
-                ],
-                cx,
-            );
-        });
+        publish(
+            cx,
+            &state,
+            ModeId::Sync,
+            vec![
+                ActivityJob::new("one", "Pretend job").counts(done, total),
+                ActivityJob::new("two", "Pretend job").counts(1, 2),
+            ],
+        );
         for (width, height) in [(1320., 860.), (1130., 760.), (960., 640.)] {
             cx.simulate_window_resize(handle, size(px(width), px(height)));
             wait_until(cx, handle, "the indicator", |cx| {
@@ -234,7 +241,7 @@ fn a_toast_stands_clear_of_every_command(cx: &mut TestAppContext) {
             );
         }
     }
-    jobs.update(cx, |jobs, cx| jobs.set_jobs(ModeId::Sync, Vec::new(), cx));
+    publish(cx, &state, ModeId::Sync, Vec::new());
 
     for (width, height) in [(1320., 860.), (960., 640.)] {
         cx.simulate_window_resize(handle, size(px(width), px(height)));
@@ -258,17 +265,16 @@ fn a_toast_stands_clear_of_every_command(cx: &mut TestAppContext) {
 
         // The activity panel, closed and then open with more jobs than it shows at once.
         let jobs = cx.update(|cx| state.read(cx).jobs().clone());
-        jobs.update(cx, |jobs, cx| {
-            jobs.set_jobs(
-                ModeId::Sync,
-                vec![
-                    ActivityJob::new("one", "Pretend job")
-                        .counts(1, 4)
-                        .stoppable(true),
-                ],
-                cx,
-            );
-        });
+        publish(
+            cx,
+            &state,
+            ModeId::Sync,
+            vec![
+                ActivityJob::new("one", "Pretend job")
+                    .counts(1, 4)
+                    .stoppable(true),
+            ],
+        );
         frame(cx, handle);
         check(
             cx,
@@ -277,17 +283,15 @@ fn a_toast_stands_clear_of_every_command(cx: &mut TestAppContext) {
             one_line,
             &[bar, &["activity-indicator"]].concat(),
         );
-        jobs.update(cx, |jobs, cx| {
-            let many = (0..8)
-                .map(|job| {
-                    ActivityJob::new(format!("job-{job}"), "Pretend job")
-                        .counts(1, 4)
-                        .stoppable(true)
-                })
-                .collect();
-            jobs.set_jobs(ModeId::Sync, many, cx);
-            jobs.set_open(true, cx);
-        });
+        let many = (0..8)
+            .map(|job| {
+                ActivityJob::new(format!("job-{job}"), "Pretend job")
+                    .counts(1, 4)
+                    .stoppable(true)
+            })
+            .collect();
+        publish(cx, &state, ModeId::Sync, many);
+        jobs.update(cx, |jobs, cx| jobs.set_open(true, cx));
         frame(cx, handle);
         let panel_commands = &[bar, &["activity-panel", "activity-panel-close"]].concat();
         check(
@@ -324,12 +328,24 @@ fn a_toast_stands_clear_of_every_command(cx: &mut TestAppContext) {
             toast.top() >= px(60.),
             "{case}: {toast:?} reaches the top bar"
         );
-        jobs.update(cx, |jobs, cx| {
-            jobs.set_jobs(ModeId::Sync, Vec::new(), cx);
-            jobs.set_open(false, cx);
-        });
+        publish(cx, &state, ModeId::Sync, Vec::new());
+        jobs.update(cx, |jobs, cx| jobs.set_open(false, cx));
         cx.update_window(handle, |_, window, cx| window.dismiss_toast(cx))
             .unwrap();
         frame(cx, handle);
     }
+}
+
+/// Reports `jobs` as `mode`'s, as the mode would.
+fn publish(
+    cx: &mut TestAppContext,
+    state: &Entity<ShellState>,
+    mode: ModeId,
+    jobs: Vec<ActivityJob>,
+) {
+    let work = Work {
+        jobs,
+        ..Work::default()
+    };
+    cx.update(|cx| ModeReporter::new(state, mode).report(work, cx));
 }

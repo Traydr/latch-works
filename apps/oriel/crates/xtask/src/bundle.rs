@@ -13,33 +13,34 @@
 //!   libvips and libavif sets, fetched first if they are not. Where two sets carry the same file
 //!   (both have dav1d 1.5.4 as `libdav1d.7.dylib`), the first set's copy serves both;
 //! - `Contents/Resources/media-tools`: the pinned ffmpeg and ffprobe, fetched first if they are
-//!   not, through `oriel-tools`' own code, where `oriel-tools` looks for them in a bundle;
+//!   not ([`crate::fetch`]);
 //! - `Contents/Resources/licenses/<set>`: each set's licences and manifest, and the notices for
 //!   Oriel itself, ffmpeg and ffprobe, and the Rust crates in the binary, with `index.json`
 //!   listing them for the About dialog ([`notices`]);
 //! - Electron Oriel's icon, an `Info.plist`, and a signature over the whole: ad hoc, or with the
 //!   identity `ORIEL_MACOS_SIGN_IDENTITY` names, as Electron Oriel's Forge config does.
 //!
-//! `LSMinimumSystemVersion` is the newest macOS any part needs, so the app never starts where a
-//! library it carries would not load. The bundle carries no data: the app keeps everything in
-//! `~/.latch-works/oriel`, as a development build does.
+//! Every place is `oriel_core_paths::Package`'s, which the app reads too, and once the bundle is
+//! made each library and the programs are found in it by the app's own search, and each library
+//! loads. `LSMinimumSystemVersion` is the newest macOS any part needs, so the app never starts
+//! where a library it carries would not load. The bundle carries no data: the app keeps
+//! everything in `~/.latch-works/oriel`, as a development build does.
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result, bail};
+use oriel_core_paths::{APP_NAME, BUNDLE_ID, MAC_EXECUTABLE, NativeSet, Notice, Package, Places};
 
 use crate::libmpv::{self, BuildOptions, sources::DEPLOYMENT_TARGET};
-use crate::notices::{self, Notice};
+use crate::notices;
+use crate::pins;
 use crate::support::{self, capture, compare_versions, is_system, log, read_macho, run_here};
-use crate::vendor::{self, pins};
+use crate::vendor;
 
-pub(crate) const APP_NAME: &str = "Oriel";
-
-const BUNDLE_ID: &str = "dev.traydr.latchworks.oriel";
-
-const EXECUTABLE: &str = "oriel";
+/// The workspace's version, which every crate inherits, xtask included.
+pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub(crate) const ICON_FILE: &str = "oriel.icns";
 
@@ -49,6 +50,8 @@ const SIGN_IDENTITY_VARIABLE: &str = "ORIEL_MACOS_SIGN_IDENTITY";
 /// One set of libraries packed into `Contents/Frameworks`.
 struct PackedSet {
     name: &'static str,
+    /// How the app finds it.
+    native: &'static NativeSet,
     id: String,
     /// The folder its dylibs are in.
     libraries: PathBuf,
@@ -56,31 +59,6 @@ struct PackedSet {
     folder: PathBuf,
     /// The library the app loads from it.
     entry: String,
-}
-
-/// The workspace's version, which every crate inherits, from `[workspace.package]`.
-pub(crate) fn crate_version(workspace: &Path) -> Result<String> {
-    let manifest = fs::read_to_string(workspace.join("Cargo.toml"))?;
-    let section = manifest
-        .split_once("[workspace.package]")
-        .map(|(_, rest)| rest.split_once("\n[").map_or(rest, |(section, _)| section))
-        .context("Cargo.toml has no [workspace.package]")?;
-    section
-        .lines()
-        .find_map(|line| line.strip_prefix("version = \""))
-        .and_then(|rest| rest.strip_suffix('"'))
-        .map(str::to_owned)
-        .context("Cargo.toml's [workspace.package] has no version")
-}
-
-/// The profile the bundle's binary is built with, `[profile.dist]` in the workspace's manifest.
-const PROFILE: &str = "dist";
-
-/// Cargo's target folder, honouring `CARGO_TARGET_DIR` as Cargo does.
-pub(crate) fn target_folder(workspace: &Path) -> PathBuf {
-    std::env::var_os("CARGO_TARGET_DIR")
-        .filter(|value| !value.is_empty())
-        .map_or_else(|| workspace.join("target"), |folder| workspace.join(folder))
 }
 
 fn escape_xml(text: &str) -> String {
@@ -94,7 +72,7 @@ fn info_plist(version: &str, minimum_macos: &str) -> String {
         ("CFBundleDevelopmentRegion", "en"),
         ("CFBundleDisplayName", APP_NAME),
         ("CFBundleName", APP_NAME),
-        ("CFBundleExecutable", EXECUTABLE),
+        ("CFBundleExecutable", MAC_EXECUTABLE),
         ("CFBundleIdentifier", BUNDLE_ID),
         ("CFBundleIconFile", ICON_FILE),
         ("CFBundleInfoDictionaryVersion", "6.0"),
@@ -215,7 +193,7 @@ fn check_links(frameworks: &Path) -> Result<()> {
 /// The newest macOS the binary and the libraries need, and which file needs it.
 fn minimum_macos(binary: &Path, frameworks: &Path) -> Result<(String, String)> {
     let mut floor = (DEPLOYMENT_TARGET.to_owned(), "Oriel".to_owned());
-    let mut files = vec![(EXECUTABLE.to_owned(), binary.to_path_buf())];
+    let mut files = vec![(MAC_EXECUTABLE.to_owned(), binary.to_path_buf())];
     files.extend(
         dylibs_in(frameworks)?
             .into_iter()
@@ -231,17 +209,33 @@ fn minimum_macos(binary: &Path, frameworks: &Path) -> Result<(String, String)> {
     Ok(floor)
 }
 
-/// Loads each set's entry library from the finished bundle, as the app will.
-fn check_loads(frameworks: &Path, sets: &[PackedSet]) -> Result<()> {
+/// Finds each set's entry library and the programs in the finished bundle by the app's own
+/// search, and loads each library, as the app will.
+fn check_loads(package: &Package, sets: &[PackedSet]) -> Result<()> {
+    let places = Places {
+        package: Some(package.clone()),
+        variable: None,
+        development: PathBuf::new(),
+        fallback: None,
+    };
     for set in sets {
-        let path = frameworks.join(&set.entry);
+        let found = set.native.locate_in(&places)?;
+        if found.path.file_name() != Some(set.entry.as_ref()) {
+            bail!(
+                "the app would load {} rather than {}",
+                found.path.display(),
+                set.entry
+            );
+        }
         // SAFETY: loading runs the library's initialisers, which have no preconditions; nothing
         // is called and the library stays loaded until this short-lived process exits.
-        let library = unsafe { libloading::Library::new(&path) }
+        let library = unsafe { libloading::Library::new(&found.path) }
             .with_context(|| format!("{} does not load from the bundle", set.entry))?;
         std::mem::forget(library);
-        log(format!("  {} loads from Contents/Frameworks", set.entry));
+        log(format!("  the app finds and loads {}", set.entry));
     }
+    NativeSet::MEDIA_TOOLS.locate_in(&places)?;
+    log("  the app finds ffmpeg and ffprobe");
     Ok(())
 }
 
@@ -259,11 +253,8 @@ pub fn make() -> Result<PathBuf> {
     if !support::is_mac_arm64() {
         bail!("Oriel is bundled on macOS arm64 only");
     }
-    let workspace = support::workspace();
-    let repository = workspace
-        .ancestors()
-        .nth(2)
-        .context("apps/oriel sits two folders under the repository")?;
+    let workspace = oriel_core_paths::workspace();
+    let repository = &support::repository();
 
     log("1. The LGPL libmpv set");
     let libmpv = libmpv::ensure_libmpv(&BuildOptions::default())?;
@@ -273,52 +264,31 @@ pub fn make() -> Result<PathBuf> {
     let libavif = vendor::ensure(&pins::LIBAVIF)?;
 
     log("\n3. The pinned ffmpeg and ffprobe");
-    let platform = oriel_tools::current_platform();
-    let pin = oriel_tools::pin_for(&platform)
+    let platform = oriel_core_paths::media_tools_platform();
+    let pin = pins::media_tools_for(&platform)
         .with_context(|| format!("no ffmpeg is pinned for {platform}"))?;
-    let media_tools = oriel_tools::ensure_media_tools(&oriel_tools::dev_cache(), pin)?;
-    log(format!(
-        "{} {}",
-        if media_tools.downloaded {
-            "Fetched and verified"
-        } else {
-            "Already intact:"
-        },
-        media_tools.folder.display()
-    ));
+    let media_tools = crate::fetch::ensure_media_tools(pin)?;
 
     log("\n4. The release build, with fat LTO");
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
-    run_here(
-        &cargo,
-        &[
-            "build".as_ref(),
-            "--profile".as_ref(),
-            PROFILE.as_ref(),
-            "-p".as_ref(),
-            "oriel".as_ref(),
-        ],
-        &workspace,
-    )?;
-    let binary = target_folder(&workspace).join(PROFILE).join(EXECUTABLE);
-    let version = crate_version(&workspace)?;
+    let binary = support::build_app()?.join(MAC_EXECUTABLE);
+    let version = VERSION;
 
     log("\n5. The bundle");
-    // In the target folder of the build it packs, so two target folders make two bundles.
-    let bundle_folder = target_folder(&workspace).join("release").join("bundle");
+    let bundle_folder = support::bundle_folder();
     let app = bundle_folder.join(format!("{APP_NAME}.app"));
     let staging = bundle_folder.join(format!(".{APP_NAME}.app.staging"));
     let contents = staging.join("Contents");
-    let frameworks = contents.join("Frameworks");
-    let resources = contents.join("Resources");
+    let package = Package::MacBundle(contents.clone());
+    let frameworks = package.libraries();
+    let resources = package.resources();
     if staging.exists() {
         fs::remove_dir_all(&staging)?;
     }
-    fs::create_dir_all(contents.join("MacOS"))?;
+    fs::create_dir_all(package.executable_folder())?;
     fs::create_dir_all(&frameworks)?;
-    fs::create_dir_all(resources.join("media-tools"))?;
+    fs::create_dir_all(package.media_tools())?;
 
-    let executable = contents.join("MacOS").join(EXECUTABLE);
+    let executable = package.executable_folder().join(MAC_EXECUTABLE);
     copy_executable(&binary, &executable)?;
     // The symbol table is a fifth of the binary, and nothing reads it at run time.
     capture("/usr/bin/strip", &["-x".as_ref(), executable.as_os_str()])?;
@@ -332,6 +302,7 @@ pub fn make() -> Result<PathBuf> {
     let sets = [
         PackedSet {
             name: "libmpv",
+            native: &NativeSet::LIBMPV,
             id: libmpv.id.clone(),
             libraries: libmpv.folder.clone(),
             folder: libmpv.folder.clone(),
@@ -339,6 +310,7 @@ pub fn make() -> Result<PathBuf> {
         },
         PackedSet {
             name: libvips.set.name,
+            native: &NativeSet::LIBVIPS,
             id: libvips.id.clone(),
             libraries: libvips.library_folder(),
             folder: libvips.folder.clone(),
@@ -346,6 +318,7 @@ pub fn make() -> Result<PathBuf> {
         },
         PackedSet {
             name: libavif.set.name,
+            native: &NativeSet::LIBAVIF,
             id: libavif.id.clone(),
             libraries: libavif.library_folder(),
             folder: libavif.folder.clone(),
@@ -354,31 +327,26 @@ pub fn make() -> Result<PathBuf> {
     ];
     let packed = pack_frameworks(&sets, &frameworks)?;
     check_links(&frameworks)?;
-    let licenses = resources.join("licenses");
-    let mut listed = vec![notices::oriel(repository, &licenses, &version)?];
+    let licenses = package.licenses();
+    let mut listed = vec![notices::oriel(repository, &licenses, version)?];
     for set in &sets {
         let folder = licenses.join(set.name);
         support::copy_tree(&set.folder.join("licenses"), &folder)?;
-        fs::copy(
-            set.folder.join("manifest.json"),
-            folder.join("manifest.json"),
-        )?;
+        let manifest = set.folder.join(crate::set::MANIFEST_FILE);
+        fs::copy(&manifest, folder.join(crate::set::MANIFEST_FILE))?;
         listed.push(Notice {
             folder: set.name.into(),
             name: set.name.into(),
             version: set.id.clone(),
-            licence: notices::set_licence(&set.folder.join("manifest.json"))?,
+            licence: notices::set_licence(&manifest)?,
         });
     }
-    listed.push(notices::media_tools(&media_tools.folder, pin, &licenses)?);
+    listed.push(notices::media_tools(&media_tools, pin, &licenses)?);
     listed.push(notices::rust_crates(&workspace, &licenses)?);
-    notices::write_index(&licenses, &version, &listed)?;
+    notices::write_index(&licenses, version, &listed)?;
 
-    for tool in oriel_tools::tool_files(&platform) {
-        copy_executable(
-            &media_tools.folder.join(tool),
-            &resources.join("media-tools").join(tool),
-        )?;
+    for tool in oriel_core_paths::media_tools_files(&platform) {
+        copy_executable(&media_tools.join(tool), &package.media_tools().join(tool))?;
     }
 
     let (floor, needed_by) = minimum_macos(&executable, &frameworks)?;
@@ -387,7 +355,7 @@ pub fn make() -> Result<PathBuf> {
             "  macOS {floor} and later: {needed_by} needs it, above Oriel's own {DEPLOYMENT_TARGET}"
         ));
     }
-    fs::write(contents.join("Info.plist"), info_plist(&version, &floor))?;
+    fs::write(contents.join("Info.plist"), info_plist(version, &floor))?;
 
     let staging_arg: &OsStr = staging.as_os_str();
     run_here(
@@ -422,7 +390,8 @@ pub fn make() -> Result<PathBuf> {
         fs::remove_dir_all(&app)?;
     }
     fs::rename(&staging, &app)?;
-    check_loads(&app.join("Contents").join("Frameworks"), &sets)?;
+    let package = Package::MacBundle(app.join("Contents"));
+    check_loads(&package, &sets)?;
 
     log(format!(
         "\n{}: {}, version {version}, macOS {floor} and later",
@@ -431,9 +400,9 @@ pub fn make() -> Result<PathBuf> {
     ));
     log(format!(
         "  {:>6}  the app",
-        size_of(&app.join("Contents/MacOS"))?
+        size_of(&package.executable_folder())?
     ));
-    let final_frameworks = app.join("Contents").join("Frameworks");
+    let final_frameworks = package.libraries();
     for set in &sets {
         let files: Vec<&String> = packed
             .iter()
@@ -454,7 +423,7 @@ pub fn make() -> Result<PathBuf> {
     }
     log(format!(
         "  {:>6}  ffmpeg and ffprobe",
-        size_of(&app.join("Contents/Resources/media-tools"))?
+        size_of(&package.media_tools())?
     ));
     Ok(app)
 }

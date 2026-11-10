@@ -1,19 +1,10 @@
 //! What the archive's AVIF files are made of, through the vendored libavif: the container and
 //! colour boxes jSquash's encoder writes, no orientation or profile, alpha only where a pixel is
-//! not opaque, and the same bytes every time at one thread. Skips, saying so, until the set is
-//! vendored (`cargo run -p xtask -- vendor libavif`).
+//! not opaque, and the same bytes every time at one thread. Skips locally until the set is
+//! vendored (`cargo run -p xtask -- vendor libavif`), as `oriel_test_archive::require` says.
 
-use oriel_avif::{ARCHIVE_AVIF_OPTIONS, Channels, Libavif, Samples, Still};
-
-fn libavif() -> Option<&'static Libavif> {
-    match Libavif::get() {
-        Ok(libavif) => Some(libavif),
-        Err(error) => {
-            eprintln!("skipped: {error}");
-            None
-        }
-    }
-}
+use oriel_avif::{ARCHIVE_AVIF_OPTIONS, Channels, Samples, Still};
+use oriel_test_archive::libavif;
 
 /// A smooth gradient with some texture, `channels` samples per pixel, alpha from `alpha`.
 fn gradient(width: u32, height: u32, channels: usize, alpha: impl Fn(u32, u32) -> u8) -> Vec<u8> {

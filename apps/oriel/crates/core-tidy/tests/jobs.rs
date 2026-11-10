@@ -1,4 +1,4 @@
-//! Tidy's jobs as glazier-core's queue schedules them: background analysis waits behind work the
+//! Tidy's work as the engine's queue schedules it: background analysis waits behind work the
 //! owner asked for, steps aside when such work arrives with nothing of its own in flight, and
 //! goes on after; a paused job holds its turn and still stops when cancelled; and a root stays
 //! while asked-for work on it waits or runs, while its background analysis is stopped for it to
@@ -6,17 +6,19 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use futures::executor::block_on;
-use gpui_kit::{App, TestAppContext};
 use oriel_core_paths::DataRoot;
+use oriel_core_tidy::AnalysisKind;
 use oriel_core_tidy::TidyEngine;
 use oriel_core_tidy::contract::{FileFilter, FileQuery, FileSortColumn};
-use oriel_core_tidy::passes::fingerprint::pending_fingerprints;
-use oriel_core_tidy::passes::{Media, Progress, Quiet};
-use oriel_runtime::{CancelToken, JobError, PauseToken};
+use oriel_core_tidy::{Media, Progress, Quiet};
+use oriel_runtime::{CancelToken, PauseToken};
+
+use crate::running::{Running, is_cancelled, until};
+use crate::support;
 
 /// A scratch folder under the temp folder, which Tidy's sandbox admits, removed when dropped.
 struct Scratch(PathBuf);
@@ -46,7 +48,7 @@ impl Scratch {
         let data = DataRoot::at(self.0.join("data")).unwrap();
         block_on(TidyEngine::open_with(
             data.clone(),
-            data.tidy().join("catalog.sqlite"),
+            data.tidy_catalog(),
             media,
         ))
         .unwrap()
@@ -57,19 +59,6 @@ impl Drop for Scratch {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
-}
-
-/// Waits, a few milliseconds at a time, until `ready` holds; fails after ten seconds.
-async fn until(cx: &mut TestAppContext, ready: impl Fn(&App) -> bool) {
-    for _ in 0..1000 {
-        if cx.read(|cx| ready(cx)) {
-            return;
-        }
-        cx.background_executor
-            .timer(Duration::from_millis(10))
-            .await;
-    }
-    panic!("gave up waiting");
 }
 
 fn file_count(engine: &TidyEngine, root_id: i64) -> i64 {
@@ -84,118 +73,104 @@ fn file_count(engine: &TidyEngine, root_id: i64) -> i64 {
     .total
 }
 
-#[gpui_kit::test]
-async fn background_analysis_waits_behind_asked_for_work_that_holds_its_root(
-    cx: &mut TestAppContext,
-) {
-    // The work runs on threads of its own, so the test scheduler has to be allowed to wait.
-    cx.executor().allow_parking();
+#[test]
+fn background_analysis_waits_behind_asked_for_work_that_holds_its_root() {
     let scratch = Scratch::new("queue");
     let (archive, files) = scratch.archive();
     let engine = scratch.engine(Media::default());
-    let root = engine.add_root(&archive).await.unwrap();
+    let root = block_on(engine.add_root(&archive)).unwrap();
 
     // A paused scan takes its turn and waits at its first checkpoint, holding it.
-    let scan = cx.update(|cx| engine.start_scan(root.id, cx));
-    scan.update(cx, |job, cx| job.pause(cx));
-    let analysis = cx.update(|cx| engine.start_background_analysis(root.id, cx));
-    analysis.update(cx, |job, cx| job.pause(cx));
-    until(cx, |cx| analysis.read(cx).progress().is_waiting()).await;
-    cx.read(|cx| {
-        assert!(analysis.read(cx).progress().is_background());
-        assert!(scan.read(cx).is_running());
-        assert!(scan.read(cx).progress().is_paused());
-        assert!(!scan.read(cx).progress().is_background());
-    });
-    assert_eq!(engine.queued_jobs(), 1, "the analysis waits; the scan runs");
+    let scan = Running::start(engine.scan(root.id));
+    scan.progress.pause();
+    let analysis = Running::start(engine.analyze(root.id, AnalysisKind::AfterChange));
+    analysis.progress.pause();
+    until("the analysis to wait", || analysis.progress.is_waiting());
+    assert!(analysis.progress.is_background());
+    assert!(scan.is_running());
+    assert!(
+        !scan.progress.is_waiting(),
+        "the analysis waits; the scan runs"
+    );
+    assert!(!scan.progress.is_background());
 
-    // Nothing but work behind it waits: what the pages read, and emptying holding, answer.
-    assert_eq!(engine.roots().await.unwrap().len(), 1);
-    engine.overview(root.id).await.unwrap();
-    engine.empty_holding(root.id).await.unwrap();
+    // Nothing but work behind it waits: what the pages read answers.
+    assert_eq!(block_on(engine.roots()).unwrap().len(), 1);
+    block_on(engine.overview(root.id)).unwrap();
 
-    let refused = engine.remove_root(root.id).await.unwrap_err();
+    let refused = block_on(engine.remove_root(root.id)).unwrap_err();
     assert!(refused.to_string().contains("paused"), "{refused}");
     assert!(engine.check_root_removable(root.id).is_err());
 
-    scan.update(cx, |job, cx| job.resume(cx));
-    until(cx, |cx| !scan.read(cx).is_running()).await;
-    let report = cx.read(|cx| scan.read(cx).value().cloned());
-    assert_eq!(report.expect("the scan finished").files, files);
+    scan.progress.resume();
+    let report = scan.finish().expect("the scan finished");
+    assert_eq!(report.files, files);
     // The analysis has the turn now, paused before it starts.
-    until(cx, |cx| !analysis.read(cx).progress().is_waiting()).await;
-    assert!(cx.read(|cx| analysis.read(cx).is_running()));
-    assert_eq!(engine.queued_jobs(), 0);
+    until("the analysis to take its turn", || {
+        !analysis.progress.is_waiting()
+    });
+    assert!(analysis.is_running());
 
     // Background analysis is only worth finishing for a root that stays: removing the root
     // stops it, paused or not.
-    let roots = engine.remove_root(root.id).await.unwrap();
+    let roots = block_on(engine.remove_root(root.id)).unwrap();
     assert!(roots.is_empty());
-    until(cx, |cx| !analysis.read(cx).is_running()).await;
-    assert!(cx.read(|cx| {
-        analysis
-            .read(cx)
-            .error()
-            .is_some_and(JobError::is_cancelled)
-    }));
+    let stopped = analysis.finish().unwrap_err();
+    assert!(is_cancelled(&stopped), "{stopped:#}");
 }
 
-#[gpui_kit::test]
-async fn a_paused_scan_stops_when_cancelled(cx: &mut TestAppContext) {
-    cx.executor().allow_parking();
+#[test]
+fn a_paused_scan_stops_when_cancelled() {
     let scratch = Scratch::new("paused");
     let (archive, _) = scratch.archive();
     let engine = scratch.engine(Media::default());
-    let root = engine.add_root(&archive).await.unwrap();
+    let root = block_on(engine.add_root(&archive)).unwrap();
 
-    let scan = cx.update(|cx| engine.start_scan(root.id, cx));
-    scan.update(cx, |job, cx| job.pause(cx));
-    until(cx, |cx| {
-        scan.read(cx).progress().phase().starts_with("Walking ")
-    })
-    .await;
+    let scan = Running::start(engine.scan(root.id));
+    scan.progress.pause();
+    until("the walk", || {
+        scan.progress
+            .phases()
+            .iter()
+            .any(|phase| phase.starts_with("Walking "))
+    });
     // Held at the walk's first checkpoint: nothing recorded, and it stays so.
-    cx.background_executor
-        .timer(Duration::from_millis(50))
-        .await;
-    assert!(cx.read(|cx| scan.read(cx).is_running()));
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(scan.is_running());
     assert_eq!(file_count(&engine, root.id), 0);
 
-    scan.update(cx, |job, cx| job.cancel(cx));
-    until(cx, |cx| !scan.read(cx).is_running()).await;
-    cx.read(|cx| {
-        let job = scan.read(cx);
-        assert!(job.error().is_some_and(JobError::is_cancelled));
-        assert!(!job.progress().is_paused());
-    });
+    scan.progress.cancel();
+    let progress = scan.progress.clone();
+    let stopped = scan.finish().unwrap_err();
+    assert!(is_cancelled(&stopped), "{stopped:#}");
+    assert!(!progress.is_paused());
     assert_eq!(file_count(&engine, root.id), 0);
 }
 
 /// A record of what happened, in order, across threads.
 #[derive(Clone, Default)]
-struct Log(Arc<Mutex<Vec<String>>>);
+struct Log(Arc<(Mutex<Vec<String>>, Condvar)>);
 
 impl Log {
     fn push(&self, line: impl Into<String>) {
-        self.0.lock().unwrap().push(line.into());
+        let (lines, pushed) = &*self.0;
+        lines.lock().unwrap().push(line.into());
+        pushed.notify_all();
     }
 
     fn lines(&self) -> Vec<String> {
-        self.0.lock().unwrap().clone()
+        self.0.0.lock().unwrap().clone()
     }
 
-    fn has(&self, line: &str) -> bool {
-        self.lines().iter().any(|seen| seen == line)
-    }
-
+    /// Waits until `line` is pushed; fails after a minute.
     fn wait_for(&self, line: &str) {
-        for _ in 0..2500 {
-            if self.has(line) {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(2));
-        }
-        panic!("never saw {line:?} in {:?}", self.lines());
+        let (lines, pushed) = &*self.0;
+        let (lines, waited) = pushed
+            .wait_timeout_while(lines.lock().unwrap(), Duration::from_secs(60), |lines| {
+                !lines.iter().any(|seen| seen == line)
+            })
+            .unwrap();
+        assert!(!waited.timed_out(), "never saw {line:?} in {lines:?}");
     }
 }
 
@@ -247,27 +222,17 @@ impl Progress for Logged {
 
 #[test]
 fn background_analysis_steps_aside_for_a_scan_and_goes_on_after() {
-    let media = Media::locate();
-    if media.vips.is_none() {
-        eprintln!("skipped: fingerprints need libvips");
-        return;
-    }
     // The clips' fingerprints and loudness are the analysis's work after the stills, where it
     // meets the waiting scan; without the pinned ffmpeg there are none, and it finishes first.
-    if media.ffmpeg.is_none() {
-        eprintln!("skipped: the analysis needs the archive's clips, which need the pinned ffmpeg");
+    let (Some(media), Some(_)) = (support::media(), oriel_test_archive::media_tools()) else {
         return;
-    }
+    };
     let scratch = Scratch::new("step-aside");
     let (archive, _) = scratch.archive();
     let engine = scratch.engine(media);
     let root = block_on(engine.add_root(&archive)).unwrap();
-    let scanned = engine.scan_blocking(root.id, &Quiet::new()).unwrap();
-    assert_eq!(
-        scanned.follow_up.analyze,
-        [root.id],
-        "the scan queues analysis"
-    );
+    let scanned = engine.scan(root.id).run(&Quiet::new()).unwrap();
+    assert!(scanned.analysis_due, "the scan queues analysis");
 
     let log = Log::default();
     std::thread::scope(|scope| {
@@ -277,11 +242,13 @@ fn background_analysis_steps_aside_for_a_scan_and_goes_on_after() {
                 hold_until: Some("scan waits"),
                 ..Logged::new("analysis", &lines)
             };
-            engine.analyze_in_background_blocking(root.id, &progress)
+            engine
+                .analyze(root.id, AnalysisKind::AfterChange)
+                .run(&progress)
         });
         log.wait_for("analysis item");
         let lines = log.clone();
-        let scan = scope.spawn(move || engine.scan_blocking(root.id, &Logged::new("scan", &lines)));
+        let scan = scope.spawn(move || engine.scan(root.id).run(&Logged::new("scan", &lines)));
         scan.join().unwrap().unwrap();
         analysis.join().unwrap().unwrap();
     });
@@ -312,28 +279,31 @@ fn background_analysis_steps_aside_for_a_scan_and_goes_on_after() {
             .any(|line| line == "analysis goes"),
         "the analysis went on after the scan: {lines:?}"
     );
-    let pending = block_on(
-        engine
-            .catalog()
-            .call(move |connection| pending_fingerprints(connection, root.id)),
-    )
-    .unwrap();
-    assert_eq!(pending, 0, "every file got its fingerprint");
+    assert!(
+        !block_on(engine.analysis_due(root.id)).unwrap(),
+        "nothing is left to analyse"
+    );
 }
 
 /// A stand-in for ffmpeg that works for a while on its first run of these `calls`, a pattern over
-/// its arguments, ticking so its progress shows, then does the real thing.
+/// its arguments, ticking so its progress shows (25 ticks), then does the real thing. That run
+/// writes its process id to `pid`.
 #[cfg(unix)]
 fn a_slow_tool(scratch: &Scratch, real: &std::path::Path, calls: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt as _;
     let shim = scratch.0.join("slow-ffmpeg");
-    let (started, ticks) = (scratch.0.join("started"), scratch.0.join("ticks"));
+    let (started, ticks, pid) = (
+        scratch.0.join("started"),
+        scratch.0.join("ticks"),
+        scratch.0.join("pid"),
+    );
     fs::write(
         &shim,
         format!(
-            "#!/bin/sh\ncase \"$*\" in {calls})\n  if [ ! -f '{started}' ]; then\n    : > '{started}'\n    i=0\n    while [ $i -lt 25 ]; do\n      sleep 0.1\n      echo x >> '{ticks}'\n      i=$((i+1))\n    done\n  fi;;\nesac\nexec '{real}' \"$@\"\n",
+            "#!/bin/sh\ncase \"$*\" in {calls})\n  if [ ! -f '{started}' ]; then\n    echo $$ > '{pid}'\n    : > '{started}'\n    i=0\n    while [ $i -lt 25 ]; do\n      sleep 0.1\n      echo x >> '{ticks}'\n      i=$((i+1))\n    done\n  fi;;\nesac\nexec '{real}' \"$@\"\n",
             started = started.display(),
             ticks = ticks.display(),
+            pid = pid.display(),
             real = real.display(),
         ),
     )
@@ -344,42 +314,44 @@ fn a_slow_tool(scratch: &Scratch, real: &std::path::Path, calls: &str) -> PathBu
 
 #[cfg(unix)]
 fn ticks(scratch: &Scratch) -> usize {
-    fs::read(scratch.0.join("ticks")).map_or(0, |bytes| bytes.len())
+    fs::read(scratch.0.join("ticks")).map_or(0, |bytes| bytes.len() / 2)
+}
+
+/// Whether the slow tool's process is stopped, as `ps` sees it.
+#[cfg(unix)]
+fn suspended(scratch: &Scratch) -> bool {
+    let Ok(pid) = fs::read_to_string(scratch.0.join("pid")) else {
+        return false;
+    };
+    std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", pid.trim()])
+        .output()
+        .is_ok_and(|output| output.stdout.starts_with(b"T"))
 }
 
 /// Waits for a piece of asked-for work on a thread of its own, with time for the tool to finish.
 #[cfg(unix)]
-async fn proceeds<T: Send + 'static>(
-    cx: &mut TestAppContext,
-    what: &str,
-    work: impl FnOnce() -> T + Send + 'static,
-) -> T {
+fn proceeds<T: Send + 'static>(what: &str, work: impl FnOnce() -> T + Send + 'static) -> T {
     let handle = std::thread::spawn(work);
-    for _ in 0..6000 {
-        if handle.is_finished() {
-            return handle.join().unwrap();
-        }
-        cx.run_until_parked();
-        cx.background_executor
-            .timer(Duration::from_millis(10))
-            .await;
-    }
-    panic!("{what} still waits behind the paused analysis");
+    until(
+        &format!("{what} to go ahead of the paused analysis"),
+        || handle.is_finished(),
+    );
+    handle.join().unwrap()
 }
 
 /// Pausing background analysis while it is in a tool must not stop what the owner asks for: the
 /// tool finishes its file, the analysis steps aside, and a scan, an Undo and a change each go ahead.
 /// Resumed, the analysis finishes.
 #[cfg(unix)]
-#[gpui_kit::test]
-async fn paused_analysis_in_a_tool_lets_asked_for_work_go_and_resumes(cx: &mut TestAppContext) {
+#[test]
+fn paused_analysis_in_a_tool_lets_asked_for_work_go_and_resumes() {
     use oriel_core_tidy::contract::PlanRequest;
 
-    cx.executor().allow_parking();
-    let media = Media::locate();
-    let Some(ffmpeg) = media.ffmpeg.clone() else {
+    let Some(tools) = oriel_test_archive::media_tools() else {
         return;
     };
+    let (media, ffmpeg) = (Media::locate(), tools.ffmpeg().to_path_buf());
     let scratch = Scratch::new("analysis-in-tool");
     let archive = scratch.0.join("clips-archive");
     assert!(oriel_test_archive::build_shrink_archive(&archive));
@@ -388,8 +360,8 @@ async fn paused_analysis_in_a_tool_lets_asked_for_work_go_and_resumes(cx: &mut T
         ffmpeg: Some(shim),
         ..media
     });
-    let root = engine.add_root(&archive).await.unwrap();
-    engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+    let root = block_on(engine.add_root(&archive)).unwrap();
+    engine.scan(root.id).run(&Quiet::new()).unwrap();
     let files = block_on(engine.list_files(FileQuery {
         filter: FileFilter::root(Some(root.id)),
         sort: FileSortColumn::Path,
@@ -399,84 +371,62 @@ async fn paused_analysis_in_a_tool_lets_asked_for_work_go_and_resumes(cx: &mut T
     }))
     .unwrap();
     let undoable = engine
-        .perform_blocking(
-            PlanRequest::Hold {
-                file_ids: vec![files.rows[0].id],
-            },
-            &Quiet::new(),
-        )
+        .perform(PlanRequest::Hold {
+            file_ids: vec![files.rows[0].id],
+        })
+        .run(&Quiet::new())
         .unwrap();
 
     // The first run from here on is the analysis's own.
     let _ = fs::remove_file(scratch.0.join("started"));
     let _ = fs::remove_file(scratch.0.join("ticks"));
-    let analysis = cx.update(|cx| engine.start_background_analysis(root.id, cx));
-    until(cx, |_| scratch.0.join("started").exists()).await;
-    analysis.update(cx, |job, cx| job.pause(cx));
+    let analysis = Running::start(engine.analyze(root.id, AnalysisKind::AfterChange));
+    until("the analysis's tool", || scratch.0.join("started").exists());
+    analysis.progress.pause();
     let at_pause = ticks(&scratch);
 
     let (scanning, id) = (engine.clone(), root.id);
-    proceeds(cx, "a scan", move || {
-        scanning.scan_blocking(id, &Quiet::new())
-    })
-    .await
-    .unwrap();
+    proceeds("a scan", move || scanning.scan(id).run(&Quiet::new())).unwrap();
     assert!(
         ticks(&scratch) > at_pause,
         "the tool ran on to finish its file"
     );
-    assert!(cx.read(|cx| analysis.read(cx).is_running()));
+    assert!(analysis.is_running());
 
     let (undoing, plan) = (engine.clone(), undoable.applied.plan.id);
-    let undone = proceeds(cx, "an Undo", move || {
-        undoing.undo_plans_blocking(&[plan], &Quiet::new())
+    let undone = proceeds("an Undo", move || {
+        undoing.undo(vec![plan]).run(&Quiet::new())
     })
-    .await
     .unwrap();
     assert!(undone.complete, "{:?}", undone.message);
 
     let (changing, file) = (engine.clone(), files.rows[1].id);
-    let changed = proceeds(cx, "a change", move || {
-        changing.perform_blocking(
-            PlanRequest::Hold {
+    let changed = proceeds("a change", move || {
+        changing
+            .perform(PlanRequest::Hold {
                 file_ids: vec![file],
-            },
-            &Quiet::new(),
-        )
+            })
+            .run(&Quiet::new())
     })
-    .await
     .unwrap();
     assert_eq!(changed.applied.plan.done, 1);
 
-    analysis.update(cx, |job, cx| job.resume(cx));
-    for _ in 0..6000 {
-        cx.run_until_parked();
-        if !cx.read(|cx| analysis.read(cx).is_running()) {
-            break;
-        }
-        cx.background_executor
-            .timer(Duration::from_millis(10))
-            .await;
-    }
-    assert!(
-        cx.read(|cx| analysis.read(cx).value().is_some()),
-        "it finished"
-    );
+    analysis.progress.resume();
+    analysis.finish().expect("it finished");
     let pending = block_on(engine.analysis_due(root.id)).unwrap();
     assert!(!pending, "and nothing is left to analyse");
 }
 
 /// A change the owner paused stays truly suspended, tool and all, and goes on when resumed.
 #[cfg(unix)]
-#[gpui_kit::test]
-async fn a_paused_change_keeps_its_tool_suspended(cx: &mut TestAppContext) {
+#[test]
+fn a_paused_change_keeps_its_tool_suspended() {
     use oriel_core_tidy::contract::{PlanRequest, VideoCodecChoice, VideoQuality};
 
-    cx.executor().allow_parking();
-    let media = Media::locate();
-    let Some(ffmpeg) = media.ffmpeg.clone() else {
+    let Some(tools) = oriel_test_archive::media_tools() else {
         return;
     };
+    let (media, ffmpeg) = (Media::locate(), tools.ffmpeg().to_path_buf());
     let scratch = Scratch::new("change-in-tool");
     let archive = scratch.0.join("clips-archive");
     assert!(oriel_test_archive::build_shrink_archive(&archive));
@@ -485,8 +435,8 @@ async fn a_paused_change_keeps_its_tool_suspended(cx: &mut TestAppContext) {
         ffmpeg: Some(shim),
         ..media
     });
-    let root = engine.add_root(&archive).await.unwrap();
-    engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+    let root = block_on(engine.add_root(&archive)).unwrap();
+    engine.scan(root.id).run(&Quiet::new()).unwrap();
     let files = block_on(engine.list_files(FileQuery {
         filter: FileFilter::root(Some(root.id)),
         sort: FileSortColumn::Path,
@@ -501,45 +451,17 @@ async fn a_paused_change_keeps_its_tool_suspended(cx: &mut TestAppContext) {
         .find(|row| row.rel_path.ends_with("busy.mp4"))
         .unwrap()
         .id;
-    let (_, change) = cx
-        .update(|cx| {
-            engine.perform(
-                PlanRequest::Reencode {
-                    file_ids: vec![busy],
-                    codec: VideoCodecChoice::Av1,
-                    quality: VideoQuality::High,
-                },
-                cx,
-            )
-        })
-        .await
-        .unwrap();
-    until(cx, |_| ticks(&scratch) > 0).await;
-    change.update(cx, |job, cx| job.pause(cx));
-    // A tick written just as the pause arrived lands, then nothing more.
-    cx.background_executor
-        .timer(Duration::from_millis(400))
-        .await;
-    let held_at = ticks(&scratch);
-    cx.background_executor
-        .timer(Duration::from_millis(1200))
-        .await;
-    assert_eq!(ticks(&scratch), held_at, "the tool held still");
-    assert!(cx.read(|cx| change.read(cx).is_running()));
+    let change = Running::start(engine.perform(PlanRequest::Reencode {
+        file_ids: vec![busy],
+        codec: VideoCodecChoice::Av1,
+        quality: VideoQuality::High,
+    }));
+    until("the tool to start", || ticks(&scratch) > 0);
+    change.progress.pause();
+    until("the tool to be suspended", || suspended(&scratch));
+    assert!(change.is_running());
 
-    change.update(cx, |job, cx| job.resume(cx));
-    for _ in 0..6000 {
-        cx.run_until_parked();
-        if !cx.read(|cx| change.read(cx).is_running()) {
-            break;
-        }
-        cx.background_executor
-            .timer(Duration::from_millis(10))
-            .await;
-    }
-    assert!(ticks(&scratch) > held_at, "it went on when resumed");
-    assert!(
-        cx.read(|cx| change.read(cx).value().is_some()),
-        "and finished"
-    );
+    change.progress.resume();
+    change.finish().expect("and finished");
+    assert_eq!(ticks(&scratch), 25, "it went on when resumed");
 }

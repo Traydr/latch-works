@@ -4,8 +4,7 @@
 //! `oriel.mode` = `tidy`, `oriel.tidy.view` = `library`, …).
 //!
 //! Electron Oriel kept these in Chromium's Local Storage, a LevelDB nothing else reads, so Oriel
-//! keeps the same entries in one JSON object of strings instead, `local-storage.json` in
-//! `DataRoot::shell()`.
+//! keeps the same entries in one JSON object of strings instead, `DataRoot::local_storage`.
 //!
 //! A mode remembers its own page here, as Electron Oriel's modes do: Tidy under
 //! `oriel.tidy.view`, for one.
@@ -15,9 +14,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use gpui_kit::{App, Global};
-
-/// The file in the shell's data folder.
-pub const FILE_NAME: &str = "local-storage.json";
 
 /// The entries, and the file they are kept in. One per app, as a GPUI global.
 #[derive(Debug, Default)]
@@ -29,10 +25,10 @@ pub struct LocalStorage {
 impl Global for LocalStorage {}
 
 impl LocalStorage {
-    /// The store kept in `folder`, with what it held last time. A missing file starts empty, and
+    /// The store kept in `file`, with what it held last time. A missing file starts empty, and
     /// so does one that does not parse, which the next write replaces.
-    pub fn open(folder: &Path) -> Self {
-        let file = folder.join(FILE_NAME);
+    pub fn open(file: &Path) -> Self {
+        let file = file.to_path_buf();
         let entries = match std::fs::read_to_string(&file) {
             Ok(text) => parse(&text).unwrap_or_else(|| {
                 log::warn!("{} is not a JSON object; starting empty", file.display());
@@ -76,19 +72,6 @@ impl LocalStorage {
         }
         storage.entries.insert(key.to_string(), value.to_string());
         storage.save();
-    }
-
-    /// Forgets `key` and writes the file.
-    pub fn remove(cx: &mut App, key: &str) {
-        let storage = cx.default_global::<Self>();
-        if storage.entries.remove(key).is_some() {
-            storage.save();
-        }
-    }
-
-    /// The file this store is kept in, if any.
-    pub fn file(&self) -> Option<&Path> {
-        self.file.as_deref()
     }
 
     /// Writes every entry, through a temporary file so a crash mid-write cannot leave half a file.
@@ -154,19 +137,23 @@ mod tests {
         assert!(parse("not json").is_none());
     }
 
-    #[test]
-    fn writes_what_it_reads_back() {
-        let folder = scratch("round-trip");
-        let mut storage = LocalStorage::open(&folder);
-        assert!(storage.entries.is_empty(), "a missing file starts empty");
-        storage
-            .entries
-            .insert("oriel.sidebar".into(), "rail".into());
-        storage.save();
-
-        let text = std::fs::read_to_string(folder.join(FILE_NAME)).unwrap();
+    #[gpui_kit::test]
+    fn writes_what_it_reads_back(cx: &mut gpui_kit::TestAppContext) {
+        let file = scratch("round-trip").join("local-storage.json");
+        cx.update(|cx| {
+            LocalStorage::init(LocalStorage::open(&file), cx);
+            assert_eq!(
+                LocalStorage::get(cx, "oriel.sidebar"),
+                None,
+                "a missing file starts empty"
+            );
+            LocalStorage::set(cx, "oriel.sidebar", "rail");
+        });
+        let text = std::fs::read_to_string(&file).unwrap();
         assert_eq!(text, r#"{"oriel.sidebar":"rail"}"#);
-        let reopened = LocalStorage::open(&folder);
-        assert_eq!(reopened.entries["oriel.sidebar"], "rail");
+        cx.update(|cx| {
+            LocalStorage::init(LocalStorage::open(&file), cx);
+            assert_eq!(LocalStorage::get(cx, "oriel.sidebar"), Some("rail"));
+        });
     }
 }

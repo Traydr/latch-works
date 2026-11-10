@@ -1,7 +1,7 @@
-//! Folders: the folder browser over the gallery (`FolderGridOverlay.tsx`). It shows the opened
-//! folder's children as cards; a click browses into one, a double-click opens it, and on the
-//! opened folder itself each child has Included or Excluded, which a recursive scan follows.
-//! Escape, Close or a click on the scrim closes it.
+//! Folders: the folder browser over the gallery. It shows the opened folder's children as cards; a
+//! click browses into one, a double-click opens it, and on the opened folder itself each child has
+//! Included or Excluded, which a recursive scan follows. Escape, Close or a click on the scrim
+//! closes it.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -14,33 +14,27 @@ use gpui_kit::component::{
 };
 use gpui_kit::{
     App, AppContext as _, ClickEvent, Context, ElementId, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ParentElement as _, Render,
-    Role, SharedString, StatefulInteractiveElement as _, Styled as _, Task, TestSupportExt as _,
-    Window, actions, div, prelude::FluentBuilder as _, px,
+    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, Role,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Task, TestSupportExt as _, Window,
+    div, prelude::FluentBuilder as _, px,
 };
 use oriel_core_domain::FolderNode;
-use oriel_core_index::list_folder_children;
 use oriel_ui::ControlSize as _;
 use oriel_ui::TextRole as _;
+use oriel_ui::shortcuts::KeyTable;
 
+use crate::catalog::list_folder_children;
 use crate::gallery::display_name;
-
-actions!(
-    folder_overlay,
-    [
-        /// Closes the folder browser (Escape).
-        CloseFolderBrowser
-    ]
-);
+use crate::shortcuts::Close;
 
 const KEY_CONTEXT: &str = "FolderBrowser";
 
+pub(crate) const FOLDER_KEYS: KeyTable = oriel_ui::key_table!("Folder list" {
+    "Close" => ["escape" => Close],
+});
+
 pub(crate) fn bind_keys(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new(
-        "escape",
-        CloseFolderBrowser,
-        Some(KEY_CONTEXT),
-    )]);
+    cx.bind_keys(FOLDER_KEYS.bindings(KEY_CONTEXT, cx));
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -68,6 +62,8 @@ pub struct FolderOverlay {
     breadcrumbs: Vec<(PathBuf, SharedString)>,
     folders: Vec<FolderNode>,
     loading: bool,
+    /// Why the folder on show could not be listed.
+    failed: Option<SharedString>,
     excluded: Vec<String>,
     focus: FocusHandle,
     _load: Option<Task<()>>,
@@ -94,6 +90,7 @@ impl FolderOverlay {
             root,
             folders: Vec::new(),
             loading: false,
+            failed: None,
             excluded,
             focus: cx.focus_handle(),
             _load: None,
@@ -111,10 +108,6 @@ impl FolderOverlay {
         &self.folders
     }
 
-    pub fn is_loading(&self) -> bool {
-        self.loading
-    }
-
     /// The opened folder's excluded children, after a toggle was saved.
     pub fn set_excluded(&mut self, excluded: Vec<String>, cx: &mut Context<Self>) {
         self.excluded = excluded;
@@ -125,15 +118,25 @@ impl FolderOverlay {
         self.loading = true;
         let read = folder.clone();
         self._load = Some(cx.spawn(async move |this, cx| {
-            let folders = cx
-                .background_spawn(async move { list_folder_children(&read).unwrap_or_default() })
+            let listed = cx
+                .background_spawn(async move { list_folder_children(&read) })
                 .await;
             this.update(cx, |this, cx| {
-                if this.current == folder {
-                    this.folders = folders;
-                    this.loading = false;
-                    cx.notify();
+                if this.current != folder {
+                    return;
                 }
+                (this.folders, this.failed) = match listed {
+                    Ok(folders) => (folders, None),
+                    Err(error) => {
+                        log::warn!("cannot list the folders in {}: {error}", folder.display());
+                        (
+                            Vec::new(),
+                            Some(format!("Unable to list subfolders: {error}").into()),
+                        )
+                    }
+                };
+                this.loading = false;
+                cx.notify();
             })
             .ok();
         }));
@@ -309,7 +312,11 @@ impl Render for FolderOverlay {
                 .gap_3()
                 .text_body()
                 .text_color(theme.muted_foreground)
-                .child("No subfolders")
+                .child(
+                    self.failed
+                        .clone()
+                        .unwrap_or_else(|| "No subfolders".into()),
+                )
                 .child(
                     Button::new("open-this-folder")
                         .bar_size()
@@ -340,7 +347,7 @@ impl Render for FolderOverlay {
             .occlude()
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus)
-            .on_action(cx.listener(|_, _: &CloseFolderBrowser, _, cx| {
+            .on_action(cx.listener(|_, _: &Close, _, cx| {
                 cx.emit(FolderOverlayEvent::Close);
             }))
             .absolute()

@@ -1,36 +1,39 @@
 import * as z from "zod/mini";
-import type { ResolveRedgifsMediaResponse, ResolvedRedgifsMedia } from "../shared/reddit-media";
+import { isAllowedDownloadUrl } from "../shared/download-policy";
+import { toError } from "../shared/errors";
+import { fetchWithTimeout } from "../shared/fetch";
+import { getUrlFileName } from "../shared/path";
+import type {
+  CollectorResponses,
+  FailedCollectorRequest,
+  RESOLVE_REDGIFS_MEDIA_MESSAGE,
+  ResolvedRedgifsMedia,
+} from "../shared/protocol/collector";
+
+type ResolveRedgifsMediaResponse =
+  | CollectorResponses[typeof RESOLVE_REDGIFS_MEDIA_MESSAGE]
+  | FailedCollectorRequest;
 
 const REDGIFS_TEMPORARY_AUTH_URL = "https://api.redgifs.com/v2/auth/temporary";
 
-const REQUEST_TIMEOUT_MS = 12_000;
-
-type Fetcher = typeof fetch;
-
 const RedgifsAuthResponseSchema = z.object({ token: z.string().check(z.minLength(1)) });
 
-/** RedGIFs only serves a handful of URL fields, and each is optional per gif. */
+/** Each of the RedGIFs URL fields is optional per gif. */
 const RedgifsUrlsSchema = z.object({
   hd: z.optional(z.string()),
   sd: z.optional(z.string()),
-  poster: z.optional(z.string()),
-  thumbnail: z.optional(z.string())
 });
 
-export const RedgifsGifResponseSchema = z.catch(
-  z.object({ gif: z.object({ urls: RedgifsUrlsSchema }) }),
-  { gif: { urls: {} } }
-);
+const RedgifsGifResponseSchema = z.catch(z.object({ gif: z.object({ urls: RedgifsUrlsSchema }) }), {
+  gif: { urls: {} },
+});
 
-export type RedgifsGifResponse = z.infer<typeof RedgifsGifResponseSchema>;
+type RedgifsGifResponse = z.infer<typeof RedgifsGifResponseSchema>;
 
-export async function resolveRedgifsMedia(
-  redgifsId: string,
-  fetcher: Fetcher = fetch
-): Promise<ResolveRedgifsMediaResponse> {
+export async function resolveRedgifsMedia(redgifsId: string): Promise<ResolveRedgifsMediaResponse> {
   try {
     const normalizedId = redgifsId.toLowerCase();
-    const authResponse = await fetchWithTimeout(fetcher, REDGIFS_TEMPORARY_AUTH_URL);
+    const authResponse = await fetchWithTimeout(REDGIFS_TEMPORARY_AUTH_URL);
 
     if (!authResponse.ok) {
       return failed(`temporary authorization returned HTTP ${authResponse.status}`);
@@ -43,15 +46,14 @@ export async function resolveRedgifsMedia(
     }
 
     const gifResponse = await fetchWithTimeout(
-      fetcher,
       `https://api.redgifs.com/v2/gifs/${encodeURIComponent(normalizedId)}?views=yes`,
       {
         headers: {
           authorization: `Bearer ${auth.data.token}`,
           "content-type": "application/json",
-          "x-customheader": `https://www.redgifs.com/watch/${normalizedId}`
-        }
-      }
+          "x-customheader": `https://www.redgifs.com/watch/${normalizedId}`,
+        },
+      },
     );
 
     if (!gifResponse.ok) {
@@ -60,72 +62,35 @@ export async function resolveRedgifsMedia(
 
     const media = parseRedgifsMedia(
       RedgifsGifResponseSchema.parse(await gifResponse.json()),
-      normalizedId
+      normalizedId,
     );
 
     return media ? { ok: true, media } : failed("media lookup did not return a valid MP4 URL");
   } catch (error) {
-    return failed(error instanceof Error ? error.message : "unknown RedGIFs error");
+    return failed(toError(error).message);
   }
 }
 
-export function parseRedgifsMedia(
+function parseRedgifsMedia(
   body: RedgifsGifResponse,
-  redgifsId: string
+  redgifsId: string,
 ): ResolvedRedgifsMedia | null {
   const { urls } = body.gif;
 
-  const originalUrl = [urls.hd, urls.sd].find(isAllowedRedgifsMp4Url);
+  const originalUrl = [urls.hd, urls.sd].find(
+    (url): url is string => url !== undefined && isAllowedDownloadUrl("reddit", url),
+  );
 
   if (originalUrl === undefined) {
     return null;
   }
 
-  const thumbnailUrl = [urls.poster, urls.thumbnail].find(isAllowedRedgifsUrl);
   const fileName = getUrlFileName(originalUrl) || `${redgifsId}.mp4`;
 
   return {
     originalUrl,
-    thumbnailUrl: thumbnailUrl ?? null,
-    fileName: fileName.toLowerCase().endsWith(".mp4") ? fileName : `${redgifsId}.mp4`
+    fileName: fileName.toLowerCase().endsWith(".mp4") ? fileName : `${redgifsId}.mp4`,
   };
-}
-
-function isAllowedRedgifsMp4Url(value: string | undefined): value is string {
-  if (!isAllowedRedgifsUrl(value)) {
-    return false;
-  }
-
-  return new URL(value).pathname.toLowerCase().endsWith(".mp4");
-}
-
-function isAllowedRedgifsUrl(value: string | undefined): value is string {
-  if (value === undefined) {
-    return false;
-  }
-
-  try {
-    const url = new URL(value);
-
-    return (
-      url.protocol === "https:" &&
-      (url.hostname === "redgifs.com" || url.hostname.endsWith(".redgifs.com"))
-    );
-  } catch {
-    return false;
-  }
-}
-
-function getUrlFileName(value: string): string {
-  return decodeURIComponent(new URL(value).pathname.split("/").pop() ?? "");
-}
-
-function fetchWithTimeout(
-  fetcher: Fetcher,
-  input: string,
-  init: RequestInit = {}
-): Promise<Response> {
-  return fetcher(input, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
 }
 
 function failed(message: string): ResolveRedgifsMediaResponse {

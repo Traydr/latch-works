@@ -170,6 +170,8 @@ function usePdfDocument({
           const slot = document.createElement("div");
           slot.className = "relative mx-auto max-w-full overflow-hidden rounded bg-white";
           slot.dataset.pageNumber = String(pageNumber);
+          slot.setAttribute("role", "group");
+          slot.setAttribute("aria-label", `Page ${pageNumber}`);
           container.append(slot);
         }
 

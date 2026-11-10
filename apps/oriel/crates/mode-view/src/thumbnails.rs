@@ -1,29 +1,18 @@
-//! The thumbnail service: a WebP per still and per video, made on the background executor and
-//! kept on disk under `DataRoot::view()/frame-view/thumbnails`, where Electron Oriel keeps its own
-//! under its View folder, and drawn by GPUI's `img()`.
+//! The thumbnail service: a WebP per still and per video, made on the background executor, kept
+//! on disk in `DataRoot::view_thumbnails` and drawn by GPUI's `img()`.
 //!
-//! It follows Electron Oriel's broker (`thumbnailService.ts`, `ThumbnailBrokerService.ts`,
-//! `ThumbnailWorkerRuntime.ts`):
-//! - the same request size, twice the thumbnail size setting;
-//! - the same cache key: the path, the size, the file's `mtimeMs` and length, under `thumb-v2`,
-//!   as SHA-1 hex;
-//! - stills through ImageIO and libwebp at sharp's settings (lossless at effort 0 for PNG, BMP and
-//!   GIF, quality 92 at effort 5 for the rest); videos as a frame a second in from the pinned
-//!   ffmpeg, at quality 82 and effort 4;
-//! - one video worker; the image workers are more than Electron Oriel's (below);
-//! - the gallery's visible tiles before its overscan, and a tile that scrolled away dropped from
-//!   the queue;
-//! - the disk cache pruned to its 5,000 newest files once it passes 5,100. That cap is Electron
-//!   Oriel's, and a known weakness: an archive larger than 5,000 tiles makes its thumbnails
-//!   again on every pass. Oriel keeps it, so its cache stays Electron Oriel's, until a plan
-//!   changes it.
-//!
-//! Electron Oriel also keeps the last 600 WebP files' bytes in memory; here the decoded tiles
-//! are in the gallery's own bounded image cache instead, so that layer has nothing to do.
-//!
-//! Electron Oriel runs half the cores as image workers, 2 to 6, each a process of its own. Here a
-//! worker is a thread, whose cost is the buffers of the one still it decodes, so View runs all
-//! the cores but two, up to 12: the thumbnails come out the same, and sooner.
+//! - The request size is twice the thumbnail size setting.
+//! - The cache key is the item's id (its path, length and modification time) and the request
+//!   size, as SHA-1 hex, so a changed file gets a new thumbnail.
+//! - Stills go through ImageIO (libvips off macOS) and libwebp at sharp's settings (lossless at effort 0 for PNG, BMP
+//!   and GIF, quality 92 at effort 5 for the rest); videos as a frame a second in from the pinned
+//!   ffmpeg, at quality 82 and effort 4.
+//! - One video worker; the image workers are all the cores but two, up to 12 (below).
+//! - The gallery's visible tiles come before its overscan, and a tile that scrolled away is
+//!   dropped from the queue.
+//! - The disk cache is pruned to its 5,000 newest files once it passes 5,100: a known weakness,
+//!   since an archive larger than 5,000 tiles makes its thumbnails again on every pass.
+//! - Decoded tiles live in the gallery's own bounded image cache, not here.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
@@ -34,60 +23,48 @@ use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context as _, Result};
 use gpui_kit::{AppContext as _, Context, SharedString};
+use oriel_core_domain::format::iso_timestamp;
 use oriel_media::still::{self, WebpSettings};
 use oriel_runtime::CancelToken;
 
 use crate::listing::{MediaEntry, MediaKind};
 use crate::media_tools::ViewMediaTools;
 
-/// View's thumbnail size setting by default (`DEFAULT_SETTINGS.thumbnailSize`), in pixels.
+/// View's thumbnail size setting by default, in pixels.
 pub const THUMBNAIL_SIZE: f32 = 220.;
 
-/// Where the thumbnails go in View's folder, as in Electron Oriel's.
-pub const THUMBNAIL_FOLDER: [&str; 2] = ["frame-view", "thumbnails"];
-
-/// `MAX_THUMB_DISK_FILES`: the disk cache is pruned back to this many files…
+/// The disk cache is pruned back to this many files…
 pub const MAX_DISK_FILES: usize = 5000;
-/// …once it holds more than this (`MAX_THUMB_DISK_FILES_BEFORE_PRUNE`).
+/// …once it holds more than this.
 const PRUNE_ABOVE: usize = MAX_DISK_FILES + 100;
 
-/// Bumped when the files change shape, so old ones are never read as new.
-const CACHE_VERSION: &str = "thumb-v2";
+/// Bumped when the files or their keys change shape, so old ones are never read as new.
+const CACHE_VERSION: &str = "thumb-v3";
 
 /// Stills whose thumbnails stay lossless, as sharp is asked for them.
 const LOSSLESS_EXTENSIONS: [&str; 3] = ["png", "bmp", "gif"];
 
-/// `DEFAULT_VIDEO_WORKERS`.
+/// Videos' frames are made one at a time: each is an ffmpeg process.
 const VIDEO_WORKERS: usize = 1;
 
-/// How many failures Diagnostics lists (`MAX_RECENT_FAILURES`).
+/// How many failures Diagnostics lists.
 const RECENT_FAILURES: usize = 10;
 
-/// How many of the service's own events Diagnostics lists (`MAX_RECENT_WORKER_EVENTS`).
+/// How many of the service's own events Diagnostics lists.
 const RECENT_EVENTS: usize = 10;
 
-/// The size thumbnails are made at for a thumbnail size setting: twice it, for a 2× display
-/// (`getThumbnailRequestSize`), within the 64–1024 the media protocol accepts.
+/// The size thumbnails are made at for a thumbnail size setting: twice it, for a 2× display,
+/// within 64 to 1024.
 pub fn request_size(thumbnail_size: f32) -> u32 {
     (thumbnail_size * 2.).round().clamp(64., 1024.) as u32
 }
 
-/// Electron Oriel's cache key for a thumbnail: `sha1("thumb-v2|path|size|mtimeMs|bytes")` in hex,
-/// with `mtimeMs` written as JavaScript writes a number.
-pub fn cache_key(path: &Path, size: u32, modified_ms: f64, file_size: u64) -> String {
-    let source = format!(
-        "{CACHE_VERSION}|{}|{size}|{}|{file_size}",
-        path.display(),
-        js_number(modified_ms)
-    );
-    sha1_smol::Sha1::from(source).digest().to_string()
-}
-
-/// A number as JavaScript's `String(number)` writes one in the range file times fall in: the
-/// shortest digits that read back as the same float, with no `.0` on a whole number. Rust's
-/// `Display` for `f64` does the same below 1e21.
-fn js_number(value: f64) -> String {
-    format!("{value}")
+/// The cache key of the thumbnail of the item with `id` ([`crate::listing::media_id`]) at
+/// `size`: `sha1("thumb-v3|id|size")` in hex.
+pub fn cache_key(id: &str, size: u32) -> String {
+    sha1_smol::Sha1::from(format!("{CACHE_VERSION}|{id}|{size}"))
+        .digest()
+        .to_string()
 }
 
 /// The image workers: every core but two, kept for the main thread and the rest of the app, at
@@ -190,7 +167,7 @@ impl ThumbnailStats {
     }
 }
 
-/// What View's two Diagnostics switches ask of the service (`ThumbnailDebugOptions`): its events
+/// What View's two Diagnostics switches ask of the service: its events
 /// written to the terminal as they happen, and its timings kept.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DebugOptions {
@@ -198,7 +175,7 @@ pub struct DebugOptions {
     pub monitoring: bool,
 }
 
-/// One kind of timing, in milliseconds (`ThumbnailPerformanceAggregateState`).
+/// One kind of timing, in milliseconds.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TimingAggregate {
     pub count: u64,
@@ -214,7 +191,7 @@ impl TimingAggregate {
         self.max_ms = self.max_ms.max(ms);
     }
 
-    /// The mean, to two decimals, as `createTimingAggregateSnapshot` rounds it.
+    /// The mean, to two decimals.
     pub fn average_ms(&self) -> f64 {
         if self.count == 0 {
             return 0.;
@@ -228,9 +205,8 @@ impl TimingAggregate {
     }
 }
 
-/// The service's timings while performance monitoring is on (`ThumbnailBrokerTimings`): a
-/// thumbnail found on disk, one made, and each from the gallery asking to it being ready.
-/// Electron Oriel's memory hits have no counterpart: the gallery's image cache serves those.
+/// The service's timings while performance monitoring is on: a thumbnail found on disk, one made,
+/// and each from the gallery asking to it being ready.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ThumbnailTimings {
     pub disk_hit: TimingAggregate,
@@ -248,7 +224,7 @@ pub struct ThumbnailDiagnostics {
     pub in_flight: usize,
     pub disk_files: usize,
     pub recent_failures: Vec<String>,
-    /// The service's own events, newest last (`recentWorkerEvents`).
+    /// The service's own events, newest last.
     pub recent_events: Vec<String>,
     /// The timings, while performance monitoring is on.
     pub timings: Option<ThumbnailTimings>,
@@ -317,16 +293,17 @@ impl ThumbnailService {
             on_disk: None,
             listing: 0,
         };
-        let tools = service.tools.status();
         service.event(format!(
             "{} image workers and {VIDEO_WORKERS} video worker ready. ffmpeg={} ImageIO=true",
             service.concurrency,
-            tools.available()
+            oriel_tools::MediaTools::shared().is_ok()
         ));
         cx.spawn(async move |this, cx| {
             let left = cx
                 .background_spawn(async move {
-                    let _ = fs::create_dir_all(&folder);
+                    if let Err(error) = fs::create_dir_all(&folder) {
+                        log::warn!("cannot create {}: {error}", folder.display());
+                    }
                     prune_listing(&folder)
                 })
                 .await;
@@ -343,14 +320,6 @@ impl ThumbnailService {
         })
         .detach();
         service
-    }
-
-    pub fn folder(&self) -> &Path {
-        &self.folder
-    }
-
-    pub fn size(&self) -> u32 {
-        self.size
     }
 
     pub fn concurrency(&self) -> usize {
@@ -375,19 +344,19 @@ impl ThumbnailService {
         }
     }
 
-    /// Follows View's Diagnostics switches (`setDebugOptions`).
+    /// Follows View's Diagnostics switches.
     pub fn set_debug(&mut self, debug: DebugOptions) {
         self.debug = debug;
     }
 
     /// Notes one of the service's own events for Diagnostics, and writes it to the terminal while
-    /// debug logging is on, as Electron Oriel's broker writes its worker events.
+    /// debug logging is on.
     fn event(&mut self, message: String) {
         if self.debug.logging {
             eprintln!("[thumbnails] {message}");
         }
         self.recent_events
-            .push_back(format!("{} {message}", timestamp()));
+            .push_back(format!("{} {message}", iso_timestamp(SystemTime::now())));
         while self.recent_events.len() > RECENT_EVENTS {
             self.recent_events.pop_front();
         }
@@ -452,9 +421,9 @@ impl ThumbnailService {
     }
 
     /// The items the gallery wants now: `visible` first, then `nearby` (its overscan). Anything
-    /// queued before and wanted no longer is dropped from the queue, as Electron Oriel aborts
-    /// the request of a tile that scrolled away. A thumbnail the cache's listing has is ready at
-    /// once, and the gallery is told; the rest are drawn differently only once made.
+    /// queued before and wanted no longer is dropped from the queue. A thumbnail the cache's
+    /// listing has is ready at once, and the gallery is told; the rest are drawn differently only
+    /// once made.
     pub fn want(&mut self, visible: &[MediaEntry], nearby: &[MediaEntry], cx: &mut Context<Self>) {
         for entry in self.images.drain(..).chain(self.videos.drain(..)) {
             if matches!(self.slots.get(entry.key()), Some(Slot::Queued)) {
@@ -491,12 +460,7 @@ impl ThumbnailService {
     /// The entry's file, if the cache's listing has it.
     fn on_disk_path(&self, entry: &MediaEntry) -> Option<Arc<Path>> {
         let on_disk = self.on_disk.as_ref()?;
-        let name = file_name(&cache_key(
-            entry.path(),
-            self.size,
-            entry.modified_ms(),
-            entry.size(),
-        ));
+        let name = file_name(&cache_key(entry.id(), self.size));
         on_disk
             .contains(name.as_str())
             .then(|| self.folder.join(name).into())
@@ -515,7 +479,6 @@ impl ThumbnailService {
         self.slots.insert(entry.key().clone(), Slot::Ready(path));
     }
 
-    /// Whether nothing is queued or running.
     pub fn is_idle(&self) -> bool {
         self.images.is_empty()
             && self.videos.is_empty()
@@ -564,7 +527,7 @@ impl ThumbnailService {
         .detach();
     }
 
-    /// Records a job's timings while performance monitoring is on (`recordTiming`).
+    /// Records a job's timings while performance monitoring is on.
     fn time(
         &mut self,
         generation: u64,
@@ -651,7 +614,11 @@ impl ThumbnailService {
     fn fail(&mut self, entry: &MediaEntry, error: &anyhow::Error) -> Slot {
         log::debug!("no thumbnail for {}: {error:#}", entry.path().display());
         self.stats.unavailable += 1;
-        let line = format!("{} {}: {error:#}", timestamp(), entry.name());
+        let line = format!(
+            "{} {}: {error:#}",
+            iso_timestamp(SystemTime::now()),
+            entry.name()
+        );
         self.recent_failures.push_back(line);
         while self.recent_failures.len() > RECENT_FAILURES {
             self.recent_failures.pop_front();
@@ -697,7 +664,7 @@ fn make(
     tools: &ViewMediaTools,
     cancel: &CancelToken,
 ) -> Result<Made, Failure> {
-    let key = cache_key(entry.path(), size, entry.modified_ms(), entry.size());
+    let key = cache_key(entry.id(), size);
     let path: Arc<Path> = folder.join(file_name(&key)).into();
     if path.is_file() {
         return Ok(Made::FromDisk(path));
@@ -706,7 +673,7 @@ fn make(
     let started = Instant::now();
     let bytes = if entry.kind() == MediaKind::Video {
         let frame = tools
-            .extract_video_frame(entry.path(), cancel)
+            .poster_frame(entry.path(), cancel)
             .map_err(|_| Failure::Cancelled)?
             .ok_or_else(|| {
                 Failure::Video(anyhow::anyhow!(
@@ -734,8 +701,8 @@ fn make(
     })
 }
 
-/// sharp's settings in Electron Oriel's worker: lossless at effort 0 for PNG, BMP and GIF, and
-/// quality 92 at effort 5 for the rest.
+/// sharp's settings: lossless at effort 0 for PNG, BMP and GIF, and quality 92 at effort 5 for
+/// the rest.
 fn webp_settings(path: &Path) -> WebpSettings {
     let extension = path
         .extension()
@@ -759,7 +726,7 @@ fn write_atomically(folder: &Path, key: &str, path: &Path, bytes: &[u8]) -> Resu
     Ok(())
 }
 
-/// The cache's files: WebP, and the PNG an older Frame View wrote.
+/// The cache's files, its WebP thumbnails; anything else in the folder is left alone.
 fn cached_files(folder: &Path) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(folder) else {
         return Vec::new();
@@ -770,7 +737,7 @@ fn cached_files(folder: &Path) -> Vec<PathBuf> {
         .map(|entry| entry.path())
         .filter(|path| {
             path.extension()
-                .is_some_and(|extension| extension == "webp" || extension == "png")
+                .is_some_and(|extension| extension == "webp")
         })
         .collect()
 }
@@ -780,21 +747,12 @@ fn file_name(key: &str) -> String {
     format!("{key}.webp")
 }
 
-/// `pruneDiskCache`: deletes the oldest files past [`MAX_DISK_FILES`], by modified time, and
-/// returns how many are left.
-pub fn prune(folder: &Path) -> usize {
-    prune_kept(folder).len()
-}
-
-/// [`prune`], and the names of the WebP files left, which the service looks thumbnails up in.
+/// Deletes the oldest files past [`MAX_DISK_FILES`], by modified time, and returns how many are
+/// left, with the names of the WebP files left, which the service looks thumbnails up in.
 fn prune_listing(folder: &Path) -> (usize, HashSet<Box<str>>) {
     let kept = prune_kept(folder);
     let names = kept
         .iter()
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|extension| extension == "webp")
-        })
         .filter_map(|path| Some(path.file_name()?.to_string_lossy().into()))
         .collect();
     (kept.len(), names)
@@ -813,7 +771,7 @@ fn prune_kept(folder: &Path) -> Vec<PathBuf> {
     dated.sort_by_key(|(modified, _)| *modified);
     let excess = dated.len().saturating_sub(MAX_DISK_FILES);
     for (_, path) in dated.iter().take(excess) {
-        let _ = fs::remove_file(path);
+        remove(path);
     }
     dated
         .into_iter()
@@ -824,70 +782,21 @@ fn prune_kept(folder: &Path) -> Vec<PathBuf> {
 
 fn clear(folder: &Path) {
     for path in cached_files(folder) {
-        let _ = fs::remove_file(path);
+        remove(&path);
     }
 }
 
-/// An ISO 8601 time for Diagnostics' lines, as `appendRecentEntry` stamps them.
-fn timestamp() -> String {
-    let since = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    let seconds = since.as_secs();
-    let (days, rest) = (seconds / 86_400, seconds % 86_400);
-    let (year, month, day) = civil_from_days(days as i64);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
-        rest / 3600,
-        rest % 3600 / 60,
-        rest % 60,
-        since.subsec_millis()
-    )
-}
-
-/// Days since 1970-01-01 to a civil date (Howard Hinnant's algorithm).
-fn civil_from_days(days: i64) -> (i64, u32, u32) {
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let day_of_era = z.rem_euclid(146_097);
-    let year_of_era =
-        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_index = (5 * day_of_year + 2) / 153;
-    let day = (day_of_year - (153 * month_index + 2) / 5 + 1) as u32;
-    let month = if month_index < 10 {
-        month_index + 3
-    } else {
-        month_index - 9
-    } as u32;
-    let year = year_of_era + era * 400 + i64::from(month <= 2);
-    (year, month, day)
+fn remove(path: &Path) {
+    if let Err(error) = fs::remove_file(path)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        log::warn!("cannot delete {}: {error}", path.display());
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn request_size_is_twice_the_setting_within_the_protocols_range() {
-        assert_eq!(request_size(THUMBNAIL_SIZE), 440);
-        assert_eq!(request_size(20.), 64);
-        assert_eq!(request_size(900.), 1024);
-    }
-
-    /// The key `buildThumbCacheKey` gives, from Node:
-    /// `createHash("sha1").update("thumb-v2|/a/b.avif|440|1730000000123.4568|2048")`.
-    #[test]
-    fn keys_thumbnails_as_electron_oriel_does() {
-        assert_eq!(
-            cache_key(Path::new("/a/b.avif"), 440, 1_730_000_000_123.456_8, 2048),
-            "e1f99ab89875c66745dfb6b561a7662609bc7b9c"
-        );
-        assert_eq!(js_number(1_730_000_000_000.0), "1730000000000");
-        // A file Node stats at 1793199880 s and 249688421 ns has `mtimeMs` 1793199880249.6885.
-        let modified_ms = 1_793_199_880_f64 * 1e3 + 249_688_421_f64 / 1e6;
-        assert_eq!(js_number(modified_ms), "1793199880249.6885");
-    }
 
     #[test]
     fn the_disk_cache_keeps_its_newest_five_thousand() {
@@ -907,7 +816,7 @@ mod tests {
                 .unwrap();
         }
         fs::write(folder.join("notes.txt"), b"not a thumbnail").unwrap();
-        assert_eq!(prune(&folder), MAX_DISK_FILES);
+        assert_eq!(prune_listing(&folder).0, MAX_DISK_FILES);
         for oldest in 0..3 {
             assert!(!folder.join(format!("{oldest:05}.webp")).exists());
         }
@@ -916,12 +825,5 @@ mod tests {
         clear(&folder);
         assert_eq!(cached_files(&folder).len(), 0);
         fs::remove_dir_all(&folder).unwrap();
-    }
-
-    #[test]
-    fn timestamps_are_iso_dates() {
-        assert_eq!(civil_from_days(0), (1970, 1, 1));
-        assert_eq!(civil_from_days(20_454), (2026, 1, 1));
-        assert!(timestamp().ends_with('Z'));
     }
 }

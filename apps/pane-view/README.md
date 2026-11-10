@@ -2,7 +2,7 @@
 
 > Private web viewer for a synced personal media archive — responsive on desktop, tablet, and phone.
 
-Pane View is the **web counterpart** to [Frame View](../frame-view). It serves an authenticated gallery backed by PostgreSQL metadata and S3 object storage. The browser UI is read-oriented: catalog writes happen through Lockstep sync APIs, while signed-in users can soft-delete entries from the gallery UI. Content reaches Pane View through [Lockstep](../../apps/lockstep-cli), which scans a local archive and pushes originals to the sync API.
+Pane View is the web viewer of the archive. It serves an authenticated gallery backed by PostgreSQL metadata and S3 object storage. The browser UI is read-oriented: catalog writes happen through Lockstep sync APIs, while signed-in users can soft-delete entries from the gallery UI. Content reaches Pane View through [Lockstep](../../apps/lockstep-cli), which scans a local archive and pushes originals to the sync API.
 
 ## Features
 
@@ -14,8 +14,8 @@ Pane View is the **web counterpart** to [Frame View](../frame-view). It serves a
 - Video playback controls (play/pause, seek, speed)
 - Sort modes: name, date, random
 - Search and detail panel
-- Planned: favorites and per-user viewer resume state (schema hooks exist; UI wiring is incomplete)
-- Shutter-served thumbnails and previews; presigned redirects for originals
+- Resume where you left off in videos and PDFs (optional, per user)
+- Shutter-served thumbnails, previews, and originals; signed bucket URLs without Shutter
 - Sync API for Lockstep push/plan/verify workflows
 
 ## Tech stack
@@ -28,7 +28,7 @@ Pane View is the **web counterpart** to [Frame View](../frame-view). It serves a
 | Database | PostgreSQL + [Drizzle ORM](https://orm.drizzle.team/) |
 | Storage | S3-compatible object storage |
 | Media | Shutter delivery and `pdfjs-dist` |
-| Shared libs | `@latch-works/media-domain`, `media-storage` |
+| Shared libs | `@latch-works/media-domain` |
 
 ## Prerequisites
 
@@ -53,7 +53,7 @@ S3_SECRET_ACCESS_KEY=...
 PANE_VIEW_USERNAME=...
 PANE_VIEW_PASSWORD=...
 PANE_VIEW_SYNC_TOKEN=...           # bearer token for Lockstep, at least 16 characters
-SHUTTER_EDGE_URL=https://...       # optional; leave empty for pass-through delivery
+SHUTTER_EDGE_URL=https://...       # all SHUTTER_* optional together; see below
 SHUTTER_CONTROL_URL=https://...
 SHUTTER_SPACE_ID=...
 SHUTTER_RESOLVER_ID=...            # optional; the Space's S3 resolver for the originals bucket (v2)
@@ -62,13 +62,14 @@ SHUTTER_CAPABILITY_KEYS=...        # Shutter capability-key registry
 SHUTTER_CAPABILITY_KID=...
 ```
 
-The `SHUTTER_*` variables are optional. When `SHUTTER_EDGE_URL` is empty, Pane View runs in
-pass-through mode: thumbnails and previews redirect to signed original URLs served directly from
-S3 storage (no resized variants; video/PDF tiles show placeholders). `/api/health` reports the
-active mode in its `variants` field.
+Shutter is all or nothing. With every `SHUTTER_*` variable unset, Pane View runs in pass-through
+mode: thumbnails and previews are signed original URLs served directly from S3 storage (no
+resized variants; video/PDF tiles show placeholders) and there is nothing for maintenance to
+purge. Set one and all but `SHUTTER_RESOLVER_ID` are required, and the capability key must be
+active for the Space: the server refuses to start on a partial configuration and names what is
+missing. `/api/health` reports the active mode in its `variants` field.
 
-`SHUTTER_EDGE_URL` alone still decides whether Shutter is used at all. With it and
-`SHUTTER_RESOLVER_ID` set, thumbnails and previews are v2 Delivery URLs
+With Shutter on and `SHUTTER_RESOLVER_ID` set, thumbnails and previews are v2 Delivery URLs
 (`/v2/{space}/{resolver}/{shard_a}/{shard_b}/{object}?token=…`): Shutter reads the
 originals bucket through the S3 resolver configured on the Space (read-only key,
 key template `originals/sha256/{shard_a}/{shard_b}/{object}`) and Pane View only
@@ -88,7 +89,7 @@ From the **repo root**:
 
 ```powershell
 pnpm install
-pnpm dev:pane
+pnpm --filter @latch-works/pane-view dev
 ```
 
 Or from this directory:
@@ -105,6 +106,23 @@ The dev server binds to `127.0.0.1` and loads `.env` when present.
 pnpm db:generate   # generate migration from schema changes
 pnpm db:migrate    # apply migrations
 ```
+
+Migrations that rewrite or delete data say so in their header; back up the database before
+applying them to an existing archive. On Railway, every deploy runs `pnpm db:migrate` before the
+new version starts (`.railway/railway.ts`), so deploying a version that adds such a migration
+applies it: take the backup before you deploy, not after.
+
+> **Back up before deploying `0022_drop_dead_schema`.** Deploying the version that adds it runs
+> it, and it destroys data that cannot be rebuilt from the schema. It drops the `api_tokens`,
+> `sources`, `collections`, `collection_items`, and `favorites` tables with any rows they hold,
+> and columns nothing reads (among them `media_objects.width/height/duration_ms/page_count`,
+> `library_entries.sha256/size/metadata`, and `users.password_hash/role`). It deletes rows that
+> hold a removed enum value (`legacy_derivative_cleanup` maintenance jobs and `update`/`keep` sync
+> run items) and viewer state for `collection` subjects or for entries that no longer exist; viewer
+> state then follows its entry through a foreign key. It also rewrites hard-wipe progress written
+> before the Shutter-only architecture. While the migration runs, the old version keeps serving
+> and its queries name the dropped columns, so requests fail until the new version is live. The
+> file header lists every change.
 
 `0021_lowercase_sha256` rewrites rows as well as the schema, so back up the database before
 applying it to an existing archive. It lowercases the stored SHA-256 hashes in `media_objects`,
@@ -142,17 +160,23 @@ Start with `plan` (read-only) or `doctor` to verify connectivity before pushing.
 
 ```text
 src/
-├── routes/              # TanStack Router pages and API routes
-├── features/
-│   ├── gallery/         # Grid, sidebar, viewer modal
-│   ├── comics/          # Comic reader
-│   ├── library/         # Library snapshot service
-│   ├── media/           # Thumbnail/delivery helpers
+├── routes/              # TanStack Router pages and API routes; _authed/ holds owner-only pages
+├── features/            # Browser code, server functions, and each feature's contract
+│                        #   (server/ only through import(); an oxlint rule enforces it)
+│   ├── library/         # Listing contract, listing/snapshot server functions, query keys
+│   ├── gallery/         # Grid, sidebar, browse state and session
+│   ├── viewer/          # Media viewer, video player, PDF viewer, comic reader, viewer state
+│   ├── delivery/        # Delivery contract, the client URL cache, image components
+│   ├── management/      # Maintenance screen, its server functions and contract
+│   ├── stats/           # Archive statistics screen
 │   └── settings/        # Theme, hotkeys, preferences
-├── server/
-│   ├── auth/            # Better Auth + session
-│   ├── db/              # Drizzle schema
-│   └── library/         # PostgreSQL library queries
+├── server/              # Server-only modules, loaded lazily by server functions
+│   ├── auth/            # Better Auth, session, sync token, login throttle
+│   ├── db/              # Drizzle schema, coordination locks, and the sync/maintenance guards
+│   ├── library/         # Listing SQL (keyset paging, comic grouping)
+│   ├── media/           # Source Object storage, Shutter, delivery resolution
+│   ├── management/      # Maintenance jobs, folder delete, library wipe
+│   └── sync/            # The Lockstep sync API (parsed with @latch-works/sync-protocol) and sync runs
 └── components/ui/       # Shared UI primitives
 ```
 

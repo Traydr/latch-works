@@ -1,5 +1,5 @@
-//! WebP through libwebp, the library sharp's `.webp()` wraps, at the settings Electron Oriel's
-//! thumbnail worker passes it (`ThumbnailWorkerRuntime.ts`), and read back for the gallery's tiles.
+//! WebP through libwebp, the library sharp's `.webp()` wraps, at the settings View's thumbnails
+//! were always made at, and read back for the gallery's tiles.
 
 use std::ffi::{c_int, c_void};
 use std::mem::MaybeUninit;
@@ -42,18 +42,6 @@ impl WebpSettings {
             method,
             lossless: true,
         }
-    }
-
-    pub fn quality(&self) -> f32 {
-        self.quality
-    }
-
-    pub fn method(&self) -> i32 {
-        self.method
-    }
-
-    pub fn is_lossless(&self) -> bool {
-        self.lossless
     }
 }
 

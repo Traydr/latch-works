@@ -1,4 +1,4 @@
-//! Tidy's sidebar (`components/Sidebar.tsx`): the folder on screen with its menu, the pages in
+//! Tidy's sidebar: the folder on screen with its menu, the pages in
 //! order under "To do" and "Archive" with their counts, and Holding at the foot. What runs shows
 //! in the shell's activity panel, at the window's bottom right.
 
@@ -11,14 +11,14 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
     prelude::FluentBuilder as _, px,
 };
+use oriel_core_domain::format;
 use oriel_core_tidy::contract::{OptimizeCategory, Root, Tidy};
 use oriel_ui::ModeId;
 use oriel_ui::TextRole as _;
 use oriel_ui::layout::NavItem;
 use oriel_ui::locations::{LocationItem, LocationSwitcher, location_id, shared_locations};
 
-use crate::format;
-use crate::pages::TidyPage;
+use crate::pages::{PageGroup, TidyPage};
 use crate::state::TidyState;
 
 /// The files Convert would change, without the extension fixes Clean up makes.
@@ -38,10 +38,7 @@ pub fn convert_count(tidy: &Tidy) -> i64 {
 
 /// Everything Clean up would do: silent soundtracks, junk, empty folders and wrong extensions.
 pub fn cleanup_count(tidy: &Tidy) -> i64 {
-    tidy.silent_tracks.files
-        + tidy.cleanup.junk
-        + tidy.cleanup.empty_folders
-        + tidy.cleanup.extensions
+    tidy.silent_tracks.files + tidy.cleanup.count()
 }
 
 fn counted(count: i64) -> Option<String> {
@@ -56,8 +53,8 @@ fn nav_item(
     cx: &App,
 ) -> NavItem {
     let current = state.read(cx).page() == page;
-    let tooltip = match page.shortcut() {
-        Some(shortcut) => format!("{}  {shortcut}", page.label()),
+    let tooltip = match page.keys() {
+        Some(keys) => oriel_ui::keys::labelled(page.label(), keys),
         None => page.label().to_string(),
     };
     let target = state.clone();
@@ -135,7 +132,7 @@ fn root_switcher(state: &Entity<TidyState>, root: Option<&Root>, rail: bool) -> 
 /// The switcher's menu, as it is when it opens.
 fn folder_menu(state: &Entity<TidyState>, mut menu: PopupMenu, cx: &App) -> PopupMenu {
     let current = state.read(cx);
-    let shell = current.shell.read(cx);
+    let shell = current.shell().read(cx);
     let root_id = current.root_id();
     for candidate in current.roots() {
         let target = state.clone();
@@ -165,13 +162,15 @@ fn folder_menu(state: &Entity<TidyState>, mut menu: PopupMenu, cx: &App) -> Popu
         },
     );
     let (add, rescan) = (state.clone(), state.clone());
-    menu = menu
-        .separator()
-        .item(
-            oriel_ui::menu_row("Add folder…  ⌘O").on_click(move |_, window, cx| {
-                crate::open_add_folder(&add, window, cx);
-            }),
-        );
+    menu = menu.separator().item(
+        oriel_ui::menu_row(oriel_ui::keys::labelled(
+            "Add folder…",
+            crate::ADD_FOLDER_KEYS,
+        ))
+        .on_click(move |_, window, cx| {
+            crate::open_add_folder(&add, window, cx);
+        }),
+    );
     let Some(root) = current.root() else {
         return menu;
     };
@@ -179,16 +178,18 @@ fn folder_menu(state: &Entity<TidyState>, mut menu: PopupMenu, cx: &App) -> Popu
     let forget = state.clone();
     let (name, root_id) = (root.name.clone(), root.id);
     menu.item(
-        oriel_ui::menu_row("Rescan  ⌘R").on_click(move |_, window, cx| {
-            rescan.update(cx, |state, cx| {
-                if let Some(root_id) = state.root_id() {
-                    state.start_scan(root_id, window, cx);
-                }
-            });
-        }),
+        oriel_ui::menu_row(oriel_ui::keys::labelled("Rescan", crate::RESCAN_KEYS)).on_click(
+            move |_, window, cx| {
+                rescan.update(cx, |state, cx| {
+                    if let Some(root_id) = state.root_id() {
+                        state.start_scan(root_id, window, cx);
+                    }
+                });
+            },
+        ),
     )
     .item(
-        oriel_ui::menu_row("Show in Finder").on_click(move |_, _, cx| {
+        oriel_ui::menu_row(oriel_ui::keys::REVEAL_LABEL).on_click(move |_, _, cx| {
             cx.reveal_path(Path::new(&path));
         }),
     )
@@ -228,25 +229,69 @@ pub(crate) fn confirm_forget(
     });
 }
 
+/// What a page's sidebar item says after its name: how much work it has, or what holding keeps.
+fn badge(state: &TidyState, page: TidyPage) -> Option<String> {
+    match page {
+        TidyPage::Duplicates => {
+            let tidy = state.overview()?;
+            counted(
+                state.duplicate_sets_shown(
+                    tidy.duplicates.similar.sets + tidy.duplicates.exact.sets,
+                ),
+            )
+        }
+        TidyPage::Convert => counted(convert_count(state.overview()?)),
+        TidyPage::CleanUp => counted(cleanup_count(state.overview()?)),
+        // What AV1 would save, not a count: shrinking is optional, and Tidy up leaves it out.
+        TidyPage::Shrink => state
+            .overview()
+            .filter(|tidy| tidy.shrink.files > 0)
+            .map(|tidy| {
+                format!(
+                    "~{}",
+                    format::bytes((tidy.shrink.bytes - tidy.shrink.estimated_bytes) as f64)
+                )
+            }),
+        TidyPage::Holding => state
+            .holding_preview()
+            .filter(|holding| holding.total > 0)
+            .map(|holding| format::bytes(holding.total_bytes)),
+        TidyPage::Overview | TidyPage::Library | TidyPage::History => None,
+    }
+}
+
+/// The items of the pages in `groups`, in the sidebar's order, each group but the first under
+/// its heading.
+fn page_items(
+    state: &Entity<TidyState>,
+    groups: &[PageGroup],
+    rail: bool,
+    window: &Window,
+    cx: &App,
+) -> Vec<AnyElement> {
+    let current = state.read(cx);
+    let mut items = Vec::new();
+    let mut last_group = None;
+    for page in TidyPage::ALL
+        .into_iter()
+        .filter(|page| groups.contains(&page.group()))
+    {
+        let group = page.group();
+        if last_group.is_some_and(|last| last != group)
+            && let Some(label) = group.label()
+        {
+            items.push(group_label(label, rail, window, cx));
+        }
+        last_group = Some(group);
+        items.push(nav_item(state, page, badge(current, page), rail, cx).into_any_element());
+    }
+    items
+}
+
 /// The folder's switcher and the pages, below the mode switcher.
 pub fn navigation(state: &Entity<TidyState>, rail: bool, window: &Window, cx: &App) -> AnyElement {
-    let current = state.read(cx);
-    let tidy = current.overview.data();
-    let root = current.root().cloned();
-    let duplicates = tidy.and_then(|tidy| {
-        counted(
-            current.duplicate_sets_shown(tidy.duplicates.similar.sets + tidy.duplicates.exact.sets),
-        )
-    });
-    let convert = tidy.and_then(|tidy| counted(convert_count(tidy)));
-    let cleanup = tidy.and_then(|tidy| counted(cleanup_count(tidy)));
-    // What AV1 would save, not a count: shrinking is optional, and Tidy up leaves it out.
-    let shrink = tidy.filter(|tidy| tidy.shrink.files > 0).map(|tidy| {
-        format!(
-            "~{}",
-            format::bytes((tidy.shrink.bytes - tidy.shrink.estimated_bytes) as f64)
-        )
-    });
+    let root = state.read(cx).root().cloned();
+    let short_rail = rail && oriel_ui::layout::is_short_rail(window);
     div()
         .flex()
         .flex_col()
@@ -259,40 +304,28 @@ pub fn navigation(state: &Entity<TidyState>, rail: bool, window: &Window, cx: &A
                 .w_full()
                 .gap_0p5()
                 .px_2()
-                .when(rail && oriel_ui::layout::is_short_rail(window), |this| {
-                    this.pt_1()
-                })
-                .when(!(rail && oriel_ui::layout::is_short_rail(window)), |this| {
-                    this.pt_3()
-                })
+                .when(short_rail, |this| this.pt_1())
+                .when(!short_rail, |this| this.pt_3())
                 .when(rail, |this| this.items_center())
-                .child(nav_item(state, TidyPage::Overview, None, rail, cx))
-                .child(group_label("To do", rail, window, cx))
-                .child(nav_item(state, TidyPage::Duplicates, duplicates, rail, cx))
-                .child(nav_item(state, TidyPage::Convert, convert, rail, cx))
-                .child(nav_item(state, TidyPage::CleanUp, cleanup, rail, cx))
-                .child(nav_item(state, TidyPage::Shrink, shrink, rail, cx))
-                .child(group_label("Archive", rail, window, cx))
-                .child(nav_item(state, TidyPage::Library, None, rail, cx))
-                .child(nav_item(state, TidyPage::History, None, rail, cx)),
+                .children(page_items(
+                    state,
+                    &[PageGroup::Home, PageGroup::ToDo, PageGroup::Archive],
+                    rail,
+                    window,
+                    cx,
+                )),
         )
         .into_any_element()
 }
 
-/// The job running, then Holding, above the shell's Settings.
-pub fn footer(state: &Entity<TidyState>, rail: bool, _: &mut Window, cx: &App) -> AnyElement {
-    let current = state.read(cx);
-    let holding = current
-        .holding
-        .data()
-        .filter(|holding| holding.total > 0)
-        .map(|holding| format::bytes(holding.total_bytes));
+/// Holding, above the shell's Settings.
+pub fn footer(state: &Entity<TidyState>, rail: bool, window: &mut Window, cx: &App) -> AnyElement {
     div()
         .flex()
         .flex_col()
         .w_full()
         .gap_0p5()
         .when(rail, |this| this.items_center())
-        .child(nav_item(state, TidyPage::Holding, holding, rail, cx))
+        .children(page_items(state, &[PageGroup::Foot], rail, window, cx))
         .into_any_element()
 }

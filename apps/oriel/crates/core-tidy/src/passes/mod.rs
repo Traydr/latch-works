@@ -1,4 +1,4 @@
-//! The analysis passes, from glazier-core's `passes/`: each selects the files it has not done
+//! The analysis passes: each selects the files it has not done
 //! yet, works on several at once on worker threads, and writes its result back only to a row
 //! that still describes the bytes it read.
 
@@ -13,13 +13,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
-use oriel_runtime::{CancelToken, Cancelled, JobReporter, PauseToken};
-use rusqlite::{Connection, OptionalExtension as _};
+use oriel_runtime::{CancelToken, Cancelled, PauseToken};
 
 use crate::catalog::Catalog;
 use crate::catalog::files::SqlParams;
-use crate::contract::{FileId, RootId};
-use crate::similarity::Vips;
+use crate::contract::RootId;
+use oriel_tools::MediaTools;
+use oriel_vips::Vips;
 
 /// Where a pass reports how far it has got, and learns that it should wait or stop.
 pub trait Progress: Send + Sync {
@@ -59,7 +59,7 @@ pub trait Progress: Send + Sync {
 
     /// Between items, with nothing in flight: waits while the work is paused (and, in the
     /// background, while work the owner asked for runs), and fails once it is cancelled, paused
-    /// or not. glazier-core's `checkpoint`.
+    /// or not.
     fn checkpoint(&self) -> Result<(), Cancelled> {
         match (self.pause_token(), self.cancel_token()) {
             (Some(pause), Some(cancel)) => pause.wait_blocking(cancel),
@@ -69,42 +69,23 @@ pub trait Progress: Send + Sync {
     }
 }
 
-impl Progress for JobReporter {
-    fn phase(&self, label: &str, total: u64) {
-        self.begin_phase(label.to_owned(), total);
-    }
-
-    fn done(&self, done: u64) {
-        self.set_done(done);
-    }
-
-    fn item(&self, item: Option<(&str, Option<f32>)>) {
-        self.set_item(item);
-    }
-
-    fn cancel_token(&self) -> Option<&CancelToken> {
-        Some(JobReporter::cancel_token(self))
-    }
-
-    fn pause_token(&self) -> Option<&PauseToken> {
-        Some(JobReporter::pause_token(self))
-    }
-
-    fn waiting(&self, waiting: bool) {
-        self.set_waiting(waiting);
-    }
-
-    fn background(&self, background: bool) {
-        self.set_background(background);
-    }
-}
-
 /// Progress nobody watches, for tests and one-off runs; it stops when its token is cancelled
-/// and waits while its pause token is paused.
-#[derive(Clone, Debug, Default)]
+/// and waits while its pause token is paused, which also holds its tools unless the work says
+/// it is background work.
+#[derive(Clone, Debug)]
 pub struct Quiet {
     token: CancelToken,
     pause: PauseToken,
+}
+
+impl Default for Quiet {
+    fn default() -> Self {
+        let token = CancelToken::new();
+        Self {
+            pause: PauseToken::holding(&token),
+            token,
+        }
+    }
 }
 
 impl Quiet {
@@ -136,7 +117,7 @@ impl Progress for Quiet {
 }
 
 /// The native tools the passes run: libvips in process, ffmpeg and ffprobe as child processes.
-/// Each is optional, as in glazier-core's toolkit: a pass that needs one that is missing leaves
+/// Each is optional: a pass that needs one that is missing leaves
 /// its files for later rather than recording them as broken.
 #[derive(Clone, Default)]
 pub struct Media {
@@ -146,10 +127,42 @@ pub struct Media {
 }
 
 impl Media {
-    /// libvips, loaded now if it was found but not loaded yet; `None` when it is missing or
-    /// will not load, so the passes leave pictures for later as when it was never found.
+    /// The app's own tools: the process's libvips (8.18.x only), and the pinned ffmpeg and
+    /// ffprobe by [`MediaTools::shared`]. One that cannot be found is left out, with a warning,
+    /// and the passes that need it wait. libvips is loaded the first time something decodes a
+    /// picture (a scan, an analysis, a change), not as Tidy opens.
+    pub fn locate() -> Media {
+        let vips = match crate::similarity::shared_libvips() {
+            Ok(vips) => Some(vips),
+            Err(error) => {
+                log::warn!("Tidy runs without libvips: {error}");
+                None
+            }
+        };
+        let (ffmpeg, ffprobe) = match MediaTools::shared() {
+            Ok(tools) => (
+                Some(tools.ffmpeg().to_path_buf()),
+                Some(tools.ffprobe().to_path_buf()),
+            ),
+            Err(error) => {
+                log::warn!("Tidy runs without ffmpeg and ffprobe: {error}");
+                (None, None)
+            }
+        };
+        Media {
+            vips,
+            ffmpeg,
+            ffprobe,
+        }
+    }
+
+    /// libvips, loaded now if it was found but not loaded yet; `None` when it is missing, will
+    /// not load or is a release Tidy does not read through, so the passes leave pictures for
+    /// later as when it was never found.
     pub fn loaded_vips(&self) -> Option<&Vips> {
-        self.vips.as_deref().filter(|vips| vips.loads())
+        self.vips
+            .as_deref()
+            .filter(|vips| crate::similarity::libvips_loads(vips))
     }
 }
 
@@ -190,7 +203,7 @@ impl PassContext<'_> {
 }
 
 /// How many files a pass that keeps one core busy per file (a libvips decode, an ffmpeg run with
-/// one thread) works on at once: one per core. glazier-core's passes take 3 to 6 at once, which
+/// one thread) works on at once: one per core. Electron Oriel's passes took 3 to 6 at once, which
 /// left most of the cores idle through the analysis (3.1 of 18 busy on the 21k fixture).
 pub fn per_core() -> usize {
     std::thread::available_parallelism().map_or(4, std::num::NonZero::get)
@@ -214,8 +227,7 @@ pub fn for_each_concurrent<T: Sync>(
     })
 }
 
-/// Runs `work` over `items`, at most `concurrency` at a time on worker threads, as glazier-core's
-/// `forEachConcurrent`. The first error stops every lane and is returned; a stop is checked
+/// Runs `work` over `items`, at most `concurrency` at a time on worker threads. The first error stops every lane and is returned; a stop is checked
 /// between items. When the work is paused or asked to step aside, the lanes stop taking items,
 /// those in flight finish, and the checkpoint runs with none in flight, so whatever runs in it
 /// never overlaps them; then the lanes go on from where they were.
@@ -283,60 +295,4 @@ fn run_lanes<T: Sync>(
         }
         first_error.map_or(Ok(()), Err)
     })
-}
-
-/// A row as a pass selected it; the pass works on it only while the catalog still agrees.
-#[derive(Clone, Debug, PartialEq)]
-pub struct SelectedFile {
-    pub id: FileId,
-    pub root_id: RootId,
-    pub rel_path: String,
-    pub size: i64,
-    pub mtime_ms: f64,
-}
-
-/// True when the file's row still has the path, size and mtime the pass selected it with. A
-/// background pass can resume after a change moved, held or converted the file.
-pub fn still_selected(connection: &Connection, file: &SelectedFile) -> anyhow::Result<bool> {
-    let current: Option<(RootId, String, i64, f64)> = connection
-        .query_row(
-            "SELECT root_id, rel_path, size, mtime_ms FROM files WHERE id = ?1",
-            [file.id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        )
-        .optional()?;
-    Ok(current.is_some_and(|(root_id, rel_path, size, mtime_ms)| {
-        root_id == file.root_id
-            && rel_path == file.rel_path
-            && size == file.size
-            && mtime_ms == file.mtime_ms
-    }))
-}
-
-/// The WHERE condition that writes a pass's result only to the row it selected, unchanged.
-pub const SAME_ROW_SQL: &str = "id = $id AND root_id = $root_id AND rel_path = $rel_path
-  AND size = $size AND mtime_ms = $mtime_ms";
-
-pub fn same_row_params(file: &SelectedFile) -> SqlParams {
-    SqlParams::new()
-        .with("id", file.id)
-        .with("root_id", file.root_id)
-        .with("rel_path", file.rel_path.clone())
-        .with("size", file.size)
-        .with("mtime_ms", file.mtime_ms)
-}
-
-/// glazier-core's `message.slice(0, 500)`: at most 500 UTF-16 code units of an error, cut at a
-/// character.
-pub fn error_text(message: &str) -> String {
-    let mut units = 0;
-    let mut end = message.len();
-    for (index, character) in message.char_indices() {
-        units += character.len_utf16();
-        if units > 500 {
-            end = index;
-            break;
-        }
-    }
-    message[..end].to_owned()
 }

@@ -1,19 +1,19 @@
-//! The pictures Tidy's tiles and rows show, as Electron Oriel's `glazier-media://thumb/` serves
-//! them: a still decoded by ImageIO at the size asked for, a video's frame from the pinned ffmpeg.
+//! The pictures Tidy's tiles and rows show: a still decoded by ImageIO at the size asked for, a
+//! video's frame from the pinned ffmpeg.
 //!
 //! They are kept in memory only: the most recently drawn, up to a few hundred and about 200 MB of
 //! pixels (plan 063, decision 23), whichever comes first. An image that goes is released from
-//! GPUI's sprite atlas too, since GPUI keeps every image it was handed otherwise (Phase 0's
-//! findings), and a tile whose image went shows its ground until it is decoded again.
+//! GPUI's sprite atlas too, since GPUI keeps every image it was handed otherwise (measured in
+//! plan 063's spike), and a tile whose image went shows its ground until it is decoded again.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui_kit::{App, Context, RenderImage};
 use oriel_core_tidy::contract::{FileKind, FileRow};
-use oriel_tools::{MediaTools, ToolRun};
+use oriel_tools::{MediaTools, poster_frame};
+use oriel_ui::image_cache::{self, ImageCache, Slot};
 
 /// The most decoded pictures kept; more than any page draws at once.
 const CAPACITY: usize = 400;
@@ -22,9 +22,6 @@ const CAPACITY: usize = 400;
 /// each, so 400 of them came to some 660 MB; at this cap a revisited set decodes again, which
 /// takes under a second.
 const CAPACITY_BYTES: u64 = 200 << 20;
-
-/// Electron Oriel's media tools' timeout.
-const FRAME_TIMEOUT: Duration = Duration::from_secs(12);
 
 /// Stills decode on the background executor, at most this many at once.
 const CONCURRENT: usize = 4;
@@ -35,20 +32,13 @@ const CONCURRENT: usize = 4;
 /// the stills' four, and the Library's typing and scrolling keep their frames.
 const VIDEO_CONCURRENT: usize = 8;
 
-enum Entry {
-    Queued,
-    Loading,
-    Ready(Arc<RenderImage>),
-    Failed,
-}
-
-struct Held {
-    entry: Entry,
-    /// When it was last asked for, on [`Thumbs::clock`].
-    used: u64,
+/// What Tidy keeps beside each picture.
+struct Kept {
     /// The frame that last asked for it, on [`Thumbs::frame`].
     frame: u64,
     video: bool,
+    /// Its decode has started.
+    loading: bool,
 }
 
 /// What a tile shows for a file.
@@ -62,18 +52,14 @@ pub enum Thumb {
 }
 
 pub struct Thumbs {
-    held: HashMap<(PathBuf, u32), Held>,
+    cache: ImageCache<(PathBuf, u32), Kept>,
     loading: usize,
     /// Of `loading`, the videos' frames.
     loading_videos: usize,
-    /// Counts requests, so the order they came in is known.
-    clock: u64,
     /// Counts frames, or rather the bursts of requests one frame's drawing makes: it moves on
     /// once the frame that asked is done.
     frame: u64,
     frame_open: bool,
-    /// The bytes of pixels of the pictures held.
-    bytes: u64,
     /// Decodes finished since Tidy started, the videos among them, and the time they took,
     /// for the pages spike.
     decoded: u64,
@@ -84,13 +70,11 @@ pub struct Thumbs {
 impl Thumbs {
     pub fn new() -> Self {
         Self {
-            held: HashMap::new(),
+            cache: ImageCache::default(),
             loading: 0,
             loading_videos: 0,
-            clock: 0,
             frame: 0,
             frame_open: false,
-            bytes: 0,
             decoded: 0,
             video_frames: 0,
             decode_time: Duration::ZERO,
@@ -101,9 +85,9 @@ impl Thumbs {
     pub fn is_idle(&self) -> bool {
         self.loading == 0
             && !self
-                .held
-                .values()
-                .any(|held| matches!(held.entry, Entry::Queued))
+                .cache
+                .iter()
+                .any(|(_, slot, kept, _)| matches!(slot, Slot::Waiting(_)) && !kept.loading)
     }
 
     /// How many decodes have finished since Tidy started, how many of them were videos' frames,
@@ -115,14 +99,14 @@ impl Thumbs {
     /// Whether the picture for `path` at `size` has been decoded, or has failed, for the pages
     /// spike.
     pub fn is_done(&self, path: &Path, size: u32) -> bool {
-        self.held
-            .get(&(path.to_path_buf(), size))
-            .is_some_and(|held| matches!(held.entry, Entry::Ready(_) | Entry::Failed))
+        self.cache
+            .slot(&(path.to_path_buf(), size))
+            .is_some_and(|slot| matches!(slot, Slot::Ready(_) | Slot::Failed))
     }
 
     /// The pictures held and their pixels' bytes, for the pages spike's memory readings.
     pub fn held(&self) -> (usize, u64) {
-        (self.held.len(), self.bytes)
+        (self.cache.len(), self.cache.bytes())
     }
 
     /// The picture for `row` at `size` pixels on its longer side, asking for it if it is not
@@ -144,28 +128,26 @@ impl Thumbs {
 
     /// The picture for the file at `path`, a video when `video`.
     pub fn path(&mut self, path: &Path, video: bool, size: u32, cx: &mut Context<Self>) -> Thumb {
-        self.clock += 1;
         self.open_frame(cx);
         let key = (path.to_path_buf(), size);
-        if let Some(held) = self.held.get_mut(&key) {
-            held.used = self.clock;
-            held.frame = self.frame;
-            return match &held.entry {
-                Entry::Ready(image) => Thumb::Ready(image.clone()),
-                Entry::Failed => Thumb::Unavailable,
-                Entry::Queued | Entry::Loading => Thumb::Pending,
+        if let Some(slot) = self.cache.touch(&key) {
+            let thumb = match slot {
+                Slot::Ready(image) => Thumb::Ready(image.clone()),
+                Slot::Failed => Thumb::Unavailable,
+                Slot::Waiting(_) => Thumb::Pending,
             };
+            if let Some(kept) = self.cache.meta_mut(&key) {
+                kept.frame = self.frame;
+            }
+            return thumb;
         }
         self.make_room(1, cx);
-        self.held.insert(
-            key,
-            Held {
-                entry: Entry::Queued,
-                used: self.clock,
-                frame: self.frame,
-                video,
-            },
-        );
+        let kept = Kept {
+            frame: self.frame,
+            video,
+            loading: false,
+        };
+        self.cache.wait(key, None, kept);
         self.pump(cx);
         Thumb::Pending
     }
@@ -197,21 +179,25 @@ impl Thumbs {
                 break;
             }
             let Some(key) = self
-                .held
+                .cache
                 .iter()
-                .filter(|(_, held)| {
-                    matches!(held.entry, Entry::Queued) && if held.video { videos } else { stills }
+                .filter(|(_, slot, kept, _)| {
+                    matches!(slot, Slot::Waiting(_))
+                        && !kept.loading
+                        && if kept.video { videos } else { stills }
                 })
-                .max_by(|(_, a), (_, b)| a.frame.cmp(&b.frame).then(b.used.cmp(&a.used)))
-                .map(|(key, _)| key.clone())
+                .max_by(|(_, _, a, a_used), (_, _, b, b_used)| {
+                    a.frame.cmp(&b.frame).then(b_used.cmp(a_used))
+                })
+                .map(|(key, ..)| key.clone())
             else {
                 break;
             };
-            let Some(held) = self.held.get_mut(&key) else {
+            let Some(kept) = self.cache.meta_mut(&key) else {
                 break;
             };
-            held.entry = Entry::Loading;
-            let video = held.video;
+            kept.loading = true;
+            let video = kept.video;
             let (path, size) = key.clone();
             self.loading += 1;
             self.loading_videos += usize::from(video);
@@ -237,25 +223,11 @@ impl Thumbs {
                     this.decoded += 1;
                     this.video_frames += u64::from(video);
                     this.decode_time += took;
-                    match this.held.get_mut(&key) {
-                        // Asked for again after it went, it may have been decoded twice.
-                        Some(held) if !matches!(held.entry, Entry::Ready(_)) => {
-                            held.entry = match image {
-                                Some(image) => {
-                                    this.bytes += pixel_bytes(&image);
-                                    Entry::Ready(image)
-                                }
-                                None => Entry::Failed,
-                            };
-                            // The bytes grew, so the least recently drawn may have to go.
-                            this.make_room(0, cx);
-                        }
-                        _ => {
-                            if let Some(image) = image {
-                                cx.drop_image(image, None);
-                            }
-                        }
-                    }
+                    // Asked for again after it went, it may have been decoded twice.
+                    let unwanted = this.cache.finish(&key, image);
+                    image_cache::release(unwanted, None, cx);
+                    // The bytes grew, so the least recently drawn may have to go.
+                    this.make_room(0, cx);
                     this.pump(cx);
                     cx.notify();
                 })
@@ -269,78 +241,19 @@ impl Thumbs {
     /// held fit [`CAPACITY_BYTES`]. What the last frame drew stays, even past either cap, so a
     /// page that draws more than that never decodes its own pictures over and over.
     fn make_room(&mut self, more: usize, cx: &mut App) {
-        let mut evicted = Vec::new();
-        while self.held.len() + more > CAPACITY || self.bytes > CAPACITY_BYTES {
-            let frame = self.frame;
-            let Some(oldest) = self
-                .held
-                .iter()
-                .filter(|(_, held)| held.frame + 1 < frame)
-                .min_by_key(|(_, held)| held.used)
-                .map(|(key, _)| key.clone())
-            else {
-                break;
-            };
-            if let Some(Held {
-                entry: Entry::Ready(image),
-                ..
-            }) = self.held.remove(&oldest)
-            {
-                self.bytes -= pixel_bytes(&image);
-                evicted.push(image);
-            }
-        }
-        if !evicted.is_empty() {
-            // Pictures are asked for while a frame is drawn, and GPUI lends the window out for
-            // the draw, so `drop_image` would miss its atlas and the texture would stay there
-            // for good. Once the frame is done the window is back and the atlas lets go.
-            cx.defer(move |cx| {
-                for image in evicted {
-                    cx.drop_image(image, None);
-                }
-            });
-        }
+        let frame = self.frame;
+        let evicted = self.cache.evict(
+            |held, bytes| held + more > CAPACITY || bytes > CAPACITY_BYTES,
+            |_, kept| kept.frame + 1 >= frame,
+        );
+        image_cache::release_after_frame(evicted, cx);
     }
 }
 
-/// The bytes of a decoded picture's pixels.
-fn pixel_bytes(image: &RenderImage) -> u64 {
-    let size = image.size(0);
-    size.width.0.unsigned_abs() as u64 * size.height.0.unsigned_abs() as u64 * 4
-}
-
-/// One frame of a video, a second in or else its first, as PNG bytes from the pinned ffmpeg
-/// (`extractVideoFrame`).
-///
-/// The PNG is compressed at zlib's quickest level, not ffmpeg's default: it only crosses a pipe
-/// to be decoded at once, and decodes to the same pixels, while the default's compression of a
-/// full-size frame took most of the run. Stored outright it would be a little quicker still, but
-/// five times the size, and the allocator keeps what such frames leave behind.
+/// One frame of a video from the pinned ffmpeg, as PNG bytes.
 fn video_frame(path: &Path) -> Option<Vec<u8>> {
-    static TOOLS: OnceLock<Option<MediaTools>> = OnceLock::new();
-    let tools = TOOLS.get_or_init(|| MediaTools::locate().ok()).as_ref()?;
-    for start in ["00:00:01", "00:00:00"] {
-        let output = ToolRun::new(tools.ffmpeg(), FRAME_TIMEOUT)
-            .args(["-hide_banner", "-loglevel", "error", "-ss", start, "-i"])
-            .arg(path)
-            .args([
-                "-frames:v",
-                "1",
-                "-f",
-                "image2pipe",
-                "-vcodec",
-                "png",
-                "-compression_level",
-                "1",
-                "pipe:1",
-            ])
-            .run()
-            .ok()?;
-        if output.success() && !output.stdout.is_empty() {
-            return Some(output.stdout);
-        }
-    }
-    None
+    let tools = MediaTools::shared().ok()?;
+    poster_frame(tools.ffmpeg(), path, None).ok()
 }
 
 /// A file's picture filling its box: the thumbnail fitted as `fit` says, or the file's icon on

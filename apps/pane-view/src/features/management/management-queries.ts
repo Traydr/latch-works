@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { librarySnapshotKeys } from "../library/library-queries";
+import { invalidateLibraryContent } from "../library/library-queries";
 import {
   cancelAllRunningSyncRuns,
   cancelCleanupJob,
@@ -97,7 +97,7 @@ export function useDeleteFoldersMutation() {
     mutationFn: (folderPaths: string[]) => deleteFolders({ data: { folderPaths } }),
     onSuccess: () => {
       void invalidate();
-      void queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all });
+      void invalidateLibraryContent(queryClient);
     },
   });
 }
@@ -133,7 +133,7 @@ export function useWipeLibraryMutation() {
       wipeLibrary({ data: input }),
     onSuccess: () => {
       void invalidate();
-      void queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all });
+      void invalidateLibraryContent(queryClient);
     },
   });
 }
@@ -146,7 +146,7 @@ export function usePurgeSoftDeletedItemsMutation() {
     mutationFn: () => purgeSoftDeletedItems(),
     onSuccess: () => {
       void invalidate();
-      void queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all });
+      void invalidateLibraryContent(queryClient);
     },
   });
 }

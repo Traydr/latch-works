@@ -1,21 +1,21 @@
-//! Similar groups, from glazier-core's `similarity/group.ts`: files whose fingerprints say they
+//! Similar groups: files whose fingerprints say they
 //! show the same picture or the same footage, however they were encoded.
 //!
-//! The thresholds were measured on the owner's library and are glazier-core's exactly. Which
+//! The thresholds were measured on the owner's library and are Electron Oriel's exactly. Which
 //! file becomes a group's first member and which link sets its distance follow the order
-//! glazier-core walks its JavaScript `Map`s in, insertion order, so the groups here equal its
+//! Electron Oriel walked its JavaScript `Map`s in, insertion order, so the groups here equal its
 //! groups member for member; `IndexMap` keeps that order.
 
 use std::collections::HashMap;
 use std::hash::Hash;
 
 use indexmap::IndexMap;
+use oriel_core_domain::number::{js_round, v8_log};
 use serde::{Deserialize, Serialize};
 
 use super::fingerprint::Fingerprint;
 use super::phash::Hash64;
 use crate::contract::{FileId, SimilarityLevel};
-use crate::number::{js_round, v8_log};
 
 /// Two prints can match only when their aspect ratios differ by less than about 3%.
 const ASPECT_TOLERANCE: f64 = 0.03;
@@ -103,7 +103,7 @@ pub fn group_similar_files(
     let mut stills = Stills::default();
     let mut motions = Vec::new();
     for file in files {
-        // `!(aspect > 0)` in glazier-core, which NaN also fails.
+        // NaN is no aspect either.
         if file.aspect.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater)
             || !file.aspect.is_finite()
         {
@@ -273,7 +273,7 @@ fn cluster_within_aspect_bins<T: Entry>(
     sets.clusters()
 }
 
-/// Union–find over ids, tracking the largest link distance in each set. It keeps glazier-core's
+/// Union–find over ids, tracking the largest link distance in each set. It keeps Electron Oriel's
 /// order: ids in the order first seen, and each set's root the one its first union named.
 #[derive(Debug)]
 pub struct DisjointSets<K> {

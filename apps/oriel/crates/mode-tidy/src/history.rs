@@ -1,20 +1,22 @@
-//! History (`views/HistoryView.tsx`): every change Tidy made to the folder, newest first, by
+//! History: every change Tidy made to the folder, newest first, by
 //! day, with what it did and its Undo. Duplicate decisions made one after another read as one
-//! entry, which opens to list its sets, each with a picture of what stayed and its own Undo
-//! (`ResolveSets`); any other entry opens to list its first steps, and all of them on asking
-//! (`PlanSteps`). U undoes the entry in focus, all of its changes at once.
+//! entry, which opens to list its sets, each with a picture of what stayed and its own Undo;
+//! any other entry opens to list its first steps, and all of them on asking.
+//! U undoes the entry in focus, all of its changes at once.
 //!
 //! Sets marked as not duplicates ("Keep both", "Keep all") are duplicate decisions too, though
 //! no plan records them: the catalog's dismissals are read beside the journal and listed among
-//! the plans by when they were made, and their Undo brings the set back to review. Electron
-//! Oriel lists them in Duplicates' "Not duplicates" instead, which the owner left out.
+//! the plans by when they were made, and their Undo brings the set back to review (the owner's
+//! choice over a separate "Not duplicates" list in Duplicates).
 //!
 //! The log is drawn a screen at a time ([`crate::windowed`]): a day's heading, each entry, and
 //! the button for earlier changes are items of one column, each entry drawing its part of its
 //! day's card.
 
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -26,29 +28,28 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription,
     TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
-use oriel_core_tidy::contract::{DuplicateDismissal, RootId};
+use oriel_core_domain::format;
+use oriel_core_tidy::contract::DuplicateDismissal;
 use oriel_ui::TextRole as _;
+use oriel_ui::ToastExt as _;
 use oriel_ui::focus::FocusReveal;
 use oriel_ui::{ControlSize as _, Toast, TopBar};
 
 use crate::actions::{PerformOptions, describe_plan};
-use crate::changes::{
-    HoldingItem, HoldingRequest, PlanId, PlanKind, PlanListRequest, PlanStatus, PlanStepAction,
-    PlanStepPage, PlanStepsRequest, PlanSummary, StepStatus, can_undo,
-};
-use crate::format;
-use crate::loaded::Loaded;
+use crate::labels::{file_name, relative_to};
+use crate::loaded::{Loaded, PageReads};
 use crate::pages::TidyPage;
 use crate::state::TidyState;
 use crate::thumbs::{Thumb, Thumbs};
 use crate::widgets;
 use crate::windowed::{Piece, Windowed};
+use oriel_core_tidy::TidyEngine;
+use oriel_core_tidy::contract::{
+    HoldingItem, HoldingRequest, MAX_HISTORY_ROWS, PlanId, PlanKind, PlanListRequest, PlanStatus,
+    PlanStep, PlanStepAction, PlanStepPage, PlanStepsRequest, PlanSummary, RootId, StepStatus,
+};
 
 const PAGE: usize = 200;
-
-/// Opens the newest entry once the log is read, for a check in a real window, since this Mac
-/// allows no scripted clicks.
-const OPEN_VARIABLE: &str = "ORIEL_HISTORY_OPEN";
 
 /// Duplicate decisions made within this long of each other read as one session.
 const SESSION_GAP_MS: f64 = 10. * 60_000.;
@@ -56,11 +57,8 @@ const SESSION_GAP_MS: f64 = 10. * 60_000.;
 /// Steps an entry lists when it opens, before "Show all".
 const PREVIEW_STEPS: usize = 8;
 
-/// Steps read at a time once all are asked for.
-const STEP_PAGE: usize = 500;
-
-/// Held files read to find what each set of a run of duplicate decisions kept.
-const HELD_LIMIT: i64 = 500;
+/// Steps each "Show all" adds.
+const STEP_PAGE: usize = MAX_HISTORY_ROWS as usize;
 
 /// What the log lists: a plan from the journal, or a set marked as not duplicates.
 #[derive(Clone)]
@@ -80,7 +78,7 @@ impl Decision {
     /// A dismissal can always be taken back; a plan, while its changes stand.
     fn undoable(&self) -> bool {
         match self {
-            Self::Plan(plan) => can_undo(plan),
+            Self::Plan(plan) => plan.can_undo(),
             Self::Dismissal(_) => true,
         }
     }
@@ -159,7 +157,7 @@ fn dismissal_key(dismissal: &DuplicateDismissal) -> String {
     format!("dismissal-{}", dismissal.id)
 }
 
-/// What a dismissal says it did, as Duplicates' toast said it (`DuplicatesView`).
+/// What a dismissal says it did, as Duplicates' toast said it.
 fn dismissal_title(dismissal: &DuplicateDismissal) -> &'static str {
     if dismissal.exact {
         "Kept every copy"
@@ -236,7 +234,7 @@ impl Log {
         let newest_undoable = entries
             .iter()
             .find(|entry| entry.decisions.iter().any(Decision::undoable))
-            .filter(|entry| entry.plans().any(can_undo))
+            .filter(|entry| entry.plans().any(PlanSummary::can_undo))
             .map(|entry| entry.key.clone());
         // A day's entries in a card under its heading. Days are told apart by their date, as
         // their headings are ("Today", "Yesterday", the date).
@@ -273,6 +271,88 @@ impl Log {
             newest_undoable,
         }
     }
+}
+
+/// Reads `wanted` rows from `offset` on, in pages of at most [`MAX_HISTORY_ROWS`] (the most the
+/// engine answers at once), stopping early at the end of the list.
+async fn read_pages<T, Page>(
+    offset: usize,
+    wanted: usize,
+    mut page: impl FnMut(i64, i64) -> Page,
+) -> anyhow::Result<Vec<T>>
+where
+    Page: Future<Output = anyhow::Result<Vec<T>>>,
+{
+    let mut rows = Vec::new();
+    while rows.len() < wanted {
+        let limit = (wanted - rows.len()).min(MAX_HISTORY_ROWS as usize);
+        let read = page((offset + rows.len()) as i64, limit as i64).await?;
+        let end = read.len() < limit;
+        rows.extend(read);
+        if end {
+            break;
+        }
+    }
+    Ok(rows)
+}
+
+/// A plan's steps from `offset` on, `wanted` of them, with the plan's total.
+async fn read_steps(
+    engine: TidyEngine,
+    plan_id: PlanId,
+    offset: usize,
+    wanted: usize,
+) -> anyhow::Result<PlanStepPage> {
+    let total = AtomicI64::new(0);
+    let steps: Vec<PlanStep> = read_pages(offset, wanted, |offset, limit| {
+        let page = engine.plan_steps(PlanStepsRequest {
+            plan_id,
+            offset,
+            limit,
+        });
+        let total = &total;
+        async move {
+            let page = page.await?;
+            total.store(page.total, Ordering::Relaxed);
+            Ok(page.steps)
+        }
+    })
+    .await?;
+    Ok(PlanStepPage {
+        total: total.into_inner(),
+        steps,
+    })
+}
+
+/// The first held file of each of `plans`, which names the copy its duplicate decision kept:
+/// the root's holding is read a page at a time until each is found or the list ends.
+async fn read_held(
+    engine: TidyEngine,
+    root_id: RootId,
+    plans: HashSet<PlanId>,
+) -> anyhow::Result<HashMap<PlanId, HoldingItem>> {
+    let mut held = HashMap::new();
+    let mut offset = 0;
+    while held.len() < plans.len() {
+        let page = engine
+            .list_holding(HoldingRequest {
+                root_id,
+                offset,
+                limit: MAX_HISTORY_ROWS,
+            })
+            .await?;
+        let read = page.items.len() as i64;
+        for item in page.items {
+            if let Some(plan_id) = item.plan_id.filter(|id| plans.contains(id)) {
+                held.entry(plan_id).or_insert(item);
+            }
+        }
+        offset += read;
+        if read < MAX_HISTORY_ROWS || offset >= page.total {
+            break;
+        }
+    }
+    Ok(held)
 }
 
 /// The journal's plans and the dismissals, newest first, as the log's entries: duplicate
@@ -378,7 +458,7 @@ fn entry_detail(entry: &Entry) -> String {
     .join(" · ")
 }
 
-/// What a step did, in its row's first column (`ACTION_LABELS`).
+/// What a step did, in its row's first column.
 fn action_label(action: PlanStepAction) -> &'static str {
     match action {
         PlanStepAction::Hold => "To holding",
@@ -390,7 +470,7 @@ fn action_label(action: PlanStepAction) -> &'static str {
     }
 }
 
-/// How a step ended, where it is not simply done (`STEP_STATUS`).
+/// How a step ended, where it is not simply done.
 fn step_status(status: StepStatus) -> Option<&'static str> {
     match status {
         StepStatus::Pending => Some("Not run"),
@@ -401,18 +481,6 @@ fn step_status(status: StepStatus) -> Option<&'static str> {
     }
 }
 
-/// `path` inside the root, or as it is when it lies elsewhere (`relativeTo`).
-fn relative_to(root: &str, path: &str) -> String {
-    path.strip_prefix(root)
-        .filter(|rest| rest.starts_with(['/', '\\']))
-        .map(|rest| rest.trim_start_matches(['/', '\\']).to_string())
-        .unwrap_or_else(|| path.to_string())
-}
-
-fn file_name(path: &str) -> &str {
-    path.rsplit(['/', '\\']).next().unwrap_or(path)
-}
-
 fn folder_of(rel_path: &str) -> &str {
     rel_path
         .rfind(['/', '\\'])
@@ -420,10 +488,6 @@ fn folder_of(rel_path: &str) -> &str {
 }
 
 /// The path a duplicate's hold reason names as the copy that stayed: "Duplicate of a/b.jpg".
-fn keeper_of(reason: &str) -> Option<&str> {
-    reason.strip_prefix("Duplicate of ")
-}
-
 fn status_label(status: PlanStatus) -> Option<&'static str> {
     match status {
         PlanStatus::Draft => Some("Draft"),
@@ -454,12 +518,16 @@ pub struct HistoryPage {
     /// Entries and sets being undone, whose Undo waits.
     undoing: HashSet<String>,
     focused: Option<String>,
-    seen: (Option<RootId>, u64),
+    reads: PageReads,
     _subscriptions: Vec<Subscription>,
 }
 
 impl HistoryPage {
-    pub fn new(state: &Entity<TidyState>, thumbs: &Entity<Thumbs>, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        state: &Entity<TidyState>,
+        thumbs: &Entity<Thumbs>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let subscriptions = vec![
             cx.observe(state, |this, _, cx| this.sync(cx)),
             cx.observe(thumbs, |_, _, cx| cx.notify()),
@@ -478,20 +546,20 @@ impl HistoryPage {
             held: HashMap::new(),
             undoing: HashSet::new(),
             focused: None,
-            seen: (None, 0),
+            reads: PageReads::default(),
             _subscriptions: subscriptions,
         }
     }
 
     fn sync(&mut self, cx: &mut Context<Self>) {
-        let state = self.state.read(cx);
-        let key = (state.root_id(), state.catalog_version());
-        if state.page() != TidyPage::History || key == self.seen {
-            cx.notify();
-            return;
+        cx.notify();
+        if self
+            .reads
+            .due(TidyPage::History, self.state.read(cx))
+            .is_some()
+        {
+            self.reload(cx);
         }
-        self.seen = key;
-        self.reload(cx);
     }
 
     fn reload(&mut self, cx: &mut Context<Self>) {
@@ -502,19 +570,24 @@ impl HistoryPage {
         let Some(engine) = state.engine().cloned() else {
             return;
         };
-        let request = PlanListRequest {
-            root_id: Some(root_id),
-            offset: 0,
-            limit: self.wanted as i64,
-        };
-        let plans = state.changes.list_plans(&engine, request);
-        let dismissals = engine.list_dismissals(root_id, self.wanted);
-        self.plans.load_then(
-            async move { Ok((plans.await?, dismissals.await?)) },
-            |this| &mut this.plans,
-            Self::loaded,
+        let wanted = self.wanted;
+        let answer = engine.ask(
+            move |engine| async move {
+                let dismissals = engine.list_dismissals(root_id, wanted);
+                let plans = read_pages(0, wanted, |offset, limit| {
+                    engine.list_plans(PlanListRequest {
+                        root_id: Some(root_id),
+                        offset,
+                        limit,
+                    })
+                })
+                .await?;
+                Ok((plans, dismissals.await?))
+            },
             cx,
         );
+        self.plans
+            .load_then(answer, |this| &mut this.plans, Self::loaded, cx);
         self.steps.clear();
         self.held.clear();
         // What was being undone has been: the catalog changed, which is why this reads again.
@@ -528,13 +601,6 @@ impl HistoryPage {
             .plans
             .data()
             .map(|(plans, dismissals)| Rc::new(Log::of(plans, dismissals, wanted)));
-        // A check in a real window opens the newest entry, as no click can.
-        if self.expanded.is_empty()
-            && std::env::var_os(OPEN_VARIABLE).is_some_and(|value| !value.is_empty())
-            && let Some(first) = self.log.as_ref().and_then(|log| log.entries.first())
-        {
-            self.expanded.insert(first.key.clone());
-        }
         // The entries open before the answer came read their steps again, as they now are.
         let open: Vec<Rc<Entry>> = self
             .log
@@ -556,29 +622,18 @@ impl HistoryPage {
     /// run of duplicate decisions; the first steps, or as many as were asked for, for a change.
     fn read_steps(&mut self, entry: &Entry, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
-        let changes = state.changes.clone();
         let (Some(engine), Some(root_id)) = (state.engine().cloned(), state.root_id()) else {
             return;
         };
         let sets = entry.is_run();
         if sets {
-            let held = changes.list_holding(
-                &engine,
-                HoldingRequest {
-                    root_id,
-                    offset: 0,
-                    limit: HELD_LIMIT,
-                },
-            );
+            let plans = entry.plans().map(|plan| plan.id).collect();
+            let held = engine.ask(move |engine| read_held(engine, root_id, plans), cx);
             cx.spawn(async move |this, cx| {
                 let held = held.await;
                 this.update(cx, |this, cx| {
                     if let Ok(held) = held {
-                        for item in held.items {
-                            if let Some(plan_id) = item.plan_id {
-                                this.held.entry(plan_id).or_insert(item);
-                            }
-                        }
+                        this.held.extend(held);
                     }
                     cx.notify();
                 })
@@ -588,17 +643,12 @@ impl HistoryPage {
         }
         for plan in entry.plans() {
             let id = plan.id;
-            let limit = if sets {
+            let wanted = if sets {
                 1
             } else {
                 self.showing.get(&id).copied().unwrap_or(PREVIEW_STEPS)
             };
-            let request = PlanStepsRequest {
-                plan_id: id,
-                offset: 0,
-                limit: limit as i64,
-            };
-            let steps = changes.plan_steps(&engine, request);
+            let steps = engine.ask(move |engine| read_steps(engine, id, 0, wanted), cx);
             cx.spawn(async move |this, cx| {
                 let steps = steps.await;
                 this.update(cx, |this, cx| {
@@ -613,14 +663,33 @@ impl HistoryPage {
         }
     }
 
-    /// "Show all": every step of the plan, a page at a time.
+    /// "Show all": the plan's next page of steps, after those listed.
     fn show_more_steps(&mut self, entry: &Entry, cx: &mut Context<Self>) {
-        if let Some(plan) = entry.only_plan() {
-            let showing = self.showing.get(&plan.id).copied().unwrap_or(0);
-            self.showing
-                .insert(plan.id, showing.max(PREVIEW_STEPS) + STEP_PAGE);
-            self.read_steps(entry, cx);
-        }
+        let Some(plan) = entry.only_plan() else {
+            return;
+        };
+        let Some(engine) = self.state.read(cx).engine().cloned() else {
+            return;
+        };
+        let id = plan.id;
+        let listed = self.steps.get(&id).map_or(0, |page| page.steps.len());
+        self.showing.insert(id, listed + STEP_PAGE);
+        let more = engine.ask(move |engine| read_steps(engine, id, listed, STEP_PAGE), cx);
+        cx.spawn(async move |this, cx| {
+            let more = more.await;
+            this.update(cx, |this, cx| {
+                if let Ok(more) = more
+                    && let Some(page) = this.steps.get_mut(&id)
+                    && page.steps.len() == listed
+                {
+                    page.total = more.total;
+                    page.steps.extend(more.steps);
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn toggle(&mut self, entry: &Entry, cx: &mut Context<Self>) {
@@ -633,11 +702,11 @@ impl HistoryPage {
     }
 
     /// Undoes every change of the entry that can be, newest first as ⌘Z would take them back,
-    /// with one toast for them all (`undoEntry`).
+    /// with one toast for them all.
     fn undo(&mut self, entry: &Entry, window: &mut Window, cx: &mut Context<Self>) {
         let undoable: Vec<PlanSummary> = entry
             .plans()
-            .filter(|plan| can_undo(plan))
+            .filter(|plan| plan.can_undo())
             .cloned()
             .collect();
         let dismissals: Vec<i64> = entry.dismissals().map(|dismissal| dismissal.id).collect();
@@ -666,7 +735,7 @@ impl HistoryPage {
         cx.notify();
     }
 
-    /// Undoes one set of a run of duplicate decisions (`undoOne`).
+    /// Undoes one set of a run of duplicate decisions.
     fn undo_set(&mut self, plan: PlanSummary, window: &mut Window, cx: &mut Context<Self>) {
         if !self.undoing.insert(plan.id.to_string()) {
             return;
@@ -691,7 +760,7 @@ impl HistoryPage {
         cx.notify();
     }
 
-    /// Takes back dismissals, as Duplicates' own Undo does (`restoreDuplicateSet`): their sets
+    /// Takes back dismissals, as Duplicates' own Undo does: their sets
     /// are open again, and Duplicates lists them once it reads the catalog, which `changed`
     /// asks for. Nothing on screen says where the set went, so a toast does, when `announce`.
     fn restore(
@@ -710,7 +779,7 @@ impl HistoryPage {
         let count = ids.len() as i64;
         let restored: Vec<_> = ids
             .into_iter()
-            .map(|id| engine.restore_duplicate_set(id))
+            .map(|id| engine.ask(move |engine| engine.restore_duplicate_set(id), cx))
             .collect();
         cx.spawn_in(window, async move |this, cx| {
             let mut failed = None;
@@ -735,7 +804,7 @@ impl HistoryPage {
                     }),
                 };
                 if let Some(toast) = toast {
-                    widgets::show_toast(window, toast, cx);
+                    window.show_toast(toast, cx);
                 }
             })
             .ok();
@@ -974,8 +1043,7 @@ impl HistoryPage {
     }
 
     /// The sets of a run of duplicate decisions, one row each with its own Undo. Each set is its
-    /// own plan; what stayed comes from the hold reason of the copies it put in holding
-    /// (`ResolveSets`).
+    /// own plan; what stayed comes from the hold reason of the copies it put in holding.
     fn render_sets(&self, entry: &Entry, cx: &mut Context<Self>) -> AnyElement {
         let root = self.root_path(cx);
         let root_name = self
@@ -994,7 +1062,7 @@ impl HistoryPage {
                     }
                 };
                 let held = self.held.get(&plan.id);
-                let keeper = held.and_then(|held| keeper_of(&held.reason));
+                let keeper = held.and_then(HoldingItem::kept_rel_path);
                 let removed = self
                     .steps
                     .get(&plan.id)
@@ -1032,7 +1100,7 @@ impl HistoryPage {
                 .into_iter()
                 .flatten()
                 .collect();
-                let undo = can_undo(plan).then(|| {
+                let undo = plan.can_undo().then(|| {
                     let plan = plan.clone();
                     move |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
                         this.undo_set(plan.clone(), window, cx);
@@ -1398,7 +1466,7 @@ impl HistoryPage {
         };
         let title = entry_title(entry);
         let detail = entry_detail(entry);
-        // When, as "5 min ago" with the full date and time in a tooltip (`formatRelative`).
+        // When, as "5 min ago" with the full date and time in a tooltip.
         let when = first.as_ref().map(|decision| {
             let at = decision.at();
             div()
@@ -1508,7 +1576,10 @@ impl HistoryPage {
                                 .disabled(undoing)
                                 // ⌘Z undoes the newest change from anywhere; U undoes
                                 // the row the arrows are on.
-                                .tooltip(if newest { "Undo  ⌘Z" } else { "Undo  U" })
+                                .tooltip(oriel_ui::keys::labelled(
+                                    "Undo",
+                                    if newest { "cmd-z" } else { "u" },
+                                ))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
                                     this.undo(&undo_entry, window, cx);
@@ -1558,7 +1629,7 @@ fn set_picture(thumb: Thumb, cx: &App) -> AnyElement {
     }
 }
 
-/// The 32 px tile that says what kind of change a row is (`PlanIcon`).
+/// The 32 px tile that says what kind of change a row is.
 fn plan_icon(kind: PlanKind, cx: &App) -> impl IntoElement + use<> {
     let icon = match kind {
         PlanKind::Hold => IconName::Archive,
@@ -1605,7 +1676,7 @@ impl Focusable for HistoryPage {
 
 impl Render for HistoryPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let shell = self.state.read(cx).shell.clone();
+        let shell = self.state.read(cx).shell().clone();
         let body: AnyElement = match (self.plans.data(), self.plans.error()) {
             (None, Some(error)) => widgets::empty_state(
                 "history-error",
@@ -1642,7 +1713,7 @@ impl Render for HistoryPage {
             .flex_col()
             .size_full()
             .min_h_0()
-            .child(TopBar::new(&shell, "History"))
+            .child(TopBar::new(&shell, TidyPage::History.label()))
             .child(body)
     }
 }

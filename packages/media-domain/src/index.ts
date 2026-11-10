@@ -1,11 +1,36 @@
-export * from "./browser-entries.js";
+export { formatBytes } from "./format.js";
 
-export * from "./comics.js";
+export {
+  detectMediaType,
+  type FolderNode,
+  type GallerySortMode,
+  GallerySortModeSchema,
+  getExtension,
+  ImageExtensions,
+  isSupportedMediaFile,
+  type MediaItem,
+  type MediaType,
+  MediaTypeSchema,
+  PdfExtensions,
+  VideoExtensions,
+} from "./media.js";
 
-export * from "./media.js";
+export {
+  canonicalizeExtension,
+  displayNameFromPath,
+  getBaseName,
+  getParentPath,
+  joinArchivePath,
+  normalizePathForCompare,
+  pairSyncPaths,
+  toArchivePath,
+  trimTrailingSlash,
+} from "./paths.js";
 
-export * from "./paths.js";
+export { compareByName } from "./sort.js";
 
-export * from "./sort.js";
-
-export * from "./system-files.js";
+export {
+  isSystemJunkDirectory,
+  isSystemJunkFile,
+  LATCH_WORKS_DIRECTORY_NAME,
+} from "./system-files.js";

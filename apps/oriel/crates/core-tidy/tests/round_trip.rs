@@ -6,15 +6,14 @@
 //! modification times. Holding must agree with its rows throughout, and emptying it must leave
 //! nothing held.
 //!
-//! The archive is glazier-core's differential archive (see `oriel-test-archive`), plus what these
+//! The archive is the differential archive (see `oriel-test-archive`), plus what these
 //! cases need beyond it: two stills in no duplicate set, so Convert has stills to convert; a
 //! folder holding only Finder's and Explorer's files, which counts as empty; a `.DS_Store` beside
 //! media, which the walk leaves out and nothing touches; and two zero-byte files, which are no
 //! one's duplicates.
 //!
-//! Needs libvips and libavif (`cargo run -p xtask -- vendor`). The video cases also need the
-//! pinned ffmpeg and ffprobe (`cargo run -p oriel-tools --bin fetch-media-tools`); without them
-//! they say so and pass.
+//! Needs libvips and libavif (`cargo run -p xtask -- vendor`), and the video cases the pinned
+//! ffmpeg and ffprobe (`cargo run -p xtask -- fetch-media-tools`): see [`support::media`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -23,25 +22,28 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::executor::block_on;
 use oriel_core_paths::DataRoot;
+use oriel_core_tidy::AnalysisKind;
 use oriel_core_tidy::contract::{
     DuplicateKind, DuplicateScope, DuplicateSet, DuplicateSetPage, DuplicateSetRequest, FileFilter,
     FileFormat, FileId, FileQuery, FileSortColumn, HoldingItem, HoldingRequest, KeepReason,
-    OptimizeCategory, PlanId, PlanKind, PlanRequest, PlanStatus, PlanStepAction, PlanStepsRequest,
-    PlanSummary, Rename, ResolveGroup, Root, SimilarityLevel, StepStatus, VideoCodecChoice,
-    VideoQuality,
+    OptimizeCategory, PlanId, PlanKind, PlanListRequest, PlanRequest, PlanStatus, PlanStepAction,
+    PlanStepsRequest, PlanSummary, Rename, ResolveGroup, Root, SimilarityLevel, StepStatus,
+    VideoCodecChoice, VideoQuality,
 };
-use oriel_core_tidy::media::probe_video;
-use oriel_core_tidy::passes::{Media, Progress, Quiet};
-use oriel_core_tidy::plans::executor::SAME_RESULT;
-use oriel_core_tidy::scan::sniff_file;
-use oriel_core_tidy::similarity::{
-    DETAIL_VERSION, Vips, is_variant, look_at_still, look_shows_variant, normalize_detail,
+use oriel_core_tidy::internals::sniff_file;
+use oriel_core_tidy::internals::{
+    DETAIL_VERSION, is_variant, look_at_still, look_shows_variant, normalize_detail,
 };
 use oriel_core_tidy::{AnalysisReport, FollowUp, TidyEngine};
+use oriel_core_tidy::{Media, Progress, Quiet};
 use oriel_runtime::CancelToken;
 use oriel_test_archive::image::codecs::png::CompressionType;
 use oriel_test_archive::{original_mtime, save_jpeg, save_png, set_mtime, variant_picture};
+use oriel_tools::probe_video;
+use oriel_vips::Vips;
 use sha2::{Digest as _, Sha256};
+
+use crate::support;
 
 /// Every convertible category, as Convert's page and Tidy up offer them.
 const CONVERT: [OptimizeCategory; 4] = [
@@ -208,37 +210,20 @@ struct Bench {
     holding: PathBuf,
     media: Media,
     videos: bool,
-    /// The cover's name once Clean up fixes its extension: an AVIF, or a PNG without libavif.
-    cover: &'static str,
     /// The archive as the scan saw it.
     before: Tree,
     _scratch: Scratch,
 }
 
 impl Bench {
-    /// `None`, with a note, when this machine lacks libvips or libavif.
+    /// `None` when this machine lacks libvips or libavif (see [`support::media`]).
     fn open(label: &str) -> Option<Bench> {
-        let media = Media::locate();
-        if media.loaded_vips().is_none() {
-            eprintln!("skipped: the round trip needs libvips (cargo run -p xtask -- vendor)");
-            return None;
-        }
-        if let Err(error) = oriel_avif::Libavif::get() {
-            eprintln!("skipped: the round trip needs libavif: {error}");
-            return None;
-        }
+        let media = support::media()?;
         let scratch = Scratch::new(label);
         let archive = scratch.0.join("archive");
         let built = oriel_test_archive::build_archive(&archive);
         add_extras(&archive);
-        let bench = Bench::over(scratch, archive, media, built.videos);
-        if !bench.videos {
-            eprintln!(
-                "note: no pinned ffmpeg, so the archive has no clips and the video changes are \
-                 skipped (cargo run -p oriel-tools --bin fetch-media-tools)"
-            );
-        }
-        Some(bench)
+        Some(Bench::over(scratch, archive, media, built.videos))
     }
 
     /// An engine over `archive`, already built, with it added, scanned and analysed.
@@ -246,28 +231,26 @@ impl Bench {
         let data = DataRoot::at(scratch.0.join("data")).unwrap();
         let engine = block_on(TidyEngine::open_with(
             data.clone(),
-            data.tidy().join("catalog.sqlite"),
+            data.tidy_catalog(),
             media.clone(),
         ))
         .unwrap();
         let root = block_on(engine.add_root(&archive)).unwrap();
-        let scanned = engine.scan_blocking(root.id, &Quiet::new()).unwrap();
-        engine
-            .follow_up_blocking(&scanned.follow_up, &Quiet::new())
-            .unwrap();
+        let scanned = engine.scan(root.id).run(&Quiet::new()).unwrap();
+        if scanned.analysis_due {
+            engine
+                .analyze(root.id, AnalysisKind::CatchingUp)
+                .run(&Quiet::new())
+                .unwrap();
+        }
         let archive = PathBuf::from(&root.path);
         let before = Tree::of(&archive);
         let bench = Bench {
             engine,
             root,
-            holding: data.tidy().join("holding"),
+            holding: data.tidy_holding(),
             media,
             videos,
-            cover: if oriel_avif::Libavif::get().is_ok() {
-                "photos/cover.avif"
-            } else {
-                "photos/cover.png"
-            },
             before,
             archive,
             _scratch: scratch,
@@ -299,16 +282,14 @@ impl Bench {
 
     fn follow_up(&self, follow_up: &FollowUp) {
         self.engine
-            .follow_up_blocking(follow_up, &self.quiet())
+            .follow_up(follow_up.clone())
+            .run(&self.quiet())
             .unwrap();
     }
 
     /// Makes a change as the app does, with what it leaves for the engine to do after.
     fn perform(&self, request: PlanRequest) -> PlanSummary {
-        let performed = self
-            .engine
-            .perform_blocking(request, &self.quiet())
-            .unwrap();
+        let performed = self.engine.perform(request).run(&self.quiet()).unwrap();
         self.follow_up(&performed.applied.follow_up);
         let plan = performed.applied.plan;
         assert_eq!(plan.status, PlanStatus::Applied, "{plan:?}");
@@ -318,10 +299,7 @@ impl Bench {
 
     /// Undoes plans, newest first, as one Undo does; every one must come back.
     fn undo(&self, plans: &[PlanId]) {
-        let undone = self
-            .engine
-            .undo_plans_blocking(plans, &self.quiet())
-            .unwrap();
+        let undone = self.engine.undo(plans.to_vec()).run(&self.quiet()).unwrap();
         assert!(undone.complete, "{:?}", undone.message);
         self.follow_up(&undone.follow_up);
         for plan in &undone.plans {
@@ -430,6 +408,21 @@ impl Bench {
         assert_eq!(rows, on_disk, "holding's rows and its files differ");
     }
 
+    /// The holding batch folders that hold something, each a change's (or Hold's) folder in its
+    /// root's folder under holding.
+    fn held_batches(&self) -> BTreeSet<PathBuf> {
+        self.held()
+            .iter()
+            .map(|item| {
+                let within = Path::new(&item.hold_path)
+                    .strip_prefix(&self.holding)
+                    .unwrap_or_else(|_| panic!("{item:?} is outside holding"));
+                self.holding
+                    .join(within.components().take(2).collect::<PathBuf>())
+            })
+            .collect()
+    }
+
     fn duplicate_sets(&self, scope: DuplicateScope) -> Vec<DuplicateSet> {
         block_on(self.engine.duplicate_sets(DuplicateSetRequest {
             root_id: Some(self.root.id),
@@ -477,7 +470,7 @@ impl Bench {
         ResolveGroup::of_set(set, set.keep.clone(), remove)
     }
 
-    fn probe(&self, rel: &str) -> oriel_core_tidy::media::VideoProbe {
+    fn probe(&self, rel: &str) -> oriel_tools::VideoProbe {
         probe_video(
             self.media.ffprobe.as_deref().unwrap(),
             &self.archive.join(rel),
@@ -567,7 +560,7 @@ fn clean_up_holds_junk_fixes_an_extension_removes_empty_folders_and_undoes() {
         done(
             PlanStepAction::Rename,
             "photos/cover.jpg",
-            Some(bench.cover),
+            Some("photos/cover.avif"),
         ),
         done(PlanStepAction::Hold, "._sunset.png", None),
         done(PlanStepAction::RemoveFolder, "empty", None),
@@ -607,7 +600,7 @@ fn clean_up_holds_junk_fixes_an_extension_removes_empty_folders_and_undoes() {
         "photos/cover.jpg",
     ]);
     expected.files.insert(
-        bench.cover.into(),
+        "photos/cover.avif".into(),
         bench.before.file("photos/cover.jpg").clone(),
     );
     expected.folders.remove("empty");
@@ -637,22 +630,25 @@ fn a_restored_file_stays_put_when_its_change_is_undone() {
         .into_iter()
         .find(|item| item.original_path.ends_with("._sunset.png"))
         .unwrap();
-    let restored = block_on(bench.engine.restore_holding(vec![junk.id])).unwrap();
+    let restored = bench
+        .engine
+        .restore_holding(vec![junk.id])
+        .run(&bench.quiet())
+        .unwrap();
     assert_eq!((restored.restored, restored.failed.len()), (1, 0));
     assert_eq!(
         FileState::of(&bench.archive.join("._sunset.png")),
         *bench.before.file("._sunset.png")
     );
-    bench.follow_up(&FollowUp {
-        rescan: restored.rescan,
-        analyze: Vec::new(),
-    });
+    assert_eq!(restored.follow_up.rescan, [bench.root.id]);
+    bench.follow_up(&restored.follow_up);
     bench.assert_holding_agrees();
 
     // The Undo reverses the rest, and its step for the junk counts as undone: that file is back.
     let undone = bench
         .engine
-        .undo_plans_blocking(&[plan.id], &bench.quiet())
+        .undo([plan.id].to_vec())
+        .run(&bench.quiet())
         .unwrap();
     bench.follow_up(&undone.follow_up);
     let hold = bench
@@ -735,7 +731,8 @@ fn keeping_several_versions_remembers_them_until_undone() {
     if update.analyze {
         bench
             .engine
-            .analyze_blocking(bench.root.id, &bench.quiet())
+            .analyze(bench.root.id, AnalysisKind::AskedFor)
+            .run(&bench.quiet())
             .unwrap();
     }
     // A resized and recompressed copy is one picture with its original, however hard its edges.
@@ -818,8 +815,7 @@ impl Bench {
     fn catalog_path(&self) -> PathBuf {
         DataRoot::at(self._scratch.0.join("data"))
             .unwrap()
-            .tidy()
-            .join("catalog.sqlite")
+            .tidy_catalog()
     }
 
     fn catalog(&self) -> rusqlite::Connection {
@@ -857,15 +853,14 @@ impl Bench {
         run_at: &str,
         at_phase: &(dyn Fn() + Sync),
     ) -> anyhow::Result<AnalysisReport> {
-        engine.analyze_blocking(
-            self.root.id,
-            &Interrupting {
+        engine
+            .analyze(self.root.id, AnalysisKind::AskedFor)
+            .run(&Interrupting {
                 token: CancelToken::new(),
                 stop_at,
                 run_at,
                 at_phase,
-            },
-        )
+            })
     }
 
     /// Every answer about `id`, as the size stored for that file.
@@ -939,7 +934,8 @@ fn prints_from_an_older_version_hold_every_set_until_they_are_made_again() {
     assert_eq!(overview.duplicates.similar.sets, i64::from(bench.videos));
 
     engine
-        .analyze_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&bench.quiet())
         .unwrap();
     assert!(!block_on(engine.analysis_due(bench.root.id)).unwrap());
     let back = bench.page(&engine, DuplicateScope::Similar);
@@ -987,7 +983,8 @@ fn a_stopped_analysis_leaves_sets_held_and_the_next_one_finishes_them() {
     }
 
     engine
-        .analyze_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&bench.quiet())
         .unwrap();
     let back = bench.page(&engine, DuplicateScope::Similar);
     assert_eq!(back.counts.checking, 0);
@@ -1023,18 +1020,14 @@ fn a_look_at_a_file_that_changes_under_it_is_taken_again() {
     // No answer was kept about bytes that are gone.
     assert_eq!(bench.answers_about(sunset), Vec::<i64>::new());
 
-    // The change calls for an analysis, which fingerprints the file and looks again.
+    // The change calls for an analysis, which fingerprints the file and looks again, once a scan
+    // has caught the catalog up with the file, which never changed on disk.
     assert!(block_on(engine.analysis_due(bench.root.id)).unwrap());
-    let catalog = bench.catalog();
-    catalog
-        .execute(
-            "UPDATE files SET size = ?2 WHERE id = ?1",
-            [sunset, original_size],
-        )
-        .unwrap();
-    drop(catalog);
+    let scanned = engine.scan(bench.root.id).run(&bench.quiet()).unwrap();
+    assert!(scanned.analysis_due);
     engine
-        .analyze_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::CatchingUp)
+        .run(&bench.quiet())
         .unwrap();
     assert_eq!(bench.answers_about(sunset), [original_size]);
     assert_eq!(bench.page(&engine, DuplicateScope::All).counts.checking, 0);
@@ -1062,7 +1055,8 @@ fn a_still_that_will_not_decode_gets_a_final_answer_that_keeps_it() {
     .unwrap();
     let engine = bench.reopened();
     engine
-        .analyze_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&bench.quiet())
         .unwrap();
 
     let page = bench.page(&engine, DuplicateScope::Variants);
@@ -1140,7 +1134,6 @@ fn an_av1_re_encode_stays_a_copy_and_stays_in_its_set() {
         return;
     };
     if !bench.videos {
-        eprintln!("skipped: an AV1 re-encode needs the pinned ffmpeg");
         return;
     }
     let small = "clips/with-sound-small.mp4";
@@ -1232,6 +1225,9 @@ fn convert_makes_avif_and_mp4_keeping_dates_and_undoes() {
         assert_eq!(held[to].1, "Undone conversion", "{to}");
     }
 }
+
+/// What History says of a copy's step that took its identical copy's result.
+const SAME_RESULT: &str = "Same result as its identical copy";
 
 /// Whether the steps from these files, in any order, ran one encode and shared it with the rest.
 fn assert_one_encode(steps: &[Step], copies: &[&str]) {
@@ -1342,15 +1338,9 @@ fn identical_copies_stay_identical_through_convert_with_one_encode() {
 
 #[test]
 fn identical_copies_stay_identical_through_shrink_with_one_encode() {
-    if oriel_test_archive::ffmpeg().is_none() {
-        eprintln!("skipped: Shrink needs the pinned ffmpeg");
+    let (Some(media), Some(_)) = (support::media(), oriel_test_archive::media_tools()) else {
         return;
-    }
-    let media = Media::locate();
-    if media.loaded_vips().is_none() {
-        eprintln!("skipped: the round trip needs libvips (cargo run -p xtask -- vendor)");
-        return;
-    }
+    };
     let scratch = Scratch::new("copies-shrink");
     let archive = scratch.0.join("shrink-archive");
     assert!(oriel_test_archive::build_shrink_archive(&archive));
@@ -1479,7 +1469,8 @@ fn tidy_up_runs_every_step_but_duplicates_and_one_undo_takes_it_back() {
     };
     let tidied = bench
         .engine
-        .tidy_up_blocking(bench.root.id, &CONVERT, &bench.quiet())
+        .tidy_up(bench.root.id, CONVERT.to_vec())
+        .run(&bench.quiet())
         .unwrap();
     bench.follow_up(&tidied.follow_up);
     assert!(tidied.notes.is_empty(), "{:?}", tidied.notes);
@@ -1491,7 +1482,7 @@ fn tidy_up_runs_every_step_but_duplicates_and_one_undo_takes_it_back() {
     expected.push(PlanKind::Optimize);
     assert_eq!(kinds, expected);
     let now = Tree::of(&bench.archive);
-    assert!(now.files.contains_key(bench.cover));
+    assert!(now.files.contains_key("photos/cover.avif"));
     assert!(!now.folders.contains("empty"));
     assert!(!now.files.contains_key("._sunset.png"));
     assert!(now.files.contains_key("extra/harbour.avif"));
@@ -1560,8 +1551,8 @@ fn renames_a_move_and_a_hold_come_back_with_one_undo() {
     expected.folders.insert("moved".into());
     assert_same(&expected, &now, "the archive after the three changes");
 
-    // One Undo of all three, newest first. The folder the move made stays, empty, as
-    // glazier-core left it; every file is back.
+    // One Undo of all three, newest first. The folder the move made stays, empty; every file is
+    // back.
     bench.undo(&[rename.id, moved.id, hold.id]);
     let mut expected = bench.before.clone();
     expected.folders.insert("moved".into());
@@ -1576,15 +1567,9 @@ fn renames_a_move_and_a_hold_come_back_with_one_undo() {
 
 #[test]
 fn shrink_re_encodes_a_busy_video_to_av1_and_undoes() {
-    if oriel_test_archive::ffmpeg().is_none() {
-        eprintln!("skipped: Shrink needs the pinned ffmpeg");
+    let (Some(media), Some(_)) = (support::media(), oriel_test_archive::media_tools()) else {
         return;
-    }
-    let media = Media::locate();
-    if media.loaded_vips().is_none() {
-        eprintln!("skipped: the round trip needs libvips (cargo run -p xtask -- vendor)");
-        return;
-    }
+    };
     let scratch = Scratch::new("shrink");
     let archive = scratch.0.join("shrink-archive");
     assert!(oriel_test_archive::build_shrink_archive(&archive));
@@ -1639,9 +1624,8 @@ fn shrink_re_encodes_a_busy_video_to_av1_and_undoes() {
     );
 }
 
-/// Emptying holding moves its batch folders to the Trash, which on the machine running the tests
-/// is the owner's, so the test stands in for the Trash: it takes the batches holding lists away
-/// itself and marks them emptied, as Electron Oriel's main process did around the same calls.
+/// Emptying holding takes its batch folders away (into the sandboxed run's own trash), and what
+/// went cannot come back.
 #[test]
 fn emptying_holding_after_a_change_leaves_nothing_held() {
     let Some(bench) = Bench::open("empty") else {
@@ -1652,33 +1636,22 @@ fn emptying_holding_after_a_change_leaves_nothing_held() {
     });
     let held = bench.held();
     assert_eq!(held.len(), 3);
-    let batches = block_on(bench.engine.holding_batches(bench.root.id)).unwrap();
-    assert_eq!(batches.len(), 1, "one change, one batch");
-    for item in &held {
-        assert!(
-            Path::new(&item.hold_path).starts_with(&batches[0]),
-            "{item:?}"
-        );
-    }
-    for batch in &batches {
-        assert!(Path::new(batch).starts_with(&bench.holding));
-        fs::remove_dir_all(batch).unwrap();
-    }
-    let emptied = block_on(bench.engine.mark_holding_emptied(bench.root.id, batches)).unwrap();
-    assert_eq!(emptied, 3);
+    assert_eq!(bench.held_batches().len(), 1, "one change, one batch");
+    let emptied = bench
+        .engine
+        .empty_holding(bench.root.id)
+        .run(&bench.quiet())
+        .unwrap();
+    assert_eq!((emptied.emptied, emptied.failed.len()), (3, 0));
     assert!(bench.held().is_empty());
-    assert!(
-        block_on(bench.engine.holding_batches(bench.root.id))
-            .unwrap()
-            .is_empty()
-    );
     assert!(Tree::of(&bench.holding).files.is_empty());
     bench.assert_holding_agrees();
 
     // What was emptied cannot come back; the rest of the change still undoes.
     let undone = bench
         .engine
-        .undo_plans_blocking(&[plan.id], &bench.quiet())
+        .undo([plan.id].to_vec())
+        .run(&bench.quiet())
         .unwrap();
     bench.follow_up(&undone.follow_up);
     let now = Tree::of(&bench.archive);
@@ -1723,13 +1696,15 @@ fn a_closer_look_without_libvips_answers_nothing_until_it_returns() {
         .unwrap();
     let without = without_libvips(&bench);
     without
-        .analyze_blocking(bench.root.id, &Quiet::new())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&Quiet::new())
         .unwrap();
     assert_eq!(answers(&bench), (0, 0), "no answer can be given");
     drop(without);
     let again = bench.reopened();
     again
-        .analyze_blocking(bench.root.id, &Quiet::new())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&Quiet::new())
         .unwrap();
     assert_eq!(answers(&bench).1, copies);
 }
@@ -1757,7 +1732,8 @@ fn a_pair_that_could_not_be_read_keeps_both_and_is_asked_again() {
     fs::rename(&file, &aside).unwrap();
     bench
         .engine
-        .analyze_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&bench.quiet())
         .unwrap();
     let unread: i64 = catalog
         .query_row(
@@ -1773,7 +1749,8 @@ fn a_pair_that_could_not_be_read_keeps_both_and_is_asked_again() {
     fs::rename(&aside, &file).unwrap();
     bench
         .engine
-        .analyze_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&bench.quiet())
         .unwrap();
     assert_eq!(answers(&bench).1, copies);
 }
@@ -1782,14 +1759,12 @@ fn a_pair_that_could_not_be_read_keeps_both_and_is_asked_again() {
 /// the hardware route reads it and libvips refuses it. `None` when this machine has no such route.
 #[cfg(target_os = "macos")]
 fn a_damaged_avif(media: &Media, scratch: &Scratch) -> Option<(PathBuf, PathBuf, Vec<u8>)> {
-    use oriel_core_tidy::media::still::encode_still_to_avif;
-    use oriel_core_tidy::similarity::StillLook;
+    use oriel_core_tidy::internals::StillLook;
+    use oriel_core_tidy::internals::encode_still_to_avif;
     use oriel_test_archive::image::{Rgba, RgbaImage};
 
-    let (Some(vips), Ok(libavif)) = (media.loaded_vips(), oriel_avif::Libavif::get()) else {
-        eprintln!("skipped: this needs libvips and libavif (cargo run -p xtask -- vendor)");
-        return None;
-    };
+    let vips = media.loaded_vips().unwrap();
+    let libavif = oriel_test_archive::libavif().unwrap();
     let random = |state: &mut u64| {
         *state ^= *state << 13;
         *state ^= *state >> 7;
@@ -1845,7 +1820,9 @@ fn a_damaged_avif(media: &Media, scratch: &Scratch) -> Option<(PathBuf, PathBuf,
 #[cfg(target_os = "macos")]
 #[test]
 fn a_damaged_still_the_hardware_route_reads_keeps_both_files() {
-    let media = Media::locate();
+    let Some(media) = support::media() else {
+        return;
+    };
     let scratch = Scratch::new("damaged-pair");
     let Some((_, good, bytes)) = a_damaged_avif(&media, &scratch) else {
         return;
@@ -1858,7 +1835,8 @@ fn a_damaged_still_the_hardware_route_reads_keeps_both_files() {
     let bench = Bench::over(scratch, archive, media.clone(), false);
     bench
         .engine
-        .analyze_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&bench.quiet())
         .unwrap();
     let id = bench.id("a-damaged.avif");
     let catalog = bench.catalog();
@@ -1895,7 +1873,9 @@ fn a_damaged_still_the_hardware_route_reads_keeps_both_files() {
 #[cfg(target_os = "macos")]
 #[test]
 fn with_spot_variants_off_a_damaged_still_never_replaces_its_original() {
-    let media = Media::locate();
+    let Some(media) = support::media() else {
+        return;
+    };
     let scratch = Scratch::new("spot-off-damage");
     let Some((source, _, bytes)) = a_damaged_avif(&media, &scratch) else {
         return;
@@ -1910,15 +1890,20 @@ fn with_spot_variants_off_a_damaged_still_never_replaces_its_original() {
     fs::write(bench.archive.join("photo.avif"), &bytes).unwrap();
     let scanned = bench
         .engine
-        .scan_blocking(bench.root.id, &bench.quiet())
+        .scan(bench.root.id)
+        .run(&bench.quiet())
         .unwrap();
+    if scanned.analysis_due {
+        bench
+            .engine
+            .analyze(bench.root.id, AnalysisKind::CatchingUp)
+            .run(&bench.quiet())
+            .unwrap();
+    }
     bench
         .engine
-        .follow_up_blocking(&scanned.follow_up, &bench.quiet())
-        .unwrap();
-    bench
-        .engine
-        .analyze_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&bench.quiet())
         .unwrap();
 
     let sets: Vec<DuplicateSet> = [DuplicateScope::All, DuplicateScope::Variants]
@@ -1981,7 +1966,8 @@ fn pairs_left_unread(bench: &Bench) -> (i64, PathBuf, PathBuf) {
     fs::rename(&file, &aside).unwrap();
     bench
         .engine
-        .analyze_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&bench.quiet())
         .unwrap();
     (unread(bench), file, aside)
 }
@@ -2043,18 +2029,21 @@ fn pairs_that_could_not_be_read_are_asked_again_when_a_scan_ends() {
     let planted = plant_unread_answer(&bench);
     bench
         .engine
-        .analyze_in_background_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::AfterChange)
+        .run(&bench.quiet())
         .unwrap();
     assert!(answer_stands(&bench, planted));
 
     let scanned = bench
         .engine
-        .scan_blocking(bench.root.id, &bench.quiet())
+        .scan(bench.root.id)
+        .run(&bench.quiet())
         .unwrap();
-    assert_eq!(scanned.follow_up.analyze, [bench.root.id]);
+    assert!(scanned.analysis_due);
     bench
         .engine
-        .catch_up_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::CatchingUp)
+        .run(&bench.quiet())
         .unwrap();
     assert_eq!(unread(&bench), 0, "the scan's analysis asks again");
 
@@ -2080,7 +2069,8 @@ fn pairs_that_could_not_be_read_are_asked_again_at_launch_and_only_then() {
     assert!(block_on(launched.analysis_due(bench.root.id)).unwrap());
     let planted = plant_unread_answer(&bench);
     launched
-        .catch_up_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::CatchingUp)
+        .run(&bench.quiet())
         .unwrap();
     assert!(!answer_stands(&bench, planted), "it asked again");
     assert_eq!(unread(&bench), count);
@@ -2088,7 +2078,8 @@ fn pairs_that_could_not_be_read_are_asked_again_at_launch_and_only_then() {
     // That is the end of it: nothing but the next launch or scan asks once more.
     let planted = plant_unread_answer(&bench);
     launched
-        .analyze_in_background_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::AfterChange)
+        .run(&bench.quiet())
         .unwrap();
     assert!(answer_stands(&bench, planted));
 }
@@ -2141,12 +2132,10 @@ fn a_copy_goes_only_while_the_file_kept_is_as_the_scan_saw_it() {
 
         let performed = bench
             .engine
-            .perform_blocking(
-                PlanRequest::ResolveDuplicates {
-                    groups: vec![group],
-                },
-                &bench.quiet(),
-            )
+            .perform(PlanRequest::ResolveDuplicates {
+                groups: vec![group],
+            })
+            .run(&bench.quiet())
             .unwrap();
         assert!(
             bench.held().is_empty(),
@@ -2201,12 +2190,10 @@ fn a_decision_that_moved_nothing_marks_nothing() {
         .unwrap();
     let performed = bench
         .engine
-        .perform_blocking(
-            PlanRequest::ResolveDuplicates {
-                groups: vec![group],
-            },
-            &bench.quiet(),
-        )
+        .perform(PlanRequest::ResolveDuplicates {
+            groups: vec![group],
+        })
+        .run(&bench.quiet())
         .unwrap();
     assert_eq!(performed.applied.plan.done, 0);
     let marks: i64 = bench
@@ -2256,8 +2243,12 @@ fn a_sandboxed_run_empties_holding_into_its_own_trash() {
     });
     let held = bench.held().len() as i64;
     assert!(held > 0);
-    let batches = block_on(bench.engine.holding_batches(bench.root.id)).unwrap();
-    let emptied = block_on(bench.engine.empty_holding(bench.root.id)).unwrap();
+    let batches = bench.held_batches();
+    let emptied = bench
+        .engine
+        .empty_holding(bench.root.id)
+        .run(&bench.quiet())
+        .unwrap();
     assert_eq!(
         (emptied.emptied, emptied.failed.len()),
         (held, 0),
@@ -2265,10 +2256,15 @@ fn a_sandboxed_run_empties_holding_into_its_own_trash() {
     );
     assert!(bench.held().is_empty());
     let data = DataRoot::at(bench._scratch.0.join("data")).unwrap();
+    assert!(!batches.is_empty());
     for batch in &batches {
-        assert!(!Path::new(batch).exists());
-        let name = Path::new(batch).file_name().unwrap();
-        assert!(data.sandbox_trash().join(name).is_dir(), "{batch}");
+        assert!(!batch.exists());
+        let name = batch.file_name().unwrap();
+        assert!(
+            data.sandbox_trash().join(name).is_dir(),
+            "{}",
+            batch.display()
+        );
     }
 }
 
@@ -2284,7 +2280,8 @@ fn a_copy_stays_when_any_file_kept_with_it_has_changed() {
     if update.analyze {
         bench
             .engine
-            .analyze_blocking(bench.root.id, &bench.quiet())
+            .analyze(bench.root.id, AnalysisKind::AskedFor)
+            .run(&bench.quiet())
             .unwrap();
     }
     let set = bench
@@ -2309,12 +2306,10 @@ fn a_copy_stays_when_any_file_kept_with_it_has_changed() {
     fs::write(bench.archive.join(&last.rel_path), b"something else").unwrap();
     let performed = bench
         .engine
-        .perform_blocking(
-            PlanRequest::ResolveDuplicates {
-                groups: vec![group],
-            },
-            &bench.quiet(),
-        )
+        .perform(PlanRequest::ResolveDuplicates {
+            groups: vec![group],
+        })
+        .run(&bench.quiet())
         .unwrap();
     assert!(bench.held().is_empty(), "{:?}", performed.applied.plan);
 }
@@ -2350,14 +2345,6 @@ fn a_keeper_only_touched_still_lets_its_copies_go() {
     });
     assert_eq!(plan.status, PlanStatus::Applied);
     assert_eq!(bench.held().len(), going);
-}
-
-/// A plan drafted before this check has no keepers in its steps: its record still reads.
-#[test]
-fn a_step_recorded_before_keepers_were_kept_still_reads() {
-    let spec: oriel_core_tidy::plans::planner::StepSpec =
-        serde_json::from_str(r#"{"kind":"hold","reason":"Duplicate of a.png"}"#).unwrap();
-    assert_eq!(spec.action(), PlanStepAction::Hold);
 }
 
 /// Stops the work once `after` of its steps are done.
@@ -2399,13 +2386,11 @@ fn a_stopped_undo_keeps_what_came_back_and_asks_for_its_scan() {
 
     let undone = bench
         .engine
-        .undo_plans_blocking(
-            &[plan.id],
-            &StopsAfter {
-                after: 1,
-                token: CancelToken::new(),
-            },
-        )
+        .undo([plan.id].to_vec())
+        .run(&StopsAfter {
+            after: 1,
+            token: CancelToken::new(),
+        })
         .expect("a stopped undo still reports what it did");
     assert!(!undone.complete);
     assert!(
@@ -2425,7 +2410,8 @@ fn a_stopped_undo_keeps_what_came_back_and_asks_for_its_scan() {
     bench.follow_up(&undone.follow_up);
     let again = bench
         .engine
-        .undo_plans_blocking(&[plan.id], &bench.quiet())
+        .undo([plan.id].to_vec())
+        .run(&bench.quiet())
         .unwrap();
     assert!(again.complete, "{:?}", again.message);
     assert!(bench.held().is_empty());
@@ -2436,7 +2422,9 @@ fn a_stopped_undo_keeps_what_came_back_and_asks_for_its_scan() {
 #[cfg(target_os = "macos")]
 #[test]
 fn with_spot_variants_off_a_damaged_twin_is_read_though_the_first_copy_has_no_print() {
-    let media = Media::locate();
+    let Some(media) = support::media() else {
+        return;
+    };
     let scratch = Scratch::new("spot-off-twin");
     let Some((source, _, bytes)) = a_damaged_avif(&media, &scratch) else {
         return;
@@ -2453,11 +2441,13 @@ fn with_spot_variants_off_a_damaged_twin_is_read_though_the_first_copy_has_no_pr
     fs::write(bench.archive.join("twin/photo.avif"), &bytes).unwrap();
     bench
         .engine
-        .scan_blocking(bench.root.id, &bench.quiet())
+        .scan(bench.root.id)
+        .run(&bench.quiet())
         .unwrap();
     bench
         .engine
-        .analyze_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&bench.quiet())
         .unwrap();
 
     // The first of its copies, as ranked: its read failed, or the pass stopped before it.
@@ -2472,7 +2462,8 @@ fn with_spot_variants_off_a_damaged_twin_is_read_though_the_first_copy_has_no_pr
     catalog.execute("DELETE FROM file_comparisons", []).unwrap();
     let reopened = bench.reopened();
     reopened
-        .analyze_blocking(bench.root.id, &bench.quiet())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&bench.quiet())
         .unwrap();
 
     let sets = bench.page(&reopened, DuplicateScope::Variants).sets;
@@ -2527,17 +2518,16 @@ fn a_decision_on_a_page_gone_stale_moves_nothing() {
         fs::write(bench.archive.join(&file.rel_path), b"something else").unwrap();
         bench
             .engine
-            .scan_blocking(bench.root.id, &bench.quiet())
+            .scan(bench.root.id)
+            .run(&bench.quiet())
             .unwrap();
 
         let refused = bench
             .engine
-            .perform_blocking(
-                PlanRequest::ResolveDuplicates {
-                    groups: vec![group],
-                },
-                &bench.quiet(),
-            )
+            .perform(PlanRequest::ResolveDuplicates {
+                groups: vec![group],
+            })
+            .run(&bench.quiet())
             .err()
             .unwrap_or_else(|| panic!("{name}: the decision went ahead"));
         assert!(refused.to_string().contains("changed since"), "{refused}");
@@ -2570,7 +2560,8 @@ fn only_the_decision_about_what_changed_is_left_out() {
     fs::write(bench.archive.join(&kept.rel_path), b"something else").unwrap();
     bench
         .engine
-        .scan_blocking(bench.root.id, &bench.quiet())
+        .scan(bench.root.id)
+        .run(&bench.quiet())
         .unwrap();
     let going = groups[1].remove.len() as i64;
     let request = PlanRequest::ResolveDuplicates { groups };
@@ -2641,12 +2632,12 @@ fn a_decision_goes_by_the_hash_the_page_showed() {
             .unwrap()
     };
     let decide = |bench: &Bench, group: ResolveGroup| {
-        bench.engine.perform_blocking(
-            PlanRequest::ResolveDuplicates {
+        bench
+            .engine
+            .perform(PlanRequest::ResolveDuplicates {
                 groups: vec![group],
-            },
-            &bench.quiet(),
-        )
+            })
+            .run(&bench.quiet())
     };
 
     // The bytes differ, with the same size and date.
@@ -2731,7 +2722,8 @@ fn a_decision_goes_by_the_hash_the_page_showed() {
     fs::rename(&replacement, &path).unwrap();
     bench
         .engine
-        .scan_blocking(bench.root.id, &bench.quiet())
+        .scan(bench.root.id)
+        .run(&bench.quiet())
         .unwrap();
     let Err(refused) = decide(&bench, group) else {
         panic!("it went ahead");
@@ -2755,13 +2747,11 @@ fn a_stopped_change_still_asks_for_its_scan() {
         .collect();
     let performed = bench
         .engine
-        .perform_blocking(
-            PlanRequest::ResolveDuplicates { groups },
-            &StopsAfter {
-                after: 1,
-                token: CancelToken::new(),
-            },
-        )
+        .perform(PlanRequest::ResolveDuplicates { groups })
+        .run(&StopsAfter {
+            after: 1,
+            token: CancelToken::new(),
+        })
         .unwrap();
     assert_eq!(performed.applied.plan.status, PlanStatus::Cancelled);
     assert_eq!(performed.applied.follow_up.rescan, [bench.root.id]);
@@ -2779,7 +2769,8 @@ fn prints_that_failed_for_want_of_libvips_are_made_when_it_returns() {
     catalog.execute("DELETE FROM file_comparisons", []).unwrap();
     let without = without_libvips(&bench);
     without
-        .analyze_blocking(bench.root.id, &Quiet::new())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&Quiet::new())
         .unwrap();
     drop(without);
     let failed = "SELECT COUNT(*) FROM file_details WHERE error IS NOT NULL";
@@ -2788,7 +2779,8 @@ fn prints_that_failed_for_want_of_libvips_are_made_when_it_returns() {
 
     let again = bench.reopened();
     again
-        .analyze_blocking(bench.root.id, &Quiet::new())
+        .analyze(bench.root.id, AnalysisKind::AskedFor)
+        .run(&Quiet::new())
         .unwrap();
     assert_eq!(count(failed), 0);
     assert!(count("SELECT COUNT(*) FROM file_details WHERE print IS NOT NULL") > 0);
@@ -2812,14 +2804,12 @@ fn converting_a_variant_holds_its_set_until_it_has_a_print() {
     assert_eq!(set.keep.len(), 2);
     let performed = bench
         .engine
-        .perform_blocking(
-            PlanRequest::Optimize {
-                root_id: bench.root.id,
-                categories: vec![OptimizeCategory::StillToAvif],
-                file_ids: Some(vec![b_id]),
-            },
-            &bench.quiet(),
-        )
+        .perform(PlanRequest::Optimize {
+            root_id: bench.root.id,
+            categories: vec![OptimizeCategory::StillToAvif],
+            file_ids: Some(vec![b_id]),
+        })
+        .run(&bench.quiet())
         .unwrap();
 
     // Before the analysis the change asks for: in no queue, offering nothing.
@@ -2858,18 +2848,10 @@ fn a_re_encode_is_preferred_only_while_its_original_is_held() {
     assert_eq!(set.keep_reason, KeepReason::AlreadyReencoded);
 
     // The owner empties holding: the other file is now the last at full quality.
-    for item in bench.held() {
-        bench
-            .catalog()
-            .execute(
-                "UPDATE holding SET state = 'emptied' WHERE id = ?1",
-                [item.id],
-            )
-            .unwrap();
-    }
     bench
         .engine
-        .scan_blocking(bench.root.id, &bench.quiet())
+        .empty_holding(bench.root.id)
+        .run(&bench.quiet())
         .unwrap();
     let set = bench.set_with(other);
     let name = bench.name_of(&set, set.keep[0]);
@@ -2882,15 +2864,8 @@ fn a_re_encode_is_preferred_only_while_its_original_is_held() {
 
 /// A bench over Shrink's clips, with `copies/busy.mp4` an identical copy of `clips/busy.mp4`.
 fn shrink_bench(label: &str) -> Option<Bench> {
-    if oriel_test_archive::ffmpeg().is_none() {
-        eprintln!("skipped: Shrink needs the pinned ffmpeg");
-        return None;
-    }
-    let media = Media::locate();
-    if media.loaded_vips().is_none() {
-        eprintln!("skipped: the round trip needs libvips (cargo run -p xtask -- vendor)");
-        return None;
-    }
+    let media = support::media()?;
+    oriel_test_archive::media_tools()?;
     let scratch = Scratch::new(label);
     let archive = scratch.0.join("shrink-archive");
     assert!(oriel_test_archive::build_shrink_archive(&archive));
@@ -2917,7 +2892,7 @@ fn a_source_changed_during_its_conversion_is_left_alone() {
     let source = bench.archive.join("clips/busy.mp4");
     let flag = bench._scratch.0.join("change-it-now");
     let shim = bench._scratch.0.join("ffmpeg-that-changes-its-source");
-    let ffmpeg = Media::locate().ffmpeg.unwrap();
+    let ffmpeg = bench.media.ffmpeg.clone().unwrap();
     fs::write(
         &shim,
         format!(
@@ -2929,24 +2904,21 @@ fn a_source_changed_during_its_conversion_is_left_alone() {
     )
     .unwrap();
     fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).unwrap();
-    let located = Media::locate();
     let media = Media {
         ffmpeg: Some(shim),
-        ..located
+        ..bench.media.clone()
     };
     let data = DataRoot::at(bench._scratch.0.join("data")).unwrap();
     let engine = block_on(TidyEngine::open_with(data, bench.catalog_path(), media)).unwrap();
     fs::write(&flag, "").unwrap();
     let id = bench.id("clips/busy.mp4");
     let performed = engine
-        .perform_blocking(
-            PlanRequest::Reencode {
-                file_ids: vec![id],
-                codec: VideoCodecChoice::Av1,
-                quality: VideoQuality::High,
-            },
-            &bench.quiet(),
-        )
+        .perform(PlanRequest::Reencode {
+            file_ids: vec![id],
+            codec: VideoCodecChoice::Av1,
+            quality: VideoQuality::High,
+        })
+        .run(&bench.quiet())
         .unwrap();
     assert!(!flag.exists(), "the conversion never ran");
     let steps = bench.steps(performed.preview.plan_id);
@@ -2987,7 +2959,8 @@ fn a_plan_whose_undo_failed_is_not_called_undone() {
         .unwrap();
     let undone = bench
         .engine
-        .undo_plans_blocking(&[plan.id], &bench.quiet())
+        .undo([plan.id].to_vec())
+        .run(&bench.quiet())
         .unwrap();
     assert!(!undone.complete);
     assert!(
@@ -2997,13 +2970,15 @@ fn a_plan_whose_undo_failed_is_not_called_undone() {
             .unwrap()
             .contains("could not be put back")
     );
-    let status: String = bench
-        .catalog()
-        .query_row("SELECT status FROM plans WHERE id = ?1", [plan.id], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert_ne!(status, "undone");
+    let history = block_on(bench.engine.list_plans(PlanListRequest {
+        root_id: Some(bench.root.id),
+        offset: 0,
+        limit: 20,
+    }))
+    .unwrap();
+    let listed = history.iter().find(|listed| listed.id == plan.id).unwrap();
+    assert_ne!(listed.status, PlanStatus::Undone);
+    assert!(listed.can_undo());
     assert_eq!(bench.held().len(), 1, "the original stays in holding");
     let steps = bench.steps(plan.id);
     let told = steps[0].message.clone().unwrap_or_default();
@@ -3016,7 +2991,8 @@ fn a_plan_whose_undo_failed_is_not_called_undone() {
     fs::write(&output, &converted).unwrap();
     let again = bench
         .engine
-        .undo_plans_blocking(&[plan.id], &bench.quiet())
+        .undo([plan.id].to_vec())
+        .run(&bench.quiet())
         .unwrap();
     assert!(again.complete, "{:?}", again.message);
     let steps = bench.steps(plan.id);

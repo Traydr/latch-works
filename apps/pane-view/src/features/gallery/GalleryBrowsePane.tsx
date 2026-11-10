@@ -1,15 +1,16 @@
-import type { MediaItem } from "@latch-works/media-domain";
 import { type MutableRefObject, memo, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
-import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
+import type { GalleryBrowseEntry, GalleryMedia } from "@/features/library/listing-contract";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { cn } from "@/lib/utils";
 
 export interface GalleryBrowsePaneProps {
   columnCountRef: MutableRefObject<number>;
   comicMode: boolean;
+  /** Why the last comic activation could not open the reader, if it failed. */
+  comicOpenError: string | null;
   /** Why the selected item's last delete failed, if it did. */
   deleteError: string | null;
   deletedEntryIds: ReadonlySet<string>;
@@ -33,7 +34,7 @@ export interface GalleryBrowsePaneProps {
   /** The comic whose full entry is loading for the reader, if any. */
   openingComicId: string | null;
   scrollRequestKey: number;
-  selected: MediaItem | null;
+  selected: GalleryMedia | null;
   selectedId: string | null;
   /** Hidden for comic summaries: deleting a comic is folder deletion. */
   showDelete: boolean;
@@ -51,6 +52,7 @@ export interface GalleryBrowsePaneProps {
 export const GalleryBrowsePane = memo(function GalleryBrowsePane({
   columnCountRef,
   comicMode,
+  comicOpenError,
   deleteError,
   deletedEntryIds,
   deletingEntryIds,
@@ -123,6 +125,11 @@ export const GalleryBrowsePane = memo(function GalleryBrowsePane({
       )}
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {comicOpenError ? (
+          <p className="border-b border-border px-4 py-2 text-sm text-destructive" role="alert">
+            Couldn't open the comic: {comicOpenError}
+          </p>
+        ) : null}
         <BrowserGrid
           cardWidth={thumbnailSize}
           comicMode={comicMode}

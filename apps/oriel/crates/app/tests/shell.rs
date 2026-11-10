@@ -5,126 +5,25 @@
 //! the window's state round trip, quitting while work runs, the activity marks, every mode's jobs
 //! in one place, and the names VoiceOver reads.
 
-use std::cell::Cell;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
-    Action, AnyWindowHandle, App, AppContext as _, Bounds, Entity, Focusable as _, OwnedMenuItem,
-    Role, TestAppContext, VisualTestContext, WindowBounds, WindowOptions, px, size,
+    Action, AnyWindowHandle, AppContext as _, Bounds, OwnedMenuItem, Role, TestAppContext,
+    VisualTestContext, WindowBounds, px, size,
 };
-use oriel::quit::QuitPlatform;
-use oriel::shell::Shell;
-use oriel_core_paths::DataRoot;
-use oriel_media::still::{Still, WebpSettings};
-use oriel_mode_tidy::TidyPage;
+use oriel_core_paths::{DataRoot, Notice, NoticeIndex};
+use oriel_mode_tidy::{TidyMode, TidyPage};
+use oriel_mode_view::ViewMode;
 use oriel_ui::{
-    ActivityJob, JobCommand, JobControl, JobState, LocalStorage, ModeActivity, ModeId, Toast,
-    ToastExt as _,
+    ActivityJob, JobCommand, JobControl, JobState, LocalStorage, ModeActivity, ModeId,
+    ModeReporter, Toast, ToastExt as _, Work,
 };
 
-/// A folder of its own under the temp folder, emptied first.
-fn scratch(test: &str) -> PathBuf {
-    let folder = std::env::temp_dir()
-        .join("oriel-shell-tests")
-        .join(format!("{test}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&folder);
-    std::fs::create_dir_all(&folder).unwrap();
-    folder
-}
-
-/// Stands in for hiding and quitting the app, which the test platform cannot do.
-#[derive(Default)]
-struct Recorder {
-    hides: Cell<usize>,
-    quits: Cell<usize>,
-}
-
-impl QuitPlatform for Recorder {
-    fn hide(&self, _: &mut App) {
-        self.hides.set(self.hides.get() + 1);
-    }
-
-    fn quit(&self, _: &mut App) {
-        self.quits.set(self.quits.get() + 1);
-    }
-}
-
-struct Opened {
-    handle: AnyWindowHandle,
-    shell: Entity<Shell>,
-    platform: Rc<Recorder>,
-}
-
-/// GPUI Kit, the store of preferences in `data`'s shell folder, the theme and the keys, as the
-/// app starts them.
-fn start(cx: &mut TestAppContext, data: &DataRoot) {
-    data.create_folders().unwrap();
-    cx.update(|cx| {
-        gpui_kit::init(cx);
-        LocalStorage::init(LocalStorage::open(&data.shell()), cx);
-        oriel_ui::theme::init(cx);
-        oriel::actions::init(cx);
-    });
-}
-
-fn open_shell(cx: &mut TestAppContext, data: &DataRoot) -> Opened {
-    let platform = Rc::new(Recorder::default());
-    let (handle, shell) = cx.update(|cx| {
-        let platform: Rc<dyn QuitPlatform> = platform.clone();
-        gpui_kit::open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                    Default::default(),
-                    size(px(1320.), px(860.)),
-                ))),
-                ..Default::default()
-            },
-            cx,
-            |window, cx| {
-                let shell = cx.new(|cx| Shell::with_data(data.clone(), platform, window, cx));
-                shell.focus_handle(cx).focus(window, cx);
-                shell
-            },
-        )
-        .expect("open the test window")
-    });
-    frame(cx, handle);
-    Opened {
-        handle,
-        shell,
-        platform,
-    }
-}
-
-fn frame(cx: &mut TestAppContext, handle: AnyWindowHandle) {
-    cx.run_until_parked();
-    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
-        .unwrap();
-}
-
-fn press(cx: &mut TestAppContext, handle: AnyWindowHandle, key: &str) {
-    cx.update_window(handle, |_, window, cx| window.press(key, cx))
-        .unwrap();
-    frame(cx, handle);
-}
-
-fn click(cx: &mut TestAppContext, handle: AnyWindowHandle, id: &'static str) {
-    cx.update_window(handle, |_, window, cx| window.click(id, cx))
-        .unwrap();
-    frame(cx, handle);
-}
-
-fn mode(opened: &Opened, cx: &mut TestAppContext) -> ModeId {
-    cx.update(|cx| opened.shell.read(cx).state().read(cx).mode())
-}
-
-fn title(cx: &mut TestAppContext, handle: AnyWindowHandle) -> Option<String> {
-    VisualTestContext::from_window(handle, cx).window_title()
-}
+use crate::support::*;
 
 /// The action behind `item` in the menu bar's `menu`, and whether the item is checked.
 fn menu_item(cx: &mut TestAppContext, menu: &str, item: &str) -> (Box<dyn Action>, bool) {
@@ -156,20 +55,6 @@ fn choose_from_menu(cx: &mut TestAppContext, handle: AnyWindowHandle, menu: &str
     cx.update_window(handle, |_, window, cx| window.dispatch_action(action, cx))
         .unwrap();
     frame(cx, handle);
-}
-
-fn label_of(cx: &mut TestAppContext, handle: AnyWindowHandle, id: &'static str) -> Option<String> {
-    cx.update_window(handle, |_, window, _| {
-        window
-            .try_find(id)
-            .and_then(|element| element.label().map(str::to_owned))
-    })
-    .unwrap()
-}
-
-fn is_drawn(cx: &mut TestAppContext, handle: AnyWindowHandle, id: &'static str) -> bool {
-    cx.update_window(handle, |_, window, _| window.try_find(id).is_some())
-        .unwrap()
 }
 
 #[gpui_kit::test]
@@ -295,7 +180,7 @@ fn reopens_in_the_mode_it_showed_last_with_its_sidebar_and_theme(cx: &mut TestAp
         .unwrap();
     cx.run_until_parked();
 
-    let stored = std::fs::read_to_string(data.shell().join("local-storage.json")).unwrap();
+    let stored = std::fs::read_to_string(data.local_storage()).unwrap();
     let stored: serde_json::Value = serde_json::from_str(&stored).unwrap();
     assert_eq!(stored["oriel.mode"], "sync");
     assert_eq!(stored["oriel.sidebar"], "rail");
@@ -303,7 +188,7 @@ fn reopens_in_the_mode_it_showed_last_with_its_sidebar_and_theme(cx: &mut TestAp
 
     // A second start reads the file again, as the app does.
     cx.update(|cx| {
-        LocalStorage::init(LocalStorage::open(&data.shell()), cx);
+        LocalStorage::init(LocalStorage::open(&data.local_storage()), cx);
         oriel_ui::theme::init(cx);
     });
     let second = open_shell(cx, &data);
@@ -319,8 +204,9 @@ fn a_hidden_mode_keeps_its_page_and_draws_nothing(cx: &mut TestAppContext) {
     start(cx, &data);
     let opened = open_shell(cx, &data);
     let handle = opened.handle;
-    let page =
-        |cx: &mut TestAppContext| cx.update(|cx| opened.shell.read(cx).tidy().read(cx).page());
+    let page = |cx: &mut TestAppContext| {
+        cx.update(|cx| opened.shell.read(cx).mode::<TidyMode>().read(cx).page())
+    };
 
     assert!(
         !is_drawn(cx, handle, "tidy-Library"),
@@ -335,19 +221,6 @@ fn a_hidden_mode_keeps_its_page_and_draws_nothing(cx: &mut TestAppContext) {
     press(cx, handle, "secondary-2");
     assert_eq!(mode(&opened, cx), ModeId::Tidy);
     assert_eq!(page(cx), TidyPage::Library);
-}
-
-/// A small WebP still of one color at `path`.
-fn write_still(path: &Path, shade: u8) {
-    let (width, height) = (32u32, 18u32);
-    let bgra = [shade, 128, 255 - shade, 255].repeat((width * height) as usize);
-    let still = Still::from_bgra(width, height, bgra, true).unwrap();
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(
-        path,
-        still.encode_webp(WebpSettings::lossy(80., 0)).unwrap(),
-    )
-    .unwrap();
 }
 
 #[gpui_kit::test]
@@ -373,21 +246,14 @@ fn view_keeps_its_folder_while_another_mode_shows(cx: &mut TestAppContext) {
     assert_eq!(mode(&opened, cx), ModeId::View);
     let shown = |cx: &mut TestAppContext| {
         cx.update(|cx| {
-            let view = opened.shell.read(cx).view().read(cx);
+            let view = opened.shell.read(cx).mode::<ViewMode>().read(cx);
             (
                 view.folder(cx).map(|folder| folder.to_path_buf()),
                 view.gallery().read(cx).media().len(),
             )
         })
     };
-    // View scans on threads of its own, so give them real time.
-    for _ in 0..500 {
-        frame(cx, handle);
-        if shown(cx).1 == 3 {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    wait_until(cx, handle, "View to list the folder", |cx| shown(cx).1 == 3);
     let real = oriel_runtime::paths::canonicalize(&archive).unwrap();
     assert_eq!(shown(cx), (Some(real.clone()), 3));
     let tile = gpui_kit::ElementId::Path(real.join("still-0.webp").into());
@@ -411,20 +277,15 @@ fn view_keeps_its_folder_while_another_mode_shows(cx: &mut TestAppContext) {
 fn wait_for_view_folder(cx: &mut TestAppContext, opened: &Opened, folder: &Path) {
     let shown = |cx: &mut TestAppContext| {
         cx.update(|cx| {
-            let view = opened.shell.read(cx).view().read(cx);
+            let view = opened.shell.read(cx).mode::<ViewMode>().read(cx);
             let scanned =
                 view.catalog().read(cx).state() == oriel_mode_view::catalog::ScanState::Done;
             (view.folder(cx).map(|folder| folder.to_path_buf()), scanned)
         })
     };
-    for _ in 0..500 {
-        frame(cx, opened.handle);
-        if shown(cx) == (Some(folder.to_path_buf()), true) {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert_eq!(shown(cx), (Some(folder.to_path_buf()), true));
+    wait_until(cx, opened.handle, "View to show the folder scanned", |cx| {
+        shown(cx) == (Some(folder.to_path_buf()), true)
+    });
 }
 
 #[gpui_kit::test]
@@ -462,12 +323,12 @@ fn reopens_on_the_page_it_showed_last_with_view_able_to_step_back_up(cx: &mut Te
     cx.run_until_parked();
 
     // A second start reads the stored state again, as the app does.
-    cx.update(|cx| LocalStorage::init(LocalStorage::open(&data.shell()), cx));
+    cx.update(|cx| LocalStorage::init(LocalStorage::open(&data.local_storage()), cx));
     let second = open_shell(cx, &data);
     assert_eq!(mode(&second, cx), ModeId::Tidy);
     assert_eq!(title(cx, second.handle).as_deref(), Some("Tidy – Oriel"));
     assert_eq!(
-        cx.update(|cx| second.shell.read(cx).tidy().read(cx).page()),
+        cx.update(|cx| second.shell.read(cx).mode::<TidyMode>().read(cx).page()),
         TidyPage::Library
     );
 
@@ -542,14 +403,14 @@ fn remembers_the_window_size_and_position(cx: &mut TestAppContext) {
     cx.executor().advance_clock(Duration::from_millis(300));
     cx.run_until_parked();
 
-    let text = std::fs::read_to_string(data.shell().join("window-state.json"))
+    let text = std::fs::read_to_string(data.window_state())
         .expect("the window state is written a moment after a resize");
     assert_eq!(
         text,
         r#"{"bounds":{"x":0,"y":0,"width":1500,"height":940},"maximized":false}"#
     );
     // The next window opens where this one was.
-    let options = cx.update(|cx| oriel::main_window_options(&data, cx));
+    let options = cx.update(|cx| oriel::main_window_options(&oriel::Launch::of(data.clone()), cx));
     assert_eq!(
         options.window_bounds,
         Some(WindowBounds::Windowed(Bounds::new(
@@ -567,10 +428,14 @@ fn quitting_waits_for_running_work_with_the_window_hidden(cx: &mut TestAppContex
     let handle = opened.handle;
     let platform = opened.platform.clone();
     let state = cx.update(|cx| opened.shell.read(cx).state().clone());
-    let report = |cx: &mut TestAppContext, activity| {
-        state.update(cx, |state, cx| {
-            state.set_activity(ModeId::Sync, activity, cx)
-        });
+    // A push holds quitting; a scan does not.
+    let report = |cx: &mut TestAppContext, shown: Option<ModeActivity>| {
+        let work = Work {
+            shown,
+            holds_quit: matches!(shown, Some(ModeActivity::Progress(_))),
+            jobs: Vec::new(),
+        };
+        cx.update(|cx| ModeReporter::new(&state, ModeId::Sync).report(work, cx));
         cx.run_until_parked();
     };
 
@@ -629,10 +494,18 @@ fn the_switcher_shows_the_work_of_modes_not_on_screen(cx: &mut TestAppContext) {
     let opened = open_shell(cx, &data);
     let handle = opened.handle;
     let state = cx.update(|cx| opened.shell.read(cx).state().clone());
-    state.update(cx, |state, cx| {
-        state.set_activity(ModeId::Tidy, Some(ModeActivity::Progress(0.4)), cx);
-        state.set_activity(ModeId::Sync, Some(ModeActivity::Working), cx);
-        state.set_activity(ModeId::View, Some(ModeActivity::Working), cx);
+    cx.update(|cx| {
+        for (mode, shown) in [
+            (ModeId::Tidy, ModeActivity::Progress(0.4)),
+            (ModeId::Sync, ModeActivity::Working),
+            (ModeId::View, ModeActivity::Working),
+        ] {
+            let work = Work {
+                shown: Some(shown),
+                ..Work::default()
+            };
+            ModeReporter::new(&state, mode).report(work, cx);
+        }
     });
     frame(cx, handle);
 
@@ -669,7 +542,8 @@ fn every_modes_jobs_show_in_one_place_at_the_bottom_right(cx: &mut TestAppContex
     start(cx, &data);
     let opened = open_shell(cx, &data);
     let handle = opened.handle;
-    let jobs = cx.update(|cx| opened.shell.read(cx).state().read(cx).jobs().clone());
+    let state = cx.update(|cx| opened.shell.read(cx).state().clone());
+    let jobs = cx.update(|cx| state.read(cx).jobs().clone());
     let commands = Rc::new(std::cell::RefCell::new(Vec::new()));
     let _listening = cx.update(|cx| {
         let commands = commands.clone();
@@ -682,7 +556,11 @@ fn every_modes_jobs_show_in_one_place_at_the_bottom_right(cx: &mut TestAppContex
         })
     });
     let publish = |cx: &mut TestAppContext, mode, list: Vec<ActivityJob>| {
-        jobs.update(cx, |jobs, cx| jobs.set_jobs(mode, list, cx));
+        let work = Work {
+            jobs: list,
+            ..Work::default()
+        };
+        cx.update(|cx| ModeReporter::new(&state, mode).report(work, cx));
         frame(cx, handle);
     };
     // Nothing runs, so nothing shows.
@@ -870,7 +748,7 @@ fn every_mode_opens_a_shortcut_sheet(cx: &mut TestAppContext) {
         assert!(sheet_open(cx), "? in {mode}");
         close(cx);
         cx.update_window(handle, |_, window, cx| {
-            window.dispatch_action(Box::new(oriel_ui::commands::ShowShortcuts), cx);
+            window.dispatch_action(Box::new(oriel_ui::shortcuts::ShowShortcuts), cx);
         })
         .unwrap();
         frame(cx, handle);
@@ -907,17 +785,33 @@ fn about_names_the_version_and_the_licences_the_app_carries(cx: &mut TestAppCont
     // The bundle's index, as `xtask bundle` writes it, is listed with each licence.
     let licenses = root.join("licenses");
     std::fs::create_dir_all(&licenses).unwrap();
+    let notice = |folder: &str, name: &str, version: &str, licence: &str| Notice {
+        folder: folder.into(),
+        name: name.into(),
+        version: version.into(),
+        licence: licence.into(),
+    };
+    let index = NoticeIndex {
+        app: oriel_core_paths::APP_NAME.into(),
+        version: "0.0.1".into(),
+        notices: vec![
+            notice("oriel", "Oriel", "0.0.1", "MIT"),
+            notice(
+                "media-tools",
+                "ffmpeg and ffprobe",
+                "9.0.2",
+                "GPL-3.0-or-later",
+            ),
+        ],
+    };
     std::fs::write(
-        licenses.join("index.json"),
-        r#"{"app":"Oriel","version":"0.0.1","notices":[
-            {"folder":"oriel","name":"Oriel","version":"0.0.1","licence":"MIT"},
-            {"folder":"media-tools","name":"ffmpeg and ffprobe","version":"9.0.2",
-             "licence":"GPL-3.0-or-later"}]}"#,
+        licenses.join(oriel_core_paths::NOTICE_INDEX_FILE),
+        serde_json::to_string(&index).unwrap(),
     )
     .unwrap();
     cx.update_window(handle, |_, window, cx| {
         let index = oriel::about::LicenceIndex::read(&licenses);
-        oriel::about::show(index, window, cx);
+        oriel::about::show(&root, index, window, cx);
     })
     .unwrap();
     frame(cx, handle);

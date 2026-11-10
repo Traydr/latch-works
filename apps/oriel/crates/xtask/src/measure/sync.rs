@@ -16,19 +16,18 @@ use serde_json::{Value, json};
 use super::process::{self, Spec};
 use super::{Outcome, Settings, Turn};
 
-/// The e2e stack's sync token (`e2e/src/env.ts`), which the local Pane View accepts.
-pub const E2E_TOKEN: &str = "e2e-sync-token-0123456789abcdef";
 /// Where to look beside an app's binary for its own `sync_bench` example.
 pub const SYNC_BENCH: &[&str] = &["examples/sync_bench", "sync_bench"];
 
-/// A Pane View to push to, checked to be on this Mac.
+/// A Pane View to push to, checked to be on this Mac, with the token to push with; without one,
+/// `sync_bench` uses the e2e stack's.
 pub struct Target {
     pub url: String,
-    pub token: String,
+    pub token: Option<String>,
 }
 
 impl Target {
-    pub fn new(url: &str, token: String) -> Result<Self> {
+    pub fn new(url: &str, token: Option<String>) -> Result<Self> {
         check_local(url)?;
         Ok(Self {
             url: url.trim_end_matches('/').to_owned(),
@@ -75,7 +74,7 @@ pub fn run(turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {
         .or_else(|| settings.sync_bench.clone())
         .context("no sync_bench to run")?;
     let cache = turn.folder.join("sync-hash-cache");
-    let _ = fs::remove_dir_all(&cache);
+    super::clear(&cache)?;
     fs::create_dir_all(&cache)?;
 
     let mut runs = serde_json::Map::new();
@@ -96,10 +95,9 @@ pub fn run(turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {
             "ORIEL_SYNC_STACK_URL".to_owned(),
             OsString::from(&target.url),
         ));
-        env.push((
-            "ORIEL_SYNC_STACK_TOKEN".to_owned(),
-            OsString::from(&target.token),
-        ));
+        if let Some(token) = &target.token {
+            env.push(("ORIEL_SYNC_STACK_TOKEN".to_owned(), OsString::from(token)));
+        }
         let mut launched = process::launch(Spec {
             program: &bench,
             args,

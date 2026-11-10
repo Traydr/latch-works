@@ -1,10 +1,10 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { betterAuth } from "better-auth";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { env } from "../../env/server";
 import { db } from "../db";
 import * as schema from "../db/schema";
-import { readSingleUserCredentials, verifySingleUserCredentials } from "./session";
 
 export const auth = betterAuth({
   advanced: {
@@ -39,14 +39,15 @@ export interface ConfiguredOwner {
   username: string;
 }
 
+/** The one owner, from PANE_VIEW_USERNAME and PANE_VIEW_PASSWORD. */
 export function readConfiguredOwner(): ConfiguredOwner {
-  const credentials = readSingleUserCredentials();
+  const username = env.PANE_VIEW_USERNAME;
 
   return {
-    email: toOwnerEmail(credentials.username),
-    name: credentials.username,
-    password: credentials.password,
-    username: credentials.username,
+    email: toOwnerEmail(username),
+    name: username,
+    password: env.PANE_VIEW_PASSWORD,
+    username,
   };
 }
 
@@ -57,11 +58,20 @@ export function verifyConfiguredOwnerCredentials({
   password: string;
   username: string;
 }): ConfiguredOwner | null {
-  if (!verifySingleUserCredentials({ password, username })) {
-    return null;
-  }
+  const owner = readConfiguredOwner();
+  // Both comparisons always run, so a wrong username costs as much as a wrong password.
+  const usernameMatches = safeCompare(username, owner.username);
+  const passwordMatches = safeCompare(password, owner.password);
 
-  return readConfiguredOwner();
+  return usernameMatches && passwordMatches ? owner : null;
+}
+
+/** Compares fixed-size digests, so neither the length nor the content of `expected` leaks. */
+function safeCompare(candidate: string, expected: string): boolean {
+  const candidateDigest = createHash("sha256").update(candidate).digest();
+  const expectedDigest = createHash("sha256").update(expected).digest();
+
+  return timingSafeEqual(candidateDigest, expectedDigest);
 }
 
 async function ensureConfiguredOwnerCredentialAccount(

@@ -15,55 +15,23 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { JsonObject } from "@/lib/json";
-import type { MaintenanceJobProgress } from "../management/maintenance-progress";
+import type { JsonValue } from "@/lib/json";
+import {
+  ACTIVE_MAINTENANCE_JOB_STATUSES,
+  MAINTENANCE_JOB_STATUSES,
+  MAINTENANCE_JOB_TYPES,
+  SYNC_RUN_STATUSES,
+} from "@/lib/library-jobs";
 
 export const mediaTypeEnum = pgEnum("media_type", ["image", "gif", "video", "pdf", "unknown"]);
 
-export const collectionTypeEnum = pgEnum("collection_type", [
-  "comic",
-  "story-series",
-  "folder",
-  "source-post",
-]);
+export const syncRunStatusEnum = pgEnum("sync_run_status", SYNC_RUN_STATUSES);
 
-export const syncRunStatusEnum = pgEnum("sync_run_status", [
-  "running",
-  "completed",
-  "failed",
-  "cancelled",
-]);
+export const syncActionEnum = pgEnum("sync_action", ["upload", "delete"]);
 
-export const syncActionEnum = pgEnum("sync_action", ["upload", "update", "keep", "delete"]);
+export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", MAINTENANCE_JOB_TYPES);
 
-export const subjectTypeEnum = pgEnum("subject_type", ["library_entry", "collection"]);
-
-export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", [
-  "library_hard_wipe",
-  "soft_deleted_purge",
-  "shutter_source_purge",
-  // Retired one-time migration (removed 2026-07). The value stays declared so
-  // Drizzle does not try to drop it: Postgres cannot remove an enum member
-  // without recreating the type, and historical maintenance_jobs rows still
-  // reference it. Nothing schedules jobs of this type any more.
-  "legacy_derivative_cleanup",
-]);
-
-export const maintenanceJobStatusEnum = pgEnum("maintenance_job_status", [
-  "pending",
-  "running",
-  "completed",
-  "failed",
-  "cancelled",
-]);
-
-export const sourceTypeEnum = pgEnum("source_type", [
-  "cli",
-  "local",
-  "extension",
-  "tresorit",
-  "manual",
-]);
+export const maintenanceJobStatusEnum = pgEnum("maintenance_job_status", MAINTENANCE_JOB_STATUSES);
 
 export const users = pgTable(
   "users",
@@ -73,8 +41,6 @@ export const users = pgTable(
     email: text("email").notNull(),
     emailVerified: boolean("email_verified").notNull().default(false),
     image: text("image"),
-    passwordHash: text("password_hash"),
-    role: text("role").notNull().default("owner"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -91,17 +57,14 @@ export const sessions = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     token: text("token").notNull(),
-    tokenHash: text("token_hash"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-    revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (table) => ({
     tokenUnique: uniqueIndex("sessions_token_unique").on(table.token),
-    tokenHashUnique: uniqueIndex("sessions_token_hash_unique").on(table.tokenHash),
     userIdIndex: index("sessions_user_id_idx").on(table.userId),
   }),
 );
@@ -152,50 +115,14 @@ export const loginThrottleAttempts = pgTable(
   }),
 );
 
-export const apiTokens = pgTable(
-  "api_tokens",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    tokenHash: text("token_hash").notNull(),
-    name: text("name").notNull(),
-    scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
-    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    revokedAt: timestamp("revoked_at", { withTimezone: true }),
-  },
-  (table) => ({
-    tokenHashUnique: uniqueIndex("api_tokens_token_hash_unique").on(table.tokenHash),
-  }),
-);
-
-export const sources = pgTable(
-  "sources",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    type: sourceTypeEnum("type").notNull(),
-    name: text("name").notNull(),
-    basePath: text("base_path"),
-    config: jsonb("config").$type<JsonObject>().notNull().default({}),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => ({
-    nameUnique: uniqueIndex("sources_name_unique").on(table.name),
-  }),
-);
-
 export const syncRuns = pgTable("sync_runs", {
   id: uuid("id").defaultRandom().primaryKey(),
-  sourceId: uuid("source_id").references(() => sources.id),
   startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   sourceRoot: text("source_root").notNull(),
   status: syncRunStatusEnum("status").notNull(),
   counts: jsonb("counts").$type<Record<string, number>>().notNull().default({}),
-  manifestKey: text("manifest_key"),
   error: text("error"),
-  cliVersion: text("cli_version"),
-  createdByTokenId: uuid("created_by_token_id").references(() => apiTokens.id),
 });
 
 export const mediaObjects = pgTable(
@@ -207,16 +134,7 @@ export const mediaObjects = pgTable(
     contentType: text("content_type").notNull(),
     extension: text("extension").notNull(),
     mediaType: mediaTypeEnum("media_type").notNull(),
-    width: integer("width"),
-    height: integer("height"),
-    durationMs: integer("duration_ms"),
-    pageCount: integer("page_count"),
     objectKey: text("object_key").notNull(),
-    storageProvider: text("storage_provider").notNull().default("s3"),
-    bucket: text("bucket"),
-    etag: text("etag"),
-    metadata: jsonb("metadata").$type<JsonObject>().notNull().default({}),
-    createdBySyncRunId: uuid("created_by_sync_run_id").references(() => syncRuns.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
@@ -257,9 +175,6 @@ export const folders = pgTable(
     parentPath: text("parent_path").notNull().default(""),
     parentId: uuid("parent_id").references((): AnyPgColumn => folders.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    depth: integer("depth").notNull().default(0),
-    entryCount: integer("entry_count").notNull().default(0),
-    folderCount: integer("folder_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -282,19 +197,7 @@ export const libraryEntries = pgTable(
     parentPath: text("parent_path").notNull().default(""),
     filename: text("filename").notNull(),
     mtimeMs: bigint("mtime_ms", { mode: "number" }).notNull(),
-    size: bigint("size", { mode: "number" }),
-    sha256: text("sha256"),
-    source: text("source"),
-    sourceId: text("source_id"),
-    sourceRefId: uuid("source_ref_id").references(() => sources.id),
-    lastSyncRunId: uuid("last_sync_run_id").references(() => syncRuns.id),
-    metadata: jsonb("metadata").$type<JsonObject>().notNull().default({}),
-    hidden: boolean("hidden").notNull().default(false),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).defaultNow().notNull(),
-    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
-    changedAt: timestamp("changed_at", { withTimezone: true }),
-    contentChangedAt: timestamp("content_changed_at", { withTimezone: true }),
-    pathChangedAt: timestamp("path_changed_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => ({
@@ -302,58 +205,6 @@ export const libraryEntries = pgTable(
     parentIndex: index("library_entries_parent_path_idx").on(table.parentPath),
     mediaObjectIndex: index("library_entries_media_object_id_idx").on(table.mediaObjectId),
     deletedAtIndex: index("library_entries_deleted_at_idx").on(table.deletedAt),
-    sha256Lowercase: check(
-      "library_entries_sha256_lowercase",
-      sql`${table.sha256} = lower(${table.sha256})`,
-    ),
-  }),
-);
-
-export const collections = pgTable(
-  "collections",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    type: collectionTypeEnum("type").notNull(),
-    name: text("name").notNull(),
-    slug: text("slug"),
-    description: text("description"),
-    path: text("path").notNull(),
-    sourceId: uuid("source_id").references(() => sources.id),
-    externalSourceId: text("external_source_id"),
-    coverEntryId: uuid("cover_entry_id").references(() => libraryEntries.id, {
-      onDelete: "set null",
-    }),
-    metadata: jsonb("metadata").$type<JsonObject>().notNull().default({}),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-    deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  },
-  (table) => ({
-    pathTypeUnique: uniqueIndex("collections_path_type_unique").on(table.path, table.type),
-  }),
-);
-
-export const collectionItems = pgTable(
-  "collection_items",
-  {
-    collectionId: uuid("collection_id")
-      .notNull()
-      .references(() => collections.id, { onDelete: "cascade" }),
-    libraryEntryId: uuid("library_entry_id")
-      .notNull()
-      .references(() => libraryEntries.id, { onDelete: "cascade" }),
-    position: integer("position").notNull(),
-  },
-  (table) => ({
-    pk: primaryKey({ columns: [table.collectionId, table.libraryEntryId] }),
-    collectionPositionIndex: index("collection_items_collection_position_idx").on(
-      table.collectionId,
-      table.position,
-    ),
-    collectionPositionUnique: uniqueIndex("collection_items_collection_position_unique").on(
-      table.collectionId,
-      table.position,
-    ),
   }),
 );
 
@@ -367,20 +218,13 @@ export const syncRunItems = pgTable(
     mediaObjectId: uuid("media_object_id").references(() => mediaObjects.id, {
       onDelete: "set null",
     }),
-    previousMediaObjectId: uuid("previous_media_object_id").references(() => mediaObjects.id, {
-      onDelete: "set null",
-    }),
-    previousLogicalPath: text("previous_logical_path"),
     action: syncActionEnum("action").notNull(),
     error: text("error"),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.syncRunId, table.logicalPath] }),
-    // Back the ON DELETE SET NULL foreign keys so a media delete doesn't scan the table.
+    // Backs the ON DELETE SET NULL foreign key so a media delete doesn't scan the table.
     mediaObjectIndex: index("sync_run_items_media_object_id_idx").on(table.mediaObjectId),
-    previousMediaObjectIndex: index("sync_run_items_previous_media_object_id_idx").on(
-      table.previousMediaObjectId,
-    ),
   }),
 );
 
@@ -390,38 +234,24 @@ export const viewerState = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    subjectId: uuid("subject_id").notNull(),
-    subjectType: subjectTypeEnum("subject_type").notNull(),
+    subjectId: uuid("subject_id")
+      .notNull()
+      .references(() => libraryEntries.id, { onDelete: "cascade" }),
     positionMs: integer("position_ms"),
     page: integer("page"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
-    pk: primaryKey({ columns: [table.userId, table.subjectId, table.subjectType] }),
+    pk: primaryKey({ columns: [table.userId, table.subjectId] }),
   }),
 );
 
-export const favorites = pgTable(
-  "favorites",
-  {
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    subjectId: uuid("subject_id").notNull(),
-    subjectType: subjectTypeEnum("subject_type").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => ({
-    pk: primaryKey({ columns: [table.userId, table.subjectId, table.subjectType] }),
-  }),
-);
+/** The partial unique index that allows one active job per type. */
+export const ACTIVE_MAINTENANCE_JOB_INDEX = "maintenance_jobs_active_type_unique";
 
-export type {
-  LibraryWipeJobProgress,
-  MaintenanceJobProgress,
-  ShutterSourcePurgeJobProgress,
-  SoftDeletedPurgeJobProgress,
-} from "../management/maintenance-progress";
+const activeStatusList = sql.raw(
+  ACTIVE_MAINTENANCE_JOB_STATUSES.map((status) => `'${status}'`).join(", "),
+);
 
 export const maintenanceJobs = pgTable(
   "maintenance_jobs",
@@ -429,15 +259,8 @@ export const maintenanceJobs = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     type: maintenanceJobTypeEnum("type").notNull(),
     status: maintenanceJobStatusEnum("status").notNull().default("pending"),
-    // The stored default still carries the retired errorCount and a phase that
-    // is only valid for hard wipes; every scheduler supplies explicit progress
-    // and the parser (maintenance-progress.ts) ignores unknown keys, so
-    // changing it is a migration for a follow-up rather than this refactor.
-    // Written as SQL so the TypeScript progress type stays honest.
-    progress: jsonb("progress")
-      .$type<MaintenanceJobProgress>()
-      .notNull()
-      .default(sql`'{"errorCount":0,"phase":"s3_originals","processedCount":0}'::jsonb`),
+    // Parsed per job type by parseMaintenanceProgress (lib/library-jobs.ts).
+    progress: jsonb("progress").$type<JsonValue>().notNull(),
     error: text("error"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -446,13 +269,8 @@ export const maintenanceJobs = pgTable(
   (table) => ({
     statusIndex: index("maintenance_jobs_status_idx").on(table.status),
     typeStatusIndex: index("maintenance_jobs_type_status_idx").on(table.type, table.status),
-    activeHardWipeUnique: uniqueIndex("maintenance_jobs_active_hard_wipe_unique")
+    activeTypeUnique: uniqueIndex(ACTIVE_MAINTENANCE_JOB_INDEX)
       .on(table.type)
-      .where(
-        sql`${table.type} = 'library_hard_wipe' and ${table.status} in ('pending', 'running')`,
-      ),
-    activeTypeUnique: uniqueIndex("maintenance_jobs_active_type_unique")
-      .on(table.type)
-      .where(sql`${table.status} in ('pending', 'running')`),
+      .where(sql`${table.status} in (${activeStatusList})`),
   }),
 );

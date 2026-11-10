@@ -8,9 +8,14 @@ publish.workspace = true
 
 [dependencies]
 oriel-core-format.workspace = true
+oriel-core-paths.workspace = true
 # libavif is loaded at run time from the dylib the app ships (or the vendored set), never linked,
 # so a workspace build needs no C library.
 libloading = "0.8"
+
+[dev-dependencies]
+# `libavif`'s rule for a missing library: skip locally, fail on CI.
+oriel-test-archive.workspace = true
 
 [lints]
 workspace = true

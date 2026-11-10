@@ -1,39 +1,48 @@
-import type { PageLocation } from "../collector-entry";
-import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
-import { formatError, toError } from "../../gather/errors";
+import { toError } from "../../shared/errors";
+import { fetchWithTimeout } from "../../shared/fetch";
 import { lowercaseFirstAscii } from "../../shared/path";
 import {
+  type FailedCollectorRequest,
   RESOLVE_X_MEDIA_MESSAGE,
-  X_WEB_BEARER_TOKEN,
-  buildXFeatureValues,
-  buildXFieldToggles,
-  extractGraphqlMedia,
-  parseXMedia,
-  XTweetDetailResponseSchema,
-  type ResolveXMediaMessage,
-  type ResolveXMediaResponse,
+  type ResolveXMediaRequest,
+  sendCollectorRequest,
+} from "../../shared/protocol/collector";
+import type { CollectorResult, DownloadableFile } from "../../shared/types";
+import {
+  buildTweetDetailRequest,
+  normalizeXPhotoUrl,
   type ResolvedXMedia,
-  type XOperationMetadata
+  type ResolveXMediaResponse,
+  readTweetDetailMedia,
+  stripXMediaExtension,
+  X_MAIN_SCRIPT_PREFIX,
+  type XMediaAttempt,
+  type XOperationMetadata,
 } from "../../shared/x-media";
+import type { SourcePage } from "../collector-entry";
 
-type XMediaResolver = (message: ResolveXMediaMessage) => Promise<ResolveXMediaResponse>;
+type XMediaResolver = (
+  request: ResolveXMediaRequest,
+) => Promise<ResolveXMediaResponse | FailedCollectorRequest>;
 
-export async function collectXData(
+interface XPost {
+  username: string;
+  id: string;
+}
+
+export async function collect(
   document: Document,
-  location: PageLocation,
-  resolveMedia: XMediaResolver = resolveXMedia
-): Promise<GalleryCollectResponse> {
-  const post = getXPost(location);
+  page: SourcePage,
+  resolveMedia: XMediaResolver = sendCollectorRequest,
+): Promise<CollectorResult> {
+  const { username, postId } = page.address;
 
-  if (!post) {
-    return {
-      ok: false,
-      code: "UNSUPPORTED_SITE",
-      message: "This X page is not a supported post URL."
-    };
+  if (!username || !postId) {
+    return { ok: false, message: "This X page is not a supported post URL." };
   }
 
-  const username = lowercaseFirstAscii(post.username);
+  const post: XPost = { username: decodeURIComponent(username), id: postId };
+
   // Rendered photos are only what the viewer currently shows: a post can also hold videos or
   // photos that are not on screen. The resolved media list is the complete post; the rendered
   // photos only cover a resolution failure or a photo the resolver did not report.
@@ -41,171 +50,120 @@ export async function collectXData(
   const resolution = await resolvePostMedia(document, post, resolveMedia);
 
   if (resolution.failure && pageImages.length === 0) {
-    return {
-      ok: false,
-      code: "MEDIA_RESOLUTION_FAILED",
-      message: resolution.failure
-    };
+    return { ok: false, message: resolution.failure };
   }
 
   // Match by media id, not file name: the resolver reports a photo as `ID.jpg` while the page
   // may render the same photo as `ID.webp`, and that rendition has no original to download.
-  const resolvedIds = new Set(resolution.media.map((media) => getXMediaId(media.fileName)));
+  const resolvedIds = new Set(
+    resolution.media.map((media) => stripXMediaExtension(media.fileName)),
+  );
 
-  const images: GalleryImage[] = [
+  const images: DownloadableFile[] = [
     ...resolution.media,
-    ...pageImages.filter((image) => !resolvedIds.has(getXMediaId(image.fileName)))
-  ].map((image, index) => ({
-    pageNumber: index + 1,
-    thumbnailUrl: image.thumbnailUrl,
-    originalUrl: image.originalUrl,
-    fileName: image.fileName
-  }));
+    ...pageImages.filter((image) => !resolvedIds.has(stripXMediaExtension(image.fileName))),
+  ].map(({ originalUrl, fileName }) => ({ originalUrl, fileName }));
 
   if (images.length === 0) {
-    return {
-      ok: false,
-      code: "NO_IMAGES_FOUND",
-      message: "No downloadable media was found in this X post."
-    };
+    return { ok: false, message: "No downloadable media was found in this X post." };
   }
 
   return {
     ok: true,
     outputKind: "downloadable-files",
-    site: "x",
     title: getXPostTitle(document, post) || `@${post.username} post ${post.id}`,
-    pageUrl: location.href,
     galleryId: post.id,
-    folderSegments: [username],
-    skippedCount: 0,
-    images
+    folderSegments: [lowercaseFirstAscii(post.username)],
+    images,
   };
 }
 
 async function resolvePostMedia(
   document: Document,
-  post: { id: string },
-  resolveMedia: XMediaResolver
+  post: XPost,
+  resolveMedia: XMediaResolver,
 ): Promise<{ media: ResolvedXMedia[]; failure: string | null }> {
-  const resolveMessage: ResolveXMediaMessage = {
+  const request: ResolveXMediaRequest = {
     type: RESOLVE_X_MEDIA_MESSAGE,
     tweetId: post.id,
     mainScriptUrl: getXMainScriptUrl(document),
-    featureValues: getXFeatureValues(document)
+    featureValues: getXFeatureValues(document),
   };
 
-  let response: ResolveXMediaResponse;
+  let response: ResolveXMediaResponse | FailedCollectorRequest;
 
   try {
-    response = await resolveMedia(resolveMessage);
+    response = await resolveMedia(request);
   } catch (error) {
-    return { media: [], failure: formatError(toError(error)) };
+    return { media: [], failure: toError(error).message };
   }
 
   if (response.ok) {
     return { media: response.media, failure: null };
   }
 
-  const csrfToken = getCookieValue(document.cookie, "ct0");
+  const operation = "operation" in response ? response.operation : undefined;
 
-  const media =
-    response.operation && csrfToken
-      ? await resolveAuthenticatedXMedia(resolveMessage, response.operation, () =>
-          getCookieValue(document.cookie, "ct0")
-        )
-      : [];
+  if (!operation || !getCookieValue(document.cookie, "ct0")) {
+    return { media: [], failure: response.message };
+  }
 
-  return { media, failure: media.length > 0 ? null : response.message };
+  const signedIn = await resolveSignedInXMedia(request, operation, () =>
+    getCookieValue(document.cookie, "ct0"),
+  );
+
+  return "media" in signedIn
+    ? { media: signedIn.media, failure: null }
+    : { media: [], failure: `${response.message} (signed in: ${signedIn.failure})` };
 }
 
-function collectVisibleXPhotos(
-  document: Document,
-  post: { username: string; id: string }
-): GalleryImage[] {
+function collectVisibleXPhotos(document: Document, post: XPost): DownloadableFile[] {
   const dialogImages = Array.from(
     document.querySelectorAll<HTMLImageElement>(
-      '[role="dialog"] [data-testid="swipe-to-dismiss"] img[src*="pbs.twimg.com/media/"]'
-    )
+      '[role="dialog"] [data-testid="swipe-to-dismiss"] img[src*="pbs.twimg.com/media/"]',
+    ),
   );
 
   const postPath = `/${post.username}/status/${post.id}/photo/`;
 
   const inlineImages = Array.from(
-    document.querySelectorAll<HTMLImageElement>(`a[href^="${postPath}"] img[src]`)
+    document.querySelectorAll<HTMLImageElement>(`a[href^="${postPath}"] img[src]`),
   );
 
   const candidates = dialogImages.length > 0 ? dialogImages : inlineImages;
   const seen = new Set<string>();
-  const images: GalleryImage[] = [];
+  const images: DownloadableFile[] = [];
 
   for (const image of candidates) {
-    const normalized = normalizeXPhotoUrl(image.src);
+    const photo = normalizeXPhotoUrl(image.src);
 
-    if (!normalized || seen.has(normalized.originalUrl)) {
+    if (!photo || seen.has(photo.originalUrl)) {
       continue;
     }
 
-    seen.add(normalized.originalUrl);
-    images.push({
-      pageNumber: images.length + 1,
-      thumbnailUrl: image.src,
-      originalUrl: normalized.originalUrl,
-      fileName: normalized.fileName
-    });
+    seen.add(photo.originalUrl);
+    images.push(photo);
   }
 
   return images;
 }
 
-function getXMediaId(fileName: string): string {
-  const extensionStart = fileName.lastIndexOf(".");
-
-  return extensionStart > 0 ? fileName.slice(0, extensionStart) : fileName;
-}
-
-function normalizeXPhotoUrl(urlValue: string): { originalUrl: string; fileName: string } | null {
-  const url = new URL(urlValue);
-  const format = url.searchParams.get("format")?.toLowerCase();
-  const baseName = decodeURIComponent(url.pathname.split("/").pop() ?? "");
-
-  if (
-    url.hostname !== "pbs.twimg.com" ||
-    !url.pathname.startsWith("/media/") ||
-    !format ||
-    !baseName
-  ) {
-    return null;
-  }
-
-  url.searchParams.set("name", "orig");
-
-  return {
-    originalUrl: url.toString(),
-    fileName: `${baseName}.${format}`
-  };
-}
-
-function getXPost(location: PageLocation): { username: string; id: string } | null {
-  const match = location.pathname.match(/^\/([^/]+)\/status\/(\d+)/i);
-
-  return match ? { username: decodeURIComponent(match[1]), id: match[2] } : null;
-}
-
-function getXPostTitle(document: Document, post: { username: string; id: string }): string {
+function getXPostTitle(document: Document, post: XPost): string {
   const permalink = document.querySelector<HTMLAnchorElement>(
-    `a[href="/${post.username}/status/${post.id}"]`
+    `a[href="/${post.username}/status/${post.id}"]`,
   );
 
-  return permalink?.closest('[data-testid="tweet"]')?.querySelector('[data-testid="tweetText"]')
-    ?.textContent?.trim() ?? "";
+  return (
+    permalink
+      ?.closest('[data-testid="tweet"]')
+      ?.querySelector('[data-testid="tweetText"]')
+      ?.textContent?.trim() ?? ""
+  );
 }
 
 function getXMainScriptUrl(document: Document): string | null {
   return (
-    document.querySelector<HTMLScriptElement>(
-      'script[src^="https://abs.twimg.com/responsive-web/client-web/main."]'
-    )?.src ?? null
+    document.querySelector<HTMLScriptElement>(`script[src^="${X_MAIN_SCRIPT_PREFIX}"]`)?.src ?? null
   );
 }
 
@@ -220,8 +178,8 @@ function getXFeatureValues(document: Document) {
       continue;
     }
 
-    for (const match of text.matchAll(pattern)) {
-      values[match[1]] = match[2] === "true";
+    for (const [, name, value] of text.matchAll(pattern)) {
+      if (name) values[name] = value === "true";
     }
   }
 
@@ -240,46 +198,26 @@ function getCookieValue(cookie: string, name: string): string | null {
   return null;
 }
 
-async function resolveXMedia(message: ResolveXMediaMessage): Promise<ResolveXMediaResponse> {
-  return chrome.runtime.sendMessage<ResolveXMediaMessage, ResolveXMediaResponse>(message);
-}
-
-async function resolveAuthenticatedXMedia(
-  message: ResolveXMediaMessage,
+/** The TweetDetail query again, from the page with the signed-in session's cookies. */
+async function resolveSignedInXMedia(
+  request: ResolveXMediaRequest,
   operation: XOperationMetadata,
-  getCsrfToken: () => string | null
-): Promise<ResolvedXMedia[]> {
-  const url = new URL(`https://x.com/i/api/graphql/${operation.queryId}/TweetDetail`);
-  url.searchParams.set(
-    "variables",
-    JSON.stringify({
-      focalTweetId: message.tweetId,
-      with_rux_injections: false,
-      rankingMode: "Relevance",
-      includePromotedContent: false,
-      withCommunity: true,
-      withQuickPromoteEligibilityTweetFields: false,
-      withBirdwatchNotes: true,
-      withVoice: true
-    })
-  );
-  url.searchParams.set(
-    "features",
-    JSON.stringify(buildXFeatureValues(operation.featureSwitches, message.featureValues))
-  );
-  url.searchParams.set(
-    "fieldToggles",
-    JSON.stringify(buildXFieldToggles(operation.fieldToggles))
-  );
+  getCsrfToken: () => string | null,
+): Promise<XMediaAttempt> {
+  const fetchTweetDetail = (csrfToken: string) => {
+    const detail = buildTweetDetailRequest(request, operation, { kind: "session", csrfToken });
+
+    return fetchWithTimeout(detail.url, detail.init);
+  };
 
   try {
     const initialCsrfToken = getCsrfToken();
 
     if (!initialCsrfToken) {
-      return [];
+      return { failure: "no session" };
     }
 
-    let response = await fetchAuthenticatedTweetDetail(url, initialCsrfToken);
+    let response = await fetchTweetDetail(initialCsrfToken);
 
     if (response.status === 403) {
       // X commonly rotates ct0 on a rejected request. Fetch processes Set-Cookie before resolving,
@@ -287,33 +225,12 @@ async function resolveAuthenticatedXMedia(
       const refreshedCsrfToken = getCsrfToken();
 
       if (refreshedCsrfToken && refreshedCsrfToken !== initialCsrfToken) {
-        response = await fetchAuthenticatedTweetDetail(url, refreshedCsrfToken);
+        response = await fetchTweetDetail(refreshedCsrfToken);
       }
     }
 
-    if (!response.ok) {
-      return [];
-    }
-
-    const body = XTweetDetailResponseSchema.parse(await response.json());
-
-    return parseXMedia(extractGraphqlMedia(body, message.tweetId));
-  } catch {
-    return [];
+    return await readTweetDetailMedia(response, request.tweetId);
+  } catch (error) {
+    return { failure: toError(error).message };
   }
-}
-
-function fetchAuthenticatedTweetDetail(url: URL, csrfToken: string): Promise<Response> {
-  return fetch(url, {
-    credentials: "include",
-    headers: {
-      authorization: `Bearer ${X_WEB_BEARER_TOKEN}`,
-      "content-type": "application/json",
-      "x-csrf-token": csrfToken,
-      "x-twitter-active-user": "yes",
-      "x-twitter-auth-type": "OAuth2Session",
-      "x-twitter-client-language": "en"
-    },
-    signal: AbortSignal.timeout(12_000)
-  });
 }

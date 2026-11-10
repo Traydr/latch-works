@@ -1,35 +1,11 @@
 import { count, isNotNull, isNull, sql } from "drizzle-orm";
+import type { ManagementOverview } from "@/features/management/management-contract";
 import { db } from "../db";
-import { collections, folders, libraryEntries, mediaObjects } from "../db/schema";
-import { type ShutterPurgeReadiness, shutterPurgeReadiness } from "../media/shutter-client";
-import { readActiveCleanupJob } from "./guards";
+import { readActiveCleanupJob } from "../db/library-guards";
+import { folders, libraryEntries, mediaObjects } from "../db/schema";
+import { shutterConfig } from "../media/shutter-config";
+import { listRunningSyncRuns } from "../sync/sync-runs";
 import { orphanedMediaObjectCondition } from "./orphaned-sources";
-import { listRunningSyncRuns, type RunningSyncRun } from "./sync-run-control";
-
-export interface ManagementOverview {
-  activeCleanupJob: {
-    id: string;
-    phase: string;
-    processedCount: number;
-    status: "pending" | "running";
-  } | null;
-  runningSyncRuns: RunningSyncRun[];
-  /** Whether this deployment can purge Shutter's copies (see shutterPurgeReadiness). */
-  shutterPurge: ShutterPurgeReadiness;
-  library: {
-    activeEntries: number;
-    activeFolders: number;
-    collections: number;
-    softDeletedEntries: number;
-    softDeletedFolders: number;
-  };
-  storage: {
-    mediaObjectBytes: number;
-    mediaObjectCount: number;
-    /** Stored originals no live entry references; the deleted-item purge reclaims them. */
-    reclaimableMediaObjectCount: number;
-  };
-}
 
 export async function readManagementOverview(): Promise<ManagementOverview> {
   const [
@@ -37,7 +13,6 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
     softDeletedEntriesRow,
     activeFoldersRow,
     softDeletedFoldersRow,
-    collectionsRow,
     mediaObjectStats,
     reclaimableMediaObjectsRow,
     runningSyncRuns,
@@ -47,7 +22,6 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
     db.select({ value: count() }).from(libraryEntries).where(isNotNull(libraryEntries.deletedAt)),
     db.select({ value: count() }).from(folders).where(isNull(folders.deletedAt)),
     db.select({ value: count() }).from(folders).where(isNotNull(folders.deletedAt)),
-    db.select({ value: count() }).from(collections),
     db
       .select({
         bytes: sql<number>`coalesce(sum(${mediaObjects.size}), 0)`,
@@ -62,11 +36,10 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
   return {
     activeCleanupJob,
     runningSyncRuns,
-    shutterPurge: shutterPurgeReadiness(),
+    shutterEnabled: shutterConfig.mode === "on",
     library: {
       activeEntries: activeEntriesRow[0]?.value ?? 0,
       activeFolders: activeFoldersRow[0]?.value ?? 0,
-      collections: collectionsRow[0]?.value ?? 0,
       softDeletedEntries: softDeletedEntriesRow[0]?.value ?? 0,
       softDeletedFolders: softDeletedFoldersRow[0]?.value ?? 0,
     },

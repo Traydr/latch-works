@@ -1,15 +1,17 @@
-//! Whose turn it is, after glazier-core's `engine/jobs.ts` queue: one piece of work runs at a time,
-//! so a scan and a change never touch a root together.
+//! Whose turn it is: one piece of work runs at a time, so a scan and a change never touch a root
+//! together. This queue is the only one: the UI lists what waits from what each piece of work
+//! reports through its progress.
 //!
 //! - Work the owner asked for (a scan, a change, "Check now") runs in the order it was asked for,
 //!   ahead of every waiting piece of background analysis.
 //! - Background analysis that is running when asked-for work arrives steps aside at its next
 //!   checkpoint, once its items in flight have finished, and carries on when no asked-for work
 //!   waits, before any other background analysis.
-//! - A paused piece of work keeps its turn, so a paused change holds what waits behind it, as in
-//!   Electron Oriel; paused background analysis still steps aside for asked-for work.
+//! - A paused piece of work keeps its turn, so a paused change holds what waits behind it; paused
+//!   background analysis still steps aside for asked-for work.
 //!
-//! Each piece of work holds a [`Turn`] while it runs, and does its work through the turn, which is
+//! Work takes its place with a [`Ticket`] when it is asked for, before its thread starts, so the
+//! order is the order asked. Each piece of work holds a [`Turn`] while it runs, and does its work through the turn, which is
 //! a [`Progress`] whose checkpoint waits as above. The work runs on threads of its own, so waiting
 //! blocks: on one condition variable, which the queue, the pause token and the cancel token all
 //! wake.
@@ -180,63 +182,40 @@ impl std::fmt::Display for RootBusy {
 impl std::error::Error for RootBusy {}
 
 impl Scheduler {
-    /// Queues work on `roots` and waits for its turn, saying it waits through `progress` while it
-    /// does. Fails at once, or while it waits, when the work is cancelled.
+    /// Queues work on `roots` and waits for its turn; see [`Ticket::wait`].
     pub(crate) fn take_turn<'a>(
-        &'a self,
+        &self,
         priority: Priority,
         roots: Vec<RootId>,
         progress: &'a dyn Progress,
     ) -> Result<Turn<'a>, Cancelled> {
-        progress.check()?;
-        let background = Arc::new(AtomicBool::new(priority == Priority::Background));
-        // Registered before the lock is taken: a callback on a token cancelled already runs at
-        // once, and takes the lock itself.
-        let wakers = self.wakers(progress);
-        let id = {
-            let mut queue = self.shared.lock();
-            let id = queue.next_id;
-            queue.next_id += 1;
-            queue.entries.push(Entry {
-                id,
-                background: background.clone(),
-                roots,
-                cancel: progress.cancel_token().cloned(),
-                place: Place::Waiting,
-            });
-            self.shared.changed(&queue);
-            id
-        };
-        let turn = Turn {
-            shared: &self.shared,
-            id,
-            background,
-            reported_background: AtomicBool::new(priority == Priority::Background),
-            progress,
-            _wakers: wakers,
-        };
-        progress.background(priority == Priority::Background);
-        // Dropping the turn on a cancel takes the work out of the queue.
-        turn.wait_for_turn()?;
-        Ok(turn)
+        self.ticket(priority, roots).wait(progress)
     }
 
-    fn wakers(&self, progress: &dyn Progress) -> Wakers {
-        let cancel = progress.cancel_token().map(|token| {
-            let shared = self.shared.clone();
-            token.on_cancel(move || shared.nudge())
+    /// Takes a place in the queue for work on `roots`, behind everything asked for before it,
+    /// before the work starts on a thread of its own: its place is the order it was asked for,
+    /// not the order its thread happens to start in.
+    pub(crate) fn ticket(&self, priority: Priority, roots: Vec<RootId>) -> Ticket {
+        let background = Arc::new(AtomicBool::new(priority == Priority::Background));
+        let mut queue = self.shared.lock();
+        let id = queue.next_id;
+        queue.next_id += 1;
+        queue.entries.push(Entry {
+            id,
+            background: background.clone(),
+            roots,
+            cancel: None,
+            place: Place::Waiting,
         });
-        let pause = progress.pause_token().map(|token| {
-            let shared = self.shared.clone();
-            token.on_change(move || shared.nudge())
-        });
-        Wakers {
-            _cancel: cancel,
-            _pause: pause,
+        self.shared.changed(&queue);
+        Ticket {
+            shared: self.shared.clone(),
+            id: Some(id),
+            background,
         }
     }
 
-    /// Readies `root_id` for removal, as glazier-core's `removeRoot` does: refused while asked-for
+    /// Readies `root_id` for removal: refused while asked-for
     /// work on it waits or runs; its background analysis, which is only worth finishing for a
     /// root that stays, is stopped, and this returns once that has let go of its turn.
     pub(crate) fn stop_work_on(&self, root_id: RootId) -> Result<(), RootBusy> {
@@ -269,9 +248,9 @@ impl Scheduler {
         self.shared.lock().check_removable(root_id)
     }
 
-    /// Makes background analysis of `root_id` asked-for, as "Check now" does in glazier-core when
-    /// such a job waits; here it reaches one that is running or stepped aside as well, so the
-    /// same files are not analysed twice. Says whether there was any.
+    /// Makes background analysis of `root_id` asked-for, as "Check now" does, whether it waits,
+    /// runs or stepped aside, so the same files are not analysed twice. Says whether there was
+    /// any.
     pub(crate) fn promote(&self, root_id: RootId) -> bool {
         let mut queue = self.shared.lock();
         let mut promoted = false;
@@ -289,13 +268,14 @@ impl Scheduler {
         promoted
     }
 
-    /// How many pieces of work wait for their turn, for "2 more queued".
-    pub(crate) fn waiting(&self) -> usize {
+    /// How many pieces of work wait for their turn.
+    #[cfg(test)]
+    fn waiting(&self) -> usize {
         self.shared
             .lock()
             .entries
             .iter()
-            .filter(|entry| entry.place != Place::Running)
+            .filter(|entry| matches!(entry.place, Place::Waiting | Place::SteppedAside))
             .count()
     }
 }
@@ -306,11 +286,86 @@ struct Wakers {
     _pause: Option<PauseCallback>,
 }
 
+fn wakers(shared: &Arc<Shared>, progress: &dyn Progress) -> Wakers {
+    let cancel = progress.cancel_token().map(|token| {
+        let shared = shared.clone();
+        token.on_cancel(move || shared.nudge())
+    });
+    let pause = progress.pause_token().map(|token| {
+        let shared = shared.clone();
+        token.on_change(move || shared.nudge())
+    });
+    Wakers {
+        _cancel: cancel,
+        _pause: pause,
+    }
+}
+
+/// A place in the queue taken before the work starts ([`Scheduler::ticket`]); the work waits
+/// for its turn with it. Dropped unused, the place goes.
+pub(crate) struct Ticket {
+    shared: Arc<Shared>,
+    id: Option<u64>,
+    /// Shared with the queue's entry, so promoting background work reaches it before it starts.
+    background: Arc<AtomicBool>,
+}
+
+impl Ticket {
+    /// Says which roots the work touches, once it knows, so they are held against removal.
+    pub(crate) fn set_roots(&self, roots: Vec<RootId>) {
+        if let Some(id) = self.id {
+            let mut queue = self.shared.lock();
+            if let Some(entry) = queue.entry_mut(id) {
+                entry.roots = roots;
+            }
+        }
+    }
+
+    /// Waits for the turn, saying it waits through `progress` while it does. Fails at once, or
+    /// while it waits, when the work is cancelled, and the place goes.
+    pub(crate) fn wait(mut self, progress: &dyn Progress) -> Result<Turn<'_>, Cancelled> {
+        let id = self.id.take().expect("a ticket is waited on once");
+        // Registered before the lock is taken: a callback on a token cancelled already runs at
+        // once, and takes the lock itself.
+        let wakers = wakers(&self.shared, progress);
+        {
+            let mut queue = self.shared.lock();
+            if let Some(entry) = queue.entry_mut(id) {
+                entry.cancel = progress.cancel_token().cloned();
+            }
+        }
+        let background = self.background.load(Ordering::Acquire);
+        // Dropping the turn on a cancel takes the work out of the queue.
+        let turn = Turn {
+            shared: self.shared.clone(),
+            id,
+            background: self.background.clone(),
+            reported_background: AtomicBool::new(background),
+            progress,
+            _wakers: wakers,
+        };
+        progress.check()?;
+        progress.background(background);
+        turn.wait_for_turn()?;
+        Ok(turn)
+    }
+}
+
+impl Drop for Ticket {
+    fn drop(&mut self) {
+        if let Some(id) = self.id {
+            let mut queue = self.shared.lock();
+            queue.entries.retain(|entry| entry.id != id);
+            self.shared.changed(&queue);
+        }
+    }
+}
+
 /// A piece of work's turn, held while it runs; dropping it lets the next piece of work go. It is
 /// the work's [`Progress`]: reports go through to the caller's, and its checkpoint waits for the
 /// turn as well as for a pause.
 pub(crate) struct Turn<'a> {
-    shared: &'a Shared,
+    shared: Arc<Shared>,
     id: u64,
     background: Arc<AtomicBool>,
     /// What the caller's progress was last told, so a promotion is reported once.
@@ -458,25 +513,28 @@ mod tests {
 
     /// A record of what happened, in order, across threads.
     #[derive(Clone, Default)]
-    struct Log(Arc<Mutex<Vec<String>>>);
+    struct Log(Arc<(Mutex<Vec<String>>, Condvar)>);
 
     impl Log {
         fn push(&self, line: impl Into<String>) {
-            self.0.lock().unwrap().push(line.into());
+            let (lines, pushed) = &*self.0;
+            lines.lock().unwrap().push(line.into());
+            pushed.notify_all();
         }
 
         fn lines(&self) -> Vec<String> {
-            self.0.lock().unwrap().clone()
+            self.0.0.lock().unwrap().clone()
         }
 
+        /// Waits until `line` is pushed; fails after a minute.
         fn wait_for(&self, line: &str) {
-            for _ in 0..500 {
-                if self.lines().iter().any(|seen| seen == line) {
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(2));
-            }
-            panic!("never saw {line:?} in {:?}", self.lines());
+            let (lines, pushed) = &*self.0;
+            let (lines, waited) = pushed
+                .wait_timeout_while(lines.lock().unwrap(), Duration::from_secs(60), |lines| {
+                    !lines.iter().any(|seen| seen == line)
+                })
+                .unwrap();
+            assert!(!waited.timed_out(), "never saw {line:?} in {lines:?}");
         }
     }
 

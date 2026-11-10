@@ -1,11 +1,12 @@
-//! Sync's profiles, from Electron Oriel's `profileService.ts`: each pairs a source folder with a
-//! Pane View URL and its sync token, in `lockstep-settings.json` in Sync's folder, in the same
-//! format, so Electron Oriel's file reads as it is.
+//! Sync's profiles: each pairs a source folder with a Pane View URL and its sync token, in
+//! `lockstep-settings.json` in Sync's folder, in the format Electron Oriel wrote, so its file
+//! still reads as it is.
 //!
 //! The token is sealed by [`FileSecretStorage`] and stored as `encryptedToken`, never in the
 //! clear. A file that does not read is set aside as `lockstep-settings.corrupt-<time>.json`
 //! rather than overwritten, so its profiles and tokens can still be recovered by hand.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -13,14 +14,15 @@ use std::time::SystemTime;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use oriel_core_sync::{RunSummary, iso_timestamp};
+use oriel_core_domain::format::iso_timestamp;
+use oriel_core_sync::{PlanCounts, RunAction, RunStatus, RunSummary};
 use serde::{Deserialize, Serialize};
 
-use crate::secrets::FileSecretStorage;
+use oriel_core_paths::DataRoot;
 
-pub const SETTINGS_FILE_NAME: &str = "lockstep-settings.json";
+use crate::secrets::{FileSecretStorage, OpenError};
 
-/// One profile as the file holds it (`PersistedProfileSchema`).
+/// One profile as the file holds it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
@@ -29,12 +31,50 @@ pub struct Profile {
     pub encrypted_token: Option<String>,
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_run: Option<RunSummary>,
+    pub last_run: Option<LastRun>,
     pub name: String,
     pub source_root: String,
 }
 
-/// The file (`PersistedStateSchema`).
+/// How the profile's last run ended, as the file keeps it (`lastRun`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LastRun {
+    pub action: RunAction,
+    pub completed_at: String,
+    pub failed: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_counts: Option<PlanCounts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    /// What a push sent or a prune deleted; the file names both `pushed`.
+    #[serde(rename = "pushed")]
+    pub applied: usize,
+    /// Prune only: planned deletes left alone because the file is back in the source folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skipped: Option<usize>,
+    pub status: RunStatus,
+}
+
+impl LastRun {
+    fn of(summary: &RunSummary, profile_id: &str) -> Self {
+        Self {
+            action: summary.action,
+            completed_at: iso_timestamp(summary.completed_at),
+            failed: summary.failed,
+            message: summary.message.clone(),
+            plan_counts: summary.plan_counts,
+            profile_id: Some(profile_id.to_owned()),
+            applied: summary.applied,
+            skipped: summary.skipped,
+            status: summary.status,
+        }
+    }
+}
+
+/// The file.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileFile {
@@ -49,11 +89,13 @@ pub enum TokenState {
     None,
     /// Saved, and it opens with this folder's key.
     Saved,
-    /// Saved, but it does not open with this folder's key: it must be entered again.
+    /// Saved, but sealed with another key or damaged: it must be entered again.
     Unreadable,
+    /// Saved, but Sync's secret key cannot be read, so no token opens or can be saved.
+    KeyUnreadable,
 }
 
-/// A new profile, `LockstepProfileInputSchema`.
+/// A new profile.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ProfileInput {
     pub name: String,
@@ -62,7 +104,7 @@ pub struct ProfileInput {
     pub token: Option<String>,
 }
 
-/// An edit, `LockstepProfilePatchSchema`: an empty field keeps the saved value; a token replaces
+/// An edit: an empty field keeps the saved value; a token replaces
 /// the saved one, and `clear_token` forgets it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ProfilePatch {
@@ -79,16 +121,22 @@ pub struct ProfileStore {
     file_path: PathBuf,
     secrets: FileSecretStorage,
     state: ProfileFile,
+    /// Each profile's token, as it opened when the profiles were last loaded or saved.
+    tokens: HashMap<String, TokenState>,
+    /// Why Sync's secret key could not be read, when a token needed it.
+    key_error: Option<String>,
 }
 
 impl ProfileStore {
-    /// The profiles in `folder` (Sync's folder), and the error that kept them from loading, if
+    /// The profiles `data` keeps, and the error that kept them, or their tokens, from loading, if
     /// any. A missing file is no profiles yet.
-    pub fn open(folder: &Path) -> (Self, Option<String>) {
+    pub fn open(data: &DataRoot) -> (Self, Option<String>) {
         let mut store = Self {
-            file_path: folder.join(SETTINGS_FILE_NAME),
-            secrets: FileSecretStorage::in_folder(folder),
+            file_path: data.sync_settings(),
+            secrets: FileSecretStorage::new(data.sync_secret_key()),
             state: ProfileFile::default(),
+            tokens: HashMap::new(),
+            key_error: None,
         };
         let error = match fs::read_to_string(&store.file_path) {
             Ok(raw) => match serde_json::from_str::<ProfileFile>(&raw) {
@@ -104,15 +152,39 @@ impl ProfileStore {
                 store.file_path.display()
             )),
         };
+        store.open_tokens();
+        let error = error.or_else(|| store.key_error.clone());
         (store, error)
     }
 
-    pub fn file_path(&self) -> &Path {
-        &self.file_path
+    /// Works out whether each profile's token opens, once, rather than at every frame.
+    fn open_tokens(&mut self) {
+        self.key_error = None;
+        let mut tokens = HashMap::with_capacity(self.state.profiles.len());
+        for profile in &self.state.profiles {
+            let state = match self.open_token(profile) {
+                Ok(None) => TokenState::None,
+                Ok(Some(_)) => TokenState::Saved,
+                Err(OpenError::Sealed) => TokenState::Unreadable,
+                Err(OpenError::Key(error)) => {
+                    self.key_error = Some(format!(
+                        "Sync's secret key could not be read, so saved tokens cannot be \
+                         unlocked: {error}"
+                    ));
+                    TokenState::KeyUnreadable
+                }
+            };
+            tokens.insert(profile.id.clone(), state);
+        }
+        self.tokens = tokens;
     }
 
-    pub fn secrets(&self) -> &FileSecretStorage {
-        &self.secrets
+    fn open_token(&self, profile: &Profile) -> Result<Option<String>, OpenError> {
+        let Some(sealed) = &profile.encrypted_token else {
+            return Ok(None);
+        };
+        let sealed = BASE64.decode(sealed).map_err(|_| OpenError::Sealed)?;
+        self.secrets.decrypt(&sealed).map(Some)
     }
 
     /// Moves a file that failed to load out of the way, so the next save starts a new one.
@@ -148,19 +220,16 @@ impl ProfileStore {
 
     /// The profile's token, if one is saved and opens.
     pub fn api_token(&self, id: &str) -> Option<String> {
-        let sealed = self.profile(id)?.encrypted_token.as_ref()?;
-        self.secrets.decrypt(&BASE64.decode(sealed).ok()?).ok()
+        self.open_token(self.profile(id)?).ok().flatten()
     }
 
     pub fn token_state(&self, id: &str) -> TokenState {
-        match self
-            .profile(id)
-            .and_then(|profile| profile.encrypted_token.as_ref())
-        {
-            None => TokenState::None,
-            Some(_) if self.api_token(id).is_some() => TokenState::Saved,
-            Some(_) => TokenState::Unreadable,
-        }
+        self.tokens.get(id).copied().unwrap_or(TokenState::None)
+    }
+
+    /// Why Sync's secret key could not be read, if a saved token needed it and it could not.
+    pub fn key_error(&self) -> Option<&str> {
+        self.key_error.as_deref()
     }
 
     fn seal(&self, token: &str) -> io::Result<String> {
@@ -259,18 +328,15 @@ impl ProfileStore {
         self.commit(state)
     }
 
-    /// Keeps a run's summary on its profile, as "Last push 18 ok, 0 failed · 2d ago" shows.
-    pub fn record_last_run(&mut self, id: &str, summary: RunSummary) -> anyhow::Result<()> {
+    /// Keeps a run's summary on its profile, as "Last push 18 ok, 0 failed · 5 min ago" shows.
+    pub fn record_last_run(&mut self, id: &str, summary: &RunSummary) -> anyhow::Result<()> {
         if self.profile(id).is_none() {
             return Ok(());
         }
         let mut state = self.state.clone();
         for profile in &mut state.profiles {
             if profile.id == id {
-                profile.last_run = Some(RunSummary {
-                    profile_id: Some(id.to_owned()),
-                    ..summary.clone()
-                });
+                profile.last_run = Some(LastRun::of(summary, id));
             }
         }
         self.commit(state)
@@ -280,7 +346,18 @@ impl ProfileStore {
     /// failed write never leaves half a file.
     fn commit(&mut self, state: ProfileFile) -> anyhow::Result<()> {
         save(&self.file_path, &state)?;
+        let tokens_changed = state.profiles.len() != self.state.profiles.len()
+            || state
+                .profiles
+                .iter()
+                .zip(&self.state.profiles)
+                .any(|(next, now)| {
+                    next.id != now.id || next.encrypted_token != now.encrypted_token
+                });
         self.state = state;
+        if tokens_changed {
+            self.open_tokens();
+        }
         Ok(())
     }
 }
@@ -294,7 +371,9 @@ fn save(file_path: &Path, state: &ProfileFile) -> io::Result<()> {
     if let Some(folder) = file_path.parent() {
         fs::create_dir_all(folder)?;
     }
-    let temporary = file_path.with_file_name(format!("{SETTINGS_FILE_NAME}.{}.tmp", new_id()));
+    let mut temporary = file_path.as_os_str().to_owned();
+    temporary.push(format!(".{}.tmp", new_id()));
+    let temporary = PathBuf::from(temporary);
     let mut json = serde_json::to_string_pretty(state).map_err(io::Error::other)?;
     json.push('\n');
     let written = fs::write(&temporary, json).and_then(|()| fs::rename(&temporary, file_path));
@@ -304,7 +383,7 @@ fn save(file_path: &Path, state: &ProfileFile) -> io::Result<()> {
     written
 }
 
-/// `randomUUID()`: a version-4 UUID.
+/// A version-4 UUID, as `randomUUID()` makes them.
 fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }

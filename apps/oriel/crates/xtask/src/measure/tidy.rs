@@ -1,19 +1,19 @@
-//! Tidy's rows and the modes at rest: the Library spike (`crates/mode-tidy/src/spike.rs`) as
-//! `run_rest.sh` drove it, the fixture's analysis as `rs_tidy.py` timed it, and each mode at rest
-//! as `mode_idle.py` read it.
+//! Tidy's rows and the modes at rest: the Library spike (`crates/mode-tidy/src/spike.rs`), the
+//! fixture's analysis to a finished Overview, and each mode at rest.
 
 use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, bail};
+use oriel_core_paths::DataRoot;
+use oriel_launch::{storage_keys, variables};
 use serde_json::{Value, json};
 
 use super::process::{self, Launched, Sample, Spec};
 use super::spike_log::{self, LogReader};
-use super::{Outcome, Row, Settings, Turn};
+use super::{Outcome, Row, Settings, Turn, clear};
 
 fn launch(
     turn: &Turn<'_>,
@@ -35,13 +35,14 @@ fn launch(
 
 /// Writes the shell's remembered state, so the app opens in `mode` (and on `tidy_view`).
 fn remember(data: &Path, mode: &str, tidy_view: Option<&str>) -> Result<()> {
-    let shell = data.join("shell");
-    fs::create_dir_all(&shell)?;
-    let mut storage = json!({ "oriel.mode": mode });
+    let file = DataRoot::at(std::path::absolute(data)?)?.local_storage();
+    fs::create_dir_all(file.parent().context("the store has a folder")?)?;
+    let mut storage = serde_json::Map::new();
+    storage.insert(storage_keys::MODE.to_owned(), json!(mode));
     if let Some(view) = tidy_view {
-        storage["oriel.tidy.view"] = json!(view);
+        storage.insert(storage_keys::TIDY_VIEW.to_owned(), json!(view));
     }
-    fs::write(shell.join("local-storage.json"), storage.to_string())?;
+    fs::write(file, Value::Object(storage).to_string())?;
     Ok(())
 }
 
@@ -50,29 +51,39 @@ pub fn library(turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {
     // The synthetic rows show only once Tidy has a root, an empty folder in the data folder's
     // sandbox: a first short launch adds it, as a remembered root the second opens on Library.
     let data = turn.folder.join("data-library");
-    let _ = fs::remove_dir_all(&data);
+    clear(&data)?;
     let root = data.join("sandbox/library-root");
     fs::create_dir_all(&root)?;
     let log = turn.folder.join("library.log.jsonl");
-    let _ = fs::remove_file(&log);
+    clear(&log)?;
     let base = vec![
-        ("ORIEL_DATA_DIR".to_owned(), OsString::from(&data)),
-        ("ORIEL_TIDY_ROOT".to_owned(), OsString::from(&root)),
+        (variables::DATA_DIR.to_owned(), OsString::from(&data)),
+        (variables::TIDY_ROOT.to_owned(), OsString::from(&root)),
     ];
     let mut first = launch(turn, settings, "library-root", base.clone())?;
-    std::thread::sleep(Duration::from_secs(5));
+    let catalog = DataRoot::at(std::path::absolute(&data)?)?.tidy_catalog();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while !oriel_core_tidy::internals::catalog_counts(&catalog)
+        .is_ok_and(|counts| counts.last_scan_at.is_some())
+    {
+        if !first.running() || Instant::now() > deadline {
+            first.stop(Duration::from_secs(10));
+            bail!("the first launch did not scan the Library's root");
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
     first.stop(Duration::from_secs(10));
     std::thread::sleep(Duration::from_secs(2));
 
     let mut env = base;
     for (key, value) in [
-        ("ORIEL_TIDY_PAGE", "library"),
-        ("ORIEL_SPIKE_LIBRARY", "100000"),
-        ("ORIEL_SPIKE_SCROLL", "30000"),
+        (variables::TIDY_PAGE, "library"),
+        (variables::SPIKE_LIBRARY, "100000"),
+        (variables::SPIKE_SCROLL, "30000"),
     ] {
         env.push((key.to_owned(), value.into()));
     }
-    env.push(("ORIEL_SPIKE_LOG".to_owned(), log.clone().into()));
+    env.push((variables::SPIKE_LOG.to_owned(), log.clone().into()));
     let mut launched = launch(turn, settings, "library", env)?;
     // The table draws only while the window is in front.
     std::thread::sleep(Duration::from_secs(3));
@@ -170,13 +181,13 @@ pub fn idle(row: Row, turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {
         _ => "sync",
     };
     let data = turn.folder.join(format!("data-idle-{mode}"));
-    let _ = fs::remove_dir_all(&data);
+    clear(&data)?;
     remember(&data, mode, None)?;
     let mut launched = launch(
         turn,
         settings,
         row.name(),
-        vec![("ORIEL_DATA_DIR".to_owned(), data.into())],
+        vec![(variables::DATA_DIR.to_owned(), data.into())],
     )?;
     let pid = launched.pid();
     std::thread::sleep(Duration::from_secs(30));
@@ -234,7 +245,7 @@ pub fn analysis(turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {
         );
     };
     let data = turn.folder.join("data-tidy");
-    let _ = fs::remove_dir_all(&data);
+    clear(&data)?;
     fs::create_dir_all(&data)?;
     std::os::unix::fs::symlink(&fixtures, data.join("sandbox"))?;
     remember(&data, "tidy", Some("overview"))?;
@@ -245,9 +256,9 @@ pub fn analysis(turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {
         settings,
         "tidy",
         vec![
-            ("ORIEL_DATA_DIR".to_owned(), data.clone().into()),
-            ("ORIEL_TIDY_ROOT".to_owned(), root.into()),
-            ("ORIEL_TIDY_PAGE".to_owned(), "overview".into()),
+            (variables::DATA_DIR.to_owned(), data.clone().into()),
+            (variables::TIDY_ROOT.to_owned(), root.into()),
+            (variables::TIDY_PAGE.to_owned(), "overview".into()),
         ],
     )?;
     let pid = launched.pid();
@@ -295,7 +306,7 @@ pub fn analysis(turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {
     std::thread::sleep(Duration::from_secs(60));
     let at_rest = process::sample(pid);
     let exit = launched.stop(Duration::from_secs(15));
-    let counts = catalog_counts(&data.join("tidy/catalog.sqlite"));
+    let counts = catalog_counts(&DataRoot::at(std::path::absolute(&data)?)?.tidy_catalog());
 
     let mut outcome = Outcome::default();
     let done_s = done_at.map_or(f64::NAN, |at| {
@@ -367,65 +378,16 @@ pub fn analysis(turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {
     Ok(outcome)
 }
 
-/// The catalog's counts, read with the system's `sqlite3` once the app has quit, so the harness
-/// carries no SQLite of its own.
+/// The catalog's counts, read once the app has quit.
 fn catalog_counts(catalog: &Path) -> Result<Value> {
-    const COUNTS: [(&str, &str); 7] = [
-        ("files", "select count(*) from files"),
-        (
-            "fingerprinted",
-            "select count(*) from files where fingerprint is not null",
-        ),
-        (
-            "fingerprint_errors",
-            "select count(*) from files where fingerprint_error is not null",
-        ),
-        (
-            "probe_errors",
-            "select count(*) from files where probe_error is not null",
-        ),
-        (
-            "loudness",
-            "select count(*) from files where loudness_version > 0",
-        ),
-        (
-            "sha256",
-            "select count(*) from files where sha256 is not null",
-        ),
-        ("last_scan_at", "select last_scan_at from roots"),
-    ];
-    let query = format!(
-        "select {};",
-        COUNTS
-            .iter()
-            .map(|(_, sql)| format!("({sql})"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    let output = Command::new("/usr/bin/sqlite3")
-        .arg("-readonly")
-        .arg(catalog)
-        .arg(&query)
-        .stdin(Stdio::null())
-        .output()
-        .context("running /usr/bin/sqlite3")?;
-    if !output.status.success() {
-        bail!(
-            "sqlite3 {}: {}",
-            catalog.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let values: Vec<&str> = text.trim().split('|').collect();
-    if values.len() != COUNTS.len() {
-        bail!("sqlite3 gave {text:?}");
-    }
-    Ok(Value::Object(
-        COUNTS
-            .iter()
-            .zip(values)
-            .map(|((key, _), value)| ((*key).to_owned(), json!(value.parse::<f64>().ok())))
-            .collect(),
-    ))
+    let counts = oriel_core_tidy::internals::catalog_counts(catalog)?;
+    Ok(json!({
+        "files": counts.files,
+        "fingerprinted": counts.fingerprinted,
+        "fingerprint_errors": counts.fingerprint_errors,
+        "probe_errors": counts.probe_errors,
+        "loudness": counts.soundtracks_measured,
+        "sha256": counts.hashed,
+        "last_scan_at": counts.last_scan_at,
+    }))
 }

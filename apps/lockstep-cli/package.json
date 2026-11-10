@@ -1,6 +1,6 @@
 {
   "name": "@latch-works/lockstep",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -9,8 +9,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "pnpm typecheck && pnpm test",
-    "start": "tsx src/cli.ts",
-    "test": "vitest run src --passWithNoTests",
+    "start": "tsx --conditions=source src/cli.ts",
+    "test": "vitest run src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

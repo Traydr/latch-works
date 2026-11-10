@@ -7,7 +7,7 @@ use oriel_runtime::CancelToken;
 use serde::{Deserialize, Serialize};
 
 use crate::api::{ApiTarget, PaneViewClient};
-use crate::events::{Observer, RunAction, RunEvent, RunStatus, RunSummary, emit, status};
+use crate::events::{Observer, RunEvent, RunSummary, emit, status};
 use crate::format::node_error_message;
 
 /// `DoctorOptions`: whatever the profile has.
@@ -26,10 +26,11 @@ pub struct DoctorCheck {
     pub ok: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DoctorResult {
     pub checks: Vec<DoctorCheck>,
     pub ok: bool,
+    pub summary: RunSummary,
 }
 
 fn check(label: &str, ok: bool, detail: Option<String>) -> DoctorCheck {
@@ -92,23 +93,11 @@ pub async fn doctor(
     }
 
     let ok = checks.iter().all(|check| check.ok);
-    let mut summary = RunSummary::now(
-        RunAction::Doctor,
-        if ok {
-            RunStatus::Completed
-        } else {
-            RunStatus::Failed
-        },
-    );
-    summary.failed = usize::from(!ok);
-    summary.message = Some(
-        if ok {
-            "All checks passed."
-        } else {
-            "Some checks failed."
-        }
-        .to_owned(),
-    );
-    emit(observer, RunEvent::Complete(summary));
-    DoctorResult { checks, ok }
+    let summary = RunSummary::checked(ok);
+    emit(observer, RunEvent::Complete(summary.clone()));
+    DoctorResult {
+        checks,
+        ok,
+        summary,
+    }
 }

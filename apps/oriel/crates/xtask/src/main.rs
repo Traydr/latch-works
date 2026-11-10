@@ -11,6 +11,8 @@
 //!   into `.vendor/libavif-windows`;
 //! - `libmpv [--jobs N] [--work <dir>] [--out <dir>] [--keep-work]`: builds the LGPL libmpv
 //!   from pinned sources into `apps/oriel/.libmpv/<id>/`;
+//! - `fetch-media-tools [<folder>]`: fetches this platform's pinned ffmpeg and ffprobe into
+//!   `apps/oriel/.media-tools/<platform>/`;
 //! - `bundle`: makes `target/release/bundle/Oriel.app`, with the libraries above, the pinned
 //!   ffmpeg and ffprobe, the licence notices for all of them, and an ad hoc signature;
 //! - `dmg [--app <Oriel.app>]`: makes the bundle (or takes one), then a compressed disk image
@@ -28,6 +30,7 @@ mod bundle;
 // hdiutil's disk image, for macOS only.
 #[cfg(target_os = "macos")]
 mod dmg;
+mod fetch;
 // libavif and the DLLs it needs on Windows, from MSYS2.
 mod libavif_windows;
 mod libmpv;
@@ -36,6 +39,8 @@ mod libmpv;
 mod measure;
 mod notices;
 mod package;
+mod pins;
+mod set;
 mod support;
 mod vendor;
 
@@ -49,6 +54,8 @@ commands:
                                by default; on Windows, Windows' libavif)
   libmpv [--jobs N] [--work <dir>] [--out <dir>] [--keep-work]
                                build the LGPL libmpv from pinned sources into .libmpv/
+  fetch-media-tools [<folder>] fetch the pinned ffmpeg and ffprobe into .media-tools/ (or the
+                               folder named)
   bundle                       make target/release/bundle/Oriel.app
   dmg [--app <Oriel.app>]      make the bundle (or take one), then Oriel-<version>-arm64.dmg
                                beside it
@@ -66,6 +73,7 @@ fn main() -> ExitCode {
     let result = match command.as_str() {
         "vendor" => vendor::command(rest),
         "libmpv" => libmpv::command(rest),
+        "fetch-media-tools" => fetch::command(rest),
         "bundle" => bundle::command(rest),
         "package" => package::command(rest),
         #[cfg(target_os = "macos")]

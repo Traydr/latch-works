@@ -1,6 +1,6 @@
 [package]
 name = "oriel-core-sync"
-description = "lockstep-core in Rust: the scan, the hash cache, plan, push, prune, the doctor and the Pane View client."
+description = "lockstep-core in Rust: the archive scan, the sync plan, the hash cache, plan, push, prune, the doctor and the Pane View client."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,7 +12,6 @@ autotests = false
 anyhow.workspace = true
 futures.workspace = true
 oriel-core-domain.workspace = true
-oriel-core-index.workspace = true
 oriel-runtime.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -21,9 +20,13 @@ sha2.workspace = true
 # (Security.framework on macOS), so no TLS library is built in.
 reqwest = { workspace = true, features = ["json", "stream", "native-tls"] }
 tokio = { workspace = true, features = ["rt", "fs", "io-util", "sync", "time"] }
-# The client's request and response types come from lockstep-core's zod schemas, written out as
+# The client's request and response types come from sync-protocol's zod schemas, written out as
 # JSON Schema (conformance/lockstep-core/api-schema.json) and built here at compile time.
 typify = "0.8"
+
+# Node's error codes the OS numbers but std has no kind for (`node_error_message`).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 serde_json = { workspace = true, features = ["float_roundtrip"] }

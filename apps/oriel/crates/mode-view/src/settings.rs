@@ -1,10 +1,8 @@
-//! View's settings and remembered folders, in Electron Oriel's settings file
-//! (`frame-view-settings.json`, written by `settingsService.ts` and read by
-//! `settingsPersistence.ts`): the same keys, the same defaults, the same leniency on a file that
-//! is partly wrong, and the same version-3 envelope, so Electron Oriel's file reads as it is.
-//!
-//! The file lives in `DataRoot::view()`. The window's bounds, which Electron Oriel kept here
-//! before Oriel's shell kept them, are read and written back as they were.
+//! View's settings and remembered folders, in the settings file the Electron app wrote
+//! (`DataRoot::view_settings`): the same keys, defaults and version-3 envelope, so a file it left
+//! reads as it is, and each field read on its own, so a file damaged in one place keeps the rest.
+//! Keys nothing reads any more (the theme, which is the shell's, and the window's bounds) are
+//! ignored, and not written back.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -16,14 +14,11 @@ use oriel_core_domain::{GallerySortMode, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// The settings file's name in View's folder.
-pub const SETTINGS_FILE_NAME: &str = "frame-view-settings.json";
-
 /// The envelope's version; older files are migrated when read.
 const PERSISTED_STATE_VERSION: u64 = 3;
 
 /// Extensions added to the defaults after lists could be saved; a file from before version 3
-/// gets them once (`BACKFILLED_IMAGE_EXTENSIONS`, `BACKFILLED_VIDEO_EXTENSIONS`).
+/// gets them once.
 const BACKFILLED_IMAGE_EXTENSIONS: [&str; 2] = ["gif", "avif"];
 const BACKFILLED_VIDEO_EXTENSIONS: [&str; 1] = ["m4v"];
 
@@ -31,15 +26,6 @@ const MAX_PATH_LENGTH: usize = 4096;
 const MAX_EXTENSION_COUNT: usize = 64;
 const MAX_EXTENSION_LENGTH: usize = 16;
 const MAX_EXCLUDED_CHILDREN: usize = 256;
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ThemeMode {
-    #[default]
-    System,
-    Light,
-    Dark,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,7 +45,7 @@ pub struct RootGalleryPreferences {
 }
 
 impl RootGalleryPreferences {
-    /// `toggleExcludedRootChildPath`: excludes `folder` if it was included, and includes it if it
+    /// Excludes `folder` if it was included, and includes it if it
     /// was excluded, keeping the others in their order.
     pub fn toggle_excluded(&mut self, folder: &str) {
         if let Some(at) = self
@@ -81,11 +67,10 @@ pub struct DebugSettings {
     pub enable_performance_monitoring: bool,
 }
 
-/// View's settings: `AppSettingsSchema`, its keys in its order.
+/// View's settings, its keys in the file's order.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewSettings {
-    pub theme: ThemeMode,
     pub remember_last_folder: bool,
     pub recursive_default: bool,
     pub autoplay_on_hover: bool,
@@ -106,10 +91,8 @@ pub struct ViewSettings {
 }
 
 impl Default for ViewSettings {
-    /// `DEFAULT_SETTINGS`.
     fn default() -> Self {
         Self {
-            theme: ThemeMode::System,
             remember_last_folder: true,
             recursive_default: false,
             autoplay_on_hover: true,
@@ -117,7 +100,7 @@ impl Default for ViewSettings {
             loop_viewer_navigation: true,
             preview_audio_enabled: false,
             loop_videos: true,
-            thumbnail_size: 220,
+            thumbnail_size: crate::thumbnails::THUMBNAIL_SIZE as u32,
             sort_mode: GallerySortMode::NameAsc,
             random_seed: 1,
             filters: FileFilterSettings {
@@ -135,25 +118,29 @@ impl Default for ViewSettings {
 }
 
 impl ViewSettings {
-    /// `getRootGalleryPreferences`: the folder's preferences, or the defaults.
-    pub fn root_preferences(&self, root: Option<&str>) -> RootGalleryPreferences {
-        root.and_then(|root| self.root_gallery_preferences.get(root))
-            .cloned()
-            .unwrap_or_default()
+    /// The folder's preferences, or the defaults.
+    pub fn root_preferences(&self, root: Option<&Path>) -> RootGalleryPreferences {
+        root.and_then(|root| {
+            self.root_gallery_preferences
+                .get(root.to_string_lossy().as_ref())
+        })
+        .cloned()
+        .unwrap_or_default()
     }
 
-    /// `createRootGalleryPreferencesPatch`: stores `preferences` for `root`, its exclusions
-    /// without repeats.
-    pub fn set_root_preferences(&mut self, root: &str, mut preferences: RootGalleryPreferences) {
+    /// Changes the folder's preferences and stores them, its exclusions without repeats.
+    pub fn update_root(&mut self, root: &Path, change: impl FnOnce(&mut RootGalleryPreferences)) {
+        let mut preferences = self.root_preferences(Some(root));
+        change(&mut preferences);
         let mut seen = std::collections::HashSet::new();
         preferences
             .excluded_root_child_paths
             .retain(|path| seen.insert(path.clone()));
         self.root_gallery_preferences
-            .insert(root.to_owned(), preferences);
+            .insert(root.to_string_lossy().into_owned(), preferences);
     }
 
-    /// `normalizeAppSettings`: each field read on its own, and a field that is missing or wrong
+    /// Each field read on its own, and a field that is missing or wrong
     /// takes its default, so a file damaged in one place keeps the rest.
     pub fn from_json(value: &Value) -> Self {
         let defaults = Self::default();
@@ -177,9 +164,6 @@ impl ViewSettings {
         };
 
         Self {
-            theme: field("theme")
-                .and_then(|theme| serde_json::from_value(theme.clone()).ok())
-                .unwrap_or(defaults.theme),
             remember_last_folder: flag("rememberLastFolder", defaults.remember_last_folder),
             recursive_default: flag("recursiveDefault", defaults.recursive_default),
             autoplay_on_hover: flag("autoplayOnHover", defaults.autoplay_on_hover),
@@ -246,7 +230,7 @@ impl ViewSettings {
     }
 }
 
-/// `ThumbnailSizeSchema`: rounded, within 64 to 1024.
+/// Rounded, within 64 to 1024.
 pub fn thumbnail_size(value: f64) -> u32 {
     value.round().clamp(64., 1024.) as u32
 }
@@ -293,7 +277,7 @@ fn extensions(value: Option<&Value>, defaults: &[String]) -> Vec<String> {
     }
 }
 
-/// `PathInputSchema`: a string of 1 to 4096 characters, kept exactly.
+/// A string of 1 to 4096 characters, kept exactly.
 fn path_input(value: &Value) -> Option<String> {
     value
         .as_str()
@@ -305,7 +289,7 @@ fn folder_path(value: &Value) -> Option<String> {
     path_input(value)
 }
 
-/// `RootGalleryPreferencesMapSchema`: every entry valid, or none kept.
+/// Every entry valid, or none kept.
 fn root_preferences(value: &Value) -> Option<BTreeMap<String, RootGalleryPreferences>> {
     let map = value.as_object()?;
     let mut preferences = BTreeMap::new();
@@ -332,18 +316,15 @@ fn root_preferences(value: &Value) -> Option<BTreeMap<String, RootGalleryPrefere
     Some(preferences)
 }
 
-/// The file: `PersistedState`.
+/// The file: the settings in a versioned envelope.
 #[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
 struct PersistedState {
     version: u64,
     settings: ViewSettings,
-    window_bounds: Value,
-    window_maximized: bool,
 }
 
 impl PersistedState {
-    /// `migratePersistedState`.
+    /// Reads the envelope, migrating a file of an older version.
     fn from_json(value: &Value) -> Self {
         let mut settings = ViewSettings::from_json(value.get("settings").unwrap_or(&Value::Null));
         if value.get("version").and_then(Value::as_u64) != Some(PERSISTED_STATE_VERSION) {
@@ -352,9 +333,6 @@ impl PersistedState {
         Self {
             version: PERSISTED_STATE_VERSION,
             settings,
-            window_bounds: window_bounds(value.get("windowBounds")),
-            window_maximized: value.get("windowMaximized") == Some(&Value::Bool(true))
-                || value.get("windowFullscreen") == Some(&Value::Bool(true)),
         }
     }
 
@@ -362,26 +340,7 @@ impl PersistedState {
         Self {
             version: PERSISTED_STATE_VERSION,
             settings,
-            window_bounds: Value::Null,
-            window_maximized: false,
         }
-    }
-}
-
-/// `normalizeWindowBounds`: whole numbers, at least 980 × 640, or null.
-fn window_bounds(value: Option<&Value>) -> Value {
-    let Some(bounds) = value.and_then(Value::as_object) else {
-        return Value::Null;
-    };
-    let number = |key: &str| bounds.get(key).and_then(Value::as_f64);
-    match (number("x"), number("y"), number("width"), number("height")) {
-        (Some(x), Some(y), Some(width), Some(height)) => serde_json::json!({
-            "x": x.round() as i64,
-            "y": y.round() as i64,
-            "width": (width.round() as i64).max(980),
-            "height": (height.round() as i64).max(640),
-        }),
-        _ => Value::Null,
     }
 }
 
@@ -395,10 +354,10 @@ pub struct SettingsStore {
 }
 
 impl SettingsStore {
-    /// Reads `frame-view-settings.json` in `folder`. A missing or unreadable file gives the
-    /// defaults, which are written back, as `SettingsService.init` does.
-    pub fn load(folder: &Path) -> Self {
-        let path: Arc<Path> = folder.join(SETTINGS_FILE_NAME).into();
+    /// Reads the settings file at `path` (`DataRoot::view_settings`). A missing or unreadable
+    /// file gives the defaults, which are written back.
+    pub fn load(path: &Path) -> Self {
+        let path: Arc<Path> = path.into();
         let read = fs::read_to_string(&path)
             .ok()
             .and_then(|text| serde_json::from_str::<Value>(&text).ok());
@@ -417,10 +376,6 @@ impl SettingsStore {
             log::warn!("cannot write View's settings: {error}");
         }
         store
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 
     pub fn settings(&self) -> &ViewSettings {
@@ -451,13 +406,14 @@ impl SettingsStore {
         }
     }
 
-    /// Changes the settings and writes them on this thread, for tests and the last write.
+    /// Changes the settings and writes them on this thread.
+    #[cfg(test)]
     pub fn update_now(&mut self, change: impl FnOnce(&mut ViewSettings)) {
         (self.update(change))();
     }
 }
 
-/// `writePersistedState`: two-space JSON, written beside the file and renamed over it.
+/// Two-space JSON, written beside the file and renamed over it.
 fn write_state(path: &Path, state: &PersistedState) -> io::Result<()> {
     let text = serde_json::to_string_pretty(state).map_err(io::Error::other)?;
     if let Some(parent) = path.parent() {
@@ -473,12 +429,10 @@ fn write_state(path: &Path, state: &PersistedState) -> io::Result<()> {
 mod tests {
     use super::*;
 
-    /// What Electron Oriel writes on its first start: `JSON.stringify` of the default state,
-    /// indented by two.
-    const ELECTRON_DEFAULT_FILE: &str = r#"{
+    /// The file a first start writes: the default state, indented by two.
+    const DEFAULT_FILE: &str = r#"{
   "version": 3,
   "settings": {
-    "theme": "system",
     "rememberLastFolder": true,
     "recursiveDefault": false,
     "autoplayOnHover": true,
@@ -516,9 +470,7 @@ mod tests {
       "enableDebugLogging": false,
       "enablePerformanceMonitoring": false
     }
-  },
-  "windowBounds": null,
-  "windowMaximized": false
+  }
 }"#;
 
     fn scratch(test: &str) -> PathBuf {
@@ -531,20 +483,22 @@ mod tests {
     }
 
     #[test]
-    fn a_first_start_writes_the_file_electron_oriel_writes() {
+    fn a_first_start_writes_the_default_file() {
         let folder = scratch("first-start");
-        let store = SettingsStore::load(&folder);
+        let store = SettingsStore::load(&folder.join("settings.json"));
         assert_eq!(store.settings(), &ViewSettings::default());
         assert_eq!(
-            fs::read_to_string(folder.join(SETTINGS_FILE_NAME)).unwrap(),
-            ELECTRON_DEFAULT_FILE
+            fs::read_to_string(folder.join("settings.json")).unwrap(),
+            DEFAULT_FILE
         );
     }
 
+    /// A file keeps what it says through a read and a write, but for the keys nothing reads,
+    /// which the Electron app wrote and which go.
     #[test]
-    fn reads_electron_oriels_file_and_writes_it_back_the_same() {
+    fn reads_a_file_and_writes_it_back_the_same() {
         let folder = scratch("round-trip");
-        let file = ELECTRON_DEFAULT_FILE
+        let file = DEFAULT_FILE
             .replace(r#""sortMode": "name-asc""#, r#""sortMode": "random""#)
             .replace(r#""randomSeed": 1"#, r#""randomSeed": 3735928559"#)
             .replace(
@@ -561,18 +515,29 @@ mod tests {
             .replace(
                 r#""lastFolderPath": null"#,
                 r#""lastFolderPath": "/Volumes/Archive/2024""#,
+            );
+        let with_retired_keys = file
+            .replace(
+                r#""settings": {"#,
+                r#""settings": {
+    "theme": "dark","#,
             )
             .replace(
-                r#""windowBounds": null"#,
-                r#""windowBounds": {
+                "\n  }\n}",
+                r#"
+  },
+  "windowBounds": {
     "x": 10,
     "y": 20,
     "width": 1320,
     "height": 860
-  }"#,
+  },
+  "windowMaximized": true
+}"#,
             );
-        fs::write(folder.join(SETTINGS_FILE_NAME), &file).unwrap();
-        let mut store = SettingsStore::load(&folder);
+        assert_ne!(with_retired_keys, file);
+        fs::write(folder.join("settings.json"), &with_retired_keys).unwrap();
+        let mut store = SettingsStore::load(&folder.join("settings.json"));
         let settings = store.settings().clone();
         assert_eq!(settings.sort_mode, GallerySortMode::Random);
         assert_eq!(settings.random_seed, 3_735_928_559);
@@ -582,12 +547,12 @@ mod tests {
         );
         assert!(
             settings
-                .root_preferences(Some("/Volumes/Archive"))
+                .root_preferences(Some(Path::new("/Volumes/Archive")))
                 .comic_mode
         );
         store.update_now(|_| {});
         assert_eq!(
-            fs::read_to_string(folder.join(SETTINGS_FILE_NAME)).unwrap(),
+            fs::read_to_string(folder.join("settings.json")).unwrap(),
             file
         );
     }
@@ -595,7 +560,6 @@ mod tests {
     #[test]
     fn a_damaged_field_falls_back_alone() {
         let value = serde_json::json!({
-            "theme": "sepia",
             "rememberLastFolder": false,
             "thumbnailSize": 9000.4,
             "sortMode": "date-newest",
@@ -611,7 +575,6 @@ mod tests {
         });
         let settings = ViewSettings::from_json(&value);
         let defaults = ViewSettings::default();
-        assert_eq!(settings.theme, ThemeMode::System);
         assert!(!settings.remember_last_folder);
         assert_eq!(settings.thumbnail_size, 1024);
         assert_eq!(settings.sort_mode, GallerySortMode::DateNewest);
@@ -632,8 +595,7 @@ mod tests {
     fn an_old_file_gets_the_newer_extensions_once() {
         let value = serde_json::json!({
             "version": 2,
-            "settings": { "filters": { "imageExtensions": ["jpg"], "videoExtensions": ["mp4"] } },
-            "windowFullscreen": true
+            "settings": { "filters": { "imageExtensions": ["jpg"], "videoExtensions": ["mp4"] } }
         });
         let state = PersistedState::from_json(&value);
         assert_eq!(
@@ -641,7 +603,6 @@ mod tests {
             ["jpg", "gif", "avif"]
         );
         assert_eq!(state.settings.filters.video_extensions, ["mp4", "m4v"]);
-        assert!(state.window_maximized);
         let current = serde_json::json!({
             "version": 3,
             "settings": { "filters": { "imageExtensions": ["jpg"], "videoExtensions": ["mp4"] } }

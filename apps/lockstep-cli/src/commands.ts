@@ -1,43 +1,29 @@
 import {
+  doctor,
   type LockstepObserver,
   type LockstepPlan,
-  type LockstepPlanItem,
   type LockstepRunEvent,
+  plannedChanges,
+  plannedDeletes,
   planSync,
   pruneDeleted,
   pushChanges,
-  doctor as runDoctorCore,
+  type SnapshotSource,
+  type SyncPlanItem,
 } from "@latch-works/lockstep-core";
 import { formatBytes } from "@latch-works/media-domain";
 import { isInteractiveTerminal } from "./options.js";
 import {
   createLineReporter,
-  formatPushStatus,
+  formatItemStage,
   formatScanStatus,
   type LineReporter,
-  PushStageSchema,
 } from "./progress.js";
-import type { CliOptions } from "./types.js";
-
-/** The lockstep-core entry points this module drives, injectable so tests can pass fakes. */
-export interface CoreCommands {
-  doctor: typeof runDoctorCore;
-  planSync: typeof planSync;
-  pruneDeleted: typeof pruneDeleted;
-  pushChanges: typeof pushChanges;
-}
-
-export const coreCommands = {
-  doctor: runDoctorCore,
-  planSync,
-  pruneDeleted,
-  pushChanges,
-} satisfies CoreCommands;
+import type { CliOptions, RemoteRunOptions } from "./types.js";
 
 export type ExecuteCommandDeps = {
   /** Asks before deleting; an abort through `signal` rejects the pending prompt. */
   confirmPrune?: (deleteCount: number, signal?: AbortSignal) => Promise<boolean>;
-  core?: CoreCommands;
   isInteractive?: () => boolean;
   /** Aborts the run; push and prune then finalize their sync run as cancelled before rejecting. */
   signal?: AbortSignal;
@@ -47,68 +33,80 @@ export async function executeCommand(
   options: CliOptions,
   deps: ExecuteCommandDeps = {},
 ): Promise<void> {
-  const isInteractive = deps.isInteractive ?? isInteractiveTerminal;
-  const confirmPrune = deps.confirmPrune ?? defaultConfirmPrune;
-  const core = deps.core ?? coreCommands;
-  const { signal } = deps;
   const reporter = createLineReporter();
   const observer = createCliObserver(reporter);
 
   if (options.command === "doctor") {
-    const result = await core.doctor(
-      {
-        apiToken: process.env[options.apiTokenEnv],
-        apiUrl: options.apiUrl ?? process.env.LOCKSTEP_API_URL,
-        signal,
-        sourceRoot: options.source,
-      },
-      observer,
-    );
+    await runDoctor(options, observer, deps.signal);
 
-    console.log("Lockstep doctor");
-    console.log(`Node: ${process.version}`);
-    console.log("Archive writes: disabled");
-    console.log("Remote deletes: require explicit prune");
+    return;
+  }
 
-    for (const check of result.checks) {
-      const status = check.ok ? "ok" : "failed";
-      const detail = check.detail ? ` (${check.detail})` : "";
-      console.log(`${check.label}: ${status}${detail}`);
-    }
+  if (options.command === "plan" || options.command === "verify") {
+    const plan = await planAndPrint(options, reporter, observer, deps.signal);
 
-    if (!result.ok) {
-      process.exitCode = 1;
+    if (options.command === "verify") {
+      printVerifyResult(plan);
     }
 
     return;
   }
 
-  if (!options.source) {
-    throw new Error("--source is required.");
+  console.log(`Remote API URL: ${options.apiUrl}`);
+  console.log(
+    `Remote API token: ${options.apiToken ? `configured via ${options.apiTokenEnv}` : "not configured"}`,
+  );
+
+  if (!options.apiToken) {
+    console.log(`${options.command} requires a remote API URL and token.`);
+    process.exitCode = 2;
+
+    return;
   }
 
-  if (options.command === "verify" && !options.remoteSnapshot) {
-    throw new Error("--remote-snapshot is required for verify.");
+  const connected: ConnectedRunOptions = { ...options, apiToken: options.apiToken };
+  const plan = await planAndPrint(connected, reporter, observer, deps.signal);
+
+  if (connected.command === "push") {
+    await runPush(connected, plan, reporter, observer, deps.signal);
+  } else {
+    await runPrune(connected, plan, reporter, observer, deps);
+  }
+}
+
+async function runDoctor(
+  options: CliOptions,
+  observer: LockstepObserver,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  const result = await doctor(
+    { apiToken: options.apiToken, apiUrl: options.apiUrl, signal, sourceRoot: options.source },
+    observer,
+  );
+
+  console.log("Lockstep doctor");
+  console.log(`Node: ${process.version}`);
+  console.log("Archive writes: disabled");
+  console.log("Remote deletes: require explicit prune");
+
+  for (const check of result.checks) {
+    const status = check.ok ? "ok" : "failed";
+    const detail = check.detail ? ` (${check.detail})` : "";
+    console.log(`${check.label}: ${status}${detail}`);
   }
 
-  const apiUrl = options.apiUrl ?? process.env.LOCKSTEP_API_URL;
-  const apiToken = process.env[options.apiTokenEnv];
-
-  if (options.command === "push" || options.command === "prune") {
-    console.log(`Remote API URL: ${apiUrl ?? "not configured"}`);
-    console.log(
-      `Remote API token: ${apiToken ? `configured via ${options.apiTokenEnv}` : "not configured"}`,
-    );
-
-    if (!apiUrl || !apiToken) {
-      console.log(`${options.command} requires a remote API URL and token.`);
-      process.exitCode = 2;
-
-      return;
-    }
+  if (!result.ok) {
+    process.exitCode = 1;
   }
+}
 
-  const remote = selectRemote(options, apiUrl, apiToken);
+async function planAndPrint(
+  options: Exclude<CliOptions, { command: "doctor" }>,
+  reporter: LineReporter,
+  observer: LockstepObserver,
+  signal: AbortSignal | undefined,
+): Promise<LockstepPlan> {
+  const remote = selectRemote(options);
 
   if (remote.kind === "none") {
     console.warn(
@@ -117,12 +115,10 @@ export async function executeCommand(
     );
   }
 
-  const plan = await core.planSync(
+  const plan = await planSync(
     {
-      apiToken: remote.kind === "live" ? remote.apiToken : undefined,
-      apiUrl: remote.kind === "live" ? remote.apiUrl : undefined,
       hashMode: options.command === "push" ? "remote-aware" : options.hashFiles ? "all" : "none",
-      remoteSnapshotPath: remote.kind === "file" ? remote.path : undefined,
+      remote,
       signal,
       sourceRoot: options.source,
     },
@@ -132,138 +128,138 @@ export async function executeCommand(
   reporter.clear();
   printPlanSummary(plan, options, remote);
 
-  if (options.command === "verify") {
-    const changedItems = plan.items.filter((item) => item.action !== "keep");
-    const driftCount = changedItems.length;
+  return plan;
+}
 
-    if (driftCount > 0) {
-      console.log("");
-      console.log(`Verify failed: ${driftCount} path(s) differ from the remote snapshot.`);
-      process.exitCode = 1;
-    } else {
-      console.log("");
-      console.log("Verify passed: local archive matches the remote snapshot.");
-    }
+function printVerifyResult(plan: LockstepPlan): void {
+  const driftCount = plannedChanges(plan).length;
 
-    return;
+  console.log("");
+
+  if (driftCount > 0) {
+    console.log(`Verify failed: ${driftCount} path(s) differ from the remote snapshot.`);
+    process.exitCode = 1;
+  } else {
+    console.log("Verify passed: local archive matches the remote snapshot.");
   }
+}
 
-  if (options.command === "plan") {
-    return;
+/** Push or prune options once the token is known to be set. */
+type ConnectedRunOptions = RemoteRunOptions & { apiToken: string };
+
+async function runPush(
+  options: ConnectedRunOptions,
+  plan: LockstepPlan,
+  reporter: LineReporter,
+  observer: LockstepObserver,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  const result = await pushChanges(
+    {
+      apiToken: options.apiToken,
+      apiUrl: options.apiUrl,
+      maxChanges: options.maxChanges,
+      plan,
+      signal,
+      uploadConcurrency: options.uploadConcurrency,
+    },
+    observer,
+  );
+
+  reporter.clear();
+  console.log("");
+
+  if (result.failed > 0) {
+    console.log(`Push finished: ${result.applied} succeeded, ${result.failed} failed.`);
+    process.exitCode = 1;
+  } else if (result.applied === 0) {
+    console.log("Nothing to push.");
+  } else {
+    console.log(`Push finished: ${result.applied} change(s) applied.`);
   }
+}
 
-  const requiredApiUrl = requireConfiguredValue(apiUrl, "Remote API URL");
-  const requiredApiToken = requireConfiguredValue(apiToken, "Remote API token");
+async function runPrune(
+  options: ConnectedRunOptions,
+  plan: LockstepPlan,
+  reporter: LineReporter,
+  observer: LockstepObserver,
+  deps: ExecuteCommandDeps,
+): Promise<void> {
+  const { items: itemsToPrune } = plannedDeletes(plan, options.maxChanges);
 
-  if (options.command === "push") {
-    const result = await core.pushChanges(
-      {
-        apiToken: requiredApiToken,
-        apiUrl: requiredApiUrl,
-        maxChanges: options.maxChanges,
-        plan,
-        signal,
-        sourceRoot: options.source,
-        uploadConcurrency: options.uploadConcurrency,
-      },
-      observer,
-    );
+  printPruneDeletes(itemsToPrune, plan.counts.delete);
 
-    reporter.clear();
+  if (itemsToPrune.length === 0) {
     console.log("");
-
-    if (result.failed > 0) {
-      console.log(`Push finished: ${result.pushed} succeeded, ${result.failed} failed.`);
-      process.exitCode = 1;
-    } else if (result.pushed === 0) {
-      console.log("Nothing to push.");
-    } else {
-      console.log(`Push finished: ${result.pushed} change(s) applied.`);
-    }
+    console.log("Nothing to prune.");
 
     return;
   }
 
-  if (options.command === "prune") {
-    const deleteItems = plan.items.filter((item) => item.action === "delete");
-
-    const itemsToPrune =
-      options.maxChanges === undefined ? deleteItems : deleteItems.slice(0, options.maxChanges);
-
-    printPruneDeletes(itemsToPrune, deleteItems.length);
-
-    if (itemsToPrune.length === 0) {
+  if (!options.yes) {
+    if (!(deps.isInteractive ?? isInteractiveTerminal)()) {
       console.log("");
-      console.log("Nothing to prune.");
+      console.log("Prune requires --yes in non-interactive mode.");
+      process.exitCode = 1;
 
       return;
     }
 
-    if (!options.yes) {
-      if (!isInteractive()) {
-        console.log("");
-        console.log("Prune requires --yes in non-interactive mode.");
-        process.exitCode = 1;
-
-        return;
-      }
-
-      const confirmed = await confirmPrune(itemsToPrune.length, signal);
-
-      if (!confirmed) {
-        console.log("");
-        console.log("Prune cancelled.");
-        process.exitCode = 1;
-
-        return;
-      }
-    }
-
-    // Apply the deletes printed above and just confirmed; pruneDeleted never plans again. Both
-    // take deletes in plan order, so capping at the printed count applies exactly that list.
-    const result = await core.pruneDeleted(
-      {
-        apiToken: requiredApiToken,
-        apiUrl: requiredApiUrl,
-        maxChanges: itemsToPrune.length,
-        plan,
-        signal,
-      },
-      observer,
+    const confirmed = await (deps.confirmPrune ?? defaultConfirmPrune)(
+      itemsToPrune.length,
+      deps.signal,
     );
 
-    reporter.clear();
-    console.log("");
-
-    const skippedNote =
-      result.skipped > 0 ? `, ${result.skipped} skipped (back in the source folder)` : "";
-
-    if (result.failed > 0) {
-      console.log(
-        `Prune finished: ${result.pruned} succeeded${skippedNote}, ${result.failed} failed.`,
-      );
+    if (!confirmed) {
+      console.log("");
+      console.log("Prune cancelled.");
       process.exitCode = 1;
-    } else {
-      console.log(`Prune finished: ${result.pruned} delete(s) applied${skippedNote}.`);
+
+      return;
     }
+  }
+
+  // pruneDeleted applies plannedDeletes for the same cap: exactly the list printed above.
+  const result = await pruneDeleted(
+    {
+      apiToken: options.apiToken,
+      apiUrl: options.apiUrl,
+      maxChanges: options.maxChanges,
+      plan,
+      signal: deps.signal,
+    },
+    observer,
+  );
+
+  reporter.clear();
+  console.log("");
+
+  const skippedNote =
+    result.skipped > 0 ? `, ${result.skipped} skipped (back in the source folder)` : "";
+
+  if (result.failed > 0) {
+    console.log(
+      `Prune finished: ${result.applied} succeeded${skippedNote}, ${result.failed} failed.`,
+    );
+    process.exitCode = 1;
+  } else {
+    console.log(`Prune finished: ${result.applied} delete(s) applied${skippedNote}.`);
   }
 }
 
-/** What a plan compares the local archive against. */
+/** What a plan compares the local archive against, and why when it is nothing. */
 type RemoteSource =
-  | { kind: "file"; path: string }
-  | { apiToken: string; apiUrl: string; kind: "live" }
+  | Exclude<SnapshotSource, { kind: "none" }>
   | { fix: string; kind: "none"; reason: string };
 
 /**
  * A snapshot file wins when given; otherwise the live Pane View snapshot when both URL and token
  * resolve. Push and prune have already returned without both, so only plan can reach `none`.
  */
-function selectRemote(
-  options: CliOptions,
-  apiUrl: string | undefined,
-  apiToken: string | undefined,
-): RemoteSource {
+function selectRemote(options: CliOptions): RemoteSource {
+  const { apiToken, apiUrl } = options;
+
   if (options.remoteSnapshot) {
     return { kind: "file", path: options.remoteSnapshot };
   }
@@ -316,7 +312,7 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions, remote: Remot
   }
 
   console.log(`Media files: ${plan.totalFiles}`);
-  console.log(`Skipped files: ${plan.skipped}`);
+  console.log(`Skipped files: ${plan.skippedEntries.length}`);
   console.log(`Total size: ${formatBytes(plan.totalBytes)}`);
 
   if (options.showSkipped && plan.skippedEntries.length > 0) {
@@ -335,8 +331,8 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions, remote: Remot
   console.log(`  keep:   ${plan.counts.keep}`);
   console.log(`  delete: ${plan.counts.delete}`);
 
-  const changedItems = plan.items.filter((item) => item.action !== "keep");
-  const previewCount = options.command === "push" || options.command === "prune" ? 5 : 20;
+  const changedItems = plannedChanges(plan);
+  const previewCount = 20;
   const changedPreview = changedItems.slice(0, previewCount);
 
   if (changedPreview.length > 0 && options.command !== "push" && options.command !== "prune") {
@@ -357,16 +353,16 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions, remote: Remot
  * Lists every delete prune will apply, with no preview limit: the confirmation that follows
  * covers exactly these entries.
  */
-function printPruneDeletes(itemsToPrune: LockstepPlanItem[], plannedDeletes: number): void {
+function printPruneDeletes(itemsToPrune: SyncPlanItem[], deleteCount: number): void {
   if (itemsToPrune.length === 0) {
     return;
   }
 
   console.log("");
   console.log(
-    itemsToPrune.length < plannedDeletes
-      ? `Deletes to apply: ${itemsToPrune.length} of ${plannedDeletes} (capped by --max-changes)`
-      : `Deletes to apply: ${plannedDeletes}`,
+    itemsToPrune.length < deleteCount
+      ? `Deletes to apply: ${itemsToPrune.length} of ${deleteCount} (capped by --max-changes)`
+      : `Deletes to apply: ${deleteCount}`,
   );
 
   for (const item of itemsToPrune) {
@@ -389,80 +385,41 @@ async function defaultConfirmPrune(deleteCount: number, signal?: AbortSignal): P
 }
 
 function createCliObserver(reporter: LineReporter): LockstepObserver {
-  let _pushContext: { current: number; path: string; total: number } | null = null;
-
   return {
     onEvent(event: LockstepRunEvent) {
-      if (event.type === "status") {
-        // A status line is overwritten by the next one; warnings (such as a sync run that could
-        // not be finalized) have to stay on screen.
-        if (event.message.startsWith("Warning:")) {
-          reporter.log(event.message);
+      switch (event.type) {
+        case "status":
+          reporter.setStatus(event.message);
+          break;
+        case "warning":
+          reporter.log(`Warning: ${event.message}`);
+          break;
+        case "scan-progress":
+          reporter.setStatus(formatScanStatus(event.progress));
+          break;
+        case "item-stage":
+          reporter.setStatus(formatItemStage(event));
+          break;
+        case "item-success":
+          reporter.clear();
+          reporter.log(`[${event.current}/${event.total}] ${event.action} ${event.path}`);
+          break;
+        case "item-skipped":
+          reporter.clear();
+          reporter.log(
+            `[${event.current}/${event.total}] Skipped ${event.action} ${event.path}: ${event.reason}`,
+          );
+          break;
+        case "item-failure":
+          reporter.clear();
+          reporter.log(`[${event.current}/${event.total}] Failed ${event.path}: ${event.error}`);
+          break;
+        default: {
+          const _exhaustive: never = event;
 
-          return;
+          return _exhaustive;
         }
-
-        if (event.message.includes("] hashing ") || event.message.includes("] uploading ")) {
-          const match = event.message.match(/^\[(\d+)\/(\d+)\] (\w+) ([^(]+)(?: \((.+)\))?$/);
-          const stage = PushStageSchema.safeParse(match?.[3]);
-
-          if (match && stage.success) {
-            const [, current, total, , itemPath, detail] = match;
-            reporter.setStatus(
-              formatPushStatus({
-                current: Number(current),
-                detail,
-                path: itemPath?.trim() ?? "",
-                stage: stage.data,
-                total: Number(total),
-              }),
-            );
-
-            return;
-          }
-        }
-
-        reporter.setStatus(event.message);
-
-        return;
-      }
-
-      if (event.type === "scan-progress") {
-        reporter.setStatus(formatScanStatus(event.progress));
-
-        return;
-      }
-
-      if (event.type === "item-success") {
-        reporter.clear();
-        reporter.log(`[${event.current}/${event.total}] ${event.action} ${event.path}`);
-        _pushContext = null;
-
-        return;
-      }
-
-      if (event.type === "item-skipped") {
-        reporter.clear();
-        reporter.log(
-          `[${event.current}/${event.total}] Skipped ${event.action} ${event.path}: ${event.reason}`,
-        );
-
-        return;
-      }
-
-      if (event.type === "item-failure") {
-        reporter.clear();
-        reporter.log(`[${event.current}/${event.total}] Failed ${event.path}: ${event.error}`);
-        _pushContext = null;
       }
     },
   };
-}
-
-function requireConfiguredValue(value: string | undefined, name: string): string {
-  if (!value) {
-    throw new Error(`${name} is not configured.`);
-  }
-
-  return value;
 }

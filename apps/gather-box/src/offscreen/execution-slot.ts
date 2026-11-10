@@ -8,13 +8,14 @@ export class GatherExecutionSlot {
   }
 
   /**
-   * `onReleased` runs once the slot is free again, so work that can dispatch the next run — such as
-   * reporting this one as finished — never races the release.
+   * `execute` reports its own failures and does not reject. `onReleased` runs once the slot is free
+   * again, so work that can dispatch the next run — such as reporting this one as finished — never
+   * races the release.
    */
   start(
     runId: string,
     execute: (signal: AbortSignal) => Promise<void>,
-    onReleased?: () => void
+    onReleased: () => Promise<void>,
   ): GatherExecutionStart {
     if (this.active?.runId === runId) {
       return "duplicate";
@@ -28,17 +29,12 @@ export class GatherExecutionSlot {
     this.active = { runId, controller };
     void Promise.resolve()
       .then(() => execute(controller.signal))
-      .catch(() => undefined)
-      .finally(() => {
+      .finally(async () => {
         if (this.active?.runId === runId) {
           this.active = null;
         }
 
-        try {
-          onReleased?.();
-        } catch {
-          // Releasing the slot must not depend on how the run was reported.
-        }
+        await onReleased();
       });
 
     return "started";

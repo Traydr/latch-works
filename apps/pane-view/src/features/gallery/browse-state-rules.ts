@@ -1,19 +1,14 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
-import {
-  canUseFolderBrowseModes,
-  displayPathFromSearch,
-  type GalleryBrowseSearch,
-} from "@/features/gallery/browse-search";
+import type { GalleryBrowseSearch } from "@/features/gallery/browse-search";
 import type { PersistedBrowseState } from "@/features/gallery/gallery-browse-storage";
+import { createGalleryRandomSeed } from "@/features/gallery/gallery-random-seed";
 import {
-  createGalleryRandomSeed,
+  type GalleryListingRequest,
   type GalleryRandomSeed,
-} from "@/features/gallery/gallery-random-seed";
-import type {
-  GalleryListingQueryRequest,
-  LibrarySnapshotRequest,
-} from "@/features/library/library-queries";
-import { EXCLUDED_PATHS_LIMIT } from "@/features/library/library-service";
+  type LibrarySnapshotRequest,
+  normalizeListingRequest,
+  normalizeSnapshotRequest,
+} from "@/features/library/listing-contract";
 
 /**
  * The rules of gallery browse state (Plan 048), with no React in them;
@@ -25,13 +20,13 @@ import { EXCLUDED_PATHS_LIMIT } from "@/features/library/library-service";
  * remembered in-folder flags, which seed the URL in exactly two places: the
  * one-shot first-visit redirect and entering a folder from the archive root
  * (the "default recursive browsing" the settings drawer offers). Every rule
- * (`comic ⇒ recursive`, `root ⇒ neither`, the toolbar coupling) is stated once
- * in the functions below. Intents write straight to their owner — no override
- * layer.
+ * (`root ⇒ neither`, the toolbar coupling) is stated once in the functions
+ * below; `comic ⇒ recursive` is the listing contract's. Intents write straight
+ * to their owner — no override layer.
  */
 
 /** The browse flags after the two folding rules: comic ⇒ recursive; root ⇒ neither. */
-export interface BrowseFlags {
+interface BrowseFlags {
   comicMode: boolean;
   folderModesEnabled: boolean;
   recursive: boolean;
@@ -41,20 +36,16 @@ export interface BrowseFlags {
  * The one client statement of the flag rules. Resolution, URL construction,
  * the redirect, and folder entry from the root all go through it.
  */
-export function foldBrowseFlags(
+function foldBrowseFlags(
   path: string,
   flags: { comic?: boolean; recursive?: boolean },
 ): BrowseFlags {
-  const folderModesEnabled = canUseFolderBrowseModes(path);
+  const folderModesEnabled = path !== "";
   const comicMode = folderModesEnabled && (flags.comic ?? false);
   const recursive = folderModesEnabled && ((flags.recursive ?? false) || comicMode);
 
   return { comicMode, folderModesEnabled, recursive };
 }
-
-// ---------------------------------------------------------------------------
-// Resolved state
-// ---------------------------------------------------------------------------
 
 export interface ResolvedBrowseState {
   /** "" is the archive root. */
@@ -79,7 +70,7 @@ export function resolveBrowseState(
   search: GalleryBrowseSearch,
   persisted: SeededBrowseState,
 ): ResolvedBrowseState {
-  const path = displayPathFromSearch(search.path);
+  const path = search.path ?? "";
   const { comicMode, folderModesEnabled, recursive } = foldBrowseFlags(path, search);
 
   return {
@@ -95,33 +86,17 @@ export function resolveBrowseState(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Requests — the only snapshot/listing requests gallery code may build
-// ---------------------------------------------------------------------------
-
-/** URL-only snapshot request for the route loader (no localStorage on the loader path). */
-export function browseSnapshotRequestFromSearch(
-  search: GalleryBrowseSearch,
-): LibrarySnapshotRequest {
-  const path = displayPathFromSearch(search.path);
-  const { comicMode, recursive } = foldBrowseFlags(path, search);
-
-  return snapshotRequestFor({ comicMode, path, query: search.q, recursive });
-}
-
+/**
+ * The snapshot request: the folder query only. Deliberately no flags or
+ * excludes, which never change a folder row; sending them would churn the
+ * query key on every toggle, blanking the exclude dialog mid-interaction for
+ * a refetch that cannot change a single row. Reads the URL alone, so the
+ * route loader can build it without localStorage.
+ */
 export function snapshotRequestFor(
-  state: Pick<ResolvedBrowseState, "comicMode" | "path" | "query" | "recursive">,
+  state: Pick<GalleryBrowseSearch, "path" | "q">,
 ): LibrarySnapshotRequest {
-  return {
-    comicMode: state.comicMode,
-    // Deliberately no excludedPaths: the snapshot is the folder query only,
-    // and excludes never prune folders. Sending them would churn the snapshot
-    // query key on every toggle, blanking the exclude dialog mid-interaction
-    // (and resetting its scroll) for a refetch that cannot change a single row.
-    path: state.path || undefined,
-    query: state.query,
-    recursive: state.recursive,
-  };
+  return normalizeSnapshotRequest({ path: state.path, query: state.q });
 }
 
 export function listingRequestFor(
@@ -131,30 +106,19 @@ export function listingRequestFor(
   >,
   settings: { showImages: boolean; showVideos: boolean },
   excludedPaths: readonly string[] = [],
-): GalleryListingQueryRequest {
-  return {
+): GalleryListingRequest {
+  return normalizeListingRequest({
     comicMode: state.comicMode,
-    // Excludes ride the request only while the folded recursive flag is on
-    // (Plan 054, Decision 3); a path with no stored entry contributes nothing.
-    // Trimmed to the server's cap so an oversized stored list degrades to a
-    // partial exclude instead of a rejected request.
-    excludedPaths:
-      state.recursive && excludedPaths.length > 0
-        ? excludedPaths.slice(0, EXCLUDED_PATHS_LIMIT)
-        : undefined,
-    path: state.path || undefined,
+    excludedPaths: [...excludedPaths],
+    path: state.path,
     query: state.query,
     randomSeed: state.randomSeed,
     recursive: state.recursive,
     showImages: settings.showImages,
     showVideos: settings.showVideos,
     sortMode: state.sortMode,
-  };
+  });
 }
-
-// ---------------------------------------------------------------------------
-// Search building and intents
-// ---------------------------------------------------------------------------
 
 /**
  * Build the next URL search from the current state and a patch. A key present
@@ -205,25 +169,15 @@ export interface BrowseIntentResult {
 
 /**
  * What an intent does: URL-owned fields produce a navigation, local fields a
- * persisted patch. Rules stated here and nowhere else on the client:
- * - navigating to any folder (the root included) ends a search: the query is
- *   dropped so the folder shows its own contents;
- * - navigating to the root drops both flags from the URL; entering a folder
- *   from the root applies the remembered flags — the settings drawer's
- *   "default recursive browsing" default, which is the last in-folder choice
- *   or whatever the toggles set at the root;
- * - recursive off ⇒ comic off; recursive on leaves comic alone;
- * - comic on ⇒ recursive on; comic off ⇒ recursive off (the toolbar's
- *   long-standing coupling, preserved);
- * - at the root, where the URL cannot hold the flags, the toggles write the
- *   remembered default instead;
- * - shuffle switches to random and always changes the seed.
+ * persisted patch. Navigating to any folder ends a search; entering a folder
+ * from the root applies the remembered flags (the settings drawer's "default
+ * recursive browsing"); at the root, where the URL cannot hold the flags, the
+ * toggles write that remembered default instead.
  */
 export function applyBrowseIntent(
   state: ResolvedBrowseState,
   intent: BrowseIntent,
   remembered: Pick<PersistedBrowseState, "comicMode" | "recursive">,
-  createSeed: (previous?: GalleryRandomSeed | null) => GalleryRandomSeed = createGalleryRandomSeed,
 ): BrowseIntentResult {
   switch (intent.type) {
     case "navigateToPath": {
@@ -302,7 +256,9 @@ export function applyBrowseIntent(
     case "setSortMode":
       return { persisted: { sortMode: intent.next } };
     case "shuffle":
-      return { persisted: { randomSeed: createSeed(state.randomSeed), sortMode: "random" } };
+      return {
+        persisted: { randomSeed: createGalleryRandomSeed(state.randomSeed), sortMode: "random" },
+      };
     case "setDetailPanelOpen":
       return { persisted: { detailPanelOpen: intent.next } };
   }

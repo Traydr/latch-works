@@ -5,8 +5,14 @@
   "type": "module",
   "exports": {
     ".": {
+      "source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "source": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
     }
   },
   "scripts": {
@@ -17,10 +23,11 @@
   },
   "dependencies": {
     "@latch-works/media-domain": "workspace:*",
-    "@latch-works/media-index": "workspace:*",
+    "@latch-works/sync-protocol": "workspace:*",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@latch-works/conformance": "workspace:*",
     "typescript": "^7.0.2",
     "vitest": "^5.0.4"
   }

@@ -8,6 +8,6 @@ import * as z from "zod/mini";
 export function lenientArrayOf<Entry extends z.ZodMiniType>(entry: Entry) {
   return z.pipe(
     z.catch(z.array(z.catch(z.nullable(entry), null)), []),
-    z.transform((entries) => entries.filter((value) => value !== null))
+    z.transform((entries) => entries.filter((value) => value !== null)),
   );
 }

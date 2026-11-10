@@ -1,29 +1,9 @@
-import { toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
-import { and, count, eq, isNull, or, type SQL } from "drizzle-orm";
+import { and, count, isNull, or, type SQL } from "drizzle-orm";
+import { normalizeArchivePath } from "@/features/library/listing-contract";
 import { type Database, db } from "../db";
-import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
+import { guardLibraryChange } from "../db/library-guards";
 import { folders, libraryEntries } from "../db/schema";
 import { isAtOrUnderPath, isUnderPath } from "../library/folder-path-sql";
-import { assertNoActiveCleanupJob, assertNoActiveSyncRun } from "./guards";
-
-/**
- * The collaborators `softDeleteFolderSubtree` runs its prologue through. The
- * default instance below wires the real database, lock, and guards; a suite
- * substitutes its own to observe the prologue without a live archive.
- */
-export interface FolderDeleteDependencies {
-  acquireLibraryMutationStartupLock(tx: Database): Promise<void>;
-  assertNoActiveCleanupJob(client: Database): Promise<void>;
-  assertNoActiveSyncRun(client: Database): Promise<void>;
-  database: Database;
-}
-
-const defaultFolderDeleteDependencies: FolderDeleteDependencies = {
-  acquireLibraryMutationStartupLock,
-  assertNoActiveCleanupJob,
-  assertNoActiveSyncRun,
-  database: db,
-};
 
 export interface FolderDeleteResult {
   entriesDeleted: number;
@@ -31,28 +11,28 @@ export interface FolderDeleteResult {
   path: string;
 }
 
-function normalizeFolderPath(path: string): string {
-  const normalized = trimTrailingSlash(toArchivePath(path));
+/** The distinct normalized folder paths of a selection; refuses an empty one and the root. */
+function deletableFolderPaths(folderPaths: readonly string[]): string[] {
+  const paths = [...new Set(folderPaths.map(normalizeArchivePath))];
 
-  if (normalized.split("/").includes("..")) {
+  if (paths.length === 0) {
+    throw new Error("Select at least one folder to delete.");
+  }
+
+  if (paths.some((path) => path.split("/").includes(".."))) {
     throw new Error("Folder path must not contain '..' segments.");
   }
 
-  return normalized;
-}
-
-function assertDeletableFolderPath(path: string): void {
-  if (!path) {
+  if (paths.includes("")) {
     throw new Error("Cannot delete the archive root. Use library wipe instead.");
   }
+
+  return paths;
 }
 
 /** Live entries in the folder at `path` or beneath it. */
 function liveEntriesUnderPath(path: string): SQL | undefined {
-  return and(
-    isNull(libraryEntries.deletedAt),
-    or(eq(libraryEntries.parentPath, path), isUnderPath(libraryEntries.logicalPath, path)),
-  );
+  return and(isNull(libraryEntries.deletedAt), isUnderPath(libraryEntries.logicalPath, path));
 }
 
 /** How many live entries deleting `folderPaths` would soft-delete, each counted once. */
@@ -60,57 +40,28 @@ export async function countEntriesUnderPaths(
   folderPaths: string[],
   database: Database = db,
 ): Promise<number> {
-  const normalizedPaths = [...new Set(folderPaths.map(normalizeFolderPath))];
-
-  if (normalizedPaths.length === 0) {
-    throw new Error("Select at least one folder to delete.");
-  }
-
-  for (const path of normalizedPaths) {
-    assertDeletableFolderPath(path);
-  }
-
   const [row] = await database
     .select({ value: count() })
     .from(libraryEntries)
-    .where(or(...normalizedPaths.map(liveEntriesUnderPath)));
+    .where(or(...deletableFolderPaths(folderPaths).map(liveEntriesUnderPath)));
 
   return row?.value ?? 0;
 }
 
-/**
- * Soft-delete folders and their subtrees. Guarded like the maintenance
- * schedulers: never during a sync run (the sync would resurrect or fight the
- * rows) and never during a cleanup job (a purge may be hard-deleting the very
- * rows this marks). The guards run inside the mutation transaction under the
- * same library mutation startup lock the schedulers take, so a job cannot be
- * scheduled between the checks and the updates; and they live with the
- * mutation so no caller can skip them.
- */
+/** Soft-delete folders and their subtrees, behind the library change guard. */
 export async function softDeleteFolderSubtree(
   { folderPaths }: { folderPaths: string[] },
-  dependencies: FolderDeleteDependencies = defaultFolderDeleteDependencies,
+  database: Database = db,
 ): Promise<FolderDeleteResult[]> {
-  const normalizedPaths = [...new Set(folderPaths.map(normalizeFolderPath))];
-
-  if (normalizedPaths.length === 0) {
-    throw new Error("Select at least one folder to delete.");
-  }
-
-  for (const path of normalizedPaths) {
-    assertDeletableFolderPath(path);
-  }
-
+  const paths = deletableFolderPaths(folderPaths);
   const now = new Date();
 
-  return dependencies.database.transaction(async (tx) => {
-    await dependencies.acquireLibraryMutationStartupLock(tx);
-    await dependencies.assertNoActiveSyncRun(tx);
-    await dependencies.assertNoActiveCleanupJob(tx);
+  return database.transaction(async (tx) => {
+    await guardLibraryChange(tx);
 
     const results: FolderDeleteResult[] = [];
 
-    for (const path of normalizedPaths) {
+    for (const path of paths) {
       // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Overlapping folder selections must be updated in deterministic input order on one transaction.
       const deletedEntries = await tx
         .update(libraryEntries)

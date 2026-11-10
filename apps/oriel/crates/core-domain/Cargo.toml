@@ -1,6 +1,6 @@
 [package]
 name = "oriel-core-domain"
-description = "media-domain in Rust: natural order and sort orders, media kinds, archive paths, comics, the gallery's entries and system files."
+description = "media-domain in Rust: natural order and sort orders, media kinds, archive paths, comics, the gallery's entries and system files; and how every mode formats text."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,7 +11,15 @@ autotests = false
 [dependencies]
 icu_collator.workspace = true
 icu_normalizer.workspace = true
+log.workspace = true
 serde.workspace = true
+
+# Local time as JavaScript's `Date` reads it (`format::local_time`).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Time"] }
 
 [dev-dependencies]
 serde_json = { workspace = true, features = ["float_roundtrip"] }

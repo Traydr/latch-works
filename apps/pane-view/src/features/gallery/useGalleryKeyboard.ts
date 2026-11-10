@@ -1,10 +1,7 @@
+import { getParentPath } from "@latch-works/media-domain";
 import { type MutableRefObject, useCallback, useEffect, useRef } from "react";
-import {
-  getParentPath,
-  isInteractiveTarget,
-  isTextInputTarget,
-} from "@/features/gallery/browse-search";
-import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
+import { isInteractiveTarget, isTextInputTarget } from "@/features/gallery/browse-search";
+import type { GalleryBrowseEntry } from "@/features/library/listing-contract";
 
 export interface UseGalleryKeyboardOptions {
   columnCountRef: MutableRefObject<number>;

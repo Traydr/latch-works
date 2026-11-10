@@ -1,4 +1,3 @@
-import { GallerySortModeSchema } from "@latch-works/media-domain";
 import { z } from "zod";
 
 export const ThemeModeSchema = z.enum(["dark", "light", "system"]);
@@ -22,20 +21,5 @@ export const AppSettingsSchema = z.object({
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
 export type AppSettingsPatch = Partial<AppSettings>;
-
-/**
- * Per-root gallery flags, stored under `pane-view.root-preferences` and
- * written by the browse-state storage adapter after each change. Nothing reads
- * them back yet: a follow-up plan brings Frame View's "exclude this folder from
- * recursive browsing" to Pane View, and per-root storage is where that
- * exclusion list belongs. Do not delete.
- */
-export const RootGalleryPreferencesSchema = z.object({
-  comicMode: z.boolean(),
-  recursive: z.boolean(),
-  sortMode: GallerySortModeSchema,
-});
-
-export type RootGalleryPreferences = z.infer<typeof RootGalleryPreferencesSchema>;
 
 export const DEFAULT_APP_SETTINGS: AppSettings = AppSettingsSchema.parse({});

@@ -81,16 +81,6 @@ impl Still {
     }
 }
 
-/// A one-pixel image under `image`'s id. GPUI paints an image from its sprite atlas by id, and
-/// reads the pixels only to upload them the first time, so once they are uploaded this paints
-/// the same picture without keeping them (until the atlas is told to drop the id).
-pub fn stand_in(image: &RenderImage) -> Arc<RenderImage> {
-    let pixel = image::Frame::new(image::RgbaImage::new(1, 1));
-    let mut stand_in = RenderImage::new(smallvec::smallvec![pixel]);
-    stand_in.id = image.id;
-    Arc::new(stand_in)
-}
-
 /// Decodes the still at `path` with its EXIF orientation applied and its longer side at most
 /// `max_pixel_size` pixels; a smaller still keeps its own size. Reads AVIF, HEIC, JPEG, PNG, WebP,
 /// GIF (the first frame) and BMP: whatever ImageIO reads on this Mac, or libvips elsewhere.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getExpectedArchiveTarget, planArchiveImage, planArchiveMedia } from "./still-policy";
+import { getExpectedArchiveTarget, planArchiveMedia } from "./still-policy";
 
 describe("archive media policy", () => {
   it.each(["photo.jpg", "photo.jpeg", "photo.png", "photo.webp", "photo.bmp"])(
@@ -56,42 +56,5 @@ describe("archive media policy", () => {
     expect(planArchiveMedia("story.pdf", "application/pdf")).toBeNull();
     expect(planArchiveMedia("vector.svg", "image/svg+xml")).toBeNull();
     expect(planArchiveMedia("archive.zip", "application/zip")).toBeNull();
-  });
-});
-
-describe("archive image policy", () => {
-  it("converts stills to AVIF whatever their extension says", () => {
-    expect(planArchiveImage({ fileName: "a/photo.png", format: "png", frameCount: 1 })).toEqual({
-      action: "convert-avif",
-      fileName: "a/photo.avif",
-    });
-    expect(planArchiveImage({ fileName: "scan.jpg", format: "webp", frameCount: 1 })).toEqual({
-      action: "convert-avif",
-      fileName: "scan.avif",
-    });
-  });
-
-  it("turns animated GIF, WebP and PNG into MP4 instead of flattening them", () => {
-    for (const format of ["gif", "webp", "png"] as const) {
-      expect(planArchiveImage({ fileName: "loop.x", format, frameCount: 12 })).toEqual({
-        action: "convert-mp4",
-        fileName: "loop.mp4",
-      });
-    }
-  });
-
-  it("stores a single-frame GIF as an AVIF", () => {
-    expect(planArchiveImage({ fileName: "icon.gif", format: "gif", frameCount: 1 })).toEqual({
-      action: "convert-avif",
-      fileName: "icon.avif",
-    });
-  });
-
-  it("renames AVIF bytes with a stale extension and keeps real AVIFs", () => {
-    expect(planArchiveImage({ fileName: "cover.jpg", format: "avif", frameCount: 1 })).toEqual({
-      action: "rename-avif",
-      fileName: "cover.avif",
-    });
-    expect(planArchiveImage({ fileName: "cover.avif", format: "avif", frameCount: 1 })).toBeNull();
   });
 });

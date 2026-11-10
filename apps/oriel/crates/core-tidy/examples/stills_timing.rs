@@ -22,8 +22,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use oriel_avif::Libavif;
-use oriel_core_tidy::media::still::encode_still_to_avif;
-use oriel_core_tidy::similarity::{Vips, fingerprint_still, look_at_still};
+use oriel_core_tidy::internals::encode_still_to_avif;
+use oriel_core_tidy::internals::{fingerprint_still, look_at_still, open_libvips};
 use sha2::{Digest as _, Sha256};
 
 #[cfg(unix)]
@@ -112,7 +112,7 @@ fn main() {
         (Some("--release-every"), Some(n)) => Some(n.parse().unwrap()),
         _ => None,
     };
-    let (vips, _, _) = Vips::open_located().unwrap();
+    let vips = open_libvips().unwrap();
     let libavif = Libavif::get().unwrap();
     let mut stills = Vec::new();
     stills_under(

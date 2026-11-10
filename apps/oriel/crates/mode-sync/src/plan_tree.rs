@@ -1,11 +1,11 @@
-//! The plan as a tree of folders, from Electron Oriel's `plan-tree.ts`: each change under its
-//! folders, sorted as a file browser lists them, a chain of single folders collapsed into one
-//! row (`a/b/c`), and rows flattened for the list with a "show more" row after a page of files.
+//! The plan as a tree of folders: each change under its folders, sorted as a file browser lists
+//! them, a chain of single folders collapsed into one row (`a/b/c`), and rows flattened for the
+//! list with a "show more" row after a page of files.
 
 use std::collections::{HashMap, HashSet};
 
-use oriel_core_domain::{NamedPath, compare_by_name};
-use oriel_core_index::SyncPlanAction;
+use oriel_core_domain::collation::Collation;
+use oriel_core_sync::SyncPlanAction;
 
 /// Files listed per open folder before a "show more" row; a first push can hold thousands.
 pub const FILES_PER_FOLDER: usize = 200;
@@ -92,21 +92,8 @@ pub fn name_order<'a>(paths: impl IntoIterator<Item = &'a str>) -> Vec<u32> {
     ranks
 }
 
-struct Label<'a>(&'a str);
-
-impl NamedPath for Label<'_> {
-    fn name(&self) -> &str {
-        self.0
-    }
-
-    fn path(&self) -> &str {
-        self.0
-    }
-}
-
-/// `Intl.Collator(undefined, { numeric: true, sensitivity: "base" })`.
 fn natural(a: &str, b: &str) -> std::cmp::Ordering {
-    compare_by_name(&Label(a), &Label(b))
+    Collation::Natural.compare(a, b)
 }
 
 #[derive(Default)]
@@ -119,7 +106,7 @@ struct Draft {
     path: String,
 }
 
-/// `buildPlanTree`.
+/// The tree of `items`.
 pub fn build_plan_tree<'a>(items: impl IntoIterator<Item = TreeInput<'a>>) -> PlanFolder {
     let mut root = Draft::default();
     for item in items {
@@ -211,7 +198,7 @@ fn collapse_chain(folder: PlanFolder) -> PlanFolder {
     }
 }
 
-/// `flattenPlanTree`: the rows top to bottom. `open_overrides` holds folders the user opened or
+/// The rows top to bottom. `open_overrides` holds folders the user opened or
 /// closed; the rest open by size.
 pub fn flatten_plan_tree<'a>(
     root: &'a PlanFolder,

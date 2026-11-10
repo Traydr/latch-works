@@ -10,9 +10,9 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div,
     prelude::FluentBuilder as _,
 };
+use oriel_core_domain::format;
 use oriel_ui::ControlSize as _;
 
-use crate::format;
 use crate::state::TidyState;
 
 /// The line for `count` sets being checked, or nothing when there are none.

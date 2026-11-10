@@ -1,7 +1,7 @@
-//! The engine's values, as glazier-core's `contract.ts` names them: what a file is, what a query
-//! asks for, and what Overview, the Library and Duplicates are shown. The serde forms are the
-//! TypeScript's JSON, so the names a catalog's settings and plans store stay as glazier-core
-//! wrote them.
+//! The engine's values: what a file is, what a query asks for, what Overview, the Library and
+//! Duplicates are shown, and the codes the engine answers with. Only the settings and the string
+//! enums have serde forms: they are the ones catalogs written by Electron Oriel store settings
+//! and plan steps in, so those still read.
 
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,8 @@ pub type RootId = i64;
 /// A file's row id in the catalog.
 pub type FileId = i64;
 
-/// Declares a string enum with the TypeScript's names, its SQL text and every value in order.
+/// Declares a string enum with the text the catalog stores for each value, and every value in
+/// order.
 macro_rules! string_enum {
     ($(#[$meta:meta])* $name:ident { $($variant:ident = $text:literal),+ $(,)? }) => {
         $(#[$meta])*
@@ -21,17 +22,17 @@ macro_rules! string_enum {
         }
 
         impl $name {
-            /// Every value, in the TypeScript enum's order.
+            /// Every value, in order.
             pub const ALL: &'static [$name] = &[$($name::$variant),+];
 
-            /// The name the TypeScript and the catalog use.
+            /// The name the catalog uses.
             pub fn as_str(self) -> &'static str {
                 match self {
                     $($name::$variant => $text),+
                 }
             }
 
-            /// The value the catalog or the TypeScript names `text`, if any.
+            /// The value the catalog names `text`, if any.
             pub fn parse(text: &str) -> Option<$name> {
                 match text {
                     $($text => Some($name::$variant),)+
@@ -214,8 +215,7 @@ string_enum! {
 }
 
 /// A folder Tidy looks after.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Root {
     pub id: RootId,
     pub path: String,
@@ -227,8 +227,7 @@ pub struct Root {
 }
 
 /// A file as the Library and Duplicates show it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FileRow {
     pub id: FileId,
     pub root_id: RootId,
@@ -258,8 +257,7 @@ pub struct FileRow {
 
 /// Which files the Library shows: each list matches any of its values, and the lists, the
 /// search and the folder all have to match together.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct FileFilter {
     pub root_id: Option<RootId>,
     pub search: String,
@@ -282,10 +280,8 @@ impl FileFilter {
 }
 
 /// A page of the Library: which files, in which order, from where.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FileQuery {
-    #[serde(flatten)]
     pub filter: FileFilter,
     pub sort: FileSortColumn,
     pub descending: bool,
@@ -300,8 +296,7 @@ pub const MAX_PAGE_ROWS: u32 = 1000;
 /// How many files a bulk action takes at once, such as Select All.
 pub const MAX_BULK_FILES: usize = 50_000;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FilePage {
     pub total: i64,
     pub total_bytes: i64,
@@ -309,15 +304,14 @@ pub struct FilePage {
 }
 
 /// File ids for a bulk action, and whether there were more than it can take.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FileIdList {
     pub ids: Vec<FileId>,
     pub truncated: bool,
 }
 
 /// How many files, of how many bytes, a filter value matches.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FacetCount<T> {
     pub value: T,
     pub files: i64,
@@ -326,8 +320,7 @@ pub struct FacetCount<T> {
 
 /// File counts per filter value. Each facet is counted under every filter except its own, so the
 /// filter menu can show what choosing a value would match.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FileFacets {
     pub kinds: Vec<FacetCount<FileKind>>,
     pub formats: Vec<FacetCount<Option<FileFormat>>>,
@@ -336,15 +329,14 @@ pub struct FileFacets {
 }
 
 /// Files and bytes.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Count {
     pub files: i64,
     pub bytes: i64,
 }
 
 /// What a selection holds, so the selection bar offers only the actions that apply to it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SelectionSummary {
     pub files: i64,
     pub bytes: i64,
@@ -354,10 +346,12 @@ pub struct SelectionSummary {
     /// Videos with an audio track, which Strip audio applies to.
     pub with_audio: i64,
     pub extension_mismatches: i64,
+    /// What Convert does to the selection's convertible files, when it does the same to all.
+    pub convert_as: Option<OptimizeCategory>,
 }
 
 /// Something that needs a look, with how many files and bytes it covers.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Finding {
     pub kind: FindingKind,
     pub count: i64,
@@ -365,15 +359,14 @@ pub struct Finding {
 }
 
 /// Distinct contents of a duplicate set, each with its byte-identical copies, best first.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DuplicateVersion {
     pub files: Vec<FileRow>,
 }
 
 /// One picture or video and every version of it in the catalog. Byte-identical copies are one
 /// version, so a file belongs to one set only, whether its twins are exact or similar.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DuplicateSet {
     /// `set:<lowest id>`, stable while the set's files stay: a conversion gives files new bytes
     /// and keeps their ids, so what the owner chose in a set outlives it.
@@ -442,8 +435,7 @@ pub fn is_close_call(set: &DuplicateSet) -> bool {
 }
 
 /// How many sets, the files their suggestions hold and the bytes that frees.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DuplicateTotals {
     pub sets: i64,
     /// Files the suggested resolutions move to holding.
@@ -452,8 +444,7 @@ pub struct DuplicateTotals {
 }
 
 /// What Duplicates asks for.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DuplicateSetRequest {
     pub root_id: Option<RootId>,
     pub offset: usize,
@@ -465,7 +456,7 @@ pub struct DuplicateSetRequest {
 }
 
 /// Counts of open sets by kind, and of dismissed sets.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DuplicateCounts {
     pub exact: i64,
     pub similar: i64,
@@ -476,8 +467,7 @@ pub struct DuplicateCounts {
 }
 
 /// One page of duplicate sets, with counts that ignore the scope.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DuplicateSetPage {
     /// Sets matching the request's scope.
     pub total: i64,
@@ -497,8 +487,7 @@ pub struct DuplicateSetPage {
 
 /// A set the owner marked as not duplicates by hand ("Keep both", "Keep all"), as History lists
 /// it. Dismissals a plan recorded (Spot variants' kept versions) are the plan's, and not listed.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DuplicateDismissal {
     pub id: i64,
     /// When it was made, in milliseconds since the epoch, as the catalog records it.
@@ -511,13 +500,13 @@ pub struct DuplicateDismissal {
 }
 
 /// What Convert would change, by category, and why other files are left alone.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OptimizeSummary {
     pub categories: Vec<CategoryCount>,
     pub skipped: Vec<SkipCount>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CategoryCount {
     pub category: OptimizeCategory,
     pub files: i64,
@@ -526,17 +515,50 @@ pub struct CategoryCount {
     /// Of those bytes, what the open duplicate sets' suggestions would remove anyway, which their
     /// own totals already count.
     pub duplicate_bytes: i64,
+    /// What converting these files at the current video quality is estimated to save, once
+    /// [`crate::TidyEngine::estimate_optimize`] has made an estimate for them.
+    pub estimate: Option<OptimizeEstimate>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// A file whose extension Clean up would fix, and the name it would give it: AVIF and MP4 under
+/// their own extension, anything else under its format's when the one it has is wrong.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExtensionFix {
+    pub file: FileRow,
+    pub name: String,
+}
+
+/// How many files one reason left out of Convert or Shrink.
+#[derive(Clone, Debug, PartialEq)]
 pub struct SkipCount {
-    pub reason: String,
+    pub reason: SkipReason,
     pub files: i64,
 }
 
+/// Why Convert or Shrink leaves a file as it is.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SkipReason {
+    /// An earlier conversion came out no smaller.
+    NotSmaller,
+    /// An earlier AV1 re-encode came out no smaller.
+    NotSmallerAsAv1,
+    /// It will not decode.
+    WontDecode,
+    /// Its new name is taken, by a file or an earlier candidate.
+    NameTaken,
+    /// A still in a format the archive keeps as it is (TIFF, HEIC).
+    StillKept(FileFormat),
+    AlreadyAv1,
+    /// Its bitrate is low enough that AV1 would save little.
+    AlreadyCompact,
+    CannotReencode,
+    SizeUnknown,
+    /// The archive policy's own reason for a video it does not convert.
+    Unsupported(String),
+}
+
 /// One video Shrink would re-encode to AV1, with the size it is expected to come out at.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ShrinkItem {
     pub file_id: FileId,
     pub bytes: i64,
@@ -551,8 +573,7 @@ pub struct ShrinkItem {
 
 /// The videos under a root Shrink should re-encode, the most bytes saved first, and why the others
 /// are left as they are. `preview` holds the first rows, for tiles.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ShrinkSummary {
     pub items: Vec<ShrinkItem>,
     pub preview: Vec<FileRow>,
@@ -584,8 +605,7 @@ pub fn shrink_batch(items: &[ShrinkItem], limit_bytes: Option<f64>) -> &[ShrinkI
 }
 
 /// Videos Shrink would re-encode: how many, their bytes, and the bytes expected after.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ShrinkTotals {
     pub files: i64,
     /// Hard links of one file count once.
@@ -596,14 +616,13 @@ pub struct ShrinkTotals {
     pub duplicate_saving: i64,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DuplicateTotalsByKind {
     pub exact: DuplicateTotals,
     pub similar: DuplicateTotals,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CleanupCounts {
     pub junk: i64,
     pub empty_folders: i64,
@@ -611,9 +630,15 @@ pub struct CleanupCounts {
     pub extensions: i64,
 }
 
+impl CleanupCounts {
+    /// Everything Clean up would do: when it is 0, Clean up has no work.
+    pub fn count(&self) -> i64 {
+        self.junk + self.empty_folders + self.extensions
+    }
+}
+
 /// How far the background analysis has come.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AnalysisProgress {
     pub fingerprinted: i64,
     pub fingerprintable: i64,
@@ -623,8 +648,7 @@ pub struct AnalysisProgress {
 
 /// Overview's to-do list for a root, in the order the work should happen: duplicates, then
 /// conversions, then silent soundtracks, then clean-up, then what needs a human look.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Tidy {
     pub files: i64,
     pub bytes: i64,
@@ -647,7 +671,7 @@ pub struct PreferredFolder {
     pub dir: String,
 }
 
-/// Tidy's settings, stored in the catalog as glazier-core stores them.
+/// Tidy's settings, stored in the catalog in the form Electron Oriel's catalogs have them.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -675,20 +699,17 @@ impl Default for Settings {
     }
 }
 
-/// The video encoders a re-encode can use (glazier-core's `EncoderCapabilities.video`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// The video encoders a re-encode can use.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct VideoEncoders {
     pub avc: bool,
     pub hevc: bool,
     pub av1: bool,
 }
 
-/// What this machine can encode with, for Settings › Encoders and the Library's Re-encode menu
-/// (glazier-core's `EncoderCapabilities`). Electron Oriel's video encoders are WebCodecs'; Oriel
-/// has none, so its are the pinned ffmpeg's.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// What this machine can encode with, for Settings › Encoders and the Library's Re-encode menu:
+/// the pinned ffmpeg's video encoders, and libavif for pictures.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EncoderCapabilities {
     pub video: VideoEncoders,
     pub aac: bool,
@@ -696,13 +717,11 @@ pub struct EncoderCapabilities {
     /// ffmpeg has SVT-AV1, which every AV1 encode uses.
     pub svt_av1: bool,
     pub ffprobe: bool,
-    /// libavif loads, which Oriel encodes AVIF pictures with (Electron Oriel's are wasm).
-    #[serde(default)]
+    /// libavif loads, which Oriel encodes AVIF pictures with.
     pub avif: bool,
 }
 
-// Changing the archive: plans, their steps, holding and the history (glazier-core's
-// `PlanRequestSchema` and what follows it in `contract.ts`).
+// Changing the archive: plans, their steps, holding and the history.
 
 /// A plan's row id in the catalog.
 pub type PlanId = i64;
@@ -720,21 +739,19 @@ string_enum! {
 }
 
 /// One file to rename, and its new name.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rename {
     pub file_id: FileId,
     pub name: String,
 }
 
 /// One duplicate decision: the files kept and the files moved to holding.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ResolveGroup {
     pub keep: Vec<FileId>,
     pub remove: Vec<FileId>,
     /// Those files as the owner saw them when they decided. One that differs now was not what they
     /// decided about, so the decision is not carried out.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub seen: Vec<SeenFile>,
 }
 
@@ -759,8 +776,7 @@ impl ResolveGroup {
 }
 
 /// What a page showed of a file: enough to tell it has changed since.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SeenFile {
     pub id: FileId,
     pub size: i64,
@@ -768,7 +784,6 @@ pub struct SeenFile {
     pub ctime_ms: f64,
     /// Its hash then, for a file that had one: most stills are hashed only once something else is
     /// the same size.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
 }
 
@@ -795,12 +810,7 @@ impl SeenFile {
 }
 
 /// What the owner asked to change, before the planner turns it into steps.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(
-    tag = "kind",
-    rename_all = "kebab-case",
-    rename_all_fields = "camelCase"
-)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PlanRequest {
     /// Move files to their root's holding folder.
     Hold {
@@ -908,23 +918,21 @@ string_enum! {
 }
 
 /// How many steps of a plan take one action.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ActionCount {
     pub action: PlanStepAction,
     pub steps: i64,
 }
 
 /// What a plan changes for Sync: media paths that go and media paths that come.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LockstepCounts {
     pub removed_paths: i64,
     pub added_paths: i64,
 }
 
 /// A saved draft plan, as the owner reviews it before applying.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlanPreview {
     pub plan_id: PlanId,
     pub kind: PlanKind,
@@ -951,15 +959,14 @@ string_enum! {
 }
 
 /// Finished steps that put a file in holding.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct HeldCount {
     pub files: i64,
     pub bytes: i64,
 }
 
 /// One plan as History shows it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlanSummary {
     pub id: PlanId,
     pub kind: PlanKind,
@@ -973,7 +980,6 @@ pub struct PlanSummary {
     pub done: i64,
     pub skipped: i64,
     /// Of those, the ones left because the file kept instead has changed or gone.
-    #[serde(default)]
     pub skipped_for_kept_file: i64,
     pub failed: i64,
     pub undone: i64,
@@ -984,7 +990,7 @@ pub struct PlanSummary {
 }
 
 impl PlanSummary {
-    /// Whether ⌘Z or History can take the plan back, as the renderer's `canUndo` decides.
+    /// Whether ⌘Z or History can take the plan back.
     pub fn can_undo(&self) -> bool {
         self.done > 0
             && matches!(
@@ -1006,8 +1012,7 @@ string_enum! {
 }
 
 /// One step of a plan, as History lists it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlanStep {
     pub id: i64,
     pub action: PlanStepAction,
@@ -1019,15 +1024,14 @@ pub struct PlanStep {
     pub bytes_after: Option<i64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlanStepPage {
     pub total: i64,
     pub steps: Vec<PlanStep>,
 }
 
 /// One file in holding: where it came from, where it is, and why.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HoldingItem {
     pub id: HoldingId,
     pub root_id: RootId,
@@ -1039,8 +1043,23 @@ pub struct HoldingItem {
     pub reason: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// How a duplicate decision words why it held a copy; holding keeps the words, and
+/// [`HoldingItem::kept_rel_path`] reads the copy that stayed back out of them.
+const DUPLICATE_OF: &str = "Duplicate of ";
+
+/// Why a duplicate decision held a copy: the copy kept instead, by its path in the root.
+pub fn duplicate_hold_reason(kept_rel_path: &str) -> String {
+    format!("{DUPLICATE_OF}{kept_rel_path}")
+}
+
+impl HoldingItem {
+    /// The copy a duplicate decision kept instead of this one, by its path in the root.
+    pub fn kept_rel_path(&self) -> Option<&str> {
+        self.reason.strip_prefix(DUPLICATE_OF)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct HoldingList {
     pub total_bytes: i64,
     pub total: i64,
@@ -1048,8 +1067,7 @@ pub struct HoldingList {
 }
 
 /// A page of a root's plans or holding: the root (or every root) and where the page starts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PlanListRequest {
     pub root_id: Option<RootId>,
     pub offset: i64,
@@ -1057,38 +1075,25 @@ pub struct PlanListRequest {
     pub limit: i64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PlanStepsRequest {
     pub plan_id: PlanId,
     pub offset: i64,
     pub limit: i64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HoldingRequest {
     pub root_id: RootId,
     pub offset: i64,
     pub limit: i64,
 }
 
-/// The most rows a page of plans, steps or holding carries, as glazier-core's paging allows.
+/// The most rows a page of plans, steps or holding carries.
 pub const MAX_HISTORY_ROWS: i64 = 500;
 
-/// What restoring held files did: how many came back, why the others did not, and the roots to
-/// scan again for them.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RestoreResult {
-    pub restored: i64,
-    pub failed: Vec<String>,
-    /// The roots a restore put files back into, which want a scan (glazier-core queues one).
-    pub rescan: Vec<RootId>,
-}
-
 /// What emptying a root's holding into the Trash did.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EmptyHoldingResult {
     pub emptied: i64,
     /// Batch folders the Trash refused, with why; their files stay held.
@@ -1096,8 +1101,7 @@ pub struct EmptyHoldingResult {
 }
 
 /// What converting a category would save, from a sample converted into a temp folder.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OptimizeEstimate {
     pub category: OptimizeCategory,
     pub sampled: i64,

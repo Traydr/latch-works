@@ -1,15 +1,16 @@
-//! The archive Tidy's tests scan, made at test time so the repository holds no media.
+//! The archive Tidy's tests scan, made at test time so the repository holds no media, and the
+//! tools and clips every crate's media tests share.
 //!
-//! It is glazier-core's differential archive (its `buildDifferentialArchive`, which e2e's Glazier
-//! workbench and Spot variants specs drew), rebuilt in Rust: the same paths, dates and kinds of
-//! content, so the tests' counts still describe it. Stills are drawn here and written with the
-//! `image` crate, the AVIF misnamed `.jpg` goes through the libavif Convert uses, and the clips
-//! come from the pinned ffmpeg's lavfi sources. The bytes are not glazier-core's; what the tests
-//! check is what Tidy makes of the files, not their hashes.
+//! The archive keeps the paths, dates and kinds of content of the differential archive e2e's
+//! Glazier specs drew, so the tests' counts still describe it. Stills are drawn here and written
+//! with the `image` crate, the AVIF misnamed `.jpg` goes through the libavif Convert uses, and the
+//! clips come from the pinned ffmpeg's lavfi sources.
 //!
-//! Without the pinned ffmpeg (`cargo run -p oriel-tools --bin fetch-media-tools`) the clips are
-//! left out and [`Built::videos`] says so, so a caller can skip what needs them.
+//! A test that needs a tool or library this machine lacks asks [`require`] (or [`media_tools`]):
+//! locally it skips, saying why; on CI, which fetches and builds them all, it fails, so a broken
+//! fetch cannot turn the media cases green.
 
+use std::fmt::Display;
 use std::fs;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
@@ -23,7 +24,7 @@ use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::imageops::{self, FilterType as ResizeFilter};
 use image::{DynamicImage, ExtendedColorType, ImageEncoder as _, Rgba, RgbaImage};
 use oriel_avif::{Channels, Libavif, Samples, Still};
-use oriel_tools::MediaTools;
+use oriel_tools::{LocateError, MediaTools};
 
 /// The width and height of every full-size still.
 pub const WIDTH: u32 = 640;
@@ -39,6 +40,89 @@ pub fn copied_mtime() -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(1_672_628_645)
 }
 
+/// `found`, or `None` once the test has said it skips for want of `what`. On CI (`CI` set) a
+/// missing tool fails the test instead.
+pub fn require<T, E: Display>(what: &str, found: Result<T, E>) -> Option<T> {
+    match found {
+        Ok(found) => Some(found),
+        Err(error) if std::env::var_os("CI").is_some() => panic!("no {what} on CI: {error}"),
+        Err(error) => {
+            eprintln!("skipped: no {what}: {error}");
+            None
+        }
+    }
+}
+
+/// The pinned ffmpeg and ffprobe. Only a development cache never filled skips (see [`require`]);
+/// a stale pin or a variable naming a folder without them fails the test.
+pub fn media_tools() -> Option<MediaTools> {
+    match MediaTools::locate() {
+        Ok(tools) => Some(tools),
+        Err(error @ LocateError::NotFetched { .. }) => require("pinned ffmpeg", Err(error)),
+        Err(error) => panic!("{error}"),
+    }
+}
+
+/// The libavif Convert uses. Only a development copy never made skips (see [`require`]); one
+/// found that does not load fails the test.
+pub fn libavif() -> Option<&'static Libavif> {
+    if let Err(error @ oriel_core_paths::LocateError::NotInDevelopment { .. }) =
+        oriel_core_paths::NativeSet::LIBAVIF.locate()
+    {
+        return require("libavif", Err(error));
+    }
+    Some(Libavif::get().unwrap_or_else(|error| panic!("{error}")))
+}
+
+/// The pinned ffmpeg, as [`media_tools`] finds it.
+pub fn ffmpeg() -> Option<PathBuf> {
+    media_tools().map(|tools| tools.ffmpeg().to_path_buf())
+}
+
+/// A clip [`clip`] draws from ffmpeg's `testsrc2` pattern, in H.264.
+#[derive(Clone, Copy, Debug)]
+pub struct ClipSpec {
+    pub width: u32,
+    pub height: u32,
+    pub rate: u32,
+    pub seconds: u32,
+    /// An AAC track of a 440 Hz tone.
+    pub sound: bool,
+}
+
+/// Makes the clip `spec` describes at `path` with the pinned ffmpeg; fails the test if ffmpeg
+/// cannot.
+pub fn clip(tools: &MediaTools, path: &Path, spec: ClipSpec) {
+    let ClipSpec {
+        width,
+        height,
+        rate,
+        seconds,
+        sound,
+    } = spec;
+    let mut args = vec![
+        "-f".to_owned(),
+        "lavfi".to_owned(),
+        "-i".to_owned(),
+        format!("testsrc2=size={width}x{height}:rate={rate}"),
+    ];
+    if sound {
+        args.extend(["-f", "lavfi", "-i", "sine=frequency=440", "-c:a", "aac"].map(String::from));
+    }
+    args.extend(
+        [
+            "-t",
+            &seconds.to_string(),
+            "-pix_fmt",
+            "yuv420p",
+            "-c:v",
+            "libx264",
+        ]
+        .map(String::from),
+    );
+    start_ffmpeg(tools.ffmpeg(), &args, path).finish();
+}
+
 /// What a build could make on this machine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Built {
@@ -47,20 +131,14 @@ pub struct Built {
     /// `photos/cover.jpg` holds an AVIF; without libavif it holds a PNG, which lies about its
     /// type all the same.
     pub avif: bool,
+    files: usize,
 }
 
 impl Built {
-    /// How many files the archive holds: eleven of them are the clips and a copy of one.
+    /// How many files the archive holds.
     pub fn files(&self) -> usize {
-        if self.videos { 26 } else { 15 }
+        self.files
     }
-}
-
-/// The pinned ffmpeg, or `None` when it has not been fetched.
-pub fn ffmpeg() -> Option<PathBuf> {
-    MediaTools::locate()
-        .ok()
-        .map(|tools| tools.ffmpeg().to_path_buf())
 }
 
 /// Builds the archive into `archive`, which is created if missing:
@@ -76,8 +154,7 @@ pub fn ffmpeg() -> Option<PathBuf> {
 /// - `alt/`: two outfits of one picture, variants and nothing else;
 /// - AppleDouble junk (`._sunset.png`), a text file and an `empty/` folder.
 ///
-/// Twenty-six files with the clips, fifteen without, when there is no `clips/` either
-/// ([`Built::files`]).
+/// Without the pinned ffmpeg there is no `clips/`, and [`Built::videos`] says so.
 ///
 /// The first build in a process draws and encodes the archive; every later one writes out the
 /// same bytes again, which takes a moment where drawing and encoding took seconds. Each build is
@@ -87,8 +164,17 @@ pub fn build_archive(archive: &Path) -> Built {
     let mut made_here = false;
     let (contents, built) = MADE.get_or_init(|| {
         made_here = true;
-        let built = make_archive(archive);
-        (Contents::read(archive), built)
+        let (videos, avif) = make_archive(archive);
+        let contents = Contents::read(archive);
+        let files = contents.files.len();
+        (
+            contents,
+            Built {
+                videos,
+                avif,
+                files,
+            },
+        )
     });
     if !made_here {
         contents.write(archive);
@@ -97,8 +183,9 @@ pub fn build_archive(archive: &Path) -> Built {
     *built
 }
 
-/// Draws and encodes the archive into `archive`, undated.
-fn make_archive(archive: &Path) -> Built {
+/// Draws and encodes the archive into `archive`, undated: whether the clips and the AVIF are
+/// there.
+fn make_archive(archive: &Path) -> (bool, bool) {
     let at = |rel: &str| archive.join(rel);
     for folder in [
         "photos",
@@ -187,7 +274,7 @@ fn make_archive(archive: &Path) -> Built {
             avif.join().expect("the cover"),
         )
     });
-    Built { videos, avif }
+    (videos, avif)
 }
 
 /// Dates the originals and their copies in a built archive.
@@ -538,31 +625,25 @@ pub fn save_jpeg(picture: &RgbaImage, path: &Path, quality: u8) {
         .unwrap_or_else(|error| panic!("Could not write {}: {error}", path.display()));
 }
 
-/// Writes a still as an AVIF at the archive's settings, or as a PNG when libavif is missing;
+/// Writes a still as an AVIF at the archive's settings, or as a PNG when [`libavif`] skips;
 /// `true` for an AVIF.
 fn save_avif_or_png(picture: &RgbaImage, path: &Path) -> bool {
-    let encoded = Libavif::get().and_then(|libavif| {
-        libavif.encode_archive(
-            &Still {
-                width: picture.width(),
-                height: picture.height(),
-                channels: Channels::Rgba,
-                samples: Samples::Eight(picture.as_raw()),
-            },
-            1,
-        )
-    });
-    match encoded {
-        Ok(bytes) => {
-            fs::write(path, bytes)
-                .unwrap_or_else(|error| panic!("Could not write {}: {error}", path.display()));
-            true
-        }
-        Err(_) => {
-            save_png(picture, path, CompressionType::Default);
-            false
-        }
-    }
+    let Some(libavif) = libavif() else {
+        save_png(picture, path, CompressionType::Default);
+        return false;
+    };
+    let still = Still {
+        width: picture.width(),
+        height: picture.height(),
+        channels: Channels::Rgba,
+        samples: Samples::Eight(picture.as_raw()),
+    };
+    let bytes = libavif
+        .encode_archive(&still, 1)
+        .unwrap_or_else(|error| panic!("Could not encode {}: {error}", path.display()));
+    fs::write(path, bytes)
+        .unwrap_or_else(|error| panic!("Could not write {}: {error}", path.display()));
+    true
 }
 
 /// e2e's workbench picture: a fill, a translucent disc and a bar, each placed by `seed`.

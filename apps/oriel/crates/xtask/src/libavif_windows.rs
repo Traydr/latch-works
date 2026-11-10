@@ -8,8 +8,7 @@
 //! cargo run -p xtask -- package windows          # into the stage's libavif\ folder
 //! ```
 //!
-//! Each package is pinned by SHA-256, checked against the `%SHA256SUM%` MSYS2's signed
-//! repository database (`ucrt64.db`) lists for it on 2026-10-31. A package is a zstd-compressed
+//! Each package is pinned by SHA-256 ([`WINDOWS_LIBAVIF`]). A package is a zstd-compressed
 //! tar: the zstd comes off in Rust (`ruzstd`), then the system's bsdtar, which both systems carry,
 //! unpacks the tar. The DLLs go into one folder, from which `oriel-avif` loads libavif with that
 //! folder searched first for the rest; the command refuses a set where one DLL needs a DLL that
@@ -21,7 +20,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result, bail};
 
-use crate::notices::Notice;
+use oriel_core_paths::Notice;
+
+use crate::pins::{Msys2Package, WINDOWS_LIBAVIF, WINDOWS_LIBAVIF_VERSION};
 use crate::support::{self, Download, log, run_here};
 
 /// MSYS2's UCRT64 repository, then its mirror service.
@@ -30,119 +31,13 @@ const MIRRORS: [&str; 2] = [
     "https://mirror.msys2.org/mingw/ucrt64/",
 ];
 
-/// One MSYS2 package, pinned.
-struct Msys2Package {
-    /// The name after `mingw-w64-ucrt-x86_64-`.
-    name: &'static str,
-    /// `pkgver-pkgrel`.
-    version: &'static str,
-    sha256: &'static str,
-    /// The DLLs it gives the set, from its `ucrt64/bin`.
-    dlls: &'static [&'static str],
-    /// Its `.PKGINFO`'s licence.
-    licence: &'static str,
-}
-
-impl Msys2Package {
-    fn file(&self) -> String {
-        format!(
-            "mingw-w64-ucrt-x86_64-{}-{}-any.pkg.tar.zst",
-            self.name, self.version
-        )
-    }
-}
-
-/// The set: libavif and every DLL it needs, read from each DLL's imports.
-const PACKAGES: [Msys2Package; 11] = [
-    Msys2Package {
-        name: "libavif",
-        version: "1.4.2-1",
-        sha256: "9dea354b257d2e593c82c88390a178be547faaaa06f366070b4f8abc784277e6",
-        dlls: &["libavif-16.dll"],
-        licence: "BSD-2-Clause",
-    },
-    Msys2Package {
-        name: "aom",
-        version: "3.15.3-1",
-        sha256: "0fcdc93058a9b937e4f4faa0d6b03aa901c2ef568f5bb68ed88bd9c05a7a33f7",
-        dlls: &["libaom.dll"],
-        licence: "BSD-2-Clause",
-    },
-    Msys2Package {
-        name: "dav1d",
-        version: "1.5.4-1",
-        sha256: "ccf26c6f29fd36f5692d57fd5e0fe3becec492e0b875fd5e04f47a9582eb8b37",
-        dlls: &["libdav1d-7.dll"],
-        licence: "BSD-2-Clause",
-    },
-    Msys2Package {
-        name: "rav1e",
-        version: "0.8.1-1",
-        sha256: "00a03a734f96f66405ad79bae2ffb1c5cf2b050ef90a4ffa508ddbfdb64c0fb1",
-        dlls: &["librav1e.dll"],
-        licence: "BSD-2-Clause",
-    },
-    Msys2Package {
-        name: "svt-av1",
-        version: "4.2.0-1",
-        sha256: "87c97a68bab7dd67413ea0cae024c3d2e4bdc2f96fccf38365304642b1b44ee5",
-        dlls: &["libSvtAv1Enc-4.dll"],
-        licence: "BSD-3-Clause-Clear",
-    },
-    Msys2Package {
-        name: "libyuv",
-        version: "1924.r2921.644251f25-2",
-        sha256: "3016e0f97bf38313bb336447739f636c8622fc0ca2236fe48e3f6cd662ef56cb",
-        dlls: &["libyuv.dll"],
-        licence: "BSD-3-Clause",
-    },
-    Msys2Package {
-        name: "libwebp",
-        version: "1.6.0-1",
-        sha256: "34ff8396c403d484c8777ad49ad0fc06dfb94fadf6f14bcf84d50c45bc6fd17e",
-        dlls: &["libsharpyuv-0.dll"],
-        licence: "BSD-3-Clause",
-    },
-    Msys2Package {
-        name: "libjpeg-turbo",
-        version: "3.2.1-1",
-        sha256: "8eed77c1e0d6de7f8822687f7b1dfa32cda09394806ef67b23399e63de1a92a6",
-        dlls: &["libjpeg-8.dll"],
-        licence: "IJG AND BSD-3-Clause AND Zlib",
-    },
-    Msys2Package {
-        name: "libstdc++",
-        version: "16.2.0-6",
-        sha256: "33c5e58a85a538cf843a8672991cce591f0231d66da3b66a57629712d64be17f",
-        dlls: &["libstdc++-6.dll"],
-        licence: "GPL-3.0-or-later WITH GCC-exception-3.1",
-    },
-    Msys2Package {
-        name: "libgcc",
-        version: "16.2.0-6",
-        sha256: "80b2497f019977dd9528b1abc8621b1328a0115ab1f724047ccbb56bf323f11d",
-        dlls: &["libgcc_s_seh-1.dll"],
-        licence: "GPL-3.0-or-later WITH GCC-exception-3.1",
-    },
-    Msys2Package {
-        name: "libwinpthread",
-        version: "14.0.0.r569.g34eeafb7d-1",
-        sha256: "b4ebe2826e848c5e790e06ea7b37d3e0594e005f42382b0506886f17df8127da",
-        dlls: &["libwinpthread-1.dll"],
-        licence: "MIT AND BSD-3-Clause",
-    },
-];
-
 /// The set's name on `vendor`'s command line.
 pub const NAME: &str = "libavif-windows";
-
-/// The set's version, as the notices list it.
-const SET_VERSION: &str = "libavif 1.4.2-1 (MSYS2 UCRT64)";
 
 /// Fetches the set into `out` (its DLLs, side by side) and its notices into
 /// `licenses/libavif`, and returns the notice for `index.json`.
 pub fn fetch(downloads: &Path, out: &Path, licenses: &Path) -> Result<Notice> {
-    log(format!("  libavif for Windows: {SET_VERSION}"));
+    log(format!("  libavif for Windows: {WINDOWS_LIBAVIF_VERSION}"));
     if out.exists() {
         fs::remove_dir_all(out)?;
     }
@@ -153,7 +48,7 @@ pub fn fetch(downloads: &Path, out: &Path, licenses: &Path) -> Result<Notice> {
     }
     fs::create_dir_all(&notices)?;
     let mut notice = vec![
-        format!("{SET_VERSION}: libavif-16.dll and the DLLs it needs, in libavif\\"),
+        format!("{WINDOWS_LIBAVIF_VERSION}: libavif-16.dll and the DLLs it needs, in libavif\\"),
         String::new(),
         "Each package was fetched from MSYS2's UCRT64 repository and checked by SHA-256 before \
          use, against the hash MSYS2's signed repository database lists for it."
@@ -164,7 +59,7 @@ pub fn fetch(downloads: &Path, out: &Path, licenses: &Path) -> Result<Notice> {
             .to_owned(),
         String::new(),
     ];
-    for package in &PACKAGES {
+    for package in &WINDOWS_LIBAVIF {
         let unpacked = unpack(downloads, package)?;
         for dll in package.dlls {
             let from = unpacked.join("ucrt64").join("bin").join(dll);
@@ -197,7 +92,7 @@ pub fn fetch(downloads: &Path, out: &Path, licenses: &Path) -> Result<Notice> {
     Ok(Notice {
         folder: "libavif".into(),
         name: "libavif".into(),
-        version: SET_VERSION.into(),
+        version: WINDOWS_LIBAVIF_VERSION.into(),
         licence: "BSD-2-Clause, with BSD-licensed codecs and GCC's runtime (GPL-3.0-or-later \
                   WITH GCC-exception-3.1); NOTICE.txt lists each"
             .into(),
@@ -207,10 +102,9 @@ pub fn fetch(downloads: &Path, out: &Path, licenses: &Path) -> Result<Notice> {
 /// `cargo run -p xtask -- vendor libavif-windows`: the set into
 /// `apps/oriel/.vendor/libavif-windows`, where a development build on Windows finds it.
 pub fn vendor() -> Result<()> {
-    let workspace = support::workspace();
-    let downloads = workspace.join("target").join("vendor").join("downloads");
-    let out = workspace.join(".vendor").join("libavif-windows");
-    let staging = workspace
+    let downloads = support::workspace_downloads();
+    let out = oriel_core_paths::vendored_libavif_windows();
+    let staging = oriel_core_paths::workspace()
         .join("target")
         .join("vendor")
         .join("libavif-windows.licenses");

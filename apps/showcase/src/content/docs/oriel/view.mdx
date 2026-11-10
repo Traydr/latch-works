@@ -9,7 +9,7 @@ navTitle: View
 
 # View
 
-View turns a folder on disk into a grid of media entries. It never writes into the folder it shows; thumbnails and the media index live in Oriel's data folder.
+View turns a folder on disk into a grid of media entries. It never writes into the folder it shows; its thumbnail cache lives in Oriel's data folder.
 
 ## Open a folder
 
@@ -30,7 +30,7 @@ The sidebar lists the current folder's subfolders under **Folders**. Images and 
 
 Toggle **Recursive** in the toolbar to include media from subfolders in the current view. Folder tiles hide while recursive is on. Useful for scanning across a creator tree without drilling down manually.
 
-Large folders scan in the background, and the activity panel at the bottom right shows the progress. The first scan of a big tree takes time; later visits reuse the local media index. See [Troubleshooting](/docs/oriel/troubleshooting).
+Large folders scan in the background, and the activity panel at the bottom right shows the progress. Each visit scans the folder again, so the grid always matches the disk; thumbnails already made come from the cache, so later visits fill in faster. See [Troubleshooting](/docs/oriel/troubleshooting).
 
 ## Comic mode
 

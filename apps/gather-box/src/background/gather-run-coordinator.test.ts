@@ -1,136 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   EMPTY_GATHER_QUEUE,
-  GatherQueueStateSchema,
-  PROFILE_DELETED_MESSAGE,
   type GatherQueueState,
-  type OutputGatherQueueJob
+  GatherQueueStateSchema,
+  type OutputGatherQueueJob,
+  PROFILE_DELETED_MESSAGE,
 } from "../shared/gather-queue";
 import { createGatherRunState } from "../shared/gather-run";
-import {
-  DEFAULT_PROFILE_ID,
-  DEFAULT_PROFILES,
-  type GatherProfilesState
-} from "../shared/profiles";
+import { DEFAULT_PROFILE_ID, DEFAULT_PROFILES, type GatherProfilesState } from "../shared/profiles";
 import { DEFAULT_SETTINGS } from "../shared/settings";
 import type { DownloadablePayload } from "../shared/types";
-import {
-  applyGatherRunEvent,
-  GatherRunCoordinator,
-  type GatherRunCoordinatorDependencies
-} from "./gather-run-coordinator";
-
-const run = createGatherRunState({
-  id: "run-1",
-  tabId: 7,
-  windowId: 2,
-  tabUrl: "https://www.pixiv.net/artworks/1",
-  siteKey: "pixiv",
-  now: 100
-});
-
-describe("Gather Run transitions", () => {
-  it("moves through permission, writing, progress, and completion", () => {
-    const permission = applyGatherRunEvent(run, { kind: "permission-required", scope: "site" }, 101);
-    expect(permission.phase).toBe("permission-required");
-
-    const writing = applyGatherRunEvent(
-      permission,
-      {
-        kind: "writing",
-        destinationPreview: "Archive/pixiv/1",
-        folderSegments: ["pixiv", "1"],
-        total: 2
-      },
-      102
-    );
-
-    expect(writing).toMatchObject({ phase: "writing", destinationPreview: "Archive/pixiv/1" });
-
-    const progress = applyGatherRunEvent(
-      writing,
-      { kind: "progress", completed: 1, total: 2, message: "Processed 1 of 2." },
-      103
-    );
-
-    const complete = applyGatherRunEvent(
-      progress,
-      {
-        kind: "complete",
-        saved: 2,
-        skipped: 0,
-        failed: 0,
-        failedItems: [],
-        retryImages: []
-      },
-      104
-    );
-
-    expect(complete).toMatchObject({
-      phase: "complete",
-      updatedAt: 104,
-      progress: { saved: 2, skipped: 0, failed: 0 }
-    });
-  });
-
-  it("names the page that can confirm a paused job's folder", () => {
-    const siteScoped = applyGatherRunEvent(run, { kind: "permission-required", scope: "site" }, 101);
-    expect(siteScoped.progress.message).toContain("a pixiv page");
-    expect(siteScoped.log.at(-1)?.message).toContain("a pixiv page");
-
-    const globalScoped = applyGatherRunEvent(
-      run,
-      { kind: "permission-required", scope: "global" },
-      101
-    );
-
-    expect(globalScoped.progress.message).toContain("any supported page");
-  });
-
-  it("preserves retry input when an output finishes with failures", () => {
-    const image = {
-      pageNumber: 1,
-      thumbnailUrl: null,
-      originalUrl: "https://example.test/1.jpg",
-      fileName: "1.jpg"
-    };
-
-    const failed = applyGatherRunEvent(
-      run,
-      {
-        kind: "complete",
-        saved: 0,
-        skipped: 0,
-        failed: 1,
-        failedItems: [{ fileName: "1.jpg", reason: "network", kind: "error" }],
-        retryImages: [image]
-      },
-      105
-    );
-
-    expect(failed.phase).toBe("failed");
-    expect(failed.retryImages).toEqual([image]);
-  });
-
-  it("maps cancel events to the cancelled phase", () => {
-    const cancelled = applyGatherRunEvent(run, { kind: "cancelled", message: "Stopped." }, 106);
-    expect(cancelled).toMatchObject({
-      phase: "cancelled",
-      error: "Stopped.",
-      progress: { message: "Gather Run cancelled." }
-    });
-  });
-
-  it("rejects unknown event kinds instead of completing", () => {
-    // SAFETY: the reducer's default branch only runs for a kind GatherRunEvent cannot express,
-    // so driving it requires handing the reducer a value outside its own union.
-    const unknownEvent = { kind: "explode" } as never;
-
-    expect(() => applyGatherRunEvent(run, unknownEvent, 107)).toThrow(
-      /Rejected unknown Gather Run event kind/
-    );
-  });
-});
+import { GatherRunCoordinator } from "./gather-run-coordinator";
+import type { GatherRunCoordinatorDependencies } from "./gather-run-coordinator-dependencies";
 
 describe("Gather queue orchestration", () => {
   it("resumes a site-scoped permission job and still queues the confirming tab", async () => {
@@ -139,16 +20,20 @@ describe("Gather queue orchestration", () => {
 
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
-      jobs: [waitingJob]
+      jobs: [waitingJob],
     });
 
     harness.collect.mockResolvedValue(downloadablePayload());
-    harness.getTab.mockResolvedValue(tabAt({ id: 99, windowId: 2, url: "https://www.pixiv.net/artworks/2" }));
+    harness.getTab.mockResolvedValue(
+      tabAt({ id: 99, windowId: 2, url: "https://www.pixiv.net/artworks/2" }),
+    );
 
-    const result = await harness.coordinator.startForTab(tabAt({ id: 99, windowId: 2, url: "https://www.pixiv.net/artworks/2" }));
+    const result = await harness.coordinator.startForTab(
+      tabAt({ id: 99, windowId: 2, url: "https://www.pixiv.net/artworks/2" }),
+    );
 
     expect(harness.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ run: expect.objectContaining({ id: "waiting" }) })
+      expect.objectContaining({ run: expect.objectContaining({ id: "waiting" }) }),
     );
     expect(harness.collect).toHaveBeenCalledOnce();
     expect(result).toMatchObject({ outcome: "queued", queuedRunId: "new-run" });
@@ -156,8 +41,8 @@ describe("Gather queue orchestration", () => {
       { run: { id: "waiting", phase: "preparing" } },
       {
         run: { id: "new-run", phase: "queued", tabUrl: "https://www.pixiv.net/artworks/2" },
-        destinationId: "folder-a"
-      }
+        destinationId: "folder-a",
+      },
     ]);
   });
 
@@ -166,22 +51,24 @@ describe("Gather queue orchestration", () => {
 
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
-      jobs: [waitingJob]
+      jobs: [waitingJob],
     });
 
-    const result = await harness.coordinator.startForTab(tabAt({ id: 1, windowId: 1, url: "https://www.pixiv.net/artworks/1" }));
+    const result = await harness.coordinator.startForTab(
+      tabAt({ id: 1, windowId: 1, url: "https://www.pixiv.net/artworks/1" }),
+    );
 
     expect(result.outcome).toBe("started");
     expect(harness.collect).not.toHaveBeenCalled();
     expect(harness.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ run: expect.objectContaining({ id: "waiting" }) })
+      expect.objectContaining({ run: expect.objectContaining({ id: "waiting" }) }),
     );
   });
 
   it("leaves another profile's paused job waiting and queues under the active one", async () => {
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
-      jobs: [outputJob("waiting", "permission-required")]
+      jobs: [outputJob("waiting", "permission-required")],
     });
 
     const tab = tabAt({ id: 99, windowId: 2, url: "https://www.pixiv.net/artworks/2" });
@@ -193,7 +80,7 @@ describe("Gather queue orchestration", () => {
 
     expect(harness.getQueue().jobs).toMatchObject([
       { run: { id: "waiting", phase: "permission-required" }, profileId: DEFAULT_PROFILE_ID },
-      { run: { id: "new-run", phase: "queued" }, profileId: "work" }
+      { run: { id: "new-run", phase: "queued" }, profileId: "work" },
     ]);
   });
 
@@ -207,7 +94,7 @@ describe("Gather queue orchestration", () => {
     await harness.coordinator.startForTab(tab, DEFAULT_PROFILE_ID);
 
     expect(harness.getQueue().jobs).toMatchObject([
-      { run: { id: "new-run", phase: "preparing" }, profileId: DEFAULT_PROFILE_ID }
+      { run: { id: "new-run", phase: "preparing" }, profileId: DEFAULT_PROFILE_ID },
     ]);
   });
 
@@ -217,8 +104,8 @@ describe("Gather queue orchestration", () => {
       jobs: [
         { ...outputJob("paused", "permission-required"), profileId: "work" },
         { ...outputJob("queued", "queued"), profileId: "work" },
-        outputJob("next", "queued")
-      ]
+        outputJob("next", "queued"),
+      ],
     });
 
     await harness.coordinator.failDeletedProfileJobs();
@@ -227,34 +114,34 @@ describe("Gather queue orchestration", () => {
       jobs: [{ run: { id: "next", phase: "preparing" } }],
       results: [
         { id: "paused", phase: "failed", error: PROFILE_DELETED_MESSAGE },
-        { id: "queued", phase: "failed", error: PROFILE_DELETED_MESSAGE }
-      ]
+        { id: "queued", phase: "failed", error: PROFILE_DELETED_MESSAGE },
+      ],
     });
   });
 
   it("fails rather than pauses a starting output whose profile was deleted", async () => {
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
-      jobs: [{ ...outputJob("starting", "preparing"), profileId: "work" }]
+      jobs: [{ ...outputJob("starting", "preparing"), profileId: "work" }],
     });
 
     await harness.coordinator.handleEvent({
       type: "GATHER_BOX_RUN_EVENT",
       target: "background",
       runId: "starting",
-      event: { kind: "permission-required", scope: "site" }
+      event: { kind: "permission-required", scope: "site" },
     });
 
     expect(harness.getQueue()).toMatchObject({
       jobs: [],
-      results: [{ id: "starting", phase: "failed", error: PROFILE_DELETED_MESSAGE }]
+      results: [{ id: "starting", phase: "failed", error: PROFILE_DELETED_MESSAGE }],
     });
   });
 
   it("names the paused job's profile once there is more than one", async () => {
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
-      jobs: [outputJob("waiting", "preparing")]
+      jobs: [outputJob("waiting", "preparing")],
     });
 
     harness.setProfiles(TWO_PROFILES);
@@ -263,11 +150,11 @@ describe("Gather queue orchestration", () => {
       type: "GATHER_BOX_RUN_EVENT",
       target: "background",
       runId: "waiting",
-      event: { kind: "permission-required", scope: "site" }
+      event: { kind: "permission-required", scope: "site" },
     });
 
-    expect(harness.getQueue().jobs[0].run.progress.message).toBe(
-      'Folder access for pixiv needs confirmation from a pixiv page with the "Default" profile.'
+    expect(harness.getQueue().jobs[0]?.run.progress.message).toBe(
+      'Folder access for pixiv needs confirmation from a pixiv page with the "Default" profile.',
     );
   });
 
@@ -280,13 +167,18 @@ describe("Gather queue orchestration", () => {
 
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
-      jobs: [outputJob("writing", "writing")]
+      jobs: [outputJob("writing", "writing")],
     });
 
     harness.collect.mockReturnValue(collection);
-    harness.getTab.mockResolvedValue(tabAt({ id: 2, windowId: 1, url: "https://www.pixiv.net/artworks/2" }));
+    harness.getTab.mockResolvedValue(
+      tabAt({ id: 2, windowId: 1, url: "https://www.pixiv.net/artworks/2" }),
+    );
 
-    const pendingStart = harness.coordinator.startForTab(tabAt({ id: 2, windowId: 1, url: "https://www.pixiv.net/artworks/2" }));
+    const pendingStart = harness.coordinator.startForTab(
+      tabAt({ id: 2, windowId: 1, url: "https://www.pixiv.net/artworks/2" }),
+    );
+
     await vi.waitFor(() => expect(harness.collect).toHaveBeenCalledOnce());
 
     await harness.coordinator.handleEvent({
@@ -299,11 +191,11 @@ describe("Gather queue orchestration", () => {
         skipped: 0,
         failed: 1,
         failedItems: [{ fileName: "missing.jpg", reason: "network", kind: "error" }],
-        retryImages: [downloadablePayload().images[0]]
-      }
+        retryImages: downloadablePayload().images.slice(0, 1),
+      },
     });
     expect(harness.getQueue().results).toMatchObject([
-      { id: "writing", phase: "failed", retryImages: [{ fileName: "1.jpg" }] }
+      { id: "writing", phase: "failed", retryImages: [{ fileName: "1.jpg" }] },
     ]);
 
     finishCollection(downloadablePayload());
@@ -313,13 +205,13 @@ describe("Gather queue orchestration", () => {
   it("dispatches exactly one queued output until its terminal event arrives", async () => {
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
-      jobs: [outputJob("first", "queued"), outputJob("second", "queued")]
+      jobs: [outputJob("first", "queued"), outputJob("second", "queued")],
     });
 
     await harness.coordinator.recover();
     expect(harness.execute).toHaveBeenCalledTimes(1);
     expect(harness.execute).toHaveBeenLastCalledWith(
-      expect.objectContaining({ run: expect.objectContaining({ id: "first" }) })
+      expect.objectContaining({ run: expect.objectContaining({ id: "first" }) }),
     );
 
     await harness.coordinator.handleEvent({
@@ -332,19 +224,19 @@ describe("Gather queue orchestration", () => {
         skipped: 0,
         failed: 0,
         failedItems: [],
-        retryImages: []
-      }
+        retryImages: [],
+      },
     });
     expect(harness.execute).toHaveBeenCalledTimes(2);
     expect(harness.execute).toHaveBeenLastCalledWith(
-      expect.objectContaining({ run: expect.objectContaining({ id: "second" }) })
+      expect.objectContaining({ run: expect.objectContaining({ id: "second" }) }),
     );
   });
 
   it("dispatches the next output when a recorded run's terminal report is redelivered", async () => {
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
-      jobs: [outputJob("second", "queued")]
+      jobs: [outputJob("second", "queued")],
     });
 
     await harness.coordinator.handleEvent({
@@ -357,26 +249,26 @@ describe("Gather queue orchestration", () => {
         skipped: 0,
         failed: 0,
         failedItems: [],
-        retryImages: []
-      }
+        retryImages: [],
+      },
     });
 
     expect(harness.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ run: expect.objectContaining({ id: "second" }) })
+      expect.objectContaining({ run: expect.objectContaining({ id: "second" }) }),
     );
   });
 
   it("ignores a redelivered permission pause once the job was resumed", async () => {
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
-      jobs: [outputJob("waiting", "writing")]
+      jobs: [outputJob("waiting", "writing")],
     });
 
     await harness.coordinator.handleEvent({
       type: "GATHER_BOX_RUN_EVENT",
       target: "background",
       runId: "waiting",
-      event: { kind: "permission-required", scope: "site" }
+      event: { kind: "permission-required", scope: "site" },
     });
 
     expect(harness.getQueue().jobs).toMatchObject([{ run: { id: "waiting", phase: "writing" } }]);
@@ -385,12 +277,12 @@ describe("Gather queue orchestration", () => {
   it("keeps the slot occupied while cancellation settles, then advances", async () => {
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
-      jobs: [outputJob("first", "writing"), outputJob("second", "queued")]
+      jobs: [outputJob("first", "writing"), outputJob("second", "queued")],
     });
 
     await expect(harness.coordinator.cancel("first")).resolves.toMatchObject({
       outcome: "cancelled",
-      run: { phase: "cancelling" }
+      run: { phase: "cancelling" },
     });
     expect(harness.abort).toHaveBeenCalledWith("first");
     expect(harness.execute).not.toHaveBeenCalled();
@@ -399,40 +291,78 @@ describe("Gather queue orchestration", () => {
       type: "GATHER_BOX_RUN_EVENT",
       target: "background",
       runId: "first",
-      event: { kind: "cancelled", message: "Gather Run cancelled." }
+      event: { kind: "cancelled", message: "Gather Run cancelled." },
     });
     expect(harness.getQueue().results).toMatchObject([{ id: "first", phase: "cancelled" }]);
     expect(harness.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ run: expect.objectContaining({ id: "second" }) })
+      expect.objectContaining({ run: expect.objectContaining({ id: "second" }) }),
     );
+  });
+
+  it("keeps queued outputs waiting while the executor is busy, and dispatches on its report", async () => {
+    const harness = createHarness({
+      ...EMPTY_GATHER_QUEUE,
+      jobs: [
+        outputJob("first", "writing"),
+        outputJob("second", "queued"),
+        outputJob("third", "queued"),
+      ],
+    });
+
+    harness.abort.mockResolvedValue(false);
+    harness.execute.mockResolvedValueOnce({ outcome: "busy" });
+
+    await harness.coordinator.cancel("first");
+
+    expect(harness.execute).toHaveBeenCalledTimes(1);
+    expect(harness.getQueue().results).toMatchObject([{ id: "first", phase: "cancelled" }]);
+    expect(harness.getQueue().jobs.map((job) => [job.run.id, job.run.phase])).toEqual([
+      ["second", "queued"],
+      ["third", "queued"],
+    ]);
+
+    await harness.coordinator.handleEvent({
+      type: "GATHER_BOX_RUN_EVENT",
+      target: "background",
+      runId: "first",
+      event: {
+        kind: "complete",
+        saved: 1,
+        skipped: 0,
+        failed: 0,
+        failedItems: [],
+        retryImages: [],
+      },
+    });
+
+    expect(harness.execute).toHaveBeenLastCalledWith(
+      expect.objectContaining({ run: expect.objectContaining({ id: "second" }) }),
+    );
+    expect(harness.getQueue().jobs[0]?.run.phase).toBe("preparing");
   });
 });
 
 const TWO_PROFILES: GatherProfilesState = {
   profiles: [...DEFAULT_PROFILES.profiles, { id: "work", name: "Work" }],
-  activeProfileId: "work"
+  activeProfileId: "work",
 };
 
-function outputJob(
-  id: string,
-  phase: OutputGatherQueueJob["run"]["phase"]
-): OutputGatherQueueJob {
+function outputJob(id: string, phase: OutputGatherQueueJob["run"]["phase"]): OutputGatherQueueJob {
   return {
     kind: "output",
-    run: {
-      ...createGatherRunState({
-        id,
-        tabId: 1,
-        windowId: 1,
-        tabUrl: "https://www.pixiv.net/artworks/1",
-        siteKey: "pixiv"
-      }),
-      phase
-    },
+    run: createGatherRunState({
+      id,
+      tabId: 1,
+      windowId: 1,
+      tabUrl: "https://www.pixiv.net/artworks/1",
+      siteKey: "pixiv",
+      phase,
+      message: "Preparing Gather Run...",
+    }),
     payload: downloadablePayload(),
     settings: DEFAULT_SETTINGS,
     destinationId: null,
-    profileId: DEFAULT_PROFILE_ID
+    profileId: DEFAULT_PROFILE_ID,
   };
 }
 
@@ -445,15 +375,7 @@ function downloadablePayload(): DownloadablePayload {
     pageUrl: "https://www.pixiv.net/artworks/1",
     galleryId: "1",
     folderSegments: ["artist"],
-    skippedCount: 0,
-    images: [
-      {
-        pageNumber: 1,
-        thumbnailUrl: null,
-        originalUrl: "https://example.test/1.jpg",
-        fileName: "1.jpg"
-      }
-    ]
+    images: [{ originalUrl: "https://example.test/1.jpg", fileName: "1.jpg" }],
   };
 }
 
@@ -461,12 +383,16 @@ function createHarness(initial: GatherQueueState) {
   let queue = structuredClone(initial);
   let profiles = DEFAULT_PROFILES;
   const collect = vi.fn<GatherRunCoordinatorDependencies["collect"]>();
-  const execute = vi.fn<GatherRunCoordinatorDependencies["execute"]>().mockResolvedValue(true);
+
+  const execute = vi
+    .fn<GatherRunCoordinatorDependencies["execute"]>()
+    .mockResolvedValue({ outcome: "accepted" });
+
   const abort = vi.fn<GatherRunCoordinatorDependencies["abort"]>().mockResolvedValue(true);
 
-  const getTab = vi.fn<GatherRunCoordinatorDependencies["getTab"]>().mockResolvedValue(
-    tabAt({ id: 1, windowId: 1, url: "https://www.pixiv.net/artworks/1" })
-  );
+  const getTab = vi
+    .fn<GatherRunCoordinatorDependencies["getTab"]>()
+    .mockResolvedValue(tabAt({ id: 1, windowId: 1, url: "https://www.pixiv.net/artworks/1" }));
 
   const dependencies: GatherRunCoordinatorDependencies = {
     // Read back through the storage schema, as chrome.storage.local does on every load.
@@ -474,7 +400,7 @@ function createHarness(initial: GatherQueueState) {
     saveQueue: async (next) => {
       queue = structuredClone(next);
     },
-    getActiveRunId: async () => null,
+    getExecutorStatus: async () => ({ activeRunId: null }),
     getTab,
     collect,
     loadSettings: async () => DEFAULT_SETTINGS,
@@ -483,7 +409,7 @@ function createHarness(initial: GatherQueueState) {
     execute,
     abort,
     now: () => 1_000,
-    randomUUID: () => "new-run"
+    randomUUID: () => "new-run",
   };
 
   return {
@@ -495,7 +421,7 @@ function createHarness(initial: GatherQueueState) {
     getQueue: () => queue,
     setProfiles: (next: GatherProfilesState) => {
       profiles = next;
-    }
+    },
   };
 }
 
@@ -513,6 +439,6 @@ function tabAt(fields: Pick<chrome.tabs.Tab, "id" | "url" | "windowId">): chrome
     lastAccessed: 0,
     pinned: false,
     selected: true,
-    ...fields
+    ...fields,
   };
 }

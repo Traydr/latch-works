@@ -115,7 +115,17 @@
       "match": true
     },
     { "left": { "mtimeMs": 10, "size": 1 }, "right": { "mtimeMs": 11, "size": 1 }, "match": false },
-    { "left": { "mtimeMs": 10, "size": 1 }, "right": { "mtimeMs": 10, "size": 2 }, "match": false }
+    { "left": { "mtimeMs": 10, "size": 1 }, "right": { "mtimeMs": 10, "size": 2 }, "match": false },
+    {
+      "left": { "ctimeMs": 5, "mtimeMs": 10, "size": 1 },
+      "right": { "mtimeMs": 10, "size": 1 },
+      "match": true
+    },
+    {
+      "left": { "mtimeMs": -1500.5, "size": 0 },
+      "right": { "mtimeMs": -1500.2, "size": 0 },
+      "match": true
+    }
   ],
   "hydrate": {
     "entries": [

@@ -1,12 +1,13 @@
-//! A run as the page shows it, from Electron Oriel's `useLockstepController.ts`, `run-metrics.ts`,
-//! `run-lifecycle.ts` and `run-formatters.ts`: the events a run reports folded into progress,
-//! each item's state for the plan tree, the run log, the throughput, and when Prune may run.
+//! A run as the page shows it: the events a run reports folded into progress, each of the plan's
+//! changes' state for the plan tree, the run log, the throughput, and when Prune may run.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
 
-use oriel_core_index::ScanArchiveProgress;
-use oriel_core_sync::{PlanCounts, RunAction, RunEvent, RunStatus};
+use oriel_core_domain::format;
+use oriel_core_sync::ScanArchiveProgress;
+use oriel_core_sync::{LockstepPlan, PlanCounts, RunAction, RunEvent, RunStatus};
 
 /// Lines the run log keeps; older ones scroll away.
 const LOG_LINES: usize = 200;
@@ -16,6 +17,11 @@ const RATE_WINDOW_MS: f64 = 10_000.0;
 
 /// Spans kept per run; older neighbours merge so a long push stays cheap to chart.
 const MAX_SPANS: usize = 1500;
+
+/// Failures the throughput chart marks; older ones drop off.
+const MAX_FAILURE_MARKS: usize = 500;
+
+pub(crate) const CANCELLED_LABEL: &str = "Run cancelled.";
 
 /// What one item of a push or prune has come to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,13 +33,79 @@ pub enum ItemState {
 }
 
 impl ItemState {
-    /// Done or skipped: the item needs nothing more.
     pub fn is_settled(&self) -> bool {
         matches!(self, Self::Done | Self::Skipped(_))
     }
+
+    pub(crate) fn code(state: Option<&Self>) -> ItemCode {
+        match state {
+            Some(state) if state.is_settled() => ItemCode::Settled,
+            Some(Self::Failed(_)) => ItemCode::Failed,
+            _ => ItemCode::Remaining,
+        }
+    }
 }
 
-/// Where the run is.
+/// What the run made of one of the plan's changes, as the plan's rows count it: still to come (or
+/// under way), done or skipped, or failed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ItemCode {
+    Remaining,
+    Settled,
+    Failed,
+}
+
+/// The plan's changes by path, without a copy of each path: each path's hash leads to the last
+/// change with that hash, and each change to the one before it with the same hash. A lookup walks
+/// the chain and keeps the changes whose path is the one asked for.
+#[derive(Debug)]
+pub(crate) struct PathIndex {
+    plan: Arc<LockstepPlan>,
+    hasher: std::hash::RandomState,
+    last: HashMap<u64, usize>,
+    previous: Vec<usize>,
+}
+
+impl PathIndex {
+    const END: usize = usize::MAX;
+
+    pub(crate) fn of(plan: Arc<LockstepPlan>, changes: &[usize]) -> Self {
+        let hasher = std::hash::RandomState::new();
+        let mut last = HashMap::with_capacity(changes.len());
+        let mut previous = vec![Self::END; plan.items.len()];
+        for &at in changes {
+            let hash = std::hash::BuildHasher::hash_one(&hasher, plan.items[at].path.as_str());
+            previous[at] = last.insert(hash, at).unwrap_or(Self::END);
+        }
+        Self {
+            plan,
+            hasher,
+            last,
+            previous,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.plan.items.len()
+    }
+
+    /// The changes at `path`.
+    fn find<'a>(&'a self, path: &'a str) -> impl Iterator<Item = usize> + 'a {
+        let hash = std::hash::BuildHasher::hash_one(&self.hasher, path);
+        let mut at = self.last.get(&hash).copied().unwrap_or(Self::END);
+        std::iter::from_fn(move || {
+            while at != Self::END {
+                let this = at;
+                at = self.previous[this];
+                if self.plan.items[this].path == path {
+                    return Some(this);
+                }
+            }
+            None
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunPhase {
     Idle,
@@ -52,7 +124,6 @@ pub struct TransferSpan {
     pub bytes: f64,
 }
 
-/// A run's progress, `RunProgressState`.
 #[derive(Clone, Debug)]
 pub struct RunProgress {
     pub kind: Option<RunAction>,
@@ -97,21 +168,32 @@ impl Default for RunProgress {
     }
 }
 
-/// The run on screen: its progress, its label, its log, and each item's state.
+/// The run on screen: its progress, its label, its log, and what it made of each of the plan's
+/// changes, which it finds by the paths its events name.
 #[derive(Clone, Debug, Default)]
 pub struct RunState {
     pub running: bool,
     pub label: String,
     pub logs: Vec<String>,
     pub progress: RunProgress,
-    pub item_states: HashMap<String, ItemState>,
+    /// The plan on screen, whose changes the run's events are matched to.
+    plan: Option<Arc<PathIndex>>,
+    /// Each plan item's state, by its place in the plan.
+    items: Vec<Option<ItemState>>,
     item_started_at: HashMap<String, f64>,
     last_logged_scan: Option<String>,
 }
 
 impl RunState {
-    /// A new run of `kind`, labelled until its first event.
+    /// A new plan on screen, or none: what the run made of the last one's changes is dropped.
+    pub(crate) fn track(&mut self, plan: Option<Arc<PathIndex>>) {
+        self.items = vec![None; plan.as_ref().map_or(0, |plan| plan.len())];
+        self.plan = plan;
+    }
+
+    /// A new run of `kind`, labelled until its first event, over the plan on screen.
     pub fn begin(&mut self, kind: RunAction, label: &str) {
+        let plan = self.plan.take();
         *self = Self {
             running: true,
             label: label.to_owned(),
@@ -124,6 +206,36 @@ impl RunState {
             },
             ..Self::default()
         };
+        self.track(plan);
+    }
+
+    /// The state of the plan item at `at`.
+    pub(crate) fn item(&self, at: usize) -> Option<&ItemState> {
+        self.items.get(at)?.as_ref()
+    }
+
+    pub(crate) fn code(&self, at: usize) -> ItemCode {
+        ItemState::code(self.item(at))
+    }
+
+    /// The plan's changes the run has settled and failed.
+    pub(crate) fn tally(&self) -> (usize, usize) {
+        self.items.iter().fold((0, 0), |(settled, failed), state| {
+            match ItemState::code(state.as_ref()) {
+                ItemCode::Settled => (settled + 1, failed),
+                ItemCode::Failed => (settled, failed + 1),
+                ItemCode::Remaining => (settled, failed),
+            }
+        })
+    }
+
+    fn set_item(&mut self, path: &str, state: ItemState) {
+        let Some(plan) = &self.plan else {
+            return;
+        };
+        for at in plan.find(path) {
+            self.items[at] = Some(state.clone());
+        }
     }
 
     /// Milliseconds since the run started.
@@ -141,8 +253,8 @@ impl RunState {
         }
     }
 
-    /// Folds one event in, as `applyRunEvent` does. A push or prune plans first and reports that
-    /// plan's completion too; only the run's own completion ends it.
+    /// Folds one event in. A push plans first and reports that plan's completion too; only the
+    /// run's own completion ends it.
     pub fn apply(&mut self, event: RunEvent) {
         let now = self.now_ms();
         match event {
@@ -189,7 +301,7 @@ impl RunState {
             RunEvent::ItemsQueued {
                 total, total_bytes, ..
             } => {
-                self.item_states.clear();
+                self.items.fill(None);
                 self.item_started_at.clear();
                 let progress = &mut self.progress;
                 progress.phase = RunPhase::Items;
@@ -202,8 +314,8 @@ impl RunState {
                 progress.failure_times.clear();
             }
             RunEvent::ItemStart { path, total, .. } => {
-                self.item_started_at.insert(path.clone(), now);
-                self.item_states.insert(path, ItemState::Active);
+                self.set_item(&path, ItemState::Active);
+                self.item_started_at.insert(path, now);
                 self.progress.phase = RunPhase::Items;
                 self.progress.item_total = total;
             }
@@ -214,9 +326,9 @@ impl RunState {
                 path,
                 total,
             } => {
-                self.log(format!("[{current}/{total}] {action} {path}"));
+                self.log(format!("[{current}/{total}] {} {path}", action.as_str()));
                 let from = self.item_started_at.remove(&path).unwrap_or(now);
-                self.item_states.insert(path, ItemState::Done);
+                self.set_item(&path, ItemState::Done);
                 let bytes = bytes.unwrap_or(0);
                 let progress = &mut self.progress;
                 progress.pushed += 1;
@@ -240,7 +352,7 @@ impl RunState {
                 ..
             } => {
                 self.log(format!("[{current}/{total}] skipped {path}: {reason}"));
-                self.item_states.insert(path, ItemState::Skipped(reason));
+                self.set_item(&path, ItemState::Skipped(reason));
                 self.progress.skipped += 1;
             }
             RunEvent::ItemFailure {
@@ -252,17 +364,16 @@ impl RunState {
                 ..
             } => {
                 self.log(format!("[{current}/{total}] failed {path}: {error}"));
-                self.item_states.insert(path, ItemState::Failed(error));
+                self.set_item(&path, ItemState::Failed(error));
                 self.progress.failed += 1;
                 self.progress.bytes_failed += bytes.unwrap_or(0);
                 self.progress.failure_times.push(now);
-                let excess = self.progress.failure_times.len().saturating_sub(500);
+                let excess = self
+                    .progress
+                    .failure_times
+                    .len()
+                    .saturating_sub(MAX_FAILURE_MARKS);
                 self.progress.failure_times.drain(..excess);
-            }
-            RunEvent::Cancelled => {
-                self.label = "Run cancelled.".to_owned();
-                self.progress.phase = RunPhase::Cancelled;
-                self.progress.ended_at = Some(now);
             }
             RunEvent::Complete(summary) => {
                 let own = self.progress.kind == Some(summary.action);
@@ -279,7 +390,7 @@ impl RunState {
                     RunPhase::Done
                 };
                 progress.failed = summary.failed;
-                progress.pushed = summary.pushed;
+                progress.pushed = summary.applied;
                 progress.ended_at = Some(now);
             }
         }
@@ -322,7 +433,7 @@ impl RunState {
         None
     }
 
-    /// Bytes per second near the run's end (`currentRate`), or its average once it has ended.
+    /// Bytes per second near the run's end, or its average once it has ended.
     pub fn rate(&self) -> f64 {
         let now = self.progress.ended_at.unwrap_or_else(|| self.now_ms());
         let since = self.progress.queued_at.unwrap_or(now);
@@ -372,7 +483,7 @@ fn bytes_within(span: &TransferSpan, from: f64, to: f64) -> f64 {
     }
 }
 
-/// `currentRate`: bytes per second over the ten seconds up to the latest finished item, counting
+/// Bytes per second over the ten seconds up to the latest finished item, counting
 /// from no earlier than `since`; once nothing has finished for a whole window, up to `now`.
 pub fn current_rate(now: f64, since: f64, spans: &[TransferSpan]) -> f64 {
     let latest = spans.iter().fold(since, |latest, span| latest.max(span.to));
@@ -393,7 +504,6 @@ pub fn current_rate(now: f64, since: f64, spans: &[TransferSpan]) -> f64 {
         / seconds
 }
 
-/// `estimateRemainingMs`.
 pub fn estimate_remaining_ms(remaining_bytes: f64, bytes_per_second: f64) -> Option<f64> {
     if remaining_bytes <= 0.0 {
         Some(0.0)
@@ -404,7 +514,7 @@ pub fn estimate_remaining_ms(remaining_bytes: f64, bytes_per_second: f64) -> Opt
     }
 }
 
-/// `throughputSeries`: the run's throughput as `buckets` evenly spaced rates.
+/// The run's throughput as `buckets` evenly spaced rates.
 pub fn throughput_series(
     buckets: usize,
     started_at: f64,
@@ -426,8 +536,8 @@ pub fn throughput_series(
 }
 
 /// Where the throughput chart marks each failure, as a fraction of its width from the left: the
-/// failure's time over the chart's span, which is at least a second (`ThroughputChart`'s red
-/// dashed lines). A failure before the queue was known sits at the left edge.
+/// failure's time over the chart's span, which is at least a second. A failure before the queue
+/// was known sits at the left edge.
 pub fn failure_marks(started_at: f64, ended_at: f64, failure_times: &[f64]) -> Vec<f32> {
     let span = (ended_at - started_at).max(1000.0);
     failure_times
@@ -436,7 +546,7 @@ pub fn failure_marks(started_at: f64, ended_at: f64, failure_times: &[f64]) -> V
         .collect()
 }
 
-/// `appendSpan`: keeps at most `MAX_SPANS`, merging neighbours pairwise when full.
+/// Keeps at most `MAX_SPANS`, merging neighbours pairwise when full.
 fn append_span(spans: &mut Vec<TransferSpan>, span: TransferSpan) {
     if spans.len() >= MAX_SPANS {
         let merged: Vec<TransferSpan> = spans
@@ -456,7 +566,7 @@ fn append_span(spans: &mut Vec<TransferSpan>, span: TransferSpan) {
     spans.push(span);
 }
 
-/// Whether Prune may run, and if not, why (`pruneAvailability`). Prune deletes exactly what the
+/// Whether Prune may run, and if not, why. Prune deletes exactly what the
 /// reviewed plan lists, once, and waits for that plan's push when it has one: a moved file is a
 /// delete and an upload, and the old path should go only once the new one has landed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -498,35 +608,7 @@ pub fn prune_availability(
 
 /// "3 remote entries", "1 remote entry".
 pub fn describe_remote_entries(count: usize) -> String {
-    format!(
-        "{count} remote {}",
-        if count == 1 { "entry" } else { "entries" }
-    )
-}
-
-/// `formatClock`: "0:41" or "1:02:05".
-pub fn format_clock(ms: f64) -> String {
-    let total = (ms / 1000.0).round().max(0.0) as u64;
-    let (hours, minutes, seconds) = (total / 3600, total % 3600 / 60, total % 60);
-    if hours > 0 {
-        format!("{hours}:{minutes:02}:{seconds:02}")
-    } else {
-        format!("{minutes}:{seconds:02}")
-    }
-}
-
-/// `formatAgo`: "just now", "4m ago", "2h ago", "3d ago".
-pub fn format_ago(at_ms: i64, now_ms: i64) -> String {
-    let minutes = (now_ms - at_ms).div_euclid(60_000);
-    if minutes < 1 {
-        "just now".to_owned()
-    } else if minutes < 60 {
-        format!("{minutes}m ago")
-    } else if minutes / 60 < 24 {
-        format!("{}h ago", minutes / 60)
-    } else {
-        format!("{}d ago", minutes / 60 / 24)
-    }
+    format::plural_as(count, "remote entry", "remote entries")
 }
 
 #[cfg(test)]
@@ -583,15 +665,5 @@ mod tests {
         );
         // The span is at least a second, as the series' is.
         assert_eq!(failure_marks(0.0, 100.0, &[250.0]), [0.25]);
-    }
-
-    #[test]
-    fn formats_clocks_and_ages() {
-        assert_eq!(format_clock(41_000.0), "0:41");
-        assert_eq!(format_clock(3_725_000.0), "1:02:05");
-        assert_eq!(format_ago(0, 30_000), "just now");
-        assert_eq!(format_ago(0, 4 * 60_000), "4m ago");
-        assert_eq!(format_ago(0, 3 * 3_600_000), "3h ago");
-        assert_eq!(format_ago(0, 50 * 3_600_000), "2d ago");
     }
 }

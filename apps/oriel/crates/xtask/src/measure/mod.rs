@@ -48,6 +48,8 @@ use std::time::Instant;
 use anyhow::{Context as _, Result, bail};
 use serde_json::{Value, json};
 
+use oriel_core_paths::{APP_NAME, MAC_EXECUTABLE, Package};
+
 use crate::support;
 
 /// The rows, in the order a round runs them: each View row before the one that reuses its data
@@ -175,9 +177,11 @@ impl App {
             .canonicalize()
             .with_context(|| format!("--app {}: no such file", path.display()))?;
         if path.extension().is_some_and(|extension| extension == "app") {
-            let binary = path.join("Contents/MacOS/oriel");
+            let binary = Package::MacBundle(path.join("Contents"))
+                .executable_folder()
+                .join(MAC_EXECUTABLE);
             if !binary.is_file() {
-                bail!("{} has no Contents/MacOS/oriel", path.display());
+                bail!("{} has no {}", path.display(), binary.display());
             }
             return Ok(Self {
                 label,
@@ -189,16 +193,17 @@ impl App {
         if !path.is_file() {
             bail!("--app {}: neither a .app nor a binary", path.display());
         }
-        let bundle = path
-            .ancestors()
-            .nth(3)
-            .filter(|bundle| {
-                bundle
-                    .extension()
-                    .is_some_and(|extension| extension == "app")
-                    && path.parent().and_then(Path::file_name) == Some("MacOS".as_ref())
-            })
-            .map(Path::to_path_buf);
+        let bundle = match Package::of_executable(&path) {
+            Some(Package::MacBundle(contents)) => contents
+                .parent()
+                .filter(|bundle| {
+                    bundle
+                        .extension()
+                        .is_some_and(|extension| extension == "app")
+                })
+                .map(Path::to_path_buf),
+            _ => None,
+        };
         Ok(Self {
             label,
             binary: path.clone(),
@@ -372,6 +377,22 @@ fn parse_options(args: &[String]) -> Result<Options> {
     Ok(options)
 }
 
+/// Removes the file or folder at `path` left by an earlier run, if there is one, so a run never
+/// measures over stale data.
+fn clear(path: &Path) -> Result<()> {
+    let removed = match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() => fs::remove_dir_all(path),
+        Ok(_) => fs::remove_file(path),
+        Err(error) => Err(error),
+    };
+    match removed {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            Err(error).with_context(|| format!("clearing {}", path.display()))
+        }
+        _ => Ok(()),
+    }
+}
+
 fn home() -> Result<PathBuf> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -388,27 +409,27 @@ pub fn command(args: &[String]) -> Result<()> {
     }
     let options = parse_options(args)?;
     let rows = parse_rows(&options.rows, options.sync_url.is_some())?;
-    let workspace = support::workspace();
-    let fixtures = home()?.join(".latch-works/oriel-fixtures");
+    let workspace = oriel_core_paths::workspace();
+    let fixtures = home()?
+        .join(oriel_core_domain::LATCH_WORKS_DIRECTORY_NAME)
+        .join("oriel-fixtures");
 
     let sync = match &options.sync_url {
-        Some(url) => Some(sync::Target::new(
-            url,
-            options
-                .sync_token
-                .clone()
-                .unwrap_or_else(|| sync::E2E_TOKEN.to_owned()),
-        )?),
+        Some(url) => Some(sync::Target::new(url, options.sync_token.clone())?),
         None => None,
     };
 
     let mut apps = Vec::new();
     if options.apps.is_empty() {
-        let bundle = workspace.join("target/release/bundle/Oriel.app");
-        apps.push(App::resolve("A".into(), &bundle).context(
-            "no --app given and no bundle in target/release/bundle: run `cargo run -p xtask -- \
-             bundle`, or name one",
-        )?);
+        let bundles = support::bundle_folder();
+        let bundle = bundles.join(format!("{APP_NAME}.app"));
+        apps.push(App::resolve("A".into(), &bundle).with_context(|| {
+            format!(
+                "no --app given and no bundle in {}: run `cargo run -p xtask -- bundle`, or name \
+                 one",
+                bundles.display()
+            )
+        })?);
     }
     for (index, (label, path)) in options.apps.iter().enumerate() {
         let label = label
@@ -456,7 +477,7 @@ pub fn command(args: &[String]) -> Result<()> {
     if needs(Row::Video, video::MPV_SPIKE) {
         settings.mpv_spike = Some(build_tool(
             &settings.workspace,
-            &["-p", "oriel-media", "--example", "mpv_spike"],
+            &["-p", "oriel-mode-view", "--example", "mpv_spike"],
             "examples/mpv_spike",
         )?);
     }
@@ -552,10 +573,7 @@ fn build_tool(workspace: &Path, args: &[&str], relative: &str) -> Result<PathBuf
     if !status.success() {
         bail!("cargo build --release {} failed ({status})", args.join(" "));
     }
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .filter(|value| !value.is_empty())
-        .map_or_else(|| workspace.join("target"), |folder| workspace.join(folder));
-    Ok(target.join("release").join(relative))
+    Ok(support::target_folder().join("release").join(relative))
 }
 
 fn run_row(row: Row, turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {

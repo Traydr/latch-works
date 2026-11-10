@@ -1,40 +1,24 @@
-import type { ComicEntry } from "@latch-works/media-domain";
-import type { GalleryListingQueryRequest } from "@/features/library/library-queries";
-import {
-  type GalleryComicRequest,
-  getGalleryComic,
-  getGalleryListing,
-} from "@/features/library/library-service";
-import type { LibraryMediaItem } from "@/features/library/types";
-import type { GalleryListingPage } from "../../server/library/gallery-listing";
+import { getGalleryComic, getGalleryListing } from "@/features/library/library-service";
+import type {
+  GalleryComic,
+  GalleryComicRequest,
+  GalleryListingPage,
+  GalleryListingRequest,
+} from "@/features/library/listing-contract";
 
 /**
  * The only I/O the gallery browse session performs (Plan 052, Decision 3).
  * Production talks to the server functions. Gallery callers never see this.
  */
 export interface GalleryPageSource {
-  loadComic(request: GalleryComicRequest): Promise<ComicEntry<LibraryMediaItem>>;
-  loadPage(request: GalleryListingQueryRequest): Promise<GalleryListingPage>;
+  loadComic(request: GalleryComicRequest): Promise<GalleryComic>;
+  loadPage(request: GalleryListingRequest, cursor: string | null): Promise<GalleryListingPage>;
 }
 
 export function createServerGalleryPageSource(): GalleryPageSource {
   return {
     loadComic: (request) => getGalleryComic({ data: request }),
-    loadPage: (request) =>
-      getGalleryListing({
-        data: {
-          comicMode: request.comicMode,
-          cursor: request.cursor,
-          excludedPaths: request.excludedPaths ? [...request.excludedPaths] : undefined,
-          limit: request.limit,
-          path: request.path,
-          query: request.query,
-          randomSeed: request.randomSeed,
-          recursive: request.recursive,
-          showImages: request.showImages,
-          showVideos: request.showVideos,
-          sortMode: request.sortMode,
-        },
-      }),
+    loadPage: (request, cursor) =>
+      getGalleryListing({ data: cursor === null ? request : { ...request, cursor } }),
   };
 }

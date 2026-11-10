@@ -1,7 +1,7 @@
-//! View's floating bottom bar (`GalleryToolbar.tsx`, `SortMenu.tsx`), in plan 057's order with
-//! its visible labels and names: Open · Folders | Recursive · Comic · Sort · (Shuffle) | Refresh.
-//! Recursive and Comic need a folder; Folders shows a dot while the folder has excluded
-//! children; Refresh reads "Refreshing" while a scan runs.
+//! View's floating bottom bar, in plan 057's order with its visible labels and names: Open ·
+//! Folders | Recursive · Comic · Sort · (Shuffle) | Refresh. Recursive and Comic need a folder;
+//! Folders shows a dot while the folder has excluded children; Refresh reads "Refreshing" while a
+//! scan runs.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
@@ -63,7 +63,7 @@ impl ViewMode {
         let refreshing = catalog.is_scanning();
         let preferences = self.current_preferences(cx);
         let comic = preferences.comic_mode;
-        let recursive = self.recursive || comic;
+        let recursive = self.effective_recursive(&preferences);
         let excludes = !preferences.excluded_root_child_paths.is_empty();
         let sort_mode = self.settings.settings().sort_mode;
         let sort_label = SORT_OPTIONS

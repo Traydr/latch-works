@@ -5,7 +5,6 @@ use std::ffi::OsString;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result};
@@ -51,45 +50,13 @@ pub fn cpu_percent(from: &Sample, to: &Sample) -> f64 {
 /// Reads `pid` through `proc_pid_rusage`, as the scorecard's `procstat` did; `None` once it has
 /// gone.
 pub fn sample(pid: u32) -> Option<Sample> {
-    let mut usage = std::mem::MaybeUninit::<libc::rusage_info_v2>::zeroed();
-    // SAFETY: `usage` is a `rusage_info_v2`, the flavour asked for.
-    let status = unsafe {
-        libc::proc_pid_rusage(
-            pid as libc::c_int,
-            libc::RUSAGE_INFO_V2,
-            usage.as_mut_ptr().cast(),
-        )
-    };
-    if status != 0 {
-        return None;
-    }
-    // SAFETY: zeroed is a valid `rusage_info_v2`, and the call filled it.
-    let usage = unsafe { usage.assume_init() };
-    let ticks = ticks_to_ns();
+    let usage = oriel_runtime::ProcessUsage::of(pid)?;
     Some(Sample {
         epoch_ms: epoch_ms(),
-        resident: usage.ri_resident_size,
-        footprint: usage.ri_phys_footprint,
-        cpu_ns: (usage.ri_user_time + usage.ri_system_time) as f64 * ticks,
-        child_cpu_ns: (usage.ri_child_user_time + usage.ri_child_system_time) as f64 * ticks,
-    })
-}
-
-/// Nanoseconds per Mach tick. On Apple silicon `rusage_info`'s CPU times count Mach ticks, not
-/// nanoseconds. `libc` marks its Mach clock bindings deprecated in favour of the `mach2` crate,
-/// which is not worth a dependency for one reading (the View spike says the same).
-#[expect(deprecated, reason = "libc's Mach clock is enough for one reading")]
-fn ticks_to_ns() -> f64 {
-    static RATIO: OnceLock<f64> = OnceLock::new();
-    *RATIO.get_or_init(|| {
-        let mut timebase = libc::mach_timebase_info { numer: 0, denom: 0 };
-        // SAFETY: a plain out-parameter.
-        unsafe { libc::mach_timebase_info(&mut timebase) };
-        if timebase.denom == 0 {
-            1.
-        } else {
-            f64::from(timebase.numer) / f64::from(timebase.denom)
-        }
+        resident: usage.resident,
+        footprint: usage.footprint,
+        cpu_ns: usage.cpu_ns,
+        child_cpu_ns: usage.child_cpu_ns,
     })
 }
 
@@ -218,15 +185,15 @@ pub struct Spec<'a> {
     pub stderr: PathBuf,
 }
 
-/// Starts `spec` with the caller's environment less its `ORIEL_*` and `ORIEL_SPIKE_*`
-/// variables, so a variable left in the shell cannot change a run, plus the run's own.
+/// Starts `spec` with the caller's environment less its `ORIEL_*` variables, so a variable left
+/// in the shell cannot change a run, plus the run's own.
 pub fn launch(spec: Spec<'_>) -> Result<Launched> {
     let mut command = Command::new(spec.program);
     command.args(&spec.args).current_dir(spec.cwd);
     for (key, _) in std::env::vars_os() {
         if key
             .to_str()
-            .is_some_and(|key| key.starts_with("ORIEL_") || key.starts_with("ORIEL_SPIKE_"))
+            .is_some_and(|key| key.starts_with(oriel_launch::PREFIX))
         {
             command.env_remove(key);
         }

@@ -1,6 +1,42 @@
-//! JavaScript's number arithmetic where `paths.ts` relies on it: V8's `Math.log` and
-//! `Number.prototype.toFixed`. Rust's own differ in the last bit and in how they round a tie,
-//! and `formatBytes` shows both differences.
+//! JavaScript's number arithmetic where a ported rule relies on it: V8's `Math.log`,
+//! `Number.prototype.toFixed`, `Math.round` and `Number(text)`. Rust's own differ in the last bit and in how they
+//! round a tie.
+
+/// `Math.round`: halves round up, toward positive infinity.
+pub fn js_round(value: f64) -> f64 {
+    let floor = value.floor();
+    if value - floor >= 0.5 {
+        floor + 1.0
+    } else {
+        floor
+    }
+}
+
+/// `Number(text)` for the decimal forms the ported rules read (ffprobe's numbers, stored
+/// durations): blank is 0, and junk is NaN, which is `None`.
+pub fn js_number(text: &str) -> Option<f64> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Some(0.0);
+    }
+    match trimmed {
+        "Infinity" | "+Infinity" => Some(f64::INFINITY),
+        "-Infinity" => Some(f64::NEG_INFINITY),
+        _ if trimmed.bytes().all(|byte| {
+            byte.is_ascii_digit() || matches!(byte, b'.' | b'-' | b'+' | b'e' | b'E')
+        }) =>
+        {
+            trimmed.parse().ok()
+        }
+        _ => None,
+    }
+}
+
+/// The integer `JSON.stringify` writes for `value`, when it is whole and within the integers a
+/// double holds exactly; `None` for a number JavaScript writes with a fraction or an exponent.
+pub fn js_integer(value: f64) -> Option<i64> {
+    (value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0).then_some(value as i64)
+}
 
 /// V8's `Math.log` on Apple silicon, bit for bit.
 ///
@@ -8,9 +44,8 @@
 /// multiply-add written inside one expression into one instruction. Unfused, as an x86-64 build
 /// computes it, the result differs from Node's in the last bit for about 3 inputs in 10,000; the
 /// platform's `ln` differs for about 1 in 100. With the fused steps below it matched Node 24.18
-/// (V8 on arm64) on 4 million inputs and on every power of two. A Windows build of Electron
-/// Oriel, unfused, can itself differ from these vectors in the last bit.
-pub(crate) fn v8_log(x: f64) -> f64 {
+/// (V8 on arm64) on 4 million inputs and on every power of two.
+pub fn v8_log(x: f64) -> f64 {
     const LN2_HI: f64 = f64::from_bits(0x3fe6_2e42_fee0_0000);
     const LN2_LO: f64 = f64::from_bits(0x3dea_39ef_3579_3c76);
     const TWO54: f64 = f64::from_bits(0x4350_0000_0000_0000);
@@ -97,7 +132,7 @@ pub(crate) fn v8_log(x: f64) -> f64 {
 /// `value.toFixed(digits)` as the ECMAScript spec defines it: the exact decimal value of the
 /// double, rounded to `digits` places with a tie going away from zero. Rust's `{:.1}` is exact
 /// too but sends a tie to the even digit, so `1.25` is `"1.3"` here and `"1.2"` there.
-pub(crate) fn to_fixed(value: f64, digits: usize) -> String {
+pub fn to_fixed(value: f64, digits: usize) -> String {
     if value.is_nan() {
         return "NaN".to_owned();
     }

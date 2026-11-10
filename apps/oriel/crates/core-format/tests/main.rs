@@ -3,7 +3,6 @@
 
 mod support;
 
-mod animation;
 mod avif;
 mod file_names;
 mod still_policy;

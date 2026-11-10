@@ -1,5 +1,5 @@
-//! Stills off macOS, where ImageIO is not: libvips decodes them, the same build of sharp's that
-//! Tidy loads (`oriel_core_tidy::similarity::Vips`), so AVIF and HEIC read through its libheif.
+//! Stills off macOS, where ImageIO is not: libvips decodes them, the process's one libvips that
+//! Tidy reads through too, so AVIF and HEIC read through its libheif.
 //! On Windows that is `libvips-42.dll` from `@img/sharp-libvips-win32-x64`, beside the app.
 //!
 //! libvips gives the still at full size, the right way up, in sRGB with alpha; the scale down to
@@ -8,28 +8,15 @@
 //! Frames held in memory (ffmpeg's for a video's thumbnail) decode through `image`.
 
 use std::path::Path;
-use std::sync::OnceLock;
 
 use anyhow::{Result, anyhow};
 use image::imageops::FilterType;
-use oriel_core_tidy::similarity::Vips;
+use oriel_vips::Vips;
 
 use super::Still;
 
-static VIPS: OnceLock<std::result::Result<Vips, String>> = OnceLock::new();
-
-fn vips() -> Result<&'static Vips> {
-    VIPS.get_or_init(|| {
-        Vips::open_located()
-            .map(|(vips, _, _)| vips)
-            .map_err(|error| error.to_string())
-    })
-    .as_ref()
-    .map_err(|error| anyhow!("{error}"))
-}
-
 pub fn decode(path: &Path, max_pixel_size: u32) -> Result<Still> {
-    let (width, height, rgba) = vips()?.rgba_pixels(path)?;
+    let (width, height, rgba) = Vips::shared()?.rgba_pixels(path)?;
     let image = image::RgbaImage::from_raw(width, height, rgba)
         .ok_or_else(|| anyhow!("libvips gave {} the wrong number of bytes", path.display()))?;
     from_rgba(image, max_pixel_size)

@@ -1,10 +1,10 @@
-//! A video playing in the copy list or the loupe, through `oriel-media`'s player (libmpv, or
-//! AVPlayer where libmpv cannot load), with its sound: playing one is how the owner checks a
-//! soundtrack. One plays at a time; the page drops it when another starts, the set changes, the
-//! loupe flips or closes, or another page shows, and pauses it when Tidy leaves the screen.
+//! A video playing in the copy list or the loupe, through `oriel-media`'s libmpv player, with
+//! its sound: playing one is how the owner checks a soundtrack. One plays at a time; the page
+//! drops it when another starts, the set changes, the loupe flips or closes, or another page
+//! shows, and pauses it when Tidy leaves the screen.
 //!
-//! Over its picture sit Electron Oriel's `VideoControls`: play or pause, the time and the length,
-//! a scrubber and the sound. Clicks stay in the controls.
+//! Over its picture sit its controls: play or pause, the time and the length, a scrubber and the
+//! sound. Clicks stay in the controls.
 //!
 //! A version tile's video is the same player opened as a silent preview ([`TileVideo::silent`]):
 //! it plays at once, looping, without sound and without controls, its frames no larger than the
@@ -12,31 +12,28 @@
 //! picture is its one control: a click plays or pauses it.
 
 use std::path::PathBuf;
-use std::time::Duration;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::base::slider::{SliderEvent, SliderState};
 use gpui_kit::base::{Slider, SliderIndicator, SliderTrack};
 use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
-    AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, MouseButton,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Subscription, Window, div, prelude::FluentBuilder as _, px, relative,
+    Context, Entity, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
+    prelude::FluentBuilder as _, px, relative,
 };
-use oriel_media::mpv::{AnyPlayer, pump_frames};
-use oriel_media::video::{SeekMode, VideoError};
+use oriel_core_domain::format;
+use oriel_media::video::{Player, Scrubber, VideoError, pump_frames};
 use oriel_ui::TextRole as _;
 
 /// The scrubber's resolution, as a share of the video.
 const SCRUB_STEP: f32 = 0.0005;
 
 pub struct TileVideo {
-    video: Result<AnyPlayer, VideoError>,
-    scrubber: Entity<SliderState>,
-    /// The video was playing when a drag along the scrubber paused it.
-    resume_after_scrub: bool,
-    /// Whether it draws Electron Oriel's controls over its picture, on a black ground; a tile's
-    /// draws its picture alone.
+    video: Result<Player, VideoError>,
+    scrubber: Scrubber,
+    /// Whether it draws its controls over its picture, on a black ground; a tile's draws its
+    /// picture alone.
     controls: bool,
     _subscriptions: Vec<Subscription>,
 }
@@ -44,17 +41,16 @@ pub struct TileVideo {
 impl TileVideo {
     /// Opens `path` and plays it at once, muted when the page's sound is off.
     pub fn new(path: PathBuf, muted: bool, cx: &mut Context<Self>) -> Self {
-        let mut video = AnyPlayer::open(&path);
+        let mut video = Player::open(&path);
         if let Ok(video) = &mut video {
             video.set_muted(muted);
             video.play();
         }
-        let scrubber = cx.new(|_| SliderState::new().min(0.).max(1.).step(SCRUB_STEP));
-        let subscriptions = vec![cx.subscribe(&scrubber, Self::on_scrub)];
+        let scrubber = Scrubber::new(SCRUB_STEP, cx);
+        let subscriptions = vec![cx.subscribe(scrubber.slider(), Self::on_scrub)];
         Self {
             video,
             scrubber,
-            resume_after_scrub: false,
             controls: true,
             _subscriptions: subscriptions,
         }
@@ -64,23 +60,21 @@ impl TileVideo {
     /// soundtrack is decoded and no audio device opens, and frames are drawn no larger than
     /// `max_side` pixels.
     pub fn silent(path: PathBuf, max_side: u32, cx: &mut Context<Self>) -> Self {
-        let mut video = AnyPlayer::open_silent_preview(&path, max_side);
+        let mut video = Player::open_silent_preview(&path, max_side);
         if let Ok(video) = &mut video {
             video.set_looping(true);
             video.play();
         }
-        let scrubber = cx.new(|_| SliderState::new());
         Self {
             video,
-            scrubber,
-            resume_after_scrub: false,
+            scrubber: Scrubber::new(SCRUB_STEP, cx),
             controls: false,
             _subscriptions: Vec::new(),
         }
     }
 
     pub fn is_playing(&self) -> bool {
-        self.video.as_ref().is_ok_and(AnyPlayer::is_playing)
+        self.video.as_ref().is_ok_and(Player::is_playing)
     }
 
     /// Whether a picture shows yet, or the error that stands for one.
@@ -127,35 +121,21 @@ impl TileVideo {
     /// A drag along the scrubber shows keyframes as it goes, with the video held still, and
     /// lands on the exact frame where it is let go.
     fn on_scrub(&mut self, _: Entity<SliderState>, event: &SliderEvent, cx: &mut Context<Self>) {
-        let (fraction, mode) = match event {
-            SliderEvent::Change(value) => (value.end(), SeekMode::Fast),
-            SliderEvent::Release(value) => (value.end(), SeekMode::Exact),
-        };
         let Ok(video) = &mut self.video else {
             return;
         };
-        let Some(duration) = video.duration() else {
-            return;
-        };
-        let releasing = mode == SeekMode::Exact;
-        if !releasing && video.is_playing() {
-            video.pause();
-            self.resume_after_scrub = true;
-        }
-        video.seek(duration.mul_f32(fraction.clamp(0., 1.)), mode);
-        if releasing && std::mem::take(&mut self.resume_after_scrub) {
-            video.play();
-        }
+        let scrub = self.scrubber.scrub(event, video.is_playing());
+        video.scrub(scrub);
         cx.notify();
     }
 
-    fn video_of(&mut self) -> &mut AnyPlayer {
+    fn video_of(&mut self) -> &mut Player {
         self.video
             .as_mut()
             .expect("frames are pumped only for a video that opened")
     }
 
-    fn render_controls(&self, video: &AnyPlayer, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_controls(&self, video: &Player, cx: &mut Context<Self>) -> impl IntoElement {
         let playing = video.is_playing();
         let muted = video.is_muted();
         let position = video.position();
@@ -165,14 +145,14 @@ impl TileVideo {
         } else {
             (position.as_secs_f32() / duration.as_secs_f32()).clamp(0., 1.)
         };
-        let slider = Slider::new(&self.scrubber)
+        let slider = Slider::new(self.scrubber.slider())
             .accessibility_label("Position")
             .flex()
             .flex_1()
             .min_w_0()
             .items_center()
             .child(
-                SliderTrack::new(&self.scrubber)
+                SliderTrack::new(self.scrubber.slider())
                     .relative()
                     .flex()
                     .items_center()
@@ -180,7 +160,7 @@ impl TileVideo {
                     // A 32 pt target around the 4 pt line, as View's player has.
                     .h(px(32.))
                     .child(
-                        SliderIndicator::new(&self.scrubber)
+                        SliderIndicator::new(self.scrubber.slider())
                             .relative()
                             .w_full()
                             .h(px(4.))
@@ -235,8 +215,8 @@ impl TileVideo {
                     .text_caption()
                     .child(SharedString::from(format!(
                         "{} / {}",
-                        clock(position),
-                        clock(duration)
+                        format::clock(position),
+                        format::clock(duration)
                     ))),
             )
             .child(slider)
@@ -280,17 +260,6 @@ fn control_button(
         .child(Icon::new(icon).size(px(16.)))
 }
 
-/// A time as the controls show it: "1:05", "1:02:05" (`formatDuration`).
-fn clock(time: Duration) -> String {
-    let total = time.as_secs();
-    let (hours, minutes, seconds) = (total / 3600, total % 3600 / 60, total % 60);
-    if hours > 0 {
-        format!("{hours}:{minutes:02}:{seconds:02}")
-    } else {
-        format!("{minutes}:{seconds:02}")
-    }
-}
-
 impl Render for TileVideo {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.video.is_ok() {
@@ -305,7 +274,7 @@ impl Render for TileVideo {
                 .items_center()
                 .justify_center()
                 .when_some(
-                    self.video.as_ref().ok().and_then(AnyPlayer::picture),
+                    self.video.as_ref().ok().and_then(Player::picture),
                     |this, picture| this.child(picture),
                 );
         }

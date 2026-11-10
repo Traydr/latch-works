@@ -1,10 +1,16 @@
-//! A value read from the engine, as `useEngineQuery` keeps one: the last answer, or why there is
-//! none, with only the newest request's answer kept, so a slow older one never overwrites it.
+//! How Tidy's UI reaches the engine ([`TidyClient`]), and a value read from it ([`Loaded`]): the
+//! last answer, or why there is none, with only the newest request's answer kept, so a slow older
+//! one never overwrites it.
 
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use gpui_kit::{AppContext, Context, SharedString, Task};
+use oriel_core_tidy::contract::RootId;
+use oriel_core_tidy::{Media, Queued, TidyEngine};
+
+use crate::pages::TidyPage;
+use crate::state::TidyState;
 
 /// Page reads asked for whose answers have not landed yet, so the pages spike can tell when a
 /// page has everything it asked for.
@@ -32,15 +38,89 @@ impl Drop for InFlight {
     }
 }
 
-/// Waits for an engine call on GPUI's background executor, blocking one of its threads while the
-/// catalog's thread answers. The answer then reaches the UI from GPUI's own executor, never from
-/// the catalog's thread, which keeps headless tests deterministic (GPUI's test scheduler refuses
-/// a wake from a thread it does not know).
-pub fn engine_call<T: Send + 'static>(
-    future: impl Future<Output = anyhow::Result<T>> + Send + 'static,
-    cx: &impl AppContext,
-) -> Task<anyhow::Result<T>> {
-    cx.background_spawn(async move { futures::executor::block_on(future) })
+/// The engine as Tidy's UI holds it. Its queries come back as GPUI tasks, waited for on GPUI's
+/// background executor while the catalog's thread answers, so the answer reaches the UI from
+/// GPUI's own executor and never from the catalog's thread: GPUI's test scheduler refuses a wake
+/// from a thread it does not know. Its work comes back queued, for a job to run.
+#[derive(Clone)]
+pub struct TidyClient(TidyEngine);
+
+impl TidyClient {
+    pub(crate) fn new(engine: TidyEngine) -> Self {
+        Self(engine)
+    }
+
+    /// The answer of `query`, which may ask the engine several things in turn.
+    pub fn ask<T, F>(
+        &self,
+        query: impl FnOnce(TidyEngine) -> F,
+        cx: &impl AppContext,
+    ) -> Task<anyhow::Result<T>>
+    where
+        T: Send + 'static,
+        F: Future<Output = anyhow::Result<T>> + Send + 'static,
+    {
+        let future = query(self.0.clone());
+        cx.background_spawn(async move { futures::executor::block_on(future) })
+    }
+
+    /// Work the engine queues, for a job to run on a thread of its own.
+    pub fn queue<T>(&self, work: impl FnOnce(&TidyEngine) -> Queued<T>) -> Queued<T> {
+        work(&self.0)
+    }
+
+    /// See [`TidyEngine::check_root_removable`].
+    pub fn check_root_removable(&self, root_id: RootId) -> anyhow::Result<()> {
+        self.0.check_root_removable(root_id)
+    }
+
+    /// See [`TidyEngine::promote_analysis`].
+    pub fn promote_analysis(&self, root_id: RootId) -> bool {
+        self.0.promote_analysis(root_id)
+    }
+
+    pub fn media(&self) -> &Media {
+        self.0.media()
+    }
+}
+
+/// When a page reads from the engine: only while it is on screen, and again whenever the folder
+/// on screen or the catalog has changed since it last read. Every page keeps one.
+#[derive(Default)]
+pub struct PageReads {
+    seen: (Option<RootId>, u64),
+}
+
+/// What a page reads with, once it is due to read.
+pub struct Read {
+    pub engine: TidyClient,
+    pub root_id: RootId,
+    /// The folder on screen is another than at the last read, so what the page holds for the
+    /// last one (a selection, how far it has paged) goes.
+    pub root_changed: bool,
+}
+
+impl PageReads {
+    /// Reads again at the next chance, as a page's Try again asks.
+    pub fn forget(&mut self) {
+        self.seen = (None, 0);
+    }
+
+    /// Whether `page` reads now; if so it counts as read. `None` while another page is on
+    /// screen, nothing changed, or the engine has no folder to read yet.
+    pub fn due(&mut self, page: TidyPage, state: &TidyState) -> Option<Read> {
+        let key = (state.root_id(), state.catalog_version());
+        if state.page() != page || key == self.seen {
+            return None;
+        }
+        let root_changed = key.0 != self.seen.0;
+        self.seen = key;
+        Some(Read {
+            engine: state.engine().cloned()?,
+            root_id: state.root_id()?,
+            root_changed,
+        })
+    }
 }
 
 pub struct Loaded<T> {
@@ -80,28 +160,27 @@ impl<T: Send + 'static> Loaded<T> {
         self.task = None;
     }
 
-    /// Asks again: `future`'s answer lands in the field `slot` names on the entity, unless a newer
+    /// Asks again: `answer` lands in the field `slot` names on the entity, unless a newer
     /// request was made meanwhile. The entity is notified when it lands.
     pub fn load<V: 'static>(
         &mut self,
-        future: impl Future<Output = anyhow::Result<T>> + Send + 'static,
+        answer: Task<anyhow::Result<T>>,
         slot: fn(&mut V) -> &mut Loaded<T>,
         cx: &mut Context<V>,
     ) {
-        self.load_then(future, slot, |_, _| {}, cx);
+        self.load_then(answer, slot, |_, _| {}, cx);
     }
 
     /// [`Self::load`], then `then` once a newer request has not overtaken it.
     pub fn load_then<V: 'static>(
         &mut self,
-        future: impl Future<Output = anyhow::Result<T>> + Send + 'static,
+        answer: Task<anyhow::Result<T>>,
         slot: fn(&mut V) -> &mut Loaded<T>,
         then: fn(&mut V, &mut Context<V>),
         cx: &mut Context<V>,
     ) {
         self.stamp += 1;
         let stamp = self.stamp;
-        let answer = engine_call(future, cx);
         let in_flight = InFlight::start();
         self.task = Some(cx.spawn(async move |this, cx| {
             let _in_flight = in_flight;

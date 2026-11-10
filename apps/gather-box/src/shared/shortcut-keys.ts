@@ -3,7 +3,7 @@ export type GatherShortcutAction = "toggle" | "download";
 export function installShortcutKeyListener(
   document: Document,
   isEnabled: () => boolean,
-  onShortcut: (action: GatherShortcutAction) => void
+  onShortcut: (action: GatherShortcutAction) => void,
 ): () => void {
   let rightShiftDown = false;
 
@@ -24,11 +24,7 @@ export function installShortcutKeyListener(
       return;
     }
 
-    const action = isRightBracket(event)
-      ? "toggle"
-      : isLeftBracket(event)
-        ? "download"
-        : null;
+    const action = isRightBracket(event) ? "toggle" : isLeftBracket(event) ? "download" : null;
 
     if (!action) {
       return;

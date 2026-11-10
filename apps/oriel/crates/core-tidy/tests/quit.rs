@@ -10,10 +10,14 @@ use std::time::{Duration, Instant};
 
 use futures::executor::block_on;
 use oriel_core_paths::DataRoot;
+use oriel_core_tidy::AnalysisKind;
 use oriel_core_tidy::TidyEngine;
-use oriel_core_tidy::passes::{Media, Quiet};
+use oriel_core_tidy::{Media, Quiet};
 use oriel_tools::{ToolRun, kill_running_tools};
 use rusqlite::Connection;
+
+#[path = "support.rs"]
+mod support;
 
 /// One library and its catalog, under a folder removed when the test ends.
 struct Library {
@@ -28,7 +32,7 @@ impl Library {
         let archive = folder.join("archive");
         oriel_test_archive::build_archive(&archive);
         let data = DataRoot::at(folder.join("data")).unwrap();
-        let catalog = data.tidy().join("catalog.sqlite");
+        let catalog = data.tidy_catalog();
         let engine = block_on(TidyEngine::open_with(data, catalog.clone(), media)).unwrap();
         let root_id = block_on(engine.add_root(&archive)).unwrap().id;
         Self {
@@ -40,8 +44,11 @@ impl Library {
 
     /// A scan and an analysis, to their end or until the tools are stopped.
     fn work(&self) {
-        let _ = self.engine.scan_blocking(self.root_id, &Quiet::new());
-        let _ = self.engine.analyze_blocking(self.root_id, &Quiet::new());
+        let _ = self.engine.scan(self.root_id).run(&Quiet::new());
+        let _ = self
+            .engine
+            .analyze(self.root_id, AnalysisKind::AskedFor)
+            .run(&Quiet::new());
     }
 
     /// How many videos `condition` holds for.
@@ -79,12 +86,14 @@ fn wait_for_files(files: &[&Path]) {
 
 #[test]
 fn a_killed_tool_leaves_no_verdict_on_the_file() {
-    let media = Media::locate();
-    let (Some(vips), Some(ffmpeg), Some(ffprobe)) = (&media.vips, &media.ffmpeg, &media.ffprobe)
-    else {
-        eprintln!("skipped: needs libvips and the pinned ffmpeg and ffprobe");
+    let (Some(media), Some(tools)) = (support::media(), oriel_test_archive::media_tools()) else {
         return;
     };
+    let (vips, ffmpeg, ffprobe) = (
+        media.vips.as_ref().unwrap(),
+        tools.ffmpeg(),
+        tools.ffprobe(),
+    );
     let folder = std::env::temp_dir().join(format!("oriel-tidy-quit-{}", std::process::id()));
     let _ = fs::remove_dir_all(&folder);
     fs::create_dir_all(&folder).unwrap();

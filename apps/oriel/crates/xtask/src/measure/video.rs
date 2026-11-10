@@ -1,4 +1,4 @@
-//! Video through libmpv: `oriel-media`'s `mpv_spike sweep` on the first ten videos of each codec,
+//! Video through libmpv: `oriel-mode-view`'s `mpv_spike sweep` on the first ten videos of each codec,
 //! as `run_series.sh` ran it, read from the medians it prints per folder.
 
 use std::ffi::OsString;
@@ -35,15 +35,17 @@ pub fn run(turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {
         .collect();
     let mut env = Vec::new();
     // A bundle's own libmpv, the one the app plays through.
-    if let Some(bundle) = &turn.app.bundle
-        && let Some(libmpv) = fs::read_dir(bundle.join("Contents/Frameworks"))?
-            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-            .find(|path| {
-                path.file_name()
-                    .is_some_and(|name| name.to_string_lossy().starts_with("libmpv"))
-            })
-    {
-        env.push(("ORIEL_LIBMPV".to_owned(), libmpv.into_os_string()));
+    if let Some(bundle) = &turn.app.bundle {
+        let set = &oriel_core_paths::NativeSet::LIBMPV;
+        let found = set.locate_in(&oriel_core_paths::Places {
+            package: Some(oriel_core_paths::Package::MacBundle(
+                bundle.join("Contents"),
+            )),
+            variable: None,
+            development: PathBuf::new(),
+            fallback: None,
+        })?;
+        env.push((set.variable.to_owned(), found.path.into_os_string()));
     }
     env.extend(settings.env.iter().cloned());
     let log = turn.folder.join("video.log");

@@ -4,13 +4,11 @@
 //! wait, which opens into a panel listing every job with its progress and, where the job has
 //! them, Pause, Resume and Stop. Nothing shows while nothing runs.
 //!
-//! It is modelled on the panel Sync showed at the bottom right while it planned, and it takes the
-//! place of Tidy's job card, the pages' own progress and Sync's running panel. The switcher's ring
-//! and dot and the Dock's progress stay, fed by [`crate::ShellState::set_activity`].
-//!
-//! The jobs live in an entity of their own, so a job's counts moving redraw the indicator without
-//! waking every mode that observes the shell's state. A control pressed in the panel reaches the
-//! mode as a [`JobCommand`] this entity emits; the mode finds the job by its key.
+//! Modes report their jobs with the switcher's ring or dot through their
+//! [`crate::ModeReporter`]. The jobs live in an entity of their own, so a job's counts moving
+//! redraw the indicator without waking every mode that observes the shell's state. A control
+//! pressed in the panel reaches the mode whose job it is as a [`JobCommand`]; the mode finds the
+//! job by its key.
 
 use std::time::{Duration, Instant};
 
@@ -27,12 +25,13 @@ use gpui_kit::{
     TestSupportExt as _, Window, canvas, div, linear_color_stop, linear_gradient,
     prelude::FluentBuilder as _, px,
 };
+use oriel_core_domain::format;
 
 use crate::controls::ControlSize as _;
 use crate::controls::TextRole as _;
+use crate::mode::ModeMap;
 use crate::shell::ModeId;
 
-/// The panel's width.
 pub const PANEL_WIDTH: f32 = 400.;
 /// The most the collapsed indicator takes of the window's width.
 const INDICATOR_MAX_WIDTH: f32 = 440.;
@@ -49,7 +48,6 @@ const INDICATOR_CHIP_INSET: f32 = 12.;
 const INDICATOR_NAME_LEAST: f32 = 90.;
 /// The space between the indicator and what is beside it in that room.
 const ROOM_MARGIN: f32 = 8.;
-/// The panel's header.
 const PANEL_HEADER: f32 = 48.;
 /// The most the panel's list takes, in a window with room for it.
 const PANEL_LIST: f32 = 400.;
@@ -187,14 +185,6 @@ impl ActivityJob {
         self.state
     }
 
-    pub fn is_pausable(&self) -> bool {
-        self.pausable
-    }
-
-    pub fn is_stoppable(&self) -> bool {
-        self.stoppable
-    }
-
     /// How far it has got, if that is known.
     pub fn ratio(&self) -> Option<f32> {
         self.ratio.or_else(|| {
@@ -208,8 +198,8 @@ impl ActivityJob {
             format!(
                 "{} {} of {}",
                 self.label,
-                count(self.done.min(self.total)),
-                count(self.total)
+                format::count(self.done.min(self.total)),
+                format::count(self.total)
             )
         } else {
             self.label.to_string()
@@ -262,7 +252,7 @@ impl JobCommand {
 /// Every mode's jobs, and whether the panel is open. One per window, on the shell's state.
 #[derive(Default)]
 pub struct Activity {
-    jobs: [Vec<ActivityJob>; 3],
+    jobs: ModeMap<Vec<ActivityJob>>,
     open: bool,
     drawn_at: Option<Instant>,
     /// Work has begun after nothing was running, and has not yet run for [`SHOWS_AFTER`].
@@ -278,8 +268,13 @@ impl EventEmitter<JobCommand> for Activity {}
 
 impl Activity {
     /// A mode's jobs as they are now, replacing what it reported before; none when it is idle.
-    pub fn set_jobs(&mut self, mode: ModeId, mut jobs: Vec<ActivityJob>, cx: &mut Context<Self>) {
-        let slot = &mut self.jobs[mode.index()];
+    pub(crate) fn set_jobs(
+        &mut self,
+        mode: ModeId,
+        mut jobs: Vec<ActivityJob>,
+        cx: &mut Context<Self>,
+    ) {
+        let slot = &mut self.jobs[mode];
         // A job paused holds what it last showed. It may finish its step or move on to its next
         // phase as it stops, and a bar that falls to nothing reads as lost work.
         for job in &mut jobs {
@@ -333,14 +328,15 @@ impl Activity {
 
     /// One mode's jobs, as it reported them.
     pub fn jobs_of(&self, mode: ModeId) -> &[ActivityJob] {
-        &self.jobs[mode.index()]
+        &self.jobs[mode]
     }
 
     /// Every job, the running ones first and the queued last, each mode's in its own order.
     pub fn jobs(&self) -> Vec<(ModeId, &ActivityJob)> {
-        let mut jobs: Vec<(ModeId, &ActivityJob)> = ModeId::ALL
-            .into_iter()
-            .flat_map(|mode| self.jobs_of(mode).iter().map(move |job| (mode, job)))
+        let mut jobs: Vec<(ModeId, &ActivityJob)> = self
+            .jobs
+            .iter()
+            .flat_map(|(mode, jobs)| jobs.iter().map(move |job| (mode, job)))
             .collect();
         jobs.sort_by_key(|(_, job)| u8::from(job.state == JobState::Queued));
         jobs
@@ -363,7 +359,7 @@ impl Activity {
     }
 
     pub fn is_idle(&self) -> bool {
-        self.jobs.iter().all(Vec::is_empty)
+        self.jobs.values().all(Vec::is_empty)
     }
 
     /// Whether the indicator or the panel is drawn: there is work, and it has run long enough to
@@ -412,10 +408,6 @@ impl Activity {
         }
     }
 
-    pub fn toggle_open(&mut self, cx: &mut Context<Self>) {
-        self.set_open(!self.open, cx);
-    }
-
     /// Asks `mode` to pause, resume or stop its job `key`.
     pub fn control(
         &mut self,
@@ -448,19 +440,6 @@ impl Activity {
         }
         Some(text)
     }
-}
-
-/// A count as the pages write one: 1,234.
-fn count(value: u64) -> String {
-    let digits = value.to_string();
-    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
-    for (index, digit) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(digit);
-    }
-    out
 }
 
 /// The element id of a job's row, or of one of its parts: `activity-tidy-change-stop`.
@@ -706,8 +685,8 @@ fn indicator_parts(activity: &Activity) -> Option<IndicatorParts> {
     let others = activity.jobs().len() - queued - usize::from(lead.state != JobState::Queued);
     Some(IndicatorParts {
         mode: mode.label(),
-        done: count(lead.done),
-        total: count(lead.total),
+        done: format::count(lead.done),
+        total: format::count(lead.total),
         // Steps can take minutes each, so the share within them shows it is moving.
         percent: lead
             .ratio
@@ -942,7 +921,13 @@ fn render_job(
     let theme = cx.theme();
     let key = job.key.to_string();
     let id = |part: &str| job_element_id(mode, &key, part);
-    let counts = (job.total > 0).then(|| format!("{} of {}", count(job.done), count(job.total)));
+    let counts = (job.total > 0).then(|| {
+        format!(
+            "{} of {}",
+            format::count(job.done),
+            format::count(job.total)
+        )
+    });
     let caption = job.caption();
     let paused = job.state == JobState::Paused;
     let pause = job.pausable.then(|| {
@@ -1126,6 +1111,5 @@ mod tests {
             .detail("1 GB of 4 GB");
         assert_eq!(push.ratio(), Some(0.25));
         assert_eq!(push.caption(), "1 GB of 4 GB");
-        assert_eq!(count(1_234_567), "1,234,567");
     }
 }

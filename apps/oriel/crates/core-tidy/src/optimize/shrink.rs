@@ -1,18 +1,18 @@
-//! What Shrink would re-encode, from glazier-core's `optimize/shrink.ts` and its estimate of
-//! encode times, `optimize/encode-speed.ts`.
+//! What Shrink would re-encode, and how long its encodes are expected to take.
 
 use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
+use oriel_core_domain::collation::Collation;
+use oriel_core_domain::number::js_round;
 use oriel_core_format::{ArchiveVideoCodec, ArchiveVideoPlan, plan_video_reencode};
 use rusqlite::Connection;
 
 use super::candidates::{taken_paths, video_source_of};
 use crate::catalog::files::{SqlParams, query_records};
 use crate::catalog::rows::{FILE_COLUMNS, FILES_FROM, FileRecord};
-use crate::collation::locale_order;
-use crate::contract::{FileId, RootId, ShrinkItem, ShrinkTotals};
-use crate::number::js_round;
+use crate::catalog::timings::{EncodeTiming, encode_timings};
+use crate::contract::{FileId, RootId, ShrinkItem, ShrinkTotals, SkipReason};
 
 /// Below this many bits per pixel each second a video is already compact: an AV1 re-encode at
 /// Tidy's settings saves little and can come out larger.
@@ -38,17 +38,6 @@ const RECENT: usize = 50;
 
 /// Clips shorter than this mostly time ffmpeg starting up, so they say little about the encoder.
 const MIN_MEDIA_MS: f64 = 10_000.0;
-
-/// Timings read.
-const KEPT: i64 = 500;
-
-/// One timed SVT-AV1 encode.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct EncodeTiming {
-    pub pixels: f64,
-    pub media_ms: f64,
-    pub wall_ms: f64,
-}
 
 /// This machine's SVT-AV1 speed: each size class with enough timed encodes uses their median,
 /// and one without scales the M5 Pro's figure by how this machine compares in the classes it has
@@ -118,20 +107,10 @@ impl EncodeSpeed {
 
 /// This machine's speed, from the catalog's latest timings.
 pub fn encode_speed(connection: &Connection) -> anyhow::Result<EncodeSpeed> {
-    let mut statement = connection.prepare_cached(
-        "SELECT pixels, media_ms, wall_ms FROM encode_timings
-      WHERE encoder = 'svt-av1' AND media_ms >= ?1 AND wall_ms > 0
-      ORDER BY id DESC LIMIT ?2",
-    )?;
-    let rows = statement.query_map(rusqlite::params![MIN_MEDIA_MS, KEPT], |row| {
-        Ok(EncodeTiming {
-            pixels: row.get(0)?,
-            media_ms: row.get(1)?,
-            wall_ms: row.get(2)?,
-        })
-    })?;
-    let timings: Vec<EncodeTiming> = rows.collect::<rusqlite::Result<_>>()?;
-    Ok(EncodeSpeed::from_timings(&timings))
+    Ok(EncodeSpeed::from_timings(&encode_timings(
+        connection,
+        MIN_MEDIA_MS,
+    )?))
 }
 
 /// A video Shrink would re-encode.
@@ -145,7 +124,7 @@ pub struct ShrinkCandidate {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShrinkScan {
     pub candidates: Vec<ShrinkCandidate>,
-    pub skipped: IndexMap<String, i64>,
+    pub skipped: IndexMap<SkipReason, i64>,
     pub speed_measured: bool,
 }
 
@@ -168,8 +147,6 @@ impl ShrinkScan {
     }
 }
 
-const SKIP_NOT_SMALLER: &str = "Came out no smaller as AV1";
-
 /// Every video under a root that an AV1 re-encode should shrink, the most bytes saved for an encode
 /// first. Videos already AV1 or already compact are left out, as are those an earlier attempt could
 /// not shrink. Identical copies are listed together and cost one encode (`executor`); a hard link
@@ -190,8 +167,8 @@ pub fn find_shrink_candidates(
     let mut taken: Option<HashSet<String>> = None;
     let speed = encode_speed(connection)?;
     let mut candidates = Vec::new();
-    let mut skipped: IndexMap<String, i64> = IndexMap::new();
-    let mut skip = |reason: &str| *skipped.entry(reason.to_owned()).or_default() += 1;
+    let mut skipped: IndexMap<SkipReason, i64> = IndexMap::new();
+    let mut skip = |reason: SkipReason| *skipped.entry(reason).or_default() += 1;
 
     for record in records {
         if let Some(reason) = skip_reason(&record) {
@@ -201,7 +178,7 @@ pub fn find_shrink_candidates(
         let plan = video_source_of(&record)
             .map(|source| plan_video_reencode(&source, ArchiveVideoCodec::Av1));
         let Some(ArchiveVideoPlan::ConvertMp4 { file_name, .. }) = plan else {
-            skip("Can't be re-encoded");
+            skip(SkipReason::CannotReencode);
             continue;
         };
         let (Some(width), Some(height), Some(bitrate), Some(duration_ms)) = (
@@ -210,13 +187,13 @@ pub fn find_shrink_candidates(
             record.bitrate,
             record.duration_ms,
         ) else {
-            skip("Size or bitrate unknown");
+            skip(SkipReason::SizeUnknown);
             continue;
         };
         let pixels = (width * height) as f64;
         let bits_per_pixel_second = if pixels > 0.0 { bitrate / pixels } else { 0.0 };
         if bits_per_pixel_second < COMPACT_BITS_PER_PIXEL_SECOND {
-            skip("Already compact");
+            skip(SkipReason::AlreadyCompact);
             continue;
         }
         let target = if record.dir.is_empty() {
@@ -230,7 +207,7 @@ pub fn find_shrink_candidates(
             None => taken.insert(taken_paths(connection, root_id)?),
         };
         if target != record.rel_path.to_lowercase() && taken.contains(&target) {
-            skip("A file with the target name already exists");
+            skip(SkipReason::NameTaken);
             continue;
         }
         taken.insert(target);
@@ -268,7 +245,9 @@ fn in_encode_order(candidates: Vec<ShrinkCandidate>) -> Vec<ShrinkCandidate> {
     }
     let mut groups: Vec<Vec<ShrinkCandidate>> = groups.into_values().collect();
     for group in &mut groups {
-        group.sort_by(|left, right| locale_order(&left.record.rel_path, &right.record.rel_path));
+        group.sort_by(|left, right| {
+            Collation::Locale.compare(&left.record.rel_path, &right.record.rel_path)
+        });
         let leader = group[0].record.id;
         let mut inodes = HashSet::new();
         for (index, candidate) in group.iter_mut().enumerate() {
@@ -284,19 +263,21 @@ fn in_encode_order(candidates: Vec<ShrinkCandidate>) -> Vec<ShrinkCandidate> {
     }
     let total = |group: &[ShrinkCandidate]| group.iter().map(saved).sum::<i64>();
     groups.sort_by(|left, right| {
-        total(right)
-            .cmp(&total(left))
-            .then_with(|| locale_order(&left[0].record.rel_path, &right[0].record.rel_path))
+        total(right).cmp(&total(left)).then_with(|| {
+            Collation::Locale.compare(&left[0].record.rel_path, &right[0].record.rel_path)
+        })
     });
     groups.into_iter().flatten().collect()
 }
 
-fn skip_reason(record: &FileRecord) -> Option<&'static str> {
+fn skip_reason(record: &FileRecord) -> Option<SkipReason> {
     if record.probe_error.is_some() {
-        return Some("Won't decode");
+        return Some(SkipReason::WontDecode);
     }
     if record.video_codec.as_deref() == Some("av1") {
-        return Some("Already AV1");
+        return Some(SkipReason::AlreadyAv1);
     }
-    record.shrink_not_smaller.then_some(SKIP_NOT_SMALLER)
+    record
+        .shrink_not_smaller
+        .then_some(SkipReason::NotSmallerAsAv1)
 }

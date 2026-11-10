@@ -1,4 +1,4 @@
-//! What Convert would change, from glazier-core's `optimize/candidates.ts`: every file the archive
+//! What Convert would change: every file the archive
 //! policy (`oriel-core-format`) would convert or rename, and why the others are left alone.
 
 use std::collections::{HashMap, HashSet};
@@ -15,6 +15,7 @@ use crate::catalog::files::{SqlParams, get_file_records, query_records};
 use crate::catalog::rows::{FILE_COLUMNS, FILES_FROM, FileRecord, format_column, kind_column};
 use crate::contract::{
     CategoryCount, FileFormat, FileId, OptimizeCategory, OptimizeSummary, RootId, SkipCount,
+    SkipReason,
 };
 use crate::scan::preferred_extension;
 
@@ -35,10 +36,8 @@ pub struct OptimizeCandidate {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CandidateScan {
     pub candidates: Vec<OptimizeCandidate>,
-    pub skipped: IndexMap<String, i64>,
+    pub skipped: IndexMap<SkipReason, i64>,
 }
-
-const SKIP_NOT_SMALLER: &str = "Already as small as they get";
 
 fn image_format(format: Option<FileFormat>) -> Option<ArchiveImageFormat> {
     Some(match format? {
@@ -52,7 +51,8 @@ fn image_format(format: Option<FileFormat>) -> Option<ArchiveImageFormat> {
     })
 }
 
-fn video_container(format: Option<FileFormat>) -> Option<VideoContainer> {
+/// The container of a video of `format`, or `None` for a format no container is.
+pub(crate) fn video_container(format: Option<FileFormat>) -> Option<VideoContainer> {
     Some(match format? {
         FileFormat::Mp4 => VideoContainer::Mp4,
         FileFormat::Mov => VideoContainer::Mov,
@@ -64,40 +64,6 @@ fn video_container(format: Option<FileFormat>) -> Option<VideoContainer> {
         FileFormat::Asf => VideoContainer::Asf,
         _ => return None,
     })
-}
-
-/// ffprobe's video codec names, as Mediabunny names them.
-fn ffprobe_video_codec(name: &str) -> VideoCodec {
-    match name {
-        "h264" => VideoCodec::Avc,
-        "hevc" => VideoCodec::Hevc,
-        "av1" => VideoCodec::Av1,
-        "vp9" => VideoCodec::Vp9,
-        "vp8" => VideoCodec::Vp8,
-        "prores" => VideoCodec::Prores,
-        _ => VideoCodec::Other,
-    }
-}
-
-/// ffprobe's audio codec names, as Mediabunny names them.
-fn ffprobe_audio_codec(name: &str) -> AudioCodec {
-    match name {
-        "aac" => AudioCodec::Aac,
-        "mp3" => AudioCodec::Mp3,
-        "opus" => AudioCodec::Opus,
-        "vorbis" => AudioCodec::Vorbis,
-        "flac" => AudioCodec::Flac,
-        "ac3" => AudioCodec::Ac3,
-        "eac3" => AudioCodec::Eac3,
-        "dts" => AudioCodec::Dts,
-        "pcm_s16le" => AudioCodec::PcmS16,
-        "pcm_s16be" => AudioCodec::PcmS16be,
-        "pcm_s24le" => AudioCodec::PcmS24,
-        "pcm_s32le" => AudioCodec::PcmS32,
-        "pcm_f32le" => AudioCodec::PcmF32,
-        "pcm_u8" => AudioCodec::PcmU8,
-        _ => AudioCodec::Other,
-    }
 }
 
 /// What the video policy knows of a catalogued video, or `None` for a format no container is.
@@ -121,11 +87,11 @@ fn video_source<'a>(
     Some(ArchiveVideoSource {
         file_name,
         container: video_container(format)?,
-        video_codec: video_codec.map(ffprobe_video_codec),
+        video_codec: video_codec.map(VideoCodec::from_ffprobe),
         audio_codec: if audio_streams.unwrap_or(0) == 0 {
             None
         } else {
-            audio_codec.map(ffprobe_audio_codec)
+            audio_codec.map(AudioCodec::from_ffprobe)
         },
     })
 }
@@ -164,12 +130,12 @@ pub fn find_optimize_candidates(
 
     while let Some(row) = rows.next()? {
         if row.get::<_, i64>(5)? == 1 {
-            skip_one(&mut scan.skipped, "Won't decode");
+            skip_one(&mut scan.skipped, SkipReason::WontDecode);
             continue;
         }
         let format = format_column(row, 2)?;
         let name = row.get_ref(3)?.as_str()?;
-        let mut skip = |reason: &str| skip_one(&mut scan.skipped, reason);
+        let mut skip = |reason: SkipReason| skip_one(&mut scan.skipped, reason);
         let plan = if kind_column(row, 1)? == crate::contract::FileKind::Image {
             image_plan(format, name, row.get(4)?, &mut skip)
         } else {
@@ -186,7 +152,7 @@ pub fn find_optimize_candidates(
             continue;
         };
         if row.get::<_, i64>(9)? == 1 {
-            skip_one(&mut scan.skipped, SKIP_NOT_SMALLER);
+            skip_one(&mut scan.skipped, SkipReason::NotSmaller);
             continue;
         }
         let dir = row.get_ref(10)?.as_str()?;
@@ -200,10 +166,7 @@ pub fn find_optimize_candidates(
             None => taken.insert(taken_paths(connection, root_id)?),
         };
         if target != row.get_ref(11)?.as_str()?.to_lowercase() && taken.contains(&target) {
-            skip_one(
-                &mut scan.skipped,
-                "A file with the target name already exists",
-            );
+            skip_one(&mut scan.skipped, SkipReason::NameTaken);
             continue;
         }
         taken.insert(target);
@@ -242,14 +205,11 @@ fn image_plan(
     format: Option<FileFormat>,
     file_name: &str,
     frames: Option<i64>,
-    skip: &mut dyn FnMut(&str),
+    skip: &mut dyn FnMut(SkipReason),
 ) -> Option<Planned> {
     let Some(archive_format) = image_format(format) else {
         if let Some(format @ (FileFormat::Tiff | FileFormat::Heic)) = format {
-            skip(&format!(
-                "{} stills are left as they are",
-                format.as_str().to_uppercase()
-            ));
+            skip(SkipReason::StillKept(format));
         }
         return None;
     };
@@ -280,7 +240,10 @@ fn image_plan(
     }
 }
 
-fn video_plan(source: &ArchiveVideoSource<'_>, skip: &mut dyn FnMut(&str)) -> Option<Planned> {
+fn video_plan(
+    source: &ArchiveVideoSource<'_>,
+    skip: &mut dyn FnMut(SkipReason),
+) -> Option<Planned> {
     match plan_archive_video(source)? {
         ArchiveVideoPlan::RenameMp4 { file_name } => Some(Planned {
             category: OptimizeCategory::RenameMp4,
@@ -303,14 +266,14 @@ fn video_plan(source: &ArchiveVideoSource<'_>, skip: &mut dyn FnMut(&str)) -> Op
             tracks: Some((video, audio)),
         }),
         ArchiveVideoPlan::Unsupported { reason } => {
-            skip(&reason);
+            skip(SkipReason::Unsupported(reason));
             None
         }
     }
 }
 
-fn skip_one(skipped: &mut IndexMap<String, i64>, reason: &str) {
-    *skipped.entry(reason.to_owned()).or_default() += 1;
+fn skip_one(skipped: &mut IndexMap<SkipReason, i64>, reason: SkipReason) {
+    *skipped.entry(reason).or_default() += 1;
 }
 
 const CATEGORY_ORDER: [OptimizeCategory; 6] = [
@@ -335,6 +298,7 @@ pub fn summarize_candidates(scan: &CandidateScan, removable: &HashSet<FileId>) -
                     files: 0,
                     bytes: 0,
                     duplicate_bytes: 0,
+                    estimate: None,
                 };
                 for candidate in scan.candidates.iter().filter(|c| c.category == category) {
                     count.files += 1;
@@ -352,7 +316,7 @@ pub fn summarize_candidates(scan: &CandidateScan, removable: &HashSet<FileId>) -
     }
 }
 
-pub fn skip_counts(skipped: &IndexMap<String, i64>) -> Vec<SkipCount> {
+pub fn skip_counts(skipped: &IndexMap<SkipReason, i64>) -> Vec<SkipCount> {
     skipped
         .iter()
         .map(|(reason, &files)| SkipCount {

@@ -9,12 +9,13 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as GalleryRouteImport } from './routes/_gallery'
+import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as ManageRouteImport } from './routes/manage'
-import { Route as StatsRouteImport } from './routes/stats'
-import { Route as GalleryIndexRouteImport } from './routes/_gallery/index'
+import { Route as AuthedGalleryRouteImport } from './routes/_authed/_gallery'
+import { Route as AuthedManageRouteImport } from './routes/_authed/manage'
+import { Route as AuthedStatsRouteImport } from './routes/_authed/stats'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
+import { Route as AuthedGalleryIndexRouteImport } from './routes/_authed/_gallery/index'
 import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
 import { Route as ApiSyncCompleteObjectRouteImport } from './routes/api.sync.complete-object'
@@ -22,12 +23,10 @@ import { Route as ApiSyncRunsRouteImport } from './routes/api.sync.runs'
 import { Route as ApiSyncSnapshotRouteImport } from './routes/api.sync.snapshot'
 import { Route as ApiSyncUploadUrlRouteImport } from './routes/api.sync.upload-url'
 import { Route as ApiMediaMediaIdOriginalRouteImport } from './routes/api.media.$mediaId.original'
-import { Route as ApiMediaMediaIdPreviewRouteImport } from './routes/api.media.$mediaId.preview'
-import { Route as ApiMediaMediaIdThumbnailRouteImport } from './routes/api.media.$mediaId.thumbnail'
 import { Route as ApiSyncRunsSyncRunIdCompleteRouteImport } from './routes/api.sync.runs.$syncRunId.complete'
 
-const GalleryRoute = GalleryRouteImport.update({
-  id: '/_gallery',
+const AuthedRoute = AuthedRouteImport.update({
+  id: '/_authed',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -35,25 +34,29 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ManageRoute = ManageRouteImport.update({
+const AuthedGalleryRoute = AuthedGalleryRouteImport.update({
+  id: '/_gallery',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedManageRoute = AuthedManageRouteImport.update({
   id: '/manage',
   path: '/manage',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthedRoute,
 } as any)
-const StatsRoute = StatsRouteImport.update({
+const AuthedStatsRoute = AuthedStatsRouteImport.update({
   id: '/stats',
   path: '/stats',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GalleryIndexRoute = GalleryIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => GalleryRoute,
+  getParentRoute: () => AuthedRoute,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthedGalleryIndexRoute = AuthedGalleryIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthedGalleryRoute,
 } as any)
 const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
   id: '/api/auth/login',
@@ -90,17 +93,6 @@ const ApiMediaMediaIdOriginalRoute = ApiMediaMediaIdOriginalRouteImport.update({
   path: '/api/media/$mediaId/original',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiMediaMediaIdPreviewRoute = ApiMediaMediaIdPreviewRouteImport.update({
-  id: '/api/media/$mediaId/preview',
-  path: '/api/media/$mediaId/preview',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiMediaMediaIdThumbnailRoute =
-  ApiMediaMediaIdThumbnailRouteImport.update({
-    id: '/api/media/$mediaId/thumbnail',
-    path: '/api/media/$mediaId/thumbnail',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiSyncRunsSyncRunIdCompleteRoute =
   ApiSyncRunsSyncRunIdCompleteRouteImport.update({
     id: '/$syncRunId/complete',
@@ -109,10 +101,10 @@ const ApiSyncRunsSyncRunIdCompleteRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof GalleryIndexRoute
+  '/': typeof AuthedGalleryIndexRoute
   '/login': typeof LoginRoute
-  '/manage': typeof ManageRoute
-  '/stats': typeof StatsRoute
+  '/manage': typeof AuthedManageRoute
+  '/stats': typeof AuthedStatsRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
@@ -121,16 +113,14 @@ export interface FileRoutesByFullPath {
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
-  '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
-  '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
   '/api/sync/runs/$syncRunId/complete': typeof ApiSyncRunsSyncRunIdCompleteRoute
 }
 export interface FileRoutesByTo {
+  '/': typeof AuthedGalleryIndexRoute
   '/login': typeof LoginRoute
-  '/manage': typeof ManageRoute
-  '/stats': typeof StatsRoute
+  '/manage': typeof AuthedManageRoute
+  '/stats': typeof AuthedStatsRoute
   '/api/health': typeof ApiHealthRoute
-  '/': typeof GalleryIndexRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
@@ -138,27 +128,24 @@ export interface FileRoutesByTo {
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
-  '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
-  '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
   '/api/sync/runs/$syncRunId/complete': typeof ApiSyncRunsSyncRunIdCompleteRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/_gallery': typeof GalleryRouteWithChildren
+  '/_authed': typeof AuthedRouteWithChildren
   '/login': typeof LoginRoute
-  '/manage': typeof ManageRoute
-  '/stats': typeof StatsRoute
+  '/_authed/_gallery': typeof AuthedGalleryRouteWithChildren
+  '/_authed/manage': typeof AuthedManageRoute
+  '/_authed/stats': typeof AuthedStatsRoute
   '/api/health': typeof ApiHealthRoute
-  '/_gallery/': typeof GalleryIndexRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
   '/api/sync/runs': typeof ApiSyncRunsRouteWithChildren
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
+  '/_authed/_gallery/': typeof AuthedGalleryIndexRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
-  '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
-  '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
   '/api/sync/runs/$syncRunId/complete': typeof ApiSyncRunsSyncRunIdCompleteRoute
 }
 export interface FileRouteTypes {
@@ -176,16 +163,14 @@ export interface FileRouteTypes {
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
     | '/api/media/$mediaId/original'
-    | '/api/media/$mediaId/preview'
-    | '/api/media/$mediaId/thumbnail'
     | '/api/sync/runs/$syncRunId/complete'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/'
     | '/login'
     | '/manage'
     | '/stats'
     | '/api/health'
-    | '/'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/sync/complete-object'
@@ -193,34 +178,29 @@ export interface FileRouteTypes {
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
     | '/api/media/$mediaId/original'
-    | '/api/media/$mediaId/preview'
-    | '/api/media/$mediaId/thumbnail'
     | '/api/sync/runs/$syncRunId/complete'
   id:
     | '__root__'
-    | '/_gallery'
+    | '/_authed'
     | '/login'
-    | '/manage'
-    | '/stats'
+    | '/_authed/_gallery'
+    | '/_authed/manage'
+    | '/_authed/stats'
     | '/api/health'
-    | '/_gallery/'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/sync/complete-object'
     | '/api/sync/runs'
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
+    | '/_authed/_gallery/'
     | '/api/media/$mediaId/original'
-    | '/api/media/$mediaId/preview'
-    | '/api/media/$mediaId/thumbnail'
     | '/api/sync/runs/$syncRunId/complete'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  GalleryRoute: typeof GalleryRouteWithChildren
+  AuthedRoute: typeof AuthedRouteWithChildren
   LoginRoute: typeof LoginRoute
-  ManageRoute: typeof ManageRoute
-  StatsRoute: typeof StatsRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
@@ -229,17 +209,15 @@ export interface RootRouteChildren {
   ApiSyncSnapshotRoute: typeof ApiSyncSnapshotRoute
   ApiSyncUploadUrlRoute: typeof ApiSyncUploadUrlRoute
   ApiMediaMediaIdOriginalRoute: typeof ApiMediaMediaIdOriginalRoute
-  ApiMediaMediaIdPreviewRoute: typeof ApiMediaMediaIdPreviewRoute
-  ApiMediaMediaIdThumbnailRoute: typeof ApiMediaMediaIdThumbnailRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/_gallery': {
-      id: '/_gallery'
+    '/_authed': {
+      id: '/_authed'
       path: ''
       fullPath: '/'
-      preLoaderRoute: typeof GalleryRouteImport
+      preLoaderRoute: typeof AuthedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -249,26 +227,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/manage': {
-      id: '/manage'
+    '/_authed/_gallery': {
+      id: '/_authed/_gallery'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthedGalleryRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/manage': {
+      id: '/_authed/manage'
       path: '/manage'
       fullPath: '/manage'
-      preLoaderRoute: typeof ManageRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthedManageRouteImport
+      parentRoute: typeof AuthedRoute
     }
-    '/stats': {
-      id: '/stats'
+    '/_authed/stats': {
+      id: '/_authed/stats'
       path: '/stats'
       fullPath: '/stats'
-      preLoaderRoute: typeof StatsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_gallery/': {
-      id: '/_gallery/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof GalleryIndexRouteImport
-      parentRoute: typeof GalleryRoute
+      preLoaderRoute: typeof AuthedStatsRouteImport
+      parentRoute: typeof AuthedRoute
     }
     '/api/health': {
       id: '/api/health'
@@ -276,6 +254,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authed/_gallery/': {
+      id: '/_authed/_gallery/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof AuthedGalleryIndexRouteImport
+      parentRoute: typeof AuthedGalleryRoute
     }
     '/api/auth/login': {
       id: '/api/auth/login'
@@ -326,20 +311,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMediaMediaIdOriginalRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/media/$mediaId/preview': {
-      id: '/api/media/$mediaId/preview'
-      path: '/api/media/$mediaId/preview'
-      fullPath: '/api/media/$mediaId/preview'
-      preLoaderRoute: typeof ApiMediaMediaIdPreviewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/media/$mediaId/thumbnail': {
-      id: '/api/media/$mediaId/thumbnail'
-      path: '/api/media/$mediaId/thumbnail'
-      fullPath: '/api/media/$mediaId/thumbnail'
-      preLoaderRoute: typeof ApiMediaMediaIdThumbnailRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/sync/runs/$syncRunId/complete': {
       id: '/api/sync/runs/$syncRunId/complete'
       path: '/$syncRunId/complete'
@@ -350,16 +321,32 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface GalleryRouteChildren {
-  GalleryIndexRoute: typeof GalleryIndexRoute
+interface AuthedGalleryRouteChildren {
+  AuthedGalleryIndexRoute: typeof AuthedGalleryIndexRoute
 }
 
-const GalleryRouteChildren: GalleryRouteChildren = {
-  GalleryIndexRoute: GalleryIndexRoute,
+const AuthedGalleryRouteChildren: AuthedGalleryRouteChildren = {
+  AuthedGalleryIndexRoute: AuthedGalleryIndexRoute,
 }
 
-const GalleryRouteWithChildren =
-  GalleryRoute._addFileChildren(GalleryRouteChildren)
+const AuthedGalleryRouteWithChildren = AuthedGalleryRoute._addFileChildren(
+  AuthedGalleryRouteChildren,
+)
+
+interface AuthedRouteChildren {
+  AuthedGalleryRoute: typeof AuthedGalleryRouteWithChildren
+  AuthedManageRoute: typeof AuthedManageRoute
+  AuthedStatsRoute: typeof AuthedStatsRoute
+}
+
+const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedGalleryRoute: AuthedGalleryRouteWithChildren,
+  AuthedManageRoute: AuthedManageRoute,
+  AuthedStatsRoute: AuthedStatsRoute,
+}
+
+const AuthedRouteWithChildren =
+  AuthedRoute._addFileChildren(AuthedRouteChildren)
 
 interface ApiSyncRunsRouteChildren {
   ApiSyncRunsSyncRunIdCompleteRoute: typeof ApiSyncRunsSyncRunIdCompleteRoute
@@ -374,10 +361,8 @@ const ApiSyncRunsRouteWithChildren = ApiSyncRunsRoute._addFileChildren(
 )
 
 const rootRouteChildren: RootRouteChildren = {
-  GalleryRoute: GalleryRouteWithChildren,
+  AuthedRoute: AuthedRouteWithChildren,
   LoginRoute: LoginRoute,
-  ManageRoute: ManageRoute,
-  StatsRoute: StatsRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
@@ -386,8 +371,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSyncSnapshotRoute: ApiSyncSnapshotRoute,
   ApiSyncUploadUrlRoute: ApiSyncUploadUrlRoute,
   ApiMediaMediaIdOriginalRoute: ApiMediaMediaIdOriginalRoute,
-  ApiMediaMediaIdPreviewRoute: ApiMediaMediaIdPreviewRoute,
-  ApiMediaMediaIdThumbnailRoute: ApiMediaMediaIdThumbnailRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

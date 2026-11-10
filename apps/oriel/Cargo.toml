@@ -4,7 +4,7 @@ members = ["crates/*"]
 default-members = ["crates/app"]
 
 [workspace.package]
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 license = "MIT"
 publish = false
@@ -13,7 +13,6 @@ publish = false
 # GPUI Kit pins its GPUI snapshot exactly, so this pin is exact too. Bump it on its own, with the
 # GPUI tests and plan 063's Phase 0 measurements re-run.
 gpui-kit = "=0.8.1"
-gpui-fps = "=0.8.1"
 anyhow = "1"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
@@ -34,10 +33,10 @@ reqwest = { version = "0.13", default-features = false }
 sha2 = "0.11"
 
 oriel-core-paths = { path = "crates/core-paths" }
+oriel-launch = { path = "crates/launch" }
 oriel-core-domain = { path = "crates/core-domain" }
 oriel-core-format = { path = "crates/core-format" }
 oriel-avif = { path = "crates/avif" }
-oriel-core-index = { path = "crates/core-index" }
 oriel-core-sync = { path = "crates/core-sync" }
 oriel-core-tidy = { path = "crates/core-tidy" }
 oriel-ui = { path = "crates/ui" }
@@ -47,6 +46,7 @@ oriel-mode-tidy = { path = "crates/mode-tidy" }
 oriel-mode-sync = { path = "crates/mode-sync" }
 oriel-runtime = { path = "crates/runtime" }
 oriel-tools = { path = "crates/tools" }
+oriel-vips = { path = "crates/vips" }
 oriel-test-archive = { path = "crates/test-archive" }
 
 [workspace.lints.clippy]
@@ -56,7 +56,7 @@ all = { level = "warn", priority = -1 }
 # Fat LTO over one codegen unit makes the binary 30 % smaller (45.6 to 31.8 MB; 26 MB in the
 # bundle, which leaves out the symbol table), with the same cold start and sorts. It also makes
 # a build take about three minutes after any change, against seconds, so `cargo build
-# --release`, which the spikes, examples and benches use, stays as Cargo has it. Not
+# --release`, which the spikes and examples use, stays as Cargo has it. Not
 # `panic = "abort"`: the runtime turns a job's or a catalog call's panic into its error.
 [profile.dist]
 inherits = "release"
@@ -70,7 +70,11 @@ codegen-units = 1
 [profile.dev.package."*"]
 opt-level = 1
 
-# Tidy's engine as well: the tests run its pixel work on every still they scan, which took a
-# damaged-AVIF case 15 s unoptimised and takes 2.5. An edit here rebuilds a second slower.
+# Tidy's engine and its libvips binding as well: the tests run their pixel work on every still
+# they scan, which took a damaged-AVIF case 15 s unoptimised and takes 2.5. An edit here rebuilds
+# a second slower.
 [profile.dev.package.oriel-core-tidy]
+opt-level = 1
+
+[profile.dev.package.oriel-vips]
 opt-level = 1

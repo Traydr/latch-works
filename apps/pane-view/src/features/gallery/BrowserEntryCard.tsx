@@ -1,6 +1,7 @@
 import { formatBytes } from "@latch-works/media-domain";
 import { memo } from "react";
-import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
+import type { SettledDelivery } from "@/features/delivery/delivery-cache";
+import type { GalleryBrowseEntry } from "@/features/library/listing-contract";
 import { DeleteOverlay } from "./DeleteOverlay";
 import { Poster } from "./Poster";
 
@@ -20,8 +21,8 @@ interface BrowserEntryCardProps {
   opening?: boolean;
   priority?: boolean;
   selected: boolean;
-  /** The resolved thumbnail for the card's media or comic cover, once there is one. */
-  thumbnailUrl: string | undefined;
+  /** The settled thumbnail for the card's media or comic cover, once there is one. */
+  thumbnail: SettledDelivery | undefined;
   top: number;
 }
 
@@ -43,7 +44,7 @@ export const BrowserEntryCard = memo(function BrowserEntryCard({
   opening = false,
   priority = false,
   selected,
-  thumbnailUrl,
+  thumbnail,
   top,
 }: BrowserEntryCardProps) {
   const handleClick = () => {
@@ -64,6 +65,7 @@ export const BrowserEntryCard = memo(function BrowserEntryCard({
       onClick={handleClick}
       onDoubleClick={isMobile ? undefined : () => onActivate(entry)}
       onMouseDown={(event) => event.preventDefault()}
+      title={entryTitle(entry)}
       style={{
         width: `${cardWidth}px`,
         height: `${cardHeight}px`,
@@ -75,7 +77,6 @@ export const BrowserEntryCard = memo(function BrowserEntryCard({
         <FolderCard entry={entry} focused={focused} selected={selected} />
       ) : entry.kind === "comic" ? (
         <ComicCard
-          cardWidth={cardWidth}
           deletedEntryIds={deletedEntryIds}
           deletingEntryIds={deletingEntryIds}
           entry={entry}
@@ -83,23 +84,34 @@ export const BrowserEntryCard = memo(function BrowserEntryCard({
           opening={opening}
           priority={priority}
           selected={selected}
-          thumbnailUrl={thumbnailUrl}
+          thumbnail={thumbnail}
         />
       ) : (
         <MediaCard
-          cardWidth={cardWidth}
           deletedEntryIds={deletedEntryIds}
           deletingEntryIds={deletingEntryIds}
           entry={entry}
           focused={focused}
           priority={priority}
           selected={selected}
-          thumbnailUrl={thumbnailUrl}
+          thumbnail={thumbnail}
         />
       )}
     </button>
   );
 });
+
+/** The card's tooltip: the archive path the entry stands for. */
+function entryTitle(entry: GalleryBrowseEntry): string {
+  switch (entry.kind) {
+    case "folder":
+      return entry.path;
+    case "comic":
+      return entry.comic.folderPath;
+    default:
+      return entry.media.path;
+  }
+}
 
 function FolderCard({
   entry,
@@ -119,7 +131,6 @@ function FolderCard({
             ? "ring-2 ring-violet-400 ring-offset-2 ring-offset-zinc-950"
             : "border-zinc-300/80 bg-white/75 hover:-translate-y-0.5 hover:border-zinc-400 hover:bg-white hover:shadow-lg dark:border-zinc-700/80 dark:bg-zinc-900/75 dark:hover:border-zinc-600 dark:hover:bg-zinc-900"
       }`}
-      title={entry.path}
     >
       <div className="flex items-start justify-between gap-3">
         <svg
@@ -146,7 +157,6 @@ function FolderCard({
 }
 
 function ComicCard({
-  cardWidth,
   deletedEntryIds,
   deletingEntryIds,
   entry,
@@ -154,9 +164,8 @@ function ComicCard({
   opening,
   priority,
   selected,
-  thumbnailUrl,
+  thumbnail,
 }: {
-  cardWidth: number;
   deletedEntryIds: ReadonlySet<string>;
   deletingEntryIds: ReadonlySet<string>;
   entry: Extract<GalleryBrowseEntry, { kind: "comic" }>;
@@ -164,7 +173,7 @@ function ComicCard({
   opening: boolean;
   priority?: boolean;
   selected: boolean;
-  thumbnailUrl: string | undefined;
+  thumbnail: SettledDelivery | undefined;
 }) {
   const comic = entry.comic;
   // Summaries carry only the cover; the overlays follow it. Deleting a whole
@@ -181,14 +190,8 @@ function ComicCard({
             ? "ring-2 ring-violet-400 ring-offset-2 ring-offset-zinc-950"
             : "hover:shadow-lg"
       }`}
-      title={comic.folderPath}
     >
-      <Poster
-        cardWidth={cardWidth}
-        media={comic.cover}
-        priority={priority}
-        resolvedThumbnailUrl={thumbnailUrl}
-      />
+      <Poster media={comic.cover} priority={priority} thumbnail={thumbnail} />
       {isDeleting || isDeleted ? <DeleteOverlay animated={isDeleting} /> : null}
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/10 to-transparent">
         <div className="px-3 pb-3">
@@ -203,23 +206,21 @@ function ComicCard({
 }
 
 function MediaCard({
-  cardWidth,
   deletedEntryIds,
   deletingEntryIds,
   entry,
   focused,
   priority,
   selected,
-  thumbnailUrl,
+  thumbnail,
 }: {
-  cardWidth: number;
   deletedEntryIds: ReadonlySet<string>;
   deletingEntryIds: ReadonlySet<string>;
   entry: Extract<GalleryBrowseEntry, { kind: "media" }>;
   focused: boolean;
   priority?: boolean;
   selected: boolean;
-  thumbnailUrl: string | undefined;
+  thumbnail: SettledDelivery | undefined;
 }) {
   const item = entry.media;
   const isDeleting = deletingEntryIds.has(item.id);
@@ -234,22 +235,13 @@ function MediaCard({
             ? "ring-2 ring-violet-400 ring-offset-2 ring-offset-zinc-950"
             : "hover:shadow-lg"
       }`}
-      title={item.path}
     >
-      <Poster
-        cardWidth={cardWidth}
-        media={item}
-        priority={priority}
-        resolvedThumbnailUrl={thumbnailUrl}
-      />
+      <Poster media={item} priority={priority} thumbnail={thumbnail} />
       {isDeleting || isDeleted ? <DeleteOverlay animated={isDeleting} /> : null}
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100">
         <div className="px-3 pb-3">
           <p className="truncate text-sm font-semibold text-white">{item.name}</p>
-          <p className="text-[11px] text-white/70">
-            {formatBytes(item.size)}
-            {item.width && item.height ? ` · ${item.width}×${item.height}` : ""}
-          </p>
+          <p className="text-[11px] text-white/70">{formatBytes(item.size)}</p>
         </div>
       </div>
       {item.mediaType === "video" ? (

@@ -76,6 +76,59 @@
       "checks": [{ "label": "API URL", "ok": false }, { "label": "API token", "ok": true }],
       "ok": false,
       "summary": { "failed": 1, "message": "Some checks failed.", "status": "failed" }
+    },
+    {
+      "name": "a port nothing listens on",
+      "options": { "apiUrl": "http://<address>", "apiToken": "secret" },
+      "api": { "kind": "closed" },
+      "checks": [
+        { "detail": "http://<address>", "label": "API URL", "ok": true },
+        { "label": "API token", "ok": true },
+        {
+          "detail": "Could not reach Pane View at http://<address>: connect ECONNREFUSED <address>",
+          "label": "API snapshot",
+          "ok": false
+        }
+      ],
+      "ok": false,
+      "summary": { "failed": 1, "message": "Some checks failed.", "status": "failed" }
+    },
+    {
+      "name": "a token Pane View refuses",
+      "options": { "apiUrl": "http://<address>", "apiToken": "wrong" },
+      "api": { "kind": "answer", "status": 401, "body": "Unauthorized" },
+      "checks": [
+        { "detail": "http://<address>", "label": "API URL", "ok": true },
+        { "label": "API token", "ok": true },
+        {
+          "detail": "/api/sync/snapshot failed with 401: Unauthorized",
+          "label": "API snapshot",
+          "ok": false
+        }
+      ],
+      "ok": false,
+      "summary": { "failed": 1, "message": "Some checks failed.", "status": "failed" }
+    },
+    {
+      "name": "everything answers",
+      "options": {
+        "sourceRoot": "<root>/archive",
+        "apiUrl": "http://<address>",
+        "apiToken": "secret"
+      },
+      "api": {
+        "kind": "answer",
+        "status": 200,
+        "body": "{\"entries\":[{\"path\":\"a.jpg\",\"size\":1},{\"path\":\"b.png\",\"size\":2}],\"status\":\"ok\"}"
+      },
+      "checks": [
+        { "detail": "<root>/archive", "label": "Source path", "ok": true },
+        { "detail": "http://<address>", "label": "API URL", "ok": true },
+        { "label": "API token", "ok": true },
+        { "detail": "2 remote entries", "label": "API snapshot", "ok": true }
+      ],
+      "ok": true,
+      "summary": { "failed": 0, "message": "All checks passed.", "status": "completed" }
     }
   ]
 }

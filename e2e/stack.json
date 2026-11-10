@@ -1,0 +1,15 @@
+{
+  "about": "The e2e stack every suite runs against: Pane View built and served by e2e/scripts/start-pane-view.ts on its own database and bucket, seeded by pushing the fixture archive through the Lockstep CLI. e2e/src/env.ts reads this file, and so do Oriel's Sync stack tests, sync_bench and xtask measure, so no value is copied elsewhere. Pane View listens on http://127.0.0.1:<port>. Paths are relative to this file.",
+  "paneView": {
+    "port": 3101,
+    "username": "e2e",
+    "password": "e2e-password-with-length",
+    "syncToken": "e2e-sync-token-0123456789abcdef"
+  },
+  "database": "latch_works_e2e",
+  "bucket": "latch-works-e2e",
+  "fixtures": {
+    "archive": ".fixtures/archive",
+    "lockstepSource": ".fixtures/lockstep-source"
+  }
+}

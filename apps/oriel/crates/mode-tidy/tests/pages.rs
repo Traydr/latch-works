@@ -9,13 +9,13 @@ use std::path::Path;
 use crate::support::*;
 use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{AppContext as _, Entity, Focusable as _, Modifiers, TestAppContext};
-use oriel_core_tidy::catalog::Catalog;
 use oriel_core_tidy::contract::{FileId, Settings};
+use oriel_core_tidy::internals::Catalog;
 use oriel_mode_tidy::{
     LibraryMenu, LibraryMode, LibraryPage, MenuChoice, TidyPage, last_menu, last_quick_look,
-    last_toast,
 };
 use oriel_ui::LocalStorage;
+use oriel_ui::toast::last_toast;
 
 fn library(cx: &mut TestAppContext, session: &Session) -> Entity<LibraryPage> {
     cx.read(|cx| session.tidy.read(cx).library().clone())
@@ -236,7 +236,7 @@ async fn the_library_shows_as_a_grid_and_remembers_it(cx: &mut TestAppContext) {
 
 #[gpui_kit::test]
 async fn return_renames_a_file_in_place(cx: &mut TestAppContext) {
-    let session = launch_changing(cx, "rename");
+    let session = launch(cx, "rename");
     open_library(cx, &session).await;
     let library = library(cx, &session);
     let index = index_of(cx, &session, "notes.txt");
@@ -376,11 +376,9 @@ async fn sets_not_yet_compared_wait_with_a_count_and_check_now_finishes_them(
     })
     .unwrap();
     settle(cx, &session).await;
-    let path = session
-        .root
-        .join("data")
-        .join("tidy")
-        .join("catalog.sqlite");
+    let path = oriel_core_paths::DataRoot::at(session.root.join("data"))
+        .unwrap()
+        .tidy_catalog();
     Catalog::open_blocking(path)
         .unwrap()
         .blocking(|connection| {
@@ -556,7 +554,7 @@ fn held_tiles(cx: &mut TestAppContext, session: &Session) -> Vec<(u64, bool)> {
 async fn history_lists_each_decision_of_a_run_and_holdings_arrows_pick_tiles(
     cx: &mut TestAppContext,
 ) {
-    let session = launch_changing(cx, "history-sets");
+    let session = launch(cx, "history-sets");
     add_archive(cx, &session).await;
     go(cx, &session, TidyPage::Duplicates);
     settle(cx, &session).await;

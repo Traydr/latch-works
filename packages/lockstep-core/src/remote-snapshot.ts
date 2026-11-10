@@ -1,20 +1,16 @@
 import { readFile } from "node:fs/promises";
-import type { RemoteEntrySnapshot } from "@latch-works/media-index";
+import {
+  type RemoteEntry,
+  RemoteEntrySchema,
+  RemoteSnapshotResponseSchema,
+  SYNC_ROUTES,
+} from "@latch-works/sync-protocol";
 import { z } from "zod";
+import type { PaneViewApi } from "./types.js";
 
 const ENTRY_ERROR = "Remote snapshot entries must include path and size.";
 
-/** A non-string `sha256` is dropped rather than rejected, matching the pre-schema reader. */
-export const RemoteEntrySchema = z.object({
-  path: z.string(),
-  sha256: z.string().optional().catch(undefined),
-  size: z.number(),
-});
-
 const RemoteEntryListSchema = z.array(RemoteEntrySchema);
-
-/** What `GET /api/sync/snapshot` answers, as far as this client reads it. */
-export const RemoteSnapshotResponseSchema = z.object({ entries: RemoteEntryListSchema });
 
 /** undici rejects with a bare "fetch failed" and keeps the useful reason (ECONNREFUSED…) in `cause`. */
 const NetworkErrorReasonSchema = z
@@ -33,7 +29,7 @@ const RemoteSnapshotFileSchema = z.union([
   z.object({ entries: z.array(z.unknown()) }).transform(({ entries }) => entries),
 ]);
 
-export async function readRemoteSnapshot(filePath: string): Promise<RemoteEntrySnapshot[]> {
+export async function readRemoteSnapshot(filePath: string): Promise<RemoteEntry[]> {
   const raw = await readFile(filePath, "utf-8");
   let json: unknown;
 
@@ -63,12 +59,27 @@ export async function readRemoteSnapshot(filePath: string): Promise<RemoteEntryS
   return snapshot.data;
 }
 
+/** Reads the body of a `GET /api/sync/snapshot` answer, or throws the error a client reports. */
+export function parseSnapshotResponse(body: string): RemoteEntry[] {
+  const snapshot = RemoteSnapshotResponseSchema.safeParse(JSON.parse(body));
+
+  if (!snapshot.success) {
+    // An issue at depth 0 or 1 is the object or its entries array, not an entry inside it.
+    throw new Error(
+      snapshot.error.issues.some((issue) => issue.path.length <= 1)
+        ? "Remote sync snapshot response must include an entries array."
+        : ENTRY_ERROR,
+    );
+  }
+
+  return snapshot.data.entries;
+}
+
 export async function fetchRemoteSnapshot(
-  apiUrl: string,
-  apiToken: string,
+  { apiToken, apiUrl }: PaneViewApi,
   signal?: AbortSignal,
-): Promise<RemoteEntrySnapshot[]> {
-  const url = new URL("/api/sync/snapshot", apiUrl);
+): Promise<RemoteEntry[]> {
+  const url = new URL(SYNC_ROUTES.snapshot, apiUrl);
 
   const response = await fetch(url, {
     headers: {
@@ -87,23 +98,10 @@ export async function fetchRemoteSnapshot(
   });
 
   if (!response.ok) {
-    throw new Error(`/api/sync/snapshot failed with ${response.status}: ${await response.text()}`);
-  }
-
-  const snapshot = RemoteSnapshotResponseSchema.safeParse(await response.json());
-
-  if (!snapshot.success) {
     throw new Error(
-      failedAtRoot(snapshot.error, 1)
-        ? "Remote sync snapshot response must include an entries array."
-        : ENTRY_ERROR,
+      `${SYNC_ROUTES.snapshot} failed with ${response.status}: ${await response.text()}`,
     );
   }
 
-  return snapshot.data.entries;
-}
-
-/** True when the array itself is malformed rather than one of the entries inside it. */
-function failedAtRoot(error: z.ZodError, arrayDepth: number): boolean {
-  return error.issues.some((issue) => issue.path.length <= arrayDepth);
+  return parseSnapshotResponse(await response.text());
 }

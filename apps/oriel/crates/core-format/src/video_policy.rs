@@ -20,15 +20,18 @@ pub enum VideoCodec {
 }
 
 impl VideoCodec {
-    /// The codecs Mediabunny names, in its order (`VIDEO_CODECS`).
-    pub const NAMED: [Self; 6] = [
-        Self::Avc,
-        Self::Hevc,
-        Self::Vp9,
-        Self::Av1,
-        Self::Vp8,
-        Self::Prores,
-    ];
+    /// The codec of ffprobe's `codec_name`.
+    pub fn from_ffprobe(name: &str) -> Self {
+        match name {
+            "h264" => Self::Avc,
+            "hevc" => Self::Hevc,
+            "av1" => Self::Av1,
+            "vp9" => Self::Vp9,
+            "vp8" => Self::Vp8,
+            "prores" => Self::Prores,
+            _ => Self::Other,
+        }
+    }
 }
 
 /// An audio track's codec as Mediabunny names it, with `Other` for one it does not.
@@ -61,31 +64,26 @@ pub enum AudioCodec {
 }
 
 impl AudioCodec {
-    /// The codecs Mediabunny names, in its order (`AUDIO_CODECS`).
-    pub const NAMED: [Self; 22] = [
-        Self::Aac,
-        Self::Opus,
-        Self::Mp3,
-        Self::Vorbis,
-        Self::Flac,
-        Self::Ac3,
-        Self::Eac3,
-        Self::Dts,
-        Self::PcmS16,
-        Self::PcmS16be,
-        Self::PcmS24,
-        Self::PcmS24be,
-        Self::PcmS32,
-        Self::PcmS32be,
-        Self::PcmF32,
-        Self::PcmF32be,
-        Self::PcmF64,
-        Self::PcmF64be,
-        Self::PcmU8,
-        Self::PcmS8,
-        Self::Ulaw,
-        Self::Alaw,
-    ];
+    /// The codec of ffprobe's `codec_name`.
+    pub fn from_ffprobe(name: &str) -> Self {
+        match name {
+            "aac" => Self::Aac,
+            "mp3" => Self::Mp3,
+            "opus" => Self::Opus,
+            "vorbis" => Self::Vorbis,
+            "flac" => Self::Flac,
+            "ac3" => Self::Ac3,
+            "eac3" => Self::Eac3,
+            "dts" => Self::Dts,
+            "pcm_s16le" => Self::PcmS16,
+            "pcm_s16be" => Self::PcmS16be,
+            "pcm_s24le" => Self::PcmS24,
+            "pcm_s32le" => Self::PcmS32,
+            "pcm_f32le" => Self::PcmF32,
+            "pcm_u8" => Self::PcmU8,
+            _ => Self::Other,
+        }
+    }
 }
 
 /// The video codecs stored as they are when a file moves into MP4. H.264 plays everywhere, HEVC
@@ -120,20 +118,13 @@ impl From<ArchiveVideoCodec> for VideoCodec {
     }
 }
 
-pub const ARCHIVE_VIDEO_CODECS: [ArchiveVideoCodec; 3] = [
-    ArchiveVideoCodec::Avc,
-    ArchiveVideoCodec::Hevc,
-    ArchiveVideoCodec::Av1,
-];
-
 /// Audio codecs MP4 players accept everywhere; other audio becomes AAC.
-pub const ARCHIVE_AUDIO_CODECS: [AudioCodec; 2] = [AudioCodec::Aac, AudioCodec::Mp3];
+const ARCHIVE_AUDIO_CODECS: [AudioCodec; 2] = [AudioCodec::Aac, AudioCodec::Mp3];
 
 /// The codec a video track is re-encoded to when its own codec is not an archive codec.
-pub const ARCHIVE_DEFAULT_VIDEO_CODEC: ArchiveVideoCodec = ArchiveVideoCodec::Avc;
+const ARCHIVE_DEFAULT_VIDEO_CODEC: ArchiveVideoCodec = ArchiveVideoCodec::Avc;
 
-/// A video file's container as read from its first bytes. Mediabunny reads the first five, so
-/// only those can be converted; the rest are reported.
+/// A video file's container as read from its first bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VideoContainer {
@@ -161,8 +152,9 @@ impl VideoContainer {
         }
     }
 
-    /// Whether Mediabunny reads this container, so its tracks can move into MP4. ffmpeg reads
-    /// AVI, FLV and ASF too; that is a decision for the port's converter, not this policy.
+    /// Whether a file in this container converts to MP4. These are the containers Mediabunny
+    /// reads, which the policy was written for; ffmpeg reads AVI, FLV and ASF too, but Tidy
+    /// reports them for a human look instead.
     pub fn is_convertible(self) -> bool {
         matches!(
             self,
@@ -170,17 +162,6 @@ impl VideoContainer {
         )
     }
 }
-
-pub const VIDEO_CONTAINERS: [VideoContainer; 8] = [
-    VideoContainer::Mp4,
-    VideoContainer::Mov,
-    VideoContainer::Matroska,
-    VideoContainer::Webm,
-    VideoContainer::Mpegts,
-    VideoContainer::Avi,
-    VideoContainer::Flv,
-    VideoContainer::Asf,
-];
 
 /// What the policy needs to know about a video file, decoded from a probe at its boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -302,9 +283,13 @@ pub fn plan_strip_audio(source: &ArchiveVideoSource<'_>) -> ArchiveVideoPlan {
     }
 }
 
-/// Whether a video codec is stored as it is.
 pub fn is_archive_video_codec(codec: VideoCodec) -> bool {
     ArchiveVideoCodec::from_codec(codec).is_some()
+}
+
+/// Whether a video is in the archive's format already: MP4 with an archive video codec.
+pub fn is_archive_video(container: VideoContainer, video_codec: Option<VideoCodec>) -> bool {
+    container == VideoContainer::Mp4 && video_codec.is_some_and(is_archive_video_codec)
 }
 
 fn plan_video_track(codec: VideoCodec) -> VideoTrackPlan {
@@ -317,7 +302,6 @@ fn plan_video_track(codec: VideoCodec) -> VideoTrackPlan {
     }
 }
 
-/// No audio and archive audio are kept as they are; other audio becomes AAC.
 fn plan_audio_track(codec: Option<AudioCodec>) -> AudioTrackPlan {
     match codec {
         None => AudioTrackPlan::Copy,

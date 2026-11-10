@@ -1,15 +1,14 @@
-//! The Library's menu for a right-clicked file or the selection bar's "⋯" (`moreEntries`): what
-//! applies to the files at hand, shown as a native menu, as Electron Oriel's `showMenu` shows
-//! it. Each item sends [`LibraryMenu`] to the page with its choice.
+//! The Library's menu for a right-clicked file or the selection bar's "⋯": what
+//! applies to the files at hand, shown as a native menu. Each item sends [`LibraryMenu`] to the page with its choice.
 
 use std::cell::RefCell;
 
 use gpui_kit::component::native_menu::NativeMenu;
+use oriel_core_domain::format;
 use oriel_core_tidy::contract::{
     EncoderCapabilities, FileId, FileRow, SelectionSummary, VideoCodecChoice,
 };
 
-use crate::format;
 use crate::quick_look::QUICK_LOOK_LABEL;
 
 /// What a menu item does.
@@ -90,7 +89,7 @@ const CODECS: [(VideoCodecChoice, &str, Option<&str>); 3] = [
 ];
 
 /// What applies to `files`: `target` is the one file the menu is about, if there is one, and
-/// `held` what the files hold (`moreEntries`).
+/// `held` what the files hold.
 pub fn menu_entries(
     files: &[FileId],
     target: Option<&FileRow>,
@@ -99,7 +98,7 @@ pub fn menu_entries(
 ) -> Vec<MenuEntry> {
     let mut entries = Vec::new();
     if target.is_some() {
-        // Off macOS, Quick Look opens the file in its default app (`QUICK_LOOK_LABEL`), which
+        // Off macOS, Quick Look opens the file in its default app, which
         // is what Open does, so Open alone stands for both, with Space.
         if cfg!(target_os = "macos") {
             entries.extend([
@@ -111,7 +110,10 @@ pub fn menu_entries(
         }
         entries.extend([
             MenuEntry::item("Open in View", MenuChoice::OpenInView),
-            MenuEntry::item("Show in Finder  ⇧⌘R", MenuChoice::Reveal),
+            MenuEntry::item(
+                oriel_ui::keys::labelled(oriel_ui::keys::REVEAL_LABEL, "cmd-shift-r"),
+                MenuChoice::Reveal,
+            ),
             MenuEntry::Separator,
         ]);
     }
@@ -172,11 +174,7 @@ pub fn menu_entries(
     if let Some(target) = target
         && files.len() <= 1
     {
-        let folder = if target.dir.is_empty() {
-            "the top folder"
-        } else {
-            target.dir.as_str()
-        };
+        let folder = crate::labels::folder(&target.dir);
         entries.extend([
             MenuEntry::item("Rename  ↩", MenuChoice::Rename),
             MenuEntry::Separator,
@@ -189,8 +187,14 @@ pub fn menu_entries(
     }
     entries.extend([
         MenuEntry::Separator,
-        MenuEntry::item("Move to…  ⇧⌘M", MenuChoice::Move),
-        MenuEntry::item("Move to holding  ⌘⌫", MenuChoice::Hold),
+        MenuEntry::item(
+            oriel_ui::keys::labelled("Move to…", "cmd-shift-m"),
+            MenuChoice::Move,
+        ),
+        MenuEntry::item(
+            oriel_ui::keys::labelled("Move to holding", "cmd-backspace"),
+            MenuChoice::Hold,
+        ),
     ]);
     entries
 }

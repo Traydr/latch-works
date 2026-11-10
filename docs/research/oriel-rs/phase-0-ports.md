@@ -84,5 +84,5 @@ Run these from `apps/oriel-rs`:
 - `pnpm oriel-rs:check` (from the repository root): `cargo fmt --check`, clippy with
   `-D warnings`, and the tests. Phase 0 ended with 53 tests.
 - Fingerprints: `cargo run -p oriel-core-tidy --example fingerprint_parity`.
-- Scan and AVIF: `cargo build --release -p oriel-bench` (AVIF needs `cargo run -p xtask -- vendor` first), then `scan-bench` and
-  `avif-bench`. The TypeScript side is `scripts/fixture/bench-glazier.mts`.
+- Scan and AVIF: measured by the `oriel-bench` crate and `scripts/fixture/bench-glazier.mts`,
+  both since removed; the numbers above are what they gave.

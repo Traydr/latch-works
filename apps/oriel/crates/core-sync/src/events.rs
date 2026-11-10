@@ -1,12 +1,12 @@
-//! What a run reports as it goes, as lockstep-core's `LockstepRunEvent`s, and the summary it ends
-//! with, which Sync saves on the profile as its last run.
+//! What a run reports as it goes, as lockstep-core's run events, and the summary it ends with.
 
 use std::sync::Arc;
+use std::time::SystemTime;
 
-use oriel_core_index::ScanArchiveProgress;
 use serde::{Deserialize, Serialize};
 
-use crate::format::iso_timestamp;
+use crate::scan::ScanArchiveProgress;
+use crate::sync_plan::{PlanCounts, SyncPlanAction};
 
 /// Which run: Sync's four buttons.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -47,73 +47,93 @@ impl RunStatus {
     }
 }
 
-/// A plan's counts, `LockstepPlanCounts`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct PlanCounts {
-    pub delete: usize,
-    pub keep: usize,
-    pub update: usize,
-    pub upload: usize,
-}
-
-impl PlanCounts {
-    /// What a push would send: the uploads and the updates.
-    pub fn to_push(&self) -> usize {
-        self.upload + self.update
-    }
-
-    /// Everything that is not a keep.
-    pub fn changes(&self) -> usize {
-        self.upload + self.update + self.delete
-    }
-}
-
-/// How a run ended, `LockstepRunSummary`. The field names and order are the TypeScript's, since
-/// the profile's settings file stores it as `lastRun`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// How a run ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunSummary {
     pub action: RunAction,
-    pub completed_at: String,
-    pub failed: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan_counts: Option<PlanCounts>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile_id: Option<String>,
-    pub pushed: usize,
-    /// Prune only: planned deletes left alone because the file is back in the source folder.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub skipped: Option<usize>,
+    pub completed_at: SystemTime,
     pub status: RunStatus,
+    /// What a push sent or a prune deleted.
+    pub applied: usize,
+    pub failed: usize,
+    /// Prune only: planned deletes left alone because the file is back in the source folder.
+    pub skipped: Option<usize>,
+    pub message: Option<String>,
+    pub plan_counts: Option<PlanCounts>,
 }
 
 impl RunSummary {
-    /// A summary completed now.
-    pub fn now(action: RunAction, status: RunStatus) -> Self {
+    fn ended(action: RunAction, status: RunStatus, plan_counts: Option<PlanCounts>) -> Self {
         Self {
             action,
-            completed_at: iso_timestamp(std::time::SystemTime::now()),
-            failed: 0,
-            message: None,
-            plan_counts: None,
-            profile_id: None,
-            pushed: 0,
-            skipped: None,
+            completed_at: SystemTime::now(),
             status,
+            applied: 0,
+            failed: 0,
+            skipped: None,
+            message: None,
+            plan_counts,
+        }
+    }
+
+    /// A plan that was made.
+    pub fn planned(counts: PlanCounts) -> Self {
+        Self::ended(RunAction::Plan, RunStatus::Completed, Some(counts))
+    }
+
+    /// A push or prune whose plan held nothing for it.
+    pub(crate) fn nothing_to_do(action: RunAction, counts: PlanCounts) -> Self {
+        Self {
+            message: Some(format!("Nothing to {}.", action.as_str())),
+            ..Self::ended(action, RunStatus::Completed, Some(counts))
+        }
+    }
+
+    /// The doctor's checks, all passed or not.
+    pub(crate) fn checked(ok: bool) -> Self {
+        let status = if ok {
+            RunStatus::Completed
+        } else {
+            RunStatus::Failed
+        };
+        Self {
+            failed: usize::from(!ok),
+            message: Some(
+                if ok {
+                    "All checks passed."
+                } else {
+                    "Some checks failed."
+                }
+                .to_owned(),
+            ),
+            ..Self::ended(RunAction::Doctor, status, None)
+        }
+    }
+
+    /// A push or prune that ran its items.
+    pub(crate) fn ran(
+        action: RunAction,
+        status: RunStatus,
+        plan_counts: PlanCounts,
+        (applied, failed, skipped): (usize, usize, Option<usize>),
+        message: Option<String>,
+    ) -> Self {
+        Self {
+            applied,
+            failed,
+            skipped,
+            message,
+            ..Self::ended(action, status, Some(plan_counts))
         }
     }
 }
 
-/// One thing a run reports, `LockstepRunEvent`. `action` on the item events is a plan action
-/// (`upload`, `update`, `delete`) or `push`.
+/// One thing a run reports, `LockstepRunEvent`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RunEvent {
-    Cancelled,
     Complete(RunSummary),
     ItemFailure {
-        action: String,
+        action: SyncPlanAction,
         /// Size of the local file, when the item uploads one.
         bytes: Option<u64>,
         current: usize,
@@ -122,29 +142,29 @@ pub enum RunEvent {
         total: usize,
     },
     ItemSkipped {
-        action: String,
+        action: SyncPlanAction,
         current: usize,
         path: String,
         reason: String,
         total: usize,
     },
     ItemStart {
-        action: String,
+        action: SyncPlanAction,
         bytes: Option<u64>,
         current: usize,
         path: String,
         total: usize,
     },
     ItemSuccess {
-        action: String,
+        action: SyncPlanAction,
         bytes: Option<u64>,
         current: usize,
         path: String,
         total: usize,
     },
-    /// Sent once a run knows its work list, before the first item starts.
+    /// Sent once a push or prune knows its work list, before the first item starts.
     ItemsQueued {
-        action: String,
+        action: RunAction,
         total: usize,
         total_bytes: u64,
     },
@@ -156,7 +176,6 @@ pub enum RunEvent {
 /// forwards them to the window through a channel.
 pub type Observer = Arc<dyn Fn(RunEvent) + Send + Sync>;
 
-/// Sends to an observer that may be absent.
 pub(crate) fn emit(observer: Option<&Observer>, event: RunEvent) {
     if let Some(observer) = observer {
         observer(event);

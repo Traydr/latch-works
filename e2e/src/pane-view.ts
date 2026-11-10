@@ -41,52 +41,53 @@ export async function gotoBrowse(page: Page, options: BrowseOptions = {}): Promi
   await expect(archiveBrowser(page)).toBeVisible();
 }
 
+/** The gallery's cards: the browser's buttons whose tooltip names an archive path. */
+function cards(page: Page): Locator {
+  const browser = archiveBrowser(page);
+
+  return browser.getByRole("button").and(browser.getByTitle(/./));
+}
+
 /** Waits until exactly `count` cards are rendered (the viewport is tall enough for all). */
 export async function expectEntryCount(page: Page, count: number): Promise<void> {
-  await expect(archiveBrowser(page).locator("button > div[title]")).toHaveCount(count);
+  await expect(cards(page)).toHaveCount(count);
+}
+
+/** Card paths in the order they are laid out on screen: by row, then left to right. */
+export async function readCardPaths(page: Page): Promise<string[]> {
+  const laidOut = await cards(page).evaluateAll((elements) =>
+    elements.map((element) => {
+      const { left, top } = element.getBoundingClientRect();
+
+      return { left, title: element.getAttribute("title") ?? "", top };
+    }),
+  );
+
+  laidOut.sort((a, b) => a.top - b.top || a.left - b.left);
+
+  return laidOut.map((card) => card.title);
 }
 
 /**
- * Card paths in visual order. Cards are absolutely positioned inside the
- * browser region, so DOM order is not authoritative; sort by (top, left).
+ * Presses "Load more" until `total` cards are on screen. A page can also load on its own, when the
+ * button comes into view, so each round first waits for either.
  */
-export async function readCardPaths(page: Page): Promise<string[]> {
-  const cards = await archiveBrowser(page)
-    .locator("button > div[title]")
-    .evaluateAll((elements) =>
-      elements.map((element) => {
-        const card = element.parentElement;
-
-        return {
-          left: Number.parseFloat(card?.style.left ?? "0"),
-          title: element.getAttribute("title") ?? "",
-          top: Number.parseFloat(card?.style.top ?? "0"),
-        };
-      }),
-    );
-
-  cards.sort((a, b) => a.top - b.top || a.left - b.left);
-
-  return cards.map((card) => card.title);
-}
-
-/** Presses "Load more" until `total` cards are on screen. */
 export async function loadAllPages(page: Page, total: number): Promise<void> {
-  const cards = archiveBrowser(page).locator("button > div[title]");
+  const loadMore = page.getByRole("button", { name: "Load more" });
 
-  for (let round = 0; round < 20; round += 1) {
-    const before = await cards.count();
+  for (let before = await cards(page).count(); before < total; before = await cards(page).count()) {
+    await expect
+      .poll(async () => (await cards(page).count()) > before || (await loadMore.isVisible()))
+      .toBe(true);
 
-    if (before >= total) break;
-    // The grid re-renders while a page lands, which can detach the button mid-click.
-    await page
-      .getByRole("button", { name: "Load more" })
-      .click({ timeout: 3_000 })
-      .catch(() => undefined);
-    await expect.poll(() => cards.count()).toBeGreaterThan(before);
+    if ((await cards(page).count()) === before) {
+      await loadMore.click();
+    }
+
+    await expect.poll(() => cards(page).count()).toBeGreaterThan(before);
   }
 
-  await expect(cards).toHaveCount(total);
+  await expect(cards(page)).toHaveCount(total);
 }
 
 /**
@@ -104,7 +105,7 @@ export async function chooseSort(page: Page, label: SortLabel): Promise<void> {
 }
 
 export function card(page: Page, path: string): Locator {
-  return archiveBrowser(page).locator(`button > div[title="${path}"]`);
+  return archiveBrowser(page).getByTitle(path, { exact: true });
 }
 
 export async function openViewer(page: Page, path: string): Promise<Locator> {

@@ -1,91 +1,55 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import type { MediaItem } from "@latch-works/media-domain";
+import { setTimeout as delay } from "node:timers/promises";
+import {
+  detectMediaType,
+  getBaseName,
+  getExtension,
+  getParentPath,
+  type MediaItem,
+} from "@latch-works/media-domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
 import { pushChanges } from "./push-changes.js";
-import { type PushRemoteApi, type SyncRequestBody, UnfinalizedSyncRunError } from "./remote-api.js";
+import { UnfinalizedSyncRunError } from "./sync-run.js";
+import { type FakePaneView, startFakePaneView } from "./testing.js";
 import type { LockstepPlan, LockstepRunEvent } from "./types.js";
-
-type PushMediaItemRequest = Parameters<PushRemoteApi["pushMediaItem"]>[0];
-
-interface RecordedPostJson {
-  apiToken: string;
-  apiUrl: string;
-  body: SyncRequestBody;
-  route: string;
-  signal: AbortSignal | undefined;
-}
-
-interface RemoteApiFake {
-  hashedPaths: string[];
-  postJsonCalls: RecordedPostJson[];
-  pushCalls: PushMediaItemRequest[];
-  remote: PushRemoteApi;
-}
-
-interface RemoteApiFakeBehaviour {
-  onFinalize?: () => Promise<void>;
-  onPush?: (request: PushMediaItemRequest) => Promise<void>;
-  sha256: string;
-}
-
-function createRemoteApiFake(behaviour: RemoteApiFakeBehaviour): RemoteApiFake {
-  const hashedPaths: string[] = [];
-  const postJsonCalls: RecordedPostJson[] = [];
-  const pushCalls: PushMediaItemRequest[] = [];
-
-  const remote: PushRemoteApi = {
-    hashLocalFile: async (filePath) => {
-      hashedPaths.push(filePath);
-
-      return behaviour.sha256;
-    },
-    postJson: async <TSchema extends z.ZodType>(
-      apiUrl: string,
-      route: string,
-      apiToken: string,
-      body: SyncRequestBody,
-      schema: TSchema,
-      signal?: AbortSignal,
-    ) => {
-      postJsonCalls.push({ apiToken, apiUrl, body, route, signal });
-
-      if (route.endsWith("/complete")) {
-        await behaviour.onFinalize?.();
-      }
-
-      return schema.parse(
-        route === "/api/sync/runs" ? { syncRunId: "run-1" } : { status: "database" },
-      );
-    },
-    pushMediaItem: async (request) => {
-      pushCalls.push(request);
-      await behaviour.onPush?.(request);
-    },
-  };
-
-  return { hashedPaths, postJsonCalls, pushCalls, remote };
-}
-
-function findFinalizeCall(calls: readonly RecordedPostJson[]): RecordedPostJson | undefined {
-  return calls.find((call) => call.route.endsWith("/complete"));
-}
 
 let cacheRoot: string;
 
-let contentSha256: string;
-
-let fake: RemoteApiFake;
-
-let localItem: MediaItem;
+let paneView: FakePaneView;
 
 let sourceRoot: string;
 
 let tempDir: string;
+
+function sha256(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+/** Writes a file into the source folder and returns it as the scan reports it, unhashed. */
+async function localFile(archivePath: string, content: string): Promise<MediaItem> {
+  const filePath = path.join(sourceRoot, ...archivePath.split("/"));
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, content);
+  const { mtimeMs, size } = await stat(filePath);
+
+  return {
+    extension: getExtension(archivePath),
+    id: archivePath,
+    mediaType: detectMediaType(archivePath),
+    mtimeMs: Math.trunc(mtimeMs),
+    name: getBaseName(archivePath),
+    parentPath: getParentPath(archivePath),
+    path: archivePath,
+    size,
+  };
+}
+
+function uploads(...items: MediaItem[]): LockstepPlan["items"] {
+  return items.map((local) => ({ action: "upload", local, path: local.path }));
+}
 
 function createPlan(items: LockstepPlan["items"]): LockstepPlan {
   return {
@@ -96,568 +60,248 @@ function createPlan(items: LockstepPlan["items"]): LockstepPlan {
       upload: items.filter((item) => item.action === "upload").length,
     },
     items,
-    skipped: 0,
     skippedEntries: [],
     sourceRoot,
-    totalBytes: 1024,
+    totalBytes: 0,
     totalFiles: items.length,
   };
 }
 
-function collectEvents() {
+function push(plan: LockstepPlan, options: { maxChanges?: number; signal?: AbortSignal } = {}) {
   const events: LockstepRunEvent[] = [];
 
-  return {
-    events,
-    observer: {
-      onEvent: (event: LockstepRunEvent) => {
-        events.push(event);
-      },
+  const result = pushChanges(
+    {
+      apiToken: paneView.apiToken,
+      apiUrl: paneView.apiUrl,
+      hashCacheRoot: cacheRoot,
+      plan,
+      uploadConcurrency: 3,
+      ...options,
     },
-  };
+    { onEvent: (event) => events.push(event) },
+  );
+
+  return { events, result };
 }
 
-/** `Server.address()` widens to a pipe name or null; only a bound TCP address is usable. */
-const TcpAddressSchema = z.object({ port: z.number() });
-
-/**
- * A Pane View stand-in that commits the sync run, then answers the create request late; `onCreate`
- * runs while that response is still pending. Records every finalize body.
- */
-async function startSlowCreateServer(onCreate: () => void) {
-  const completeBodies: unknown[] = [];
-
-  const server = createServer((request, response) => {
-    const chunks: Buffer[] = [];
-
-    request.on("data", (chunk: Buffer) => chunks.push(chunk));
-    request.on("end", () => {
-      const reply = (json: string) => {
-        response.writeHead(200, { "Content-Type": "application/json" });
-        response.end(json);
-      };
-
-      if (request.url === "/api/sync/runs") {
-        onCreate();
-        setTimeout(() => reply(JSON.stringify({ syncRunId: "run-slow" })), 100);
-
-        return;
-      }
-
-      completeBodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-      reply("{}");
-    });
-  });
-
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = TcpAddressSchema.parse(server.address());
-
-  return {
-    apiUrl: `http://127.0.0.1:${address.port}`,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
-    completeBodies,
-  };
+function libraryHashes(): Record<string, string | undefined> {
+  return Object.fromEntries([...paneView.library].map(([key, entry]) => [key, entry.sha256]));
 }
 
-describe("pushChanges orchestration", () => {
+describe("pushChanges", () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-push-changes-"));
     sourceRoot = path.join(tempDir, "archive");
     cacheRoot = path.join(tempDir, "cache");
-    await mkdir(path.join(sourceRoot, "photos"), { recursive: true });
-    const content = Buffer.alloc(1024, 1);
-    const filePath = path.join(sourceRoot, "photos", "photo.jpg");
-    await writeFile(filePath, content);
-    const fileStat = await stat(filePath);
-    contentSha256 = createHash("sha256").update(content).digest("hex");
-    localItem = {
-      extension: "jpg",
-      id: contentSha256,
-      mediaType: "image",
-      mtimeMs: Math.trunc(fileStat.mtimeMs),
-      name: "photo.jpg",
-      parentPath: "photos",
-      path: "photos/photo.jpg",
-      sha256: contentSha256,
-      size: content.length,
-    };
-    fake = createRemoteApiFake({ sha256: contentSha256 });
+    await mkdir(sourceRoot, { recursive: true });
+    paneView = await startFakePaneView();
   });
 
   afterEach(async () => {
+    await paneView.close();
     await rm(tempDir, { force: true, recursive: true });
   });
 
-  it("emits complete without creating a sync run when nothing changed", async () => {
+  it("creates no sync run when nothing changed", async () => {
     const plan = createPlan([{ action: "keep", path: "photos/existing.jpg" }]);
-    const { events, observer } = collectEvents();
 
-    const result = await pushChanges(
-      {
-        apiToken: "token",
-        apiUrl: "http://127.0.0.1:3000",
-        hashCacheRoot: cacheRoot,
-        plan,
-        sourceRoot: plan.sourceRoot,
-      },
-      observer,
-      fake.remote,
-    );
-
-    expect(result).toEqual({ failed: 0, plan, pushed: 0 });
-    expect(fake.postJsonCalls).toHaveLength(0);
-    expect(fake.pushCalls).toHaveLength(0);
-
-    const complete = events.find((event) => event.type === "complete");
-    expect(complete).toMatchObject({
-      summary: {
-        action: "push",
-        failed: 0,
-        message: "Nothing to push.",
-        pushed: 0,
-        status: "completed",
-      },
+    await expect(push(plan).result).resolves.toEqual({
+      action: "push",
+      applied: 0,
+      failed: 0,
+      skipped: 0,
+      status: "completed",
     });
+    expect(paneView.requests).toEqual([]);
   });
 
-  it("reports the queued bytes, then each item's start and success with its size", async () => {
-    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
-    const { events, observer } = collectEvents();
+  it("uploads and registers each change, then finalizes the run as completed", async () => {
+    const plan = createPlan(uploads(await localFile("photos/photo.jpg", "photo bytes")));
 
-    await pushChanges(
+    await expect(push(plan).result).resolves.toEqual({
+      action: "push",
+      applied: 1,
+      failed: 0,
+      skipped: 0,
+      status: "completed",
+    });
+    expect(libraryHashes()).toEqual({ "photos/photo.jpg": sha256("photo bytes") });
+    expect([...paneView.objects.values()].map((bytes) => bytes.toString())).toEqual([
+      "photo bytes",
+    ]);
+    expect(paneView.runs).toEqual([
       {
-        apiToken: "token",
-        apiUrl: "http://127.0.0.1:3000",
-        hashCacheRoot: cacheRoot,
-        plan,
-        sourceRoot: plan.sourceRoot,
-      },
-      observer,
-      fake.remote,
-    );
-
-    const progress = events.filter(
-      (event) =>
-        event.type === "items-queued" ||
-        event.type === "item-start" ||
-        event.type === "item-success",
-    );
-
-    expect(progress).toEqual([
-      { type: "items-queued", action: "push", total: 1, totalBytes: localItem.size },
-      {
-        type: "item-start",
-        action: "upload",
-        bytes: localItem.size,
-        current: 1,
-        path: "photos/photo.jpg",
-        total: 1,
-      },
-      {
-        type: "item-success",
-        action: "upload",
-        bytes: localItem.size,
-        current: 1,
-        path: "photos/photo.jpg",
-        total: 1,
+        outcome: {
+          counts: { ...plan.counts, capped: 1, failed: 0, planned: 1, pushed: 1 },
+          status: "completed",
+        },
+        started: { counts: plan.counts, sourceRoot },
+        syncRunId: "run-1",
       },
     ]);
   });
 
-  it("creates a sync run, pushes items, and finalizes as completed", async () => {
-    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
-    const { events, observer } = collectEvents();
-
-    const result = await pushChanges(
-      {
-        apiToken: "token",
-        apiUrl: "http://127.0.0.1:3000",
-        hashCacheRoot: cacheRoot,
-        plan,
-        sourceRoot: plan.sourceRoot,
-      },
-      observer,
-      fake.remote,
-    );
-
-    expect(result).toEqual({ failed: 0, plan, pushed: 1 });
-    expect(fake.postJsonCalls).toHaveLength(2);
-    expect(fake.postJsonCalls[0]).toEqual({
-      apiToken: "token",
-      apiUrl: "http://127.0.0.1:3000",
-      body: {
-        counts: plan.counts,
-        sourceRoot: plan.sourceRoot,
-      },
-      route: "/api/sync/runs",
-      // Its own deadline signal, never the run's abort signal.
-      signal: expect.any(AbortSignal),
-    });
-    expect(fake.pushCalls).toHaveLength(1);
-    expect(fake.pushCalls[0]).toMatchObject({
-      item: localItem,
-      syncRunId: "run-1",
-    });
-
-    expect(findFinalizeCall(fake.postJsonCalls)?.body).toMatchObject({
-      status: "completed",
-      counts: expect.objectContaining({ failed: 0, pushed: 1 }),
-    });
-
-    const complete = events.find((event) => event.type === "complete");
-    expect(complete).toMatchObject({
-      summary: {
-        action: "push",
-        failed: 0,
-        pushed: 1,
-        status: "completed",
-      },
-    });
-  });
-
-  it("hashes only upload/update items selected by maxChanges", async () => {
-    const secondPath = path.join(sourceRoot, "photos", "second.jpg");
-    await writeFile(secondPath, Buffer.alloc(1024, 2));
-    const secondStat = await stat(secondPath);
-
-    const secondItem: MediaItem = {
-      ...localItem,
-      id: "second",
-      mtimeMs: Math.trunc(secondStat.mtimeMs),
-      name: "second.jpg",
-      path: "photos/second.jpg",
-      sha256: undefined,
-    };
+  it("registers an update at the remote path when only case and the jpeg alias differ", async () => {
+    paneView.library.set("Photos/Cover.jpeg", { path: "Photos/Cover.jpeg", size: 3 });
+    const local = await localFile("photos/cover.jpg", "new");
 
     const plan = createPlan([
-      { action: "upload", local: localItem, path: localItem.path },
-      { action: "upload", local: secondItem, path: secondItem.path },
+      { action: "update", local, path: local.path, remote: { path: "Photos/Cover.jpeg", size: 3 } },
     ]);
 
-    const result = await pushChanges(
-      {
-        apiToken: "token",
-        apiUrl: "http://127.0.0.1:3000",
-        hashCacheRoot: cacheRoot,
-        maxChanges: 1,
-        plan,
-        sourceRoot: plan.sourceRoot,
-      },
-      undefined,
-      fake.remote,
-    );
+    await push(plan).result;
 
-    expect(result.pushed).toBe(1);
-    expect(fake.hashedPaths).toEqual([path.join(sourceRoot, "photos", "photo.jpg")]);
-    expect(fake.pushCalls).toHaveLength(1);
-    expect(fake.pushCalls[0]?.item.path).toBe(localItem.path);
+    expect(libraryHashes()).toEqual({ "Photos/Cover.jpeg": sha256("new") });
   });
 
-  it("finalizes as failed and increments failed when an item fails", async () => {
-    fake = createRemoteApiFake({
-      onPush: async () => {
-        throw new Error("upload failed");
-      },
-      sha256: contentSha256,
-    });
-    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
-    const { events, observer } = collectEvents();
-
-    const result = await pushChanges(
-      {
-        apiToken: "token",
-        apiUrl: "http://127.0.0.1:3000",
-        hashCacheRoot: cacheRoot,
-        plan,
-        sourceRoot: plan.sourceRoot,
-      },
-      observer,
-      fake.remote,
+  it("pushes only the first max-changes changes of the plan", async () => {
+    const plan = createPlan(
+      uploads(await localFile("a.jpg", "first"), await localFile("b.jpg", "second")),
     );
 
-    expect(result.failed).toBe(1);
-    expect(result.pushed).toBe(0);
-
-    expect(findFinalizeCall(fake.postJsonCalls)?.body).toMatchObject({
-      status: "failed",
-      counts: expect.objectContaining({ failed: 1, pushed: 0 }),
-    });
-
-    const complete = events.find((event) => event.type === "complete");
-    expect(complete).toMatchObject({
-      summary: {
-        action: "push",
-        failed: 1,
-        status: "failed",
-      },
-    });
+    await expect(push(plan, { maxChanges: 1 }).result).resolves.toMatchObject({ applied: 1 });
+    expect([...paneView.library.keys()]).toEqual(["a.jpg"]);
+    expect(paneView.runs[0]?.outcome?.counts).toMatchObject({ capped: 1, planned: 2, pushed: 1 });
   });
 
-  it("finalizes as cancelled and rethrows when aborted during an item", async () => {
-    const controller = new AbortController();
-    fake = createRemoteApiFake({
-      onPush: async ({ signal }) => {
-        controller.abort();
-        throw signal?.reason ?? new DOMException("Aborted", "AbortError");
-      },
-      sha256: contentSha256,
-    });
-    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
-    const { events, observer } = collectEvents();
+  it("fails an item the upload refuses, carries on, and finalizes the run as failed", async () => {
+    paneView.intercept((request) =>
+      request.route === "upload" && request.path?.includes(sha256("second"))
+        ? { status: 500 }
+        : undefined,
+    );
 
-    await expect(
-      pushChanges(
-        {
-          apiToken: "token",
-          apiUrl: "http://127.0.0.1:3000",
-          hashCacheRoot: cacheRoot,
-          plan,
-          signal: controller.signal,
-          sourceRoot: plan.sourceRoot,
-        },
-        observer,
-        fake.remote,
+    const plan = createPlan(
+      uploads(
+        await localFile("a.jpg", "first"),
+        await localFile("b.jpg", "second"),
+        await localFile("c.jpg", "third"),
       ),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    );
 
-    const finalizeCall = findFinalizeCall(fake.postJsonCalls);
-    expect(finalizeCall).toBeDefined();
-    expect(finalizeCall?.signal).toBeUndefined();
-    expect(finalizeCall?.body).toMatchObject({
+    const { events, result } = push(plan);
+
+    await expect(result).resolves.toEqual({
+      action: "push",
+      applied: 2,
+      failed: 1,
+      skipped: 0,
+      status: "failed",
+    });
+    expect([...paneView.library.keys()].sort()).toEqual(["a.jpg", "c.jpg"]);
+    expect(events.filter((event) => event.type === "item-failure")).toMatchObject([
+      { path: "b.jpg" },
+    ]);
+    expect(paneView.runs[0]?.outcome).toMatchObject({
+      counts: { failed: 1, pushed: 2 },
+      error: "1 item(s) failed during push",
+      status: "failed",
+    });
+  });
+
+  it("fails an item whose file changed after planning", async () => {
+    const local = await localFile("a.jpg", "planned");
+    await writeFile(path.join(sourceRoot, "a.jpg"), "changed since");
+
+    await expect(push(createPlan(uploads(local))).result).resolves.toMatchObject({
+      applied: 0,
+      failed: 1,
+    });
+    expect(paneView.library.size).toBe(0);
+  });
+
+  it("finalizes the run as cancelled and rethrows when cancelled during an item", async () => {
+    const controller = new AbortController();
+
+    paneView.intercept((request) => {
+      if (request.route !== "uploadUrl") return undefined;
+      controller.abort();
+
+      return "hold";
+    });
+
+    const plan = createPlan(uploads(await localFile("a.jpg", "first")));
+
+    await expect(push(plan, { signal: controller.signal }).result).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(paneView.library.size).toBe(0);
+    expect(paneView.runs[0]?.outcome).toMatchObject({
       error: "Run cancelled by user",
       status: "cancelled",
     });
-
-    const complete = events.find((event) => event.type === "complete");
-    expect(complete).toMatchObject({
-      summary: {
-        action: "push",
-        status: "cancelled",
-      },
-    });
   });
 
-  it("stops scheduling new uploads after abort and awaits in-flight work", async () => {
-    const items: MediaItem[] = [];
+  it("starts no new upload after a cancel and waits for the ones in flight", async () => {
+    const controller = new AbortController();
+    paneView.intercept((request) => (request.route === "uploadUrl" ? "hold" : undefined));
 
-    for (let index = 0; index < 4; index += 1) {
-      const content = Buffer.alloc(32, index + 1);
-      const filePath = path.join(sourceRoot, "photos", `abort-${index}.jpg`);
-      await writeFile(filePath, content);
-      const fileStat = await stat(filePath);
-      items.push({
-        ...localItem,
-        id: `abort-${index}`,
-        mtimeMs: Math.trunc(fileStat.mtimeMs),
-        name: `abort-${index}.jpg`,
-        path: `photos/abort-${index}.jpg`,
-        sha256: undefined,
-        size: content.length,
-      });
+    const items = [];
+
+    for (const name of ["a", "b", "c", "d", "e"]) {
+      items.push(await localFile(`${name}.jpg`, name));
     }
 
-    const plan = createPlan(
-      items.map((item) => ({ action: "upload" as const, local: item, path: item.path })),
-    );
-
-    const controller = new AbortController();
-    let started = 0;
-    const releaseFirstBatch: Array<() => void> = [];
-    fake = createRemoteApiFake({
-      onPush: async ({ signal }) => {
-        started += 1;
-        await new Promise<void>((resolve) => {
-          releaseFirstBatch.push(resolve);
-        });
-        throw signal?.reason ?? new DOMException("Aborted", "AbortError");
-      },
-      sha256: contentSha256,
-    });
-
-    const pushPromise = pushChanges(
-      {
-        apiToken: "token",
-        apiUrl: "http://127.0.0.1:3000",
-        hashCacheRoot: cacheRoot,
-        plan,
-        signal: controller.signal,
-        sourceRoot: plan.sourceRoot,
-        uploadConcurrency: 2,
-      },
-      undefined,
-      fake.remote,
-    );
-
-    await vi.waitFor(() => {
-      expect(started).toBe(2);
-      expect(releaseFirstBatch).toHaveLength(2);
-    });
-
+    const { result } = push(createPlan(uploads(...items)), { signal: controller.signal });
+    const registrations = () => paneView.requests.filter(({ route }) => route === "uploadUrl");
+    await vi.waitFor(() => expect(registrations()).toHaveLength(3));
     controller.abort();
 
-    for (const release of releaseFirstBatch) {
-      release();
-    }
-
-    await expect(pushPromise).rejects.toMatchObject({ name: "AbortError" });
-    expect(started).toBe(2);
-  });
-
-  it("aggregates mixed out-of-order success and failure counts", async () => {
-    const secondPath = path.join(sourceRoot, "photos", "second.jpg");
-    const thirdPath = path.join(sourceRoot, "photos", "third.jpg");
-    await writeFile(secondPath, Buffer.alloc(1024, 2));
-    await writeFile(thirdPath, Buffer.alloc(1024, 3));
-    const secondStat = await stat(secondPath);
-    const thirdStat = await stat(thirdPath);
-
-    const secondItem: MediaItem = {
-      ...localItem,
-      id: "second",
-      mtimeMs: Math.trunc(secondStat.mtimeMs),
-      name: "second.jpg",
-      path: "photos/second.jpg",
-      size: 1024,
-    };
-
-    const thirdItem: MediaItem = {
-      ...localItem,
-      id: "third",
-      mtimeMs: Math.trunc(thirdStat.mtimeMs),
-      name: "third.jpg",
-      path: "photos/third.jpg",
-      size: 1024,
-    };
-
-    const plan = createPlan([
-      { action: "upload", local: localItem, path: localItem.path },
-      { action: "upload", local: secondItem, path: secondItem.path },
-      { action: "upload", local: thirdItem, path: thirdItem.path },
-    ]);
-
-    fake = createRemoteApiFake({
-      onPush: async ({ item }) => {
-        if (item.path === secondItem.path) {
-          throw new Error("upload failed");
-        }
-      },
-      sha256: contentSha256,
-    });
-
-    const { events, observer } = collectEvents();
-
-    const result = await pushChanges(
-      {
-        apiToken: "token",
-        apiUrl: "http://127.0.0.1:3000",
-        hashCacheRoot: cacheRoot,
-        plan,
-        sourceRoot: plan.sourceRoot,
-        uploadConcurrency: 3,
-      },
-      observer,
-      fake.remote,
-    );
-
-    expect(result).toEqual({ failed: 1, plan, pushed: 2 });
-    expect(events.filter((event) => event.type === "complete")).toHaveLength(1);
-    expect(events.find((event) => event.type === "complete")).toMatchObject({
-      summary: { failed: 1, pushed: 2, status: "failed" },
-    });
+    await expect(result).rejects.toMatchObject({ name: "AbortError" });
+    expect(registrations()).toHaveLength(3);
+    expect(paneView.runs[0]?.outcome).toMatchObject({ status: "cancelled" });
   });
 
   it("retries finalization and reports completion once it lands", async () => {
-    let finalizeAttempts = 0;
-    fake = createRemoteApiFake({
-      onFinalize: async () => {
-        finalizeAttempts += 1;
+    let attempts = 0;
 
-        if (finalizeAttempts === 1) {
-          throw new Error("simulated HTTP 503");
-        }
-      },
-      sha256: contentSha256,
+    paneView.intercept((request) => {
+      if (request.route !== "completeRun") return undefined;
+      attempts += 1;
+
+      return attempts === 1 ? { status: 503 } : undefined;
     });
-    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
-    const { events, observer } = collectEvents();
 
-    const result = await pushChanges(
-      {
-        apiToken: "token",
-        apiUrl: "http://127.0.0.1:3000",
-        hashCacheRoot: cacheRoot,
-        plan,
-        sourceRoot: plan.sourceRoot,
-      },
-      observer,
-      fake.remote,
+    const { events, result } = push(createPlan(uploads(await localFile("a.jpg", "first"))));
+
+    await expect(result).resolves.toMatchObject({ applied: 1, status: "completed" });
+    expect(paneView.runs[0]?.outcome).toMatchObject({ status: "completed" });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "warning",
+        message: expect.stringContaining("failed to finalize sync run, retrying"),
+      }),
     );
-
-    expect(result).toEqual({ failed: 0, plan, pushed: 1 });
-    expect(finalizeAttempts).toBe(2);
-    expect(events.find((event) => event.type === "complete")).toMatchObject({
-      summary: { status: "completed" },
-    });
   });
 
   it("fails the push when the sync run cannot be finalized", async () => {
-    fake = createRemoteApiFake({
-      onFinalize: async () => {
-        throw new Error("simulated HTTP 503");
-      },
-      sha256: contentSha256,
-    });
-    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
-    const { events, observer } = collectEvents();
+    paneView.intercept((request) =>
+      request.route === "completeRun" ? { status: 503 } : undefined,
+    );
 
     await expect(
-      pushChanges(
-        {
-          apiToken: "token",
-          apiUrl: "http://127.0.0.1:3000",
-          hashCacheRoot: cacheRoot,
-          plan,
-          sourceRoot: plan.sourceRoot,
-        },
-        observer,
-        fake.remote,
-      ),
-    ).rejects.toThrow(/sync run run-1 could not be finalized.*simulated HTTP 503/);
-
-    expect(fake.pushCalls).toHaveLength(1);
-    expect(events.find((event) => event.type === "complete")).toMatchObject({
-      summary: { action: "push", failed: 0, pushed: 1, status: "failed" },
-    });
+      push(createPlan(uploads(await localFile("a.jpg", "first")))).result,
+    ).rejects.toThrow(/sync run run-1 could not be finalized.*503/);
+    expect([...paneView.library.keys()]).toEqual(["a.jpg"]);
+    expect(paneView.runs[0]?.outcome).toBeUndefined();
   });
 
   it("names the unfinalized run when a cancelled push cannot be finalized", async () => {
     const controller = new AbortController();
     const reason = new DOMException("user cancelled", "AbortError");
-    fake = createRemoteApiFake({
-      onFinalize: async () => {
-        throw new TypeError("fetch failed");
-      },
-      onPush: async () => {
-        controller.abort(reason);
-        throw reason;
-      },
-      sha256: contentSha256,
-    });
-    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
-    const { events, observer } = collectEvents();
 
-    const error = await pushChanges(
-      {
-        apiToken: "token",
-        apiUrl: "http://127.0.0.1:3000",
-        hashCacheRoot: cacheRoot,
-        plan,
-        signal: controller.signal,
-        sourceRoot: plan.sourceRoot,
-      },
-      observer,
-      fake.remote,
-    ).catch((cause: unknown) => cause);
+    paneView.intercept((request) => {
+      if (request.route === "completeRun") return { status: 503 };
+
+      if (request.route !== "uploadUrl") return undefined;
+      controller.abort(reason);
+
+      return "hold";
+    });
+
+    const plan = createPlan(uploads(await localFile("a.jpg", "first")));
+    const error = await push(plan, { signal: controller.signal }).result.catch((cause) => cause);
 
     expect(error).toBeInstanceOf(UnfinalizedSyncRunError);
     expect(error).toMatchObject({
@@ -666,40 +310,29 @@ describe("pushChanges orchestration", () => {
       intendedStatus: "cancelled",
       syncRunId: "run-1",
     });
-    expect(events.filter((event) => event.type === "complete")).toEqual([
-      expect.objectContaining({
-        summary: expect.objectContaining({
-          message: expect.stringContaining("run-1"),
-          status: "failed",
-        }),
-      }),
-    ]);
   });
+
   it("finalizes a run created while the push was being cancelled", async () => {
     const controller = new AbortController();
-    const server = await startSlowCreateServer(() => controller.abort());
-    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
 
-    try {
-      await expect(
-        pushChanges({
-          apiToken: "token",
-          apiUrl: server.apiUrl,
-          hashCacheRoot: cacheRoot,
-          plan,
-          signal: controller.signal,
-          sourceRoot: plan.sourceRoot,
-        }),
-      ).rejects.toMatchObject({ name: "AbortError" });
-    } finally {
-      await server.close();
-    }
+    paneView.intercept(async (request) => {
+      if (request.route !== "createRun") return undefined;
+      controller.abort();
+      // The run is committed, but its id reaches the client only after the cancel.
+      await delay(50);
 
-    expect(server.completeBodies).toEqual([
-      expect.objectContaining({
-        counts: expect.objectContaining({ pushed: 0 }),
-        status: "cancelled",
-      }),
-    ]);
+      return undefined;
+    });
+
+    const plan = createPlan(uploads(await localFile("a.jpg", "first")));
+
+    await expect(push(plan, { signal: controller.signal }).result).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(paneView.library.size).toBe(0);
+    expect(paneView.runs[0]?.outcome).toMatchObject({
+      counts: { pushed: 0 },
+      status: "cancelled",
+    });
   });
 });

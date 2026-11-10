@@ -6,20 +6,18 @@ export { pruneDeleted } from "./prune-deleted.js";
 
 export { pushChanges } from "./push-changes.js";
 
-export { type SyncRunOutcomeStatus, UnfinalizedSyncRunError } from "./remote-api.js";
+export { plannedChanges, plannedDeletes, UPLOAD_CONCURRENCY } from "./push-helpers.js";
+
+export { CANCELLED_RUN_CLEANUP_MS } from "./remote-api.js";
+
+export type { SyncPlanItem } from "./sync-plan.js";
+
+export { UnfinalizedSyncRunError } from "./sync-run.js";
 
 export type {
-  DoctorCheck,
-  DoctorOptions,
-  DoctorResult,
-  HashMode,
   LockstepObserver,
   LockstepPlan,
-  LockstepPlanCounts,
-  LockstepPlanItem,
   LockstepRunEvent,
-  LockstepRunSummary,
-  PlanSyncOptions,
-  PruneDeletedOptions,
-  PushChangesOptions,
+  PushStage,
+  SnapshotSource,
 } from "./types.js";

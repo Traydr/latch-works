@@ -1,15 +1,16 @@
-//! What Duplicates shows of a set (`components/duplicates/model.ts`): its rows, what resolving
+//! What Duplicates shows of a set: its rows, what resolving
 //! keeps and moves, each version's facts against the keeper, and why the suggestion keeps what
 //! it keeps.
 
 use std::collections::BTreeSet;
 
+use oriel_core_domain::format;
 use oriel_core_tidy::contract::{
     AudioState, DuplicateKind, DuplicateSet, FileId, FileKind, FileRow, KeepReason,
     deciding_versions, is_close_call,
 };
 
-use crate::format;
+use crate::labels;
 
 /// One tile of a set: a version, or for identical copies, one copy.
 #[derive(Clone, Debug, PartialEq)]
@@ -56,7 +57,7 @@ pub fn files_of(set: &DuplicateSet) -> Vec<&FileRow> {
 }
 
 /// What resolving keeps: the owner's choice while it still names files of the set, else the
-/// suggestion (`keptIds`).
+/// suggestion.
 pub fn kept_ids(set: &DuplicateSet, overridden: Option<&[FileId]>) -> Vec<FileId> {
     let members: BTreeSet<FileId> = files_of(set).iter().map(|file| file.id).collect();
     match overridden {
@@ -75,7 +76,7 @@ pub fn removal_of<'a>(set: &'a DuplicateSet, kept: &[FileId]) -> Vec<&'a FileRow
 }
 
 /// With Spot variants, the version a row's facts compare against: the kept copy of the same
-/// picture; otherwise the first kept file (`keeperOf`).
+/// picture; otherwise the first kept file.
 pub fn keeper_of<'a>(
     set: &DuplicateSet,
     rows: &'a [SetRow],
@@ -102,8 +103,7 @@ pub fn keeper_of<'a>(
         .or(first)
 }
 
-/// The number of the version a row is a copy of, when Spot variants found it one
-/// (`copyOfNumber`).
+/// The number of the version a row is a copy of, when Spot variants found it one.
 pub fn copy_of_number(set: &DuplicateSet, index: usize) -> Option<usize> {
     let pictures = set.pictures.as_ref()?;
     let picture = pictures.get(index)?;
@@ -111,7 +111,7 @@ pub fn copy_of_number(set: &DuplicateSet, index: usize) -> Option<usize> {
     (first < index).then_some(first + 1)
 }
 
-/// Bytes resolving frees; a file hard-linked to a kept one frees nothing (`freedBytes`).
+/// Bytes resolving frees; a file hard-linked to a kept one frees nothing.
 pub fn freed_bytes(set: &DuplicateSet, removed: &[&FileRow]) -> i64 {
     removed
         .iter()
@@ -243,7 +243,7 @@ fn audio_label(audio: AudioState) -> &'static str {
     }
 }
 
-/// A version's lanes against the keeper (`factsOf`, as labelled rows): Dimensions; Length and
+/// A version's lanes against the keeper, as labelled rows: Dimensions; Length and
 /// Sound when `video`; Size; Format. A loss names its difference.
 pub fn facts_of(file: &FileRow, keeper: &FileRow, video: bool) -> Vec<Lane> {
     let same = file.id == keeper.id;
@@ -255,7 +255,7 @@ pub fn facts_of(file: &FileRow, keeper: &FileRow, video: bool) -> Vec<Lane> {
         }
     };
     let mut lanes = Vec::new();
-    lanes.push(match format::dimensions(file) {
+    lanes.push(match labels::dimensions(file) {
         Some(dimensions) => {
             let ratio = match (pixels_of(file), pixels_of(keeper)) {
                 (Some(pixels), Some(keeper_pixels)) if !same && keeper_pixels > 0 => {
@@ -276,7 +276,7 @@ pub fn facts_of(file: &FileRow, keeper: &FileRow, video: bool) -> Vec<Lane> {
                 None => Lane::new(
                     "Dimensions",
                     dimensions.clone(),
-                    compare(format::dimensions(keeper) == Some(dimensions)),
+                    compare(labels::dimensions(keeper) == Some(dimensions)),
                 ),
             }
         }
@@ -352,7 +352,7 @@ pub fn facts_of(file: &FileRow, keeper: &FileRow, video: bool) -> Vec<Lane> {
     });
     lanes.push(Lane::new(
         "Format",
-        format::format_label(file.format).into(),
+        labels::format_label(file.format).into(),
         compare(file.format == keeper.format),
     ));
     lanes
@@ -383,7 +383,7 @@ pub fn keep_every_label(rows: &[SetRow]) -> String {
     }
 }
 
-/// The primary button's label: the versions it keeps, by number (`decisionLabel`).
+/// The primary button's label: the versions it keeps, by number.
 pub fn decision_label(rows: &[SetRow], kept: &[FileId]) -> String {
     let numbers: Vec<usize> = rows
         .iter()
@@ -404,7 +404,7 @@ pub struct Reason {
     pub close_call: bool,
 }
 
-/// `reasonOf`.
+/// Why the versions kept are the ones to keep, or why the owner's own choice differs.
 pub fn reason_of(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId], overridden: bool) -> Reason {
     let numbers: Vec<usize> = rows
         .iter()
@@ -451,11 +451,7 @@ pub fn reason_of(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId], overridde
     };
     let runner = rows.get(runner_index).map(|row| &row.file);
     let (n, m) = (keeper_index + 1, runner_index + 1);
-    let folder = if keeper.dir.is_empty() {
-        "The top folder".to_string()
-    } else {
-        keeper.dir.clone()
-    };
+    let folder = crate::labels::folder_capitalized(&keeper.dir).to_owned();
     let close_call = is_close_call(set);
     let pictures = set
         .pictures
@@ -472,9 +468,9 @@ pub fn reason_of(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId], overridde
         KeepReason::HasSound => format!("Keeping {n}: it has sound, {m} does not"),
         KeepReason::MorePixels => format!(
             "Keeping {n}: most pixels ({} against {})",
-            format::dimensions(keeper).unwrap_or_default(),
+            labels::dimensions(keeper).unwrap_or_default(),
             runner
-                .and_then(format::dimensions)
+                .and_then(labels::dimensions)
                 .unwrap_or_else(|| "unknown".into())
         ),
         KeepReason::Longer => format!(
@@ -486,7 +482,7 @@ pub fn reason_of(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId], overridde
         KeepReason::ArchiveFormat => {
             format!(
                 "Keeping {n}: already {}",
-                format::format_label(keeper.format)
+                labels::format_label(keeper.format)
             )
         }
         KeepReason::RightExtension => format!("Keeping {n}: its extension matches its contents"),

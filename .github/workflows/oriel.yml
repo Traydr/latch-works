@@ -1,10 +1,8 @@
 name: Oriel
 
-# Formats, lints and tests the Rust workspace, and checks that the TypeScript packages Pane View,
-# the Lockstep CLI and Gather Box share still produce the conformance vectors the Rust tests read
-# (the few files Electron Oriel wrote are frozen). Off by default:
-# it runs only when started by hand (Actions › Oriel › Run workflow), as the owner runs
-# `pnpm oriel:check` locally.
+# Lints the Rust workspace on Windows, so its `cfg(windows)` code is compiled, which the owner's
+# `pnpm oriel:check` on macOS does not do. The Check workflow checks the formatting on every PR.
+# Off by default: it runs only when started by hand (Actions › Oriel › Run workflow).
 on:
   workflow_dispatch:
 
@@ -12,26 +10,15 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    # Apple silicon, the platform the pinned media tools and vendored libraries are fetched for.
-    runs-on: macos-latest
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/oriel
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v6
-        with:
-          run_install: false
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: package.json
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --prod=false
-
       - name: Install the pinned Rust toolchain
-        working-directory: apps/oriel
         run: rustup toolchain install
 
       - uses: actions/cache@v6
@@ -43,18 +30,5 @@ jobs:
           key: oriel-${{ runner.os }}-${{ hashFiles('apps/oriel/Cargo.lock', 'apps/oriel/Cargo.toml', 'apps/oriel/rust-toolchain.toml') }}
           restore-keys: oriel-${{ runner.os }}-
 
-      - name: Check the vectors from TypeScript
-        run: |
-          pnpm --filter @latch-works/media-domain test
-          pnpm --filter @latch-works/media-format test
-          pnpm --filter @latch-works/media-index test
-          pnpm --filter @latch-works/lockstep-core test
-
-      - name: Fetch the pinned ffmpeg and ffprobe, and the prebuilt libvips and libavif
-        working-directory: apps/oriel
-        run: |
-          cargo run -p oriel-tools --bin fetch-media-tools
-          cargo run -p xtask -- vendor
-
-      - name: Format, lint and test the Rust workspace
-        run: pnpm oriel:check
+      - name: Lint the Rust workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings

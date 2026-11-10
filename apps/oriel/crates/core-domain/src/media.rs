@@ -5,15 +5,26 @@ use serde::{Deserialize, Serialize};
 
 use crate::{NamedPath, SortableMediaItem, canonicalize_extension, comics::ComicMediaItem};
 
-/// The still and animated image extensions the gallery lists. HEIC is not one, though ImageIO
-/// decodes it: View lists what Electron Oriel lists, and `media.ts` does not list HEIC.
 pub const IMAGE_EXTENSIONS: [&str; 7] = ["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif"];
 
-/// The video extensions the gallery lists.
 pub const VIDEO_EXTENSIONS: [&str; 5] = ["mp4", "webm", "mov", "mkv", "m4v"];
 
-/// The document extensions the gallery lists.
 pub const PDF_EXTENSIONS: [&str; 1] = ["pdf"];
+
+/// Stills Oriel shows beyond the shared lists, since ImageIO decodes them: an Oriel addition (the
+/// owner, 2026-10-29), kept out of [`IMAGE_EXTENSIONS`] so the shared rules stay as the
+/// TypeScript has them.
+pub const EXTRA_IMAGE_EXTENSIONS: [&str; 2] = ["heic", "heif"];
+
+/// Every extension a Latch Works app shows: the shared lists (Pane View shows PDFs) and
+/// [`EXTRA_IMAGE_EXTENSIONS`].
+pub fn shown_extensions() -> impl Iterator<Item = &'static str> {
+    IMAGE_EXTENSIONS
+        .into_iter()
+        .chain(EXTRA_IMAGE_EXTENSIONS)
+        .chain(VIDEO_EXTENSIONS)
+        .chain(PDF_EXTENSIONS)
+}
 
 /// What kind of media a file is, by its extension. The serde names are the TypeScript ones,
 /// which View's index and Pane View's API carry.
@@ -27,17 +38,6 @@ pub enum MediaType {
     Unknown,
 }
 
-impl MediaType {
-    /// Every kind, in the order `MediaTypeSchema` lists them.
-    pub const ALL: [Self; 5] = [
-        Self::Image,
-        Self::Gif,
-        Self::Video,
-        Self::Pdf,
-        Self::Unknown,
-    ];
-}
-
 /// How the gallery orders its items. The serde names are the TypeScript ones, which View's
 /// settings file stores.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -48,17 +48,6 @@ pub enum GallerySortMode {
     DateNewest,
     DateOldest,
     Random,
-}
-
-impl GallerySortMode {
-    /// Every mode, in the order `GallerySortModeSchema` lists them.
-    pub const ALL: [Self; 5] = [
-        Self::NameAsc,
-        Self::NameDesc,
-        Self::DateNewest,
-        Self::DateOldest,
-        Self::Random,
-    ];
 }
 
 /// One file the gallery shows, as `MediaItemSchema` describes it.
@@ -119,17 +108,11 @@ impl ComicMediaItem for MediaItem {
     }
 }
 
-/// A folder the gallery shows, as `FolderNodeSchema` describes it. `parent_id` is absent or null
-/// alike in the TypeScript, so one `None` stands for both.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// A folder the gallery shows.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FolderNode {
     pub path: String,
-    pub parent_path: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent_id: Option<String>,
     pub name: String,
-    pub has_children: bool,
 }
 
 /// The canonical extension after the last dot, or `""` when there is none or it ends the name.
@@ -146,7 +129,6 @@ pub fn get_extension(file_name: &str) -> String {
     }
 }
 
-/// The kind of media a file is, by its extension alone.
 pub fn detect_media_type(file_name: &str) -> MediaType {
     let extension = get_extension(file_name);
     let extension = extension.as_str();
@@ -164,7 +146,6 @@ pub fn detect_media_type(file_name: &str) -> MediaType {
     }
 }
 
-/// Whether the gallery shows a file of this name.
 pub fn is_supported_media_file(file_name: &str) -> bool {
     detect_media_type(file_name) != MediaType::Unknown
 }

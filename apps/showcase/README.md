@@ -64,10 +64,12 @@ over, delete `/tmp/showcase-archive` and run the prepare script again.
   the terminal. Sync pushes to `http://localhost:3000` with `PANE_VIEW_SYNC_TOKEN` from `.env`;
   for a plan that shows only the sample archive, push to an empty server instead, such as the e2e
   one (`node e2e/scripts/start-pane-view.ts`, which recreates the e2e database and empties its
-  bucket, and listens on port 3100, so stop the showcase dev server first):
+  bucket, and listens on the port in `e2e/stack.json`), with its port and sync token from
+  `e2e/stack.json`:
 
   ```bash
-  SHOWCASE_PANE_VIEW_URL=http://127.0.0.1:3100 SHOWCASE_SYNC_TOKEN=e2e-sync-token-0123456789abcdef \
+  SHOWCASE_PANE_VIEW_URL=$(node -p '"http://127.0.0.1:" + require("./e2e/stack.json").paneView.port') \
+  SHOWCASE_SYNC_TOKEN=$(node -p 'require("./e2e/stack.json").paneView.syncToken') \
     node apps/showcase/scripts/capture-oriel.mjs
   ```
 

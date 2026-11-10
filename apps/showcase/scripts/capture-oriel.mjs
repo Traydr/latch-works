@@ -74,6 +74,9 @@ print(best[kCGWindowNumber as String] as! Int)
 /** `ORIEL_SCRIPT` steps, in window points: the pointer at rest on the sidebar's empty space. */
 const parkPointer = "wait 1000;move 170,640";
 
+/** Opens the ninth tile (sample-09) from the keyboard once the gallery is idle. */
+const openNinthTile = ["idle", ...Array.from({ length: 8 }, () => "key right"), "key enter"];
+
 /** A minute of small pointer moves near the top of the window, every half second. */
 const keepViewerControls = [
   "wait 1500",
@@ -336,12 +339,15 @@ async function captureView(workDir, windowIdTool) {
   // The pointer keeps moving near the top, so the viewer's auto-hiding controls stay in sight.
   await shoot({
     ...base,
-    env: { ORIEL_OPEN: photosDir, ORIEL_SCRIPT: keepViewerControls, ORIEL_VIEW_VIEWER: "8" },
+    env: {
+      ORIEL_OPEN: photosDir,
+      ORIEL_SCRIPT: [...openNinthTile, keepViewerControls].join(";"),
+    },
     name: "view-viewer.png",
   });
   await shoot({
     ...base,
-    env: { ORIEL_SCRIPT: parkPointer, ORIEL_SETTINGS: "view" },
+    env: { ORIEL_SCRIPT: "wait 1000;key cmd-,;move 170,640" },
     name: "view-settings.png",
   });
 }

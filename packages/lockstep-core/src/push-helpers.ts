@@ -1,21 +1,27 @@
 import path from "node:path";
-import { escapesRoot, type SyncPlanAction } from "@latch-works/media-index";
-import type { HashMode } from "./types.js";
+import { escapesRoot } from "./scan.js";
+import type { SyncPlanItem } from "./sync-plan.js";
+import type { LockstepPlan } from "./types.js";
 
-export function resolveHashMode(options: {
-  defaultMode?: HashMode;
-  hashFiles?: boolean;
-  hashMode?: HashMode;
-}): HashMode {
-  if (options.hashMode) {
-    return options.hashMode;
+/** The bounded upload queue's width (plan 036). */
+export const UPLOAD_CONCURRENCY = { default: 3, max: 8, min: 1 } as const;
+
+export function resolveUploadConcurrency(value: number | undefined): number {
+  if (value === undefined) {
+    return UPLOAD_CONCURRENCY.default;
   }
 
-  if (options.hashFiles !== undefined) {
-    return options.hashFiles ? "all" : "none";
+  if (
+    !Number.isInteger(value) ||
+    value < UPLOAD_CONCURRENCY.min ||
+    value > UPLOAD_CONCURRENCY.max
+  ) {
+    throw new RangeError(
+      `uploadConcurrency must be an integer between ${UPLOAD_CONCURRENCY.min} and ${UPLOAD_CONCURRENCY.max}`,
+    );
   }
 
-  return options.defaultMode ?? "none";
+  return value;
 }
 
 /** A capped slice of plan items plus the number the cap left behind. */
@@ -24,42 +30,41 @@ export interface CappedPlanItems<T> {
   omittedCount: number;
 }
 
-export function selectChangedItems<T extends { action: SyncPlanAction }>(items: T[]): T[] {
-  return items.filter((item) => item.action !== "keep");
+function capped<T>(items: T[], maxChanges?: number): CappedPlanItems<T> {
+  if (!maxChanges || items.length <= maxChanges) {
+    return { items, omittedCount: 0 };
+  }
+
+  return { items: items.slice(0, maxChanges), omittedCount: items.length - maxChanges };
 }
 
-export function selectUploadUpdateItems<T extends { action: SyncPlanAction }>(
-  changedItems: T[],
+type PlanItems = Pick<LockstepPlan, "items">;
+
+/** Every item of the plan that is not a keep, in plan order. */
+export function plannedChanges(plan: PlanItems): SyncPlanItem[] {
+  return plan.items.filter((item) => item.action !== "keep");
+}
+
+/** The uploads and updates `pushChanges` sends for `maxChanges`, in plan order. */
+export function plannedUploads(
+  plan: PlanItems,
   maxChanges?: number,
-): CappedPlanItems<T> {
-  const uploadUpdateItems = changedItems.filter(
-    (item) => item.action === "upload" || item.action === "update",
+): CappedPlanItems<SyncPlanItem> {
+  return capped(
+    plan.items.filter((item) => item.action === "upload" || item.action === "update"),
+    maxChanges,
   );
-
-  if (!maxChanges || uploadUpdateItems.length <= maxChanges) {
-    return { items: uploadUpdateItems, omittedCount: 0 };
-  }
-
-  return {
-    items: uploadUpdateItems.slice(0, maxChanges),
-    omittedCount: uploadUpdateItems.length - maxChanges,
-  };
 }
 
-export function selectDeleteItems<T extends { action: SyncPlanAction }>(
-  changedItems: T[],
+/** The deletes `pruneDeleted` applies for `maxChanges`, in plan order. */
+export function plannedDeletes(
+  plan: PlanItems,
   maxChanges?: number,
-): CappedPlanItems<T> {
-  const deleteItems = changedItems.filter((item) => item.action === "delete");
-
-  if (!maxChanges || deleteItems.length <= maxChanges) {
-    return { items: deleteItems, omittedCount: 0 };
-  }
-
-  return {
-    items: deleteItems.slice(0, maxChanges),
-    omittedCount: deleteItems.length - maxChanges,
-  };
+): CappedPlanItems<SyncPlanItem> {
+  return capped(
+    plan.items.filter((item) => item.action === "delete"),
+    maxChanges,
+  );
 }
 
 export function resolveLocalFilePath(sourceRoot: string, archivePath: string): string {

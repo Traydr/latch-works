@@ -31,7 +31,7 @@ not run, since that machine had them all.
 | --- | --- |
 | Rust | rustup (`rustup-init.exe`); `apps/oriel/rust-toolchain.toml` pins the toolchain; the host must be `x86_64-pc-windows-msvc`, rustup's default on x64 Windows |
 | C toolchain | Visual Studio 2022 Build Tools: "Desktop development with C++", with the MSVC compiler and a Windows 11 SDK. rusqlite builds SQLite and libwebp-sys builds libwebp with it; GPUI's release build compiles its shaders with the SDK's `fxc.exe` (`GPUI_FXC_PATH` names another) and embeds its manifest with `rc.exe` |
-| vpk | The .NET 8 SDK or later, then `dotnet tool install -g vpk --version 1.3.39-g8d2844f`, the version `package.rs` pins and the `velopack` crate the app links |
+| vpk | The .NET 8 SDK or later, then `dotnet tool install -g vpk --version 1.3.39-g8d2844f`, the release of the `velopack` crate the app links, which `xtask package` reads from `Cargo.lock` |
 | curl, tar | Windows' own, in `System32` (Windows 10 1803 and later); the xtask fetches with them |
 | Node and pnpm | Only for the conformance vectors and the e2e suite, as on macOS |
 
@@ -58,7 +58,7 @@ installs to `%LocalAppData%\Oriel\current`:
 | `libmpv-2.dll` | the folder | shinchiro's `mpv-dev-x86_64-20261021-git-e471496c56.7z`, SHA-256 `efc719ef…ea633`; **GPL**, fine for the owner's own use (decision 19) |
 | `libvips-42.dll` | the folder | `@img/sharp-libvips-win32-x64` 1.3.4 (libvips 8.18.7, with libheif and aom), SHA-256 `3d6d4c90…87114`, checked against npm's sha512 |
 | `libavif-16.dll` and the 10 DLLs it needs | `libavif\` | MSYS2's UCRT64 packages (below), 28 MB; `oriel-avif` loads libavif from there with that folder searched first for the rest |
-| `ffmpeg.exe`, `ffprobe.exe` | `media-tools\` | `oriel-tools`' win32-x64 pin, gyan.dev's 9.0.2 full build (GPL-3.0-or-later), Electron Oriel's |
+| `ffmpeg.exe`, `ffprobe.exe` | `media-tools\` | the win32-x64 pin in `crates/xtask/src/pins.rs`, gyan.dev's 9.0.2 full build (GPL-3.0-or-later), Electron Oriel's |
 | The notices | `licenses\` | each part's licence and a NOTICE with its URL, hash and source; the 541 Rust crates of the Windows build; `index.json`, which About lists |
 
 The libavif set is libavif 1.4.2, the Mac's version, with every DLL its imports name, each package
@@ -75,7 +75,8 @@ Then `vpk pack --packId Oriel --packVersion <version> --packTitle "Oriel" --pack
 --runtime win-x64 --packDir <stage> --mainExe oriel.exe --icon apps\oriel\assets\oriel-icon.ico
 --outputDir target\release\package\windows\velopack`, Electron Oriel's arguments less the MSI and
 the splash, and the files are renamed `Oriel-<version>-win-x64-Setup.exe` and
-`-Portable.zip`. The pack id and title are Electron Oriel's, `Oriel`, so Setup.exe installs where
+`-Portable.zip`; a missing one fails the command. `outputs.json` beside the stage names
+Setup.exe and the staged `oriel.exe`, which `install-windows.ps1` installs and compares. The pack id and title are Electron Oriel's, `Oriel`, so Setup.exe installs where
 it did. Downloads are cached in `apps\oriel\target\vendor\downloads`, each checked against its
 SHA-256.
 
@@ -84,23 +85,31 @@ docs say the app must, and kill an app that has not exited within 15 to 30 secon
 never checks for updates (decision 19). Uninstalling removes `%LocalAppData%\Oriel` and leaves
 the data in `%USERPROFILE%\.latch-works\oriel`.
 
-## What was done from the Mac, and how it was checked
+## What each piece does on Windows
 
-Nothing here has run on Windows. On the Mac, 2026-10-31:
+It was built from the Mac on 2026-10-31 and run on the owner's Windows machine on 2026-11-01;
+[To check on Windows](#to-check-on-windows) says which pieces have run there. The Oriel workflow's
+`windows` job (`.github/workflows/oriel.yml`, started by hand) runs `cargo clippy --workspace
+--all-targets -- -D warnings` on `windows-latest`, so every `cfg(windows)` branch compiles under
+a check; it runs no tests. Five of core-sync's lockstep-core vector tests are ignored on Windows
+(`#[cfg_attr(windows, ignore)]`): their vectors were written by Node on macOS, so four hold POSIX
+paths and one makes a file named `trailing.`, which Windows cannot. From the Mac the same lint runs for `x86_64-pc-windows-gnullvm` with
+[llvm-mingw](https://github.com/mstorsjo/llvm-mingw) (open source; its headers are mingw-w64's)
+on `PATH`, which compiles the C in rusqlite and libwebp-sys:
 
-- `cargo check --workspace --all-targets` and `cargo clippy … -- -D warnings` pass for
-  `x86_64-pc-windows-gnullvm`, built with llvm-mingw 20261020 (open source; its headers are
-  mingw-w64's), which compiles the C in rusqlite and libwebp-sys. For `x86_64-pc-windows-msvc`
-  every crate without C checks too; the C needs MSVC's headers, which were not fetched.
-- A debug `oriel.exe` links for gnullvm (1 GB with debug info; a release build needs `fxc.exe`).
-- `package windows --stage-only --exe <that exe>` stages the folder above: 1.7 GB with the debug
-  exe.
+```sh
+cd apps/oriel
+PATH="<llvm-mingw>/bin:$PATH" cargo clippy --workspace --all-targets \
+  --target x86_64-pc-windows-gnullvm -- -D warnings
+```
 
-So all of it is compile-checked only:
+It passed on 2026-11-10 with llvm-mingw 20261104. On 2026-10-31 a debug `oriel.exe` linked for
+gnullvm (1 GB with debug info; a release build needs `fxc.exe`), and `package windows
+--stage-only --exe <that exe>` staged the folder above: 1.7 GB with the debug exe.
 
 - **Data root**: `%USERPROFILE%\.latch-works\oriel` (std's `home_dir` reads `USERPROFILE`).
 - **Folder reads**: the portable `read_dir` and `metadata` path beside macOS's
-  `getattrlistbulk` (`oriel-core-index`'s `folder.rs`). Tidy's walk reads each file's volume
+  `getattrlistbulk` (`oriel_runtime::fs_meta::read_entries`). Tidy's walk reads each file's volume
   serial number and file index for `dev` and `ino`, as libuv does, so hard links are found
   (`oriel_runtime::fs_meta`).
 - **ctime is NTFS's change time**, as libuv's `st_ctime` is: `fs_meta::change_time` opens the
@@ -109,12 +118,12 @@ So all of it is compile-checked only:
   its executor's checks, its hash check, and the Sync scan's fingerprints
   (`ArchiveFileFingerprint::of`) use it, so they match what Node records, as the Lockstep CLI
   does.
-  View's catalog and thumbnail keys use mtime and size only. Sync's push still records none
-  there until `core-sync-push.rs.patch` (2026-10-31, windows-2) lands.
+  View's catalog and thumbnail keys use mtime and size only. Sync's push reads it the same way
+  for the hash cache entries it writes.
 - **Paths as Node writes them**: `oriel_runtime::paths::canonicalize` is `fs.realpath`: std's
   `canonicalize` gives `\\?\C:\…` on Windows, which libuv strips. Tidy's roots go through it.
-  `paths::namespaced` is `path.toNamespacedPath`, the `\\?\` form libvips needs past 260
-  characters (plan 062): every path Tidy, View's thumbnails and the viewer hand libvips gets it,
+  `oriel-vips` gives libvips each path as `path.toNamespacedPath` writes it, the `\\?\` form it
+  needs past 260 characters (plan 062): every path Tidy, View's thumbnails and the viewer open,
   and libvips keeps no files open (`vips_cache_set_max_files(0)`, sharp's `cache({ files: 0 })`).
   std's own file calls add the prefix themselves; ffmpeg handled long paths in plan 062.
 - **Roots' names**: the overlap check and `is_within` ignore case on Windows, as `path.relative`
@@ -122,7 +131,7 @@ So all of it is compile-checked only:
   handled, as Electron Oriel did not handle them.
 - **Holding on another drive**: a root on `D:\Photos` with the data on `C:` holds in
   `D:\.latch-works\oriel\holding`, by rename; a whole drive (`D:\`) holds in the data folder,
-  by copy (`HoldingPlaces::on_volume`, by volume serial, as glazier-core by `dev`). A sandboxed
+  by copy (`HoldingPlaces::on_volume`, by volume serial, as Glazier did by `dev`). A sandboxed
   run (`ORIEL_DATA_DIR` set) holds in the data folder on every drive.
 - **Files held open** (plan 062): a sharing or lock violation (`ERROR_SHARING_VIOLATION`,
   `ERROR_LOCK_VIOLATION`) or a denied access is "in use": the step fails with "Another program
@@ -152,10 +161,10 @@ So all of it is compile-checked only:
   draws with `img()`: GPUI's `surface()` is macOS only.
 - **Stills**: libvips decodes them (AVIF and HEIC through its libheif, with aom), the same
   library Tidy loads, then `image` scales them down; frames in memory decode through `image`.
-- **Tidy's Convert**: oriel-avif loads `libavif\libavif-16.dll` beside the exe (then
-  `avif.dll` or `libavif-16.dll` beside it, `ORIEL_LIBAVIF`, and in development
-  `.vendor\libavif-windows`), with `LOAD_WITH_ALTERED_SEARCH_PATH`, so its DLLs resolve from its
-  own folder.
+- **Tidy's Convert**: oriel-avif loads `libavif\libavif-16.dll` beside the exe (in development,
+  `ORIEL_LIBAVIF` or `.vendor\libavif-windows`), with `LOAD_WITH_ALTERED_SEARCH_PATH`, so its
+  DLLs resolve from its own folder. The installed app is known by the `licenses\` folder beside
+  its exe, and finds every library and ffmpeg only in its own folder.
 - **The exe's icon and version**: `crates/app/build.rs` writes an `.rc` with Electron Oriel's
   `oriel-icon.ico` (16 to 256 pixels) as icon 1, which GPUI also loads for the window, and a
   `VERSIONINFO` (Oriel, the crate's version, Traydr), compiled by `embed-resource`: rc.exe on
@@ -168,26 +177,23 @@ So all of it is compile-checked only:
   ends. `WM_ENDSESSION` with the session going on takes the reason down; with it ending ("Shut
   down anyway"), GPUI quits at once.
 - **Quick Look** opens the file in its default app; `QUICK_LOOK_LABEL` reads "Open in Default
-  App" off macOS, once `mode-tidy-quick-look-label.patch` puts it in the menus and the shortcut
-  sheet.
+  App" off macOS, in Tidy's menus and its shortcut sheet. "Show in Finder" reads "Show in
+  Explorer" (`oriel_ui::keys::REVEAL_LABEL`), and the shortcut sheets show Ctrl for ⌘
+  (`keys::display`).
 - A release build is a GUI program (no console window).
 
-Checked from the Mac on 2026-10-31 (windows-2), with the platform agent's llvm-mingw environment:
-`cargo clippy --workspace --target x86_64-pc-windows-gnullvm --all-targets -- -D warnings`
-passes, `cargo build -p oriel --target x86_64-pc-windows-gnullvm` links, and
-`cargo run -p xtask -- vendor libavif-windows` fetches, checks and lays out the libavif set.
+`cargo run -p xtask -- vendor libavif-windows` fetches, checks and lays out the libavif set from
+any system.
 
 ## Stubbed
 
 - [x] ~~**Trash**~~: the Recycle Bin, above.
 - [x] ~~**Quits from the system**~~: answered, above.
 - [x] ~~**The exe's icon**~~: embedded, above.
-- **Quick Look**: opens the file in its default app instead, as decided; the label says so once
-  the patch lands.
-- **Macintosh wording**: Tidy's menus and shortcut sheet say "Show in Finder" and ⌘ on Windows
-  too (mode-tidy's, not this runbook's).
-- **The measuring tools** (`xtask measure`, the other spikes' footprints, `core-tidy`'s timers) read
-  macOS's process counters; on Windows they print zeros or refuse. `mpv_spike` reads Windows' own.
+- **Quick Look**: opens the file in its default app instead, as decided, and says so.
+- **The measuring tools** (`xtask measure`, the other spikes' footprints and Tidy's CPU timers,
+  through `oriel_runtime::ProcessUsage`) read macOS's process counters; on Windows they print
+  zeros or refuse. `mpv_spike` reads Windows' own.
 
 ## To check on Windows
 
@@ -197,9 +203,9 @@ the detail and the numbers:
 
 - [x] `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`; the
       conformance vectors, Tidy's change and Undo round trip and the GPUI tests that port the e2e cases.
-      Symlink tests need developer mode. (5 macOS-vector tests fail with it on, and 7 symlink tests more with it off; see plan 064.)
+      Symlink tests need developer mode. (The 5 macOS-vector tests that failed are now ignored on Windows; 7 symlink tests fail with it off; see plan 064.)
 - [x] **The video gate (plan 063, Phase 8): 60 fps at 1080p.** Passed, 4K60 too (`mpv_spike single` and tiles, not `sweep`; the viewer on one 1080p H.264 clip). STOP and report if it fails.
-      `cargo run --release -p oriel-media --example mpv_spike -- sweep` with
+      `cargo run --release -p oriel-mode-view --example mpv_spike -- sweep` with
       `ORIEL_LIBMPV=<libmpv-2.dll>`, then the viewer on the fixture's 1080p and 4K videos.
 - [x] Stills and AVIF in View and Tidy (HEIC does not decode: libvips has no HEVC decoder); similar pictures group as on macOS (libvips 8.18; the fingerprint tests pass, grouping itself was not compared).
 - [x] **Convert to AVIF** (without `libavif\` the steps fail and History shows "Failed"; the reason is only in the catalog): the staged `libavif\` loads (Settings or the log names

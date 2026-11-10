@@ -1,9 +1,9 @@
-//! Walking a root, from glazier-core's `scan/walk.ts`.
+//! Walking a root.
 
 use std::fs;
 use std::path::Path;
 
-use oriel_core_domain::{is_system_junk_directory, is_system_junk_file};
+use oriel_core_domain::{is_folder_system_file, is_system_junk_directory, is_system_junk_file};
 use oriel_runtime::Cancelled;
 use oriel_runtime::fs_meta::{MetadataExt as _, identity};
 
@@ -39,22 +39,17 @@ pub struct WalkSummary {
 /// Files go to the catalog in batches of about this many.
 const BATCH_SIZE: usize = 500;
 
-/// glazier-core stats this many entries at once; batches flush between such slices.
+/// Entries stat'ed at once; batches flush between such slices.
 const STAT_SLICE: usize = 32;
 
-/// Files Finder and Explorer write into the folders they show: view settings (`.DS_Store`,
-/// `desktop.ini`) and thumbnail caches (`Thumbs.db`). The system writes them again, so cleaning
-/// them up never sticks: the walk leaves them out, and one leaves only with its empty folder.
-const FOLDER_SYSTEM_FILES: [&str; 5] = [
-    ".ds_store",
-    "desktop.ini",
-    "thumbs.db",
-    "ehthumbs.db",
-    "ehthumbs_vista.db",
-];
+/// The last segment of an archive path (forward slashes).
+pub fn name_of(rel_path: &str) -> &str {
+    rel_path.rsplit('/').next().unwrap_or(rel_path)
+}
 
-pub fn is_folder_system_file(name: &str) -> bool {
-    FOLDER_SYSTEM_FILES.contains(&name.to_lowercase().as_str())
+/// The folder of an archive path, "" at the root.
+pub fn dir_of(rel_path: &str) -> &str {
+    rel_path.rfind('/').map_or("", |index| &rel_path[..index])
 }
 
 /// The lowercased extension after the last dot, or "" for none, a leading dot or a trailing one.
@@ -65,8 +60,8 @@ pub fn extension_of(name: &str) -> String {
     }
 }
 
-/// Whole milliseconds of a timestamp in seconds and nanoseconds, computed exactly, as
-/// glazier-core's `wholeMs` divides `stat`'s nanoseconds: a float can round across a millisecond,
+/// Whole milliseconds of a timestamp in seconds and nanoseconds, computed exactly: a float can
+/// round across a millisecond,
 /// and then two reads of one untouched file would disagree about whether it changed.
 pub fn whole_ms(seconds: i64, nanoseconds: i64) -> i64 {
     let total = i128::from(seconds) * 1_000_000_000 + i128::from(nanoseconds);
@@ -78,8 +73,8 @@ pub fn whole_ms(seconds: i64, nanoseconds: i64) -> i64 {
 /// entered, and Finder's and Explorer's folder files are left out.
 ///
 /// Each folder's entries are taken in byte order of their names, as Node's `readdir` returns
-/// them (libuv sorts `scandir` with `strcmp`), so files get the same catalog ids as glazier-core
-/// gives them and every query without an `ORDER BY` returns them in the same order.
+/// them (libuv sorts `scandir` with `strcmp`), so files get the same catalog ids as Electron Oriel
+/// gave them and every query without an `ORDER BY` returns them in the same order.
 pub fn walk_root(
     root: &Path,
     mut on_batch: impl FnMut(Vec<WalkedFile>) -> anyhow::Result<()>,
@@ -122,6 +117,7 @@ pub fn walk_root(
                     content += 1;
                 }
             } else if kind.is_file() {
+                // The system writes these again, so they leave only with their empty folder.
                 if is_folder_system_file(&name) {
                     continue;
                 }
@@ -266,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn extensions_and_times_read_as_glazier_core_reads_them() {
+    fn extensions_and_times_are_read_exactly() {
         assert_eq!(extension_of("photo.JPG"), "jpg");
         assert_eq!(extension_of(".hidden"), "");
         assert_eq!(extension_of("trailing."), "");

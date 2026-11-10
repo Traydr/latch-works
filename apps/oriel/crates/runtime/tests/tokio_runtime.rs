@@ -1,12 +1,12 @@
-//! The tokio thread: `reqwest` runs on it against a local server and GPUI's executors await the
-//! answer; dropping a task aborts its request; stopping the runtime cancels what is left.
+//! The tokio thread: `reqwest` runs on it against a local server and other threads' executors
+//! await the answer; dropping a task aborts its request; stopping the runtime cancels what is left.
 
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::net::{SocketAddr, TcpListener};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use gpui_kit::{AppContext as _, TestAppContext};
+use futures::executor::block_on;
 use oriel_runtime::{Cancelled, TokioRuntime};
 
 /// A server on a free local port that answers each of `requests` connections with the request
@@ -38,35 +38,31 @@ fn echo_server(requests: usize) -> SocketAddr {
     address
 }
 
-#[gpui_kit::test]
-async fn gpui_awaits_requests_made_on_the_tokio_thread(cx: &mut TestAppContext) {
-    // The answer comes from other threads, so the test scheduler has to be allowed to wait.
-    cx.executor().allow_parking();
+#[test]
+fn other_executors_await_requests_made_on_the_tokio_thread() {
     let runtime = TokioRuntime::start("oriel-http-test").unwrap();
     let address = echo_server(2);
 
     let handle = runtime.handle();
-    let from_foreground = cx
-        .spawn(async move |_| {
-            handle
-                .spawn(async move {
-                    reqwest::get(format!("http://{address}/catalog?page=1"))
-                        .await?
-                        .error_for_status()?
-                        .text()
-                        .await
-                })
-                .await
-        })
-        .await;
+    let from_foreground = block_on(async move {
+        handle
+            .spawn(async move {
+                reqwest::get(format!("http://{address}/catalog?page=1"))
+                    .await?
+                    .error_for_status()?
+                    .text()
+                    .await
+            })
+            .await
+    });
     assert_eq!(
         from_foreground.unwrap().unwrap(),
         "GET /catalog?page=1 HTTP/1.1"
     );
 
     let handle = runtime.handle();
-    let from_background = cx
-        .background_spawn(async move {
+    let from_background = std::thread::spawn(move || {
+        block_on(async move {
             handle
                 .spawn(async move {
                     let client = reqwest::Client::new();
@@ -80,7 +76,9 @@ async fn gpui_awaits_requests_made_on_the_tokio_thread(cx: &mut TestAppContext) 
                 })
                 .await
         })
-        .await;
+    })
+    .join()
+    .unwrap();
     assert_eq!(from_background.unwrap().unwrap(), "POST /push HTTP/1.1");
 }
 
@@ -117,6 +115,6 @@ fn stopping_the_runtime_cancels_its_tasks() {
     let task = runtime.spawn(std::future::pending::<()>());
     drop(runtime);
 
-    let error = futures::executor::block_on(task).unwrap_err();
+    let error = block_on(task).unwrap_err();
     assert!(error.is::<Cancelled>(), "{error}");
 }

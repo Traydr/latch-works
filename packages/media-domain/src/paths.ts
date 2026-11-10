@@ -28,7 +28,7 @@ export function joinArchivePath(...parts: string[]): string {
   return toArchivePath(parts.filter(Boolean).join("/"));
 }
 
-/** Alias map so equivalent spellings share one sync/storage identity. */
+/** Equivalent spellings that share one sync and storage identity. */
 const EXTENSION_ALIASES = new Map([["jpeg", "jpg"]]);
 
 export function canonicalizeExtension(extension: string): string {
@@ -37,10 +37,7 @@ export function canonicalizeExtension(extension: string): string {
   return EXTENSION_ALIASES.get(normalized) ?? normalized;
 }
 
-/**
- * Identity key for sync/plan matching.
- * Fold separators, Unicode (NFC), case, and optionally extension aliases (jpeg → jpg).
- */
+/** Identity key for sync plan matching; extension aliases fold unless turned off. */
 export function normalizePathForCompare(
   path: string,
   options: { canonicalizeExtensions?: boolean } = {},
@@ -145,18 +142,4 @@ function canonicalizePathExtension(path: string): string {
 
 export function displayNameFromPath(path: string): string {
   return getBaseName(path).replace(/[_-]/g, " ");
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) {
-    return "0 B";
-  }
-
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const value = bytes / k ** i;
-  const decimals = i === 0 ? 0 : 1;
-
-  return `${value.toFixed(decimals)} ${sizes[i]}`;
 }

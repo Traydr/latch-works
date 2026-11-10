@@ -1,5 +1,8 @@
 import { useCallback, useRef, useState } from "react";
-import type { GalleryBrowseStorage } from "@/features/gallery/gallery-browse-storage";
+import {
+  readExcludedChildPaths,
+  writeExcludedChildPaths,
+} from "@/features/gallery/gallery-browse-storage";
 
 export interface ExcludedChildPaths {
   /** The current path's excluded direct-child folders (Plan 054). */
@@ -15,53 +18,44 @@ export interface ExcludedChildPaths {
  * prune intents write through to storage and keep the mirror in step even when
  * a storage write fails silently.
  */
-export function useExcludedChildPaths(
-  path: string,
-  storage: GalleryBrowseStorage,
-): ExcludedChildPaths {
+export function useExcludedChildPaths(path: string): ExcludedChildPaths {
   const [excludes, setExcludes] = useState<{ list: string[]; path: string }>(() => ({
-    list: storage.readExcludedChildPaths(path),
+    list: readExcludedChildPaths(path),
     path,
   }));
 
   if (excludes.path !== path) {
-    setExcludes({ list: storage.readExcludedChildPaths(path), path });
+    setExcludes({ list: readExcludedChildPaths(path), path });
   }
 
   const pathRef = useRef(path);
   pathRef.current = path;
 
-  const toggleExcludedChild = useCallback(
-    (childPath: string) => {
-      const currentPath = pathRef.current;
-      const stored = storage.readExcludedChildPaths(currentPath);
+  const toggleExcludedChild = useCallback((childPath: string) => {
+    const currentPath = pathRef.current;
+    const stored = readExcludedChildPaths(currentPath);
 
-      const next = stored.includes(childPath)
-        ? stored.filter((storedPath) => storedPath !== childPath)
-        : [...stored, childPath];
+    const next = stored.includes(childPath)
+      ? stored.filter((storedPath) => storedPath !== childPath)
+      : [...stored, childPath];
 
-      storage.writeExcludedChildPaths(currentPath, next);
-      setExcludes({ list: next, path: currentPath });
-    },
-    [storage],
-  );
+    writeExcludedChildPaths(currentPath, next);
+    setExcludes({ list: next, path: currentPath });
+  }, []);
 
-  const pruneExcludedChildren = useCallback(
-    (livePaths: readonly string[]) => {
-      const currentPath = pathRef.current;
-      const stored = storage.readExcludedChildPaths(currentPath);
-      const live = new Set(livePaths);
-      const pruned = stored.filter((storedPath) => live.has(storedPath));
+  const pruneExcludedChildren = useCallback((livePaths: readonly string[]) => {
+    const currentPath = pathRef.current;
+    const stored = readExcludedChildPaths(currentPath);
+    const live = new Set(livePaths);
+    const pruned = stored.filter((storedPath) => live.has(storedPath));
 
-      if (pruned.length === stored.length) {
-        return;
-      }
+    if (pruned.length === stored.length) {
+      return;
+    }
 
-      storage.writeExcludedChildPaths(currentPath, pruned);
-      setExcludes({ list: pruned, path: currentPath });
-    },
-    [storage],
-  );
+    writeExcludedChildPaths(currentPath, pruned);
+    setExcludes({ list: pruned, path: currentPath });
+  }, []);
 
   return { excludedChildPaths: excludes.list, pruneExcludedChildren, toggleExcludedChild };
 }

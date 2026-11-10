@@ -1,8 +1,7 @@
 import { eq, ilike, isNull, ne, notInArray, or, type SQL } from "drizzle-orm";
+import type { GalleryMedia } from "@/features/library/listing-contract";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
-import { isNotUnderPath, isUnderPath } from "./folder-path-sql";
-import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
-import type { LibraryMediaItem } from "./types";
+import { escapeLikePattern, isNotUnderPath, isUnderPath } from "./folder-path-sql";
 
 export interface LibraryConditionsInput {
   currentPath: string;
@@ -13,6 +12,7 @@ export interface LibraryConditionsInput {
    * outside subtree scope (non-recursive browsing, search, the root).
    */
   excludedPaths?: readonly string[];
+  /** Already normalized (listing-contract); present means search mode. */
   query?: string;
   recursive: boolean;
 }
@@ -22,7 +22,7 @@ export interface LibraryConditions {
   folderConditions: SQL[];
   /** Non-deleted entries in scope: direct children, subtree, or path/filename matches. */
   mediaConditions: SQL[];
-  /** True when a trimmed query is present and search mode replaced the path scope. */
+  /** True when a query is present and search mode replaced the path scope. */
   searching: boolean;
 }
 
@@ -36,14 +36,11 @@ export function buildLibraryConditions({
   query,
   recursive,
 }: LibraryConditionsInput): LibraryConditions {
-  const trimmedQuery = query?.trim();
-  const searching = Boolean(trimmedQuery);
-  const mediaScope = resolveMediaScope({ currentPath, recursive, searching });
   const mediaConditions: SQL[] = [isNull(libraryEntries.deletedAt)];
   const folderConditions: SQL[] = [isNull(folders.deletedAt)];
 
-  if (searching && trimmedQuery) {
-    const queryPattern = `%${escapeLikePattern(trimmedQuery)}%`;
+  if (query) {
+    const queryPattern = `%${escapeLikePattern(query)}%`;
 
     const mediaQueryCondition = or(
       ilike(libraryEntries.logicalPath, queryPattern),
@@ -59,25 +56,25 @@ export function buildLibraryConditions({
   } else {
     folderConditions.push(eq(folders.parentPath, currentPath));
 
-    if (mediaScope.mode === "subtree") {
-      mediaConditions.push(isUnderPath(libraryEntries.logicalPath, mediaScope.pathPrefix));
+    if (!recursive) {
+      mediaConditions.push(eq(libraryEntries.parentPath, currentPath));
+    } else if (currentPath) {
+      mediaConditions.push(isUnderPath(libraryEntries.logicalPath, currentPath));
 
       for (const excluded of directChildExcludes(currentPath, excludedPaths)) {
         mediaConditions.push(isNotUnderPath(libraryEntries.logicalPath, excluded));
       }
-    } else if (mediaScope.mode === "direct-children") {
-      mediaConditions.push(eq(libraryEntries.parentPath, mediaScope.parentPath));
     }
   }
 
-  return { folderConditions, mediaConditions, searching };
+  return { folderConditions, mediaConditions, searching: Boolean(query) };
 }
 
 /**
  * The excludable set for a browse path is its direct child folders (Plan 054,
- * Decision 1). This is the one owner of that rule and of the dedupe: the
- * service only normalizes the strings, and anything else in the list is
- * dropped here so stale or malformed client data is inert instead of an error.
+ * Decision 1). This is the one owner of that rule and of the dedupe; anything
+ * else in the list is dropped here, so stale or malformed client data is inert
+ * instead of an error.
  */
 function directChildExcludes(currentPath: string, excludedPaths: readonly string[] = []): string[] {
   const prefix = `${currentPath}/`;
@@ -117,22 +114,16 @@ export type MediaRow = {
   object: typeof mediaObjects.$inferSelect;
 };
 
-export function mapMediaRowsToLibraryItems(rows: readonly MediaRow[]): LibraryMediaItem[] {
-  return rows.map(({ entry, object }): LibraryMediaItem => {
-    return {
-      durationMs: object.durationMs ?? undefined,
-      extension: object.extension,
-      height: object.height ?? undefined,
-      id: entry.id,
-      mediaType: object.mediaType,
-      mtimeMs: entry.mtimeMs,
-      name: entry.filename,
-      pageCount: object.pageCount ?? undefined,
-      parentPath: entry.parentPath,
-      path: entry.logicalPath,
-      sha256: object.sha256,
-      size: object.size,
-      width: object.width ?? undefined,
-    };
-  });
+export function mapMediaRows(rows: readonly MediaRow[]): GalleryMedia[] {
+  return rows.map(({ entry, object }) => ({
+    extension: object.extension,
+    id: entry.id,
+    mediaType: object.mediaType,
+    mtimeMs: entry.mtimeMs,
+    name: entry.filename,
+    parentPath: entry.parentPath,
+    path: entry.logicalPath,
+    sha256: object.sha256,
+    size: object.size,
+  }));
 }

@@ -32,20 +32,22 @@ use std::time::Instant;
 use futures::executor::block_on;
 use oriel_avif::Libavif;
 use oriel_core_paths::DataRoot;
-use oriel_core_tidy::catalog::Catalog;
+use oriel_core_tidy::AnalysisKind;
+use oriel_core_tidy::TidyEngine;
 use oriel_core_tidy::contract::{
     DuplicateKind, DuplicateScope, DuplicateSetRequest, FileId, Settings, SimilarityLevel,
 };
-use oriel_core_tidy::duplicates::sets::build_duplicate_sets;
-use oriel_core_tidy::engine::TidyEngine;
-use oriel_core_tidy::media::still::encode_still_to_avif;
-use oriel_core_tidy::passes::{Media, Progress};
-use oriel_core_tidy::similarity::{
-    ClusterKind, DETAIL_VERSION, Fingerprint, SimilarCluster, StillLook, Vips, detail_difference,
+use oriel_core_tidy::internals::Catalog;
+use oriel_core_tidy::internals::build_duplicate_sets;
+use oriel_core_tidy::internals::encode_still_to_avif;
+use oriel_core_tidy::internals::{
+    ClusterKind, DETAIL_VERSION, Fingerprint, SimilarCluster, StillLook, detail_difference,
     fingerprint_still, frames_show_variant, is_variant, look_at_still, look_measures,
-    look_shows_variant, normalize_detail, still_threshold,
+    look_shows_variant, normalize_detail, open_libvips, still_threshold,
 };
+use oriel_core_tidy::{Media, Progress};
 use oriel_runtime::CancelToken;
+use oriel_vips::Vips;
 use rusqlite::{Connection, OpenFlags, params};
 
 /// The start of 2026-10-27, local time: what was dismissed from here on got past Spot variants as
@@ -340,7 +342,7 @@ fn sample(connection: &Connection, sql: &str, count: usize) -> Vec<(FileId, Path
 /// Generates the copies: dismissed stills, printed stills, and stills of neither kind.
 fn generate(catalog: &str, scratch: &Path, threads: usize, per_kind: usize) {
     let connection = read_only(catalog);
-    let (vips, ..) = Vips::open_located().unwrap();
+    let vips = open_libvips().unwrap();
     let libavif = Libavif::get().unwrap();
     let select = "SELECT f.id, r.path, f.rel_path, f.width * f.height FROM files f
       JOIN roots r ON r.id = f.root_id WHERE f.fingerprint LIKE 's:%'";
@@ -567,7 +569,7 @@ fn measure_copies(
     threads: usize,
     half_of_source: &HashMap<FileId, u8>,
 ) {
-    let (vips, ..) = Vips::open_located().unwrap();
+    let vips = open_libvips().unwrap();
     let folder = scratch.join("copies");
     let mut by_source: BTreeMap<FileId, BTreeMap<String, PathBuf>> = BTreeMap::new();
     for entry in std::fs::read_dir(&folder).unwrap().flatten() {
@@ -813,7 +815,7 @@ fn measure_dismissals(
     threads: usize,
 ) {
     let dismissals = dismissed_stills(connection, selection);
-    let (vips, ..) = Vips::open_located().unwrap();
+    let vips = open_libvips().unwrap();
     let found: Mutex<HashMap<i64, DismissalFound>> = Mutex::new(HashMap::new());
     let next = AtomicUsize::new(0);
     std::thread::scope(|scope| {
@@ -1191,7 +1193,7 @@ fn measure_held(connection: &Connection, since_ms: i64, threads: usize) {
         .unwrap()
         .map(Result::unwrap)
         .collect();
-    let (vips, ..) = Vips::open_located().unwrap();
+    let vips = open_libvips().unwrap();
     let (compared, called_copy) = (AtomicUsize::new(0), AtomicUsize::new(0));
     let next = AtomicUsize::new(0);
     std::thread::scope(|scope| {
@@ -1410,7 +1412,7 @@ fn video_copies(catalog: &str, scratch: &Path, threads: usize, per_kind: usize) 
                     let made = succeeded(&command);
                     let printed = made
                         .then(|| {
-                            oriel_core_tidy::similarity::fingerprint_video(
+                            oriel_core_tidy::internals::fingerprint_video(
                                 &ffmpeg_at, &copy, *duration,
                             )
                             .ok()
@@ -1613,7 +1615,7 @@ fn margins(catalog: &Path, out: &Path) {
         .unwrap()
         .map(Result::unwrap)
         .collect();
-    let (vips, ..) = Vips::open_located().unwrap();
+    let vips = open_libvips().unwrap();
     let lines = Mutex::new(String::new());
     let next = AtomicUsize::new(0);
     std::thread::scope(|scope| {
@@ -1681,7 +1683,10 @@ fn library(catalog: &str, scratch: &Path) {
             Instant::now(),
             cpu_seconds(),
         )));
-        let report = engine.analyze_blocking(root.id, &timing).unwrap();
+        let report = engine
+            .analyze(root.id, AnalysisKind::AskedFor)
+            .run(&timing)
+            .unwrap();
         timing.phase("end", 0);
         println!("  stills offered: {}", report.detail_candidates);
     }

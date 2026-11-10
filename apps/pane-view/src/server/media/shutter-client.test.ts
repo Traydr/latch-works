@@ -1,15 +1,15 @@
 import { verifyAccessToken } from "@shutter/protocol";
-import { describe, expect, it, vi } from "vitest";
-import type { MediaThumbnailContext } from "./repository";
+import { describe, expect, it } from "vitest";
 import {
+  type EnabledShutter,
   purgeShutterSource,
   resolveShutterImageUrl,
   resolveShutterOriginalUrl,
   resolveShutterPreview,
   type ShutterClientDependencies,
-  type ShutterEnvironment,
-  shutterPurgeReadiness,
+  type ShutterSource,
 } from "./shutter-client";
+import { parseShutterConfig } from "./shutter-config";
 
 /**
  * The v2 switch: with a resolver ID every URL names the object by its key and
@@ -24,7 +24,7 @@ const KEYS = new Map([["key-id", Uint8Array.from(Buffer.from(KEY, "hex"))]]);
 
 const OBJECT_KEY = `originals/sha256/ab/ab/${SHA256}.jpg`;
 
-const environment: ShutterEnvironment = {
+const shutterConfig = parseShutterConfig({
   SHUTTER_CAPABILITY_KEYS: `{"pane-view":{"key-id":"${KEY}"}}`,
   SHUTTER_CAPABILITY_KID: "key-id",
   SHUTTER_CONTROL_URL: "https://control.shutter.test",
@@ -32,29 +32,30 @@ const environment: ShutterEnvironment = {
   SHUTTER_RESOLVER_ID: "originals",
   SHUTTER_SPACE_API_TOKEN: "test-shutter-space-api-token-at-least-32",
   SHUTTER_SPACE_ID: "pane-view",
-};
+});
 
-function context(mediaType: MediaThumbnailContext["mediaType"] = "image"): MediaThumbnailContext {
-  return {
-    extension: "jpg",
-    mediaObjectId: "media-object",
-    mediaType,
-    originalObjectKey: OBJECT_KEY,
-    sha256: SHA256,
-  };
-}
+if (shutterConfig.mode !== "on") throw new Error("the test configuration turns Shutter on");
 
+const shutter: EnabledShutter = shutterConfig;
+
+const source: ShutterSource = { objectKey: OBJECT_KEY, sha256: SHA256 };
+
+/**
+ * Control answers `responses` in turn. Only the v1 path presigns a source locator; with `presign`
+ * off, asking for one fails the call.
+ */
 function dependencies(
   responses: Response[] = [],
-  overrides: Partial<ShutterEnvironment> = {},
+  { presign = false } = {},
 ): ShutterClientDependencies & { requests: Request[] } {
   const requests: Request[] = [];
 
   return {
-    createSourceLocator: vi.fn(
-      async () => "https://bucket.example.test/originals?X-Amz-Signature=v1",
-    ),
-    environment: { ...environment, ...overrides },
+    createSourceLocator: async () => {
+      if (!presign) throw new Error("the v2 path presigns nothing");
+
+      return "https://bucket.example.test/originals?X-Amz-Signature=v1";
+    },
     fetch: async (input, init) => {
       requests.push(new Request(input, init));
       const next = responses.shift();
@@ -70,9 +71,8 @@ function dependencies(
 describe("shutter v2 resolver sources", () => {
   it("serves an image as a v2 Delivery URL with an image_source token", async () => {
     const deps = dependencies();
-    const url = new URL(await resolveShutterImageUrl(context(), 300, deps));
+    const url = new URL(await resolveShutterImageUrl(source, 300, shutter, deps));
 
-    expect(deps.createSourceLocator).not.toHaveBeenCalled();
     expect(url.origin).toBe("https://edge.shutter.test");
     expect(url.pathname).toBe(`/v2/pane-view/originals/ab/ab/${SHA256}.jpg`);
     expect(url.searchParams.get("w")).toBe("320");
@@ -91,9 +91,8 @@ describe("shutter v2 resolver sources", () => {
 
   it("serves an original as a bare v2 Delivery URL with a source_delivery token", async () => {
     const deps = dependencies();
-    const url = new URL(await resolveShutterOriginalUrl(context("video"), deps));
+    const url = new URL(await resolveShutterOriginalUrl(source, shutter, deps));
 
-    expect(deps.createSourceLocator).not.toHaveBeenCalled();
     expect(url.pathname).toBe(`/v2/pane-view/originals/ab/ab/${SHA256}.jpg`);
     expect([...url.searchParams.keys()]).toEqual(["token"]);
 
@@ -118,7 +117,7 @@ describe("shutter v2 resolver sources", () => {
       }),
     ]);
 
-    const preview = await resolveShutterPreview(context("video"), 960, deps);
+    const preview = await resolveShutterPreview(source, "video", 960, shutter, deps);
 
     expect(deps.requests[0]?.method).toBe("PUT");
     expect(new URL(deps.requests[0]?.url ?? "").pathname).toBe(
@@ -147,8 +146,8 @@ describe("shutter v2 resolver sources", () => {
       new Response(null, { status: 204 }),
     ]);
 
-    await purgeShutterSource({ objectKey: OBJECT_KEY, sha256: SHA256 }, deps);
-    await purgeShutterSource({ objectKey: null, sha256: SHA256 }, deps);
+    await purgeShutterSource(source, shutter, deps);
+    await purgeShutterSource({ objectKey: null, sha256: SHA256 }, shutter, deps);
 
     expect(deps.requests.map((request) => new URL(request.url).pathname)).toEqual([
       `/v2/spaces/pane-view/sources/originals%2Fab%2Fab%2F${SHA256}.jpg/purge`,
@@ -159,50 +158,21 @@ describe("shutter v2 resolver sources", () => {
 
   it("takes the v1 path for a key outside the originals layout and when the resolver is unset", async () => {
     const legacy = await resolveShutterImageUrl(
-      { ...context(), originalObjectKey: "uploads/x.jpg" },
+      { ...source, objectKey: "uploads/x.jpg" },
       300,
-      dependencies(),
+      shutter,
+      dependencies([], { presign: true }),
     );
 
     expect(new URL(legacy).pathname.startsWith("/v1/private/pane-view/source/")).toBe(true);
 
-    const deps = dependencies([new Response(null, { status: 204 })], { SHUTTER_RESOLVER_ID: "" });
-    const rolledBack = await resolveShutterImageUrl(context(), 300, deps);
+    const withoutResolver = { ...shutter, resolverId: null };
+    const deps = dependencies([new Response(null, { status: 204 })], { presign: true });
+    const rolledBack = await resolveShutterImageUrl(source, 300, withoutResolver, deps);
     expect(new URL(rolledBack).pathname.startsWith("/v1/private/pane-view/source/")).toBe(true);
-    expect(deps.createSourceLocator).toHaveBeenCalledTimes(1);
-    await purgeShutterSource({ objectKey: OBJECT_KEY, sha256: SHA256 }, deps);
+    await purgeShutterSource(source, withoutResolver, deps);
     expect(deps.requests.map((request) => new URL(request.url).pathname)).toEqual([
       `/v1/spaces/pane-view/sources/${SHA256}/purge`,
     ]);
-  });
-});
-
-describe("shutter purge readiness", () => {
-  const noShutter = {
-    SHUTTER_CONTROL_URL: "",
-    SHUTTER_EDGE_URL: "",
-    SHUTTER_SPACE_API_TOKEN: "",
-    SHUTTER_SPACE_ID: "",
-  };
-
-  it("is ready only with every value a purge needs", () => {
-    expect(shutterPurgeReadiness(environment)).toBe("ready");
-    expect(shutterPurgeReadiness({ ...environment, SHUTTER_EDGE_URL: "" })).toBe("ready");
-    expect(shutterPurgeReadiness({ ...environment, SHUTTER_SPACE_ID: "" })).toBe("incomplete");
-    expect(shutterPurgeReadiness({ ...environment, SHUTTER_CONTROL_URL: "" })).toBe("incomplete");
-    expect(shutterPurgeReadiness({ ...environment, SHUTTER_SPACE_API_TOKEN: "" })).toBe(
-      "incomplete",
-    );
-  });
-
-  it("counts edge-only delivery as incomplete and no Shutter at all as off", () => {
-    expect(
-      shutterPurgeReadiness({
-        ...environment,
-        ...noShutter,
-        SHUTTER_EDGE_URL: "https://edge.test",
-      }),
-    ).toBe("incomplete");
-    expect(shutterPurgeReadiness({ ...environment, ...noShutter })).toBe("off");
   });
 });

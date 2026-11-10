@@ -1,35 +1,43 @@
-//! The parts of Overview the catalog answers directly, from glazier-core's `catalog/tidy.ts`.
+//! The parts of Overview the catalog answers directly.
 
-use rusqlite::Connection;
-use serde::Serialize;
+use rusqlite::{Connection, OptionalExtension as _};
 
-use super::files::{SqlParams, supported_extensions_sql};
-use super::rows::{AUDIO_STATE_SQL, FINGERPRINTABLE_SQL, LOUDNESS_VERSION};
-use crate::contract::{AnalysisProgress, Count, Finding, FindingKind, RootId};
+use super::files::{SqlParams, flag_sql};
+use super::rows::{FINGERPRINTABLE_SQL, audio_state_sql};
+use crate::contract::{
+    AnalysisProgress, Count, FileFlag, FileFormat, Finding, FindingKind, RootId,
+};
+use crate::optimize::candidates::video_container;
+use crate::passes::loudness::LOUDNESS_VERSION;
 
 /// Pane View serves originals with these extensions by presigned URL instead of Shutter.
 const PRESIGNED_EXTENSIONS_SQL: &str = "'mkv', 'bmp'";
 
-/// What each finding counts, as a condition on `files f`.
+/// What each finding counts, as a condition on `files f`; those the Library can filter by count
+/// what its flags match.
 fn finding_sql(kind: FindingKind) -> String {
     match kind {
-        FindingKind::Undecodable => "f.probe_error IS NOT NULL".to_owned(),
-        FindingKind::ZeroByte => "f.size = 0 AND f.is_junk = 0".to_owned(),
-        FindingKind::Unsupported => format!(
-            "f.is_junk = 0 AND f.ext NOT IN ({})",
-            supported_extensions_sql()
-        ),
+        FindingKind::Undecodable => flag_sql(FileFlag::Undecodable),
+        FindingKind::ZeroByte => flag_sql(FileFlag::ZeroByte),
+        FindingKind::Unsupported => flag_sql(FileFlag::Unsupported),
         FindingKind::PresignedDelivery => format!("f.ext IN ({PRESIGNED_EXTENSIONS_SQL})"),
         FindingKind::UnconvertibleVideo => {
-            "f.kind = 'video' AND f.format IN ('avi', 'flv', 'asf')".to_owned()
+            let formats: Vec<String> = FileFormat::ALL
+                .iter()
+                .filter(|&&format| {
+                    video_container(Some(format))
+                        .is_some_and(|container| !container.is_convertible())
+                })
+                .map(|format| format!("'{format}'"))
+                .collect();
+            format!("f.kind = 'video' AND f.format IN ({})", formats.join(", "))
         }
     }
 }
 
 /// Totals, silent soundtracks, junk, empty folders, the findings that need a human look (only
 /// those with files) and how far the background analysis has come.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CatalogTidy {
     pub files: i64,
     pub bytes: i64,
@@ -65,11 +73,12 @@ pub fn catalog_tidy(connection: &Connection, root_id: RootId) -> anyhow::Result<
             )
         })
         .collect();
+    let audio_state = audio_state_sql();
     let sql = format!(
         "SELECT COUNT(*) AS files, SUM(f.size) AS bytes,
         SUM(f.is_junk = 1) AS junk,
-        SUM(({AUDIO_STATE_SQL}) = 'silent') AS silent,
-        SUM(CASE WHEN ({AUDIO_STATE_SQL}) = 'silent' THEN f.size ELSE 0 END) AS silent_bytes,
+        SUM(({audio_state}) = 'silent') AS silent,
+        SUM(CASE WHEN ({audio_state}) = 'silent' THEN f.size ELSE 0 END) AS silent_bytes,
         SUM(f.kind = 'video' AND f.probe_version > 0 AND COALESCE(f.audio_streams, 0) > 0)
           AS measurable,
         SUM(f.kind = 'video' AND f.probe_version > 0 AND COALESCE(f.audio_streams, 0) > 0
@@ -118,7 +127,8 @@ pub fn catalog_tidy(connection: &Connection, root_id: RootId) -> anyhow::Result<
             [root_id],
             |row| row.get(0),
         )
-        .unwrap_or(None);
+        .optional()?
+        .flatten();
 
     Ok(CatalogTidy {
         files: count("files"),

@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use oriel_tools::{ToolRun, kill_running_tools};
+use oriel_tools::{ToolRun, kill_running_tools, running_tools};
 
 /// A tool that lasts 30 seconds if nothing kills it.
 fn long_tool() -> ToolRun {
@@ -21,8 +21,14 @@ fn quitting_kills_the_tools_still_running() {
     let runs: Vec<_> = (0..2)
         .map(|_| std::thread::spawn(|| long_tool().run()))
         .collect();
-    // Long enough for both to start; the kill reaches only tools already running.
-    std::thread::sleep(Duration::from_millis(500));
+    // The kill reaches only tools already running.
+    while running_tools() < 2 {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "both tools start"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
 
     kill_running_tools();
     for run in runs {

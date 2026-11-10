@@ -1,18 +1,16 @@
 import * as z from "zod/mini";
-import { SiteKeySchema } from "./source-catalog";
+import { SITE_KEYS } from "./source-catalog";
+
+export const SiteKeySchema = z.enum(SITE_KEYS);
 
 export const DownloadableFileSchema = z.object({
-  pageNumber: z.number(),
-  thumbnailUrl: z.nullable(z.string()),
   originalUrl: z.string(),
-  fileName: z.string()
+  fileName: z.string(),
 });
 
 export type DownloadableFile = z.infer<typeof DownloadableFileSchema>;
 
-export type GalleryImage = DownloadableFile;
-
-export const DownloadablePayloadSchema = z.object({
+const DownloadablePayloadSchema = z.object({
   ok: z.literal(true),
   outputKind: z.literal("downloadable-files"),
   site: SiteKeySchema,
@@ -20,74 +18,50 @@ export const DownloadablePayloadSchema = z.object({
   pageUrl: z.string(),
   galleryId: z.nullable(z.string()),
   folderSegments: z.array(z.string()),
-  skippedCount: z.number(),
-  images: z.array(DownloadableFileSchema)
+  images: z.array(DownloadableFileSchema),
 });
 
 export type DownloadablePayload = z.infer<typeof DownloadablePayloadSchema>;
 
-export type GalleryPayload = DownloadablePayload;
-
-export const StoryChapterReferenceSchema = z.object({
+const StoryChapterReferenceSchema = z.object({
   chapterNumber: z.number(),
   label: z.string(),
-  url: z.string()
+  url: z.string(),
 });
 
 export type StoryChapterReference = z.infer<typeof StoryChapterReferenceSchema>;
 
-export const GeneratedStoryPayloadSchema = z.object({
+const GeneratedStoryPayloadSchema = z.object({
   ok: z.literal(true),
   outputKind: z.literal("generated-story-pdf"),
-  site: z.literal("fanfiction-net"),
+  site: SiteKeySchema,
   title: z.string(),
   author: z.string(),
   pageUrl: z.string(),
   storyId: z.string(),
   folderSegments: z.array(z.string()),
-  skippedCount: z.number(),
   fileName: z.string(),
   summary: z.string(),
   metadataLine: z.string(),
-  chapters: z.array(StoryChapterReferenceSchema)
+  chapters: z.array(StoryChapterReferenceSchema),
 });
 
 export type GeneratedStoryPayload = z.infer<typeof GeneratedStoryPayloadSchema>;
 
-export const CollectionErrorCodeSchema = z.enum([
-  "UNSUPPORTED_SITE",
-  "GRID_NOT_FOUND",
-  "NO_IMAGES_FOUND",
-  "NO_VALID_IMAGES",
-  "MEDIA_RESOLUTION_FAILED",
-  "INVALID_KEMONO_PATH",
-  "USER_NOT_FOUND",
-  "TITLE_NOT_FOUND",
-  "FILES_NOT_FOUND",
-  "NO_FILES_FOUND",
-  "NO_VALID_FILES",
-  "PDF_LINK_NOT_FOUND",
-  "AUTHOR_NOT_FOUND",
-  "CHAPTERS_NOT_FOUND",
-  "STORY_TEXT_NOT_FOUND",
-  "PDF_GENERATION_FAILED",
-  "COLLECTION_FAILED"
-]);
+export const GatherOutputSchema = z.union([DownloadablePayloadSchema, GeneratedStoryPayloadSchema]);
 
-export type CollectionErrorCode = z.infer<typeof CollectionErrorCodeSchema>;
+export type GatherOutput = z.infer<typeof GatherOutputSchema>;
 
-export const GalleryErrorSchema = z.object({
-  ok: z.literal(false),
-  code: CollectionErrorCodeSchema,
-  message: z.string()
-});
+const CollectionErrorSchema = z.object({ ok: z.literal(false), message: z.string() });
 
-export type GalleryError = z.infer<typeof GalleryErrorSchema>;
+type CollectionError = z.infer<typeof CollectionErrorSchema>;
 
-export const GalleryCollectResponseSchema = z.union([
-  DownloadablePayloadSchema,
-  GeneratedStoryPayloadSchema,
-  GalleryErrorSchema
-]);
+export const CollectionResultSchema = z.union([GatherOutputSchema, CollectionErrorSchema]);
 
-export type GalleryCollectResponse = z.infer<typeof GalleryCollectResponseSchema>;
+export type CollectionResult = z.infer<typeof CollectionResultSchema>;
+
+/** What a collector returns; its entry adds the source key and page URL it was installed for. */
+export type CollectorResult =
+  | Omit<DownloadablePayload, "site" | "pageUrl">
+  | Omit<GeneratedStoryPayload, "site" | "pageUrl">
+  | CollectionError;

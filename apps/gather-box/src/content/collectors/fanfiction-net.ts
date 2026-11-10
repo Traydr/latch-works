@@ -1,8 +1,6 @@
-import type { PageLocation } from "../collector-entry";
 import { buildStoryPdfFileName } from "../../shared/path";
-import type { GalleryCollectResponse, StoryChapterReference } from "../../shared/types";
-
-const FFN_HOSTNAME = "www.fanfiction.net";
+import type { CollectorResult, StoryChapterReference } from "../../shared/types";
+import type { PageLocation, SourcePage } from "../collector-entry";
 
 const FFN_TITLE_SELECTOR = "#profile_top b.xcontrast_txt";
 
@@ -20,23 +18,11 @@ interface FanfictionStoryPath {
   slug: string;
 }
 
-export function collectFanfictionNetData(document: Document, location: PageLocation): GalleryCollectResponse {
-  if (location.hostname !== FFN_HOSTNAME) {
-    return {
-      ok: false,
-      code: "UNSUPPORTED_SITE",
-      message: "This fanfiction.net page is not a supported story URL."
-    };
-  }
-
-  const storyPath = parseStoryPath(location);
+export function collect(document: Document, page: SourcePage): CollectorResult {
+  const storyPath = parseStoryPath(page);
 
   if (!storyPath) {
-    return {
-      ok: false,
-      code: "UNSUPPORTED_SITE",
-      message: "This fanfiction.net page is not a supported story URL."
-    };
+    return { ok: false, message: "This fanfiction.net page is not a supported story URL." };
   }
 
   const title = getText(document.querySelector(FFN_TITLE_SELECTOR)) || getTitleFallback(document);
@@ -44,8 +30,7 @@ export function collectFanfictionNetData(document: Document, location: PageLocat
   if (!title) {
     return {
       ok: false,
-      code: "TITLE_NOT_FOUND",
-      message: "Could not find the fanfiction.net story title on this page."
+      message: "Could not find the fanfiction.net story title on this page.",
     };
   }
 
@@ -54,62 +39,52 @@ export function collectFanfictionNetData(document: Document, location: PageLocat
   if (!author) {
     return {
       ok: false,
-      code: "AUTHOR_NOT_FOUND",
-      message: "Could not find the fanfiction.net story author on this page."
+      message: "Could not find the fanfiction.net story author on this page.",
     };
   }
 
-  const chapters = getChapters(document, location, storyPath);
+  const chapters = getChapters(document, page.location, storyPath);
 
   if (chapters.length === 0) {
     return {
       ok: false,
-      code: "CHAPTERS_NOT_FOUND",
-      message: "Could not find fanfiction.net story chapters on this page."
+      message: "Could not find fanfiction.net story chapters on this page.",
     };
   }
 
   return {
     ok: true,
     outputKind: "generated-story-pdf",
-    site: "fanfiction-net",
     title,
     author,
-    pageUrl: location.href,
     storyId: storyPath.storyId,
     folderSegments: [],
-    skippedCount: 0,
     fileName: buildStoryPdfFileName(author, title),
     summary: getText(document.querySelector(FFN_SUMMARY_SELECTOR)),
     metadataLine: getText(document.querySelector(FFN_METADATA_SELECTOR)),
-    chapters
+    chapters,
   };
 }
 
-function parseStoryPath(location: PageLocation): FanfictionStoryPath | null {
-  const parts = location.pathname.split("/").filter(Boolean);
+function parseStoryPath(page: SourcePage): FanfictionStoryPath | null {
+  const { storyId, chapter, slug } = page.address;
+  const chapterNumber = Number.parseInt(chapter ?? "", 10);
 
-  if (parts.length < 4 || parts[0] !== "s") {
-    return null;
-  }
-
-  const chapter = Number.parseInt(parts[2], 10);
-
-  if (!parts[1] || !Number.isFinite(chapter) || chapter < 1 || !parts[3]) {
+  if (!storyId || !slug || !Number.isFinite(chapterNumber) || chapterNumber < 1) {
     return null;
   }
 
   return {
-    storyId: decodeURIComponent(parts[1]),
-    chapter,
-    slug: decodeURIComponent(parts[3])
+    storyId: decodeURIComponent(storyId),
+    chapter: chapterNumber,
+    slug: decodeURIComponent(slug),
   };
 }
 
 function getChapters(
   document: Document,
   location: PageLocation,
-  storyPath: FanfictionStoryPath
+  storyPath: FanfictionStoryPath,
 ): StoryChapterReference[] {
   const select = document.querySelector<HTMLSelectElement>(FFN_CHAPTER_SELECTOR);
   const options = select ? Array.from(select.querySelectorAll<HTMLOptionElement>("option")) : [];
@@ -119,8 +94,8 @@ function getChapters(
       {
         chapterNumber: storyPath.chapter,
         label: `Chapter ${storyPath.chapter}`,
-        url: location.href
-      }
+        url: location.href,
+      },
     ];
   }
 
@@ -130,7 +105,11 @@ function getChapters(
   for (const option of options) {
     const chapterNumber = Number.parseInt(option.value, 10);
 
-    if (!Number.isFinite(chapterNumber) || chapterNumber < 1 || seenChapterNumbers.has(chapterNumber)) {
+    if (
+      !Number.isFinite(chapterNumber) ||
+      chapterNumber < 1 ||
+      seenChapterNumbers.has(chapterNumber)
+    ) {
       continue;
     }
 
@@ -138,7 +117,10 @@ function getChapters(
     chapters.push({
       chapterNumber,
       label: collapseWhitespace(option.textContent || `Chapter ${chapterNumber}`),
-      url: new URL(`/s/${storyPath.storyId}/${chapterNumber}/${encodeURIComponent(storyPath.slug)}`, location.href).toString()
+      url: new URL(
+        `/s/${storyPath.storyId}/${chapterNumber}/${encodeURIComponent(storyPath.slug)}`,
+        location.href,
+      ).toString(),
     });
   }
 

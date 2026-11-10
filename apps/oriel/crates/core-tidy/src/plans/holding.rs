@@ -1,12 +1,12 @@
-//! Holding, from glazier-core's `plans/holding.ts`: where files a change takes out of a root wait
+//! Holding: where files a change takes out of a root wait
 //! until the owner empties them into the Trash, and how they come back.
 //!
 //! Holding is always outside the root, so nothing that syncs or indexes the root (Sync, View, a
 //! cloud drive) sees what is held. It is Tidy's data folder (`tidy/holding/<id>-<name>`), and
-//! holding a file there is a rename when the root shares the data folder's volume. glazier-core
-//! holds a root on another volume at the top of that volume instead
-//! (`<volume>/.latch-works/glazier/holding`), and so does Oriel, in `oriel` rather than
-//! Electron Oriel's `glazier` ([`HoldingPlaces`]). A sandboxed run (`ORIEL_DATA_DIR` set)
+//! holding a file there is a rename when the root shares the data folder's volume. A root on
+//! another volume holds at the top of that volume instead, in `.latch-works/oriel/holding`
+//! (Electron Oriel's was `.latch-works/glazier/holding`, which Oriel leaves alone;
+//! [`HoldingPlaces`]). A sandboxed run (`ORIEL_DATA_DIR` set)
 //! writes nothing outside its data folder and its roots, so there such a root holds in the data
 //! folder, by copying across and checking the copy.
 
@@ -30,8 +30,8 @@ use crate::contract::{HoldingId, HoldingItem, HoldingList, HoldingRequest, PlanI
 
 /// A root's own folder inside holding: `12-Photos`, readable when someone looks. Runs of
 /// characters that are not letters, digits, spaces, dots, underscores or hyphens become one `_`.
-/// (`char::is_alphabetic` stands in for the TypeScript's `\p{L}`; it also admits the few
-/// combining marks Unicode counts as alphabetic.)
+/// (`char::is_alphabetic` stands in for `\p{L}`; it also admits the few combining marks Unicode
+/// counts as alphabetic.)
 pub fn root_folder_name(root_id: RootId, root_path: &str) -> String {
     let base = Path::new(root_path)
         .file_name()
@@ -57,15 +57,18 @@ pub fn root_folder_name(root_id: RootId, root_path: &str) -> String {
     format!("{root_id}-{name}")
 }
 
-/// Where each root's held files go, chosen once per root (glazier-core's `HoldingPlaces`):
+/// Where each root's held files go, chosen once per root:
 /// `<data>/holding/<id>-<name>` when the root shares the data folder's volume, so holding is a
-/// rename. With [`Self::on_volumes`], a root on another volume holds at the top of that volume,
-/// in `.latch-works/oriel/holding/<id>-<name>`, still a rename; glazier-core's folder there is
-/// `glazier`, which Oriel leaves alone. A root that is a whole volume, or a volume
-/// that takes no folder, holds in the data folder by copying across.
+/// rename. In the owner's run a root on another volume holds at the top of that volume, in
+/// `.latch-works/oriel/holding/<id>-<name>`, still a rename; Electron Oriel's folder there is
+/// `glazier`, which Oriel leaves alone. A root that is a whole volume, or a volume that takes no
+/// folder, holds in the data folder by copying across. A sandboxed run writes nothing outside its
+/// data folder and its roots, so it holds every file in its data folder, and what leaves holding
+/// goes to its own trash rather than the owner's, where its files would mix with theirs.
 #[derive(Debug)]
 pub struct HoldingPlaces {
     data_dir: PathBuf,
+    holding: PathBuf,
     on_volumes: bool,
     /// A sandboxed run's data folder, whose own trash stands in for the system's.
     sandbox: Option<DataRoot>,
@@ -73,27 +76,14 @@ pub struct HoldingPlaces {
 }
 
 impl HoldingPlaces {
-    pub fn new(data_dir: impl Into<PathBuf>) -> Self {
+    pub fn new(data: &DataRoot) -> Self {
         Self {
-            data_dir: data_dir.into(),
-            on_volumes: false,
-            sandbox: None,
+            data_dir: data.tidy(),
+            holding: data.tidy_holding(),
+            on_volumes: !data.is_sandboxed(),
+            sandbox: data.is_sandboxed().then(|| data.clone()),
             folders: Mutex::new(HashMap::new()),
         }
-    }
-
-    /// Holds a root on another volume on that volume. Off in a sandboxed run, which writes
-    /// nothing outside its data folder and its roots.
-    pub fn on_volumes(mut self, on_volumes: bool) -> Self {
-        self.on_volumes = on_volumes;
-        self
-    }
-
-    /// Sends what leaves holding to `sandbox`'s own trash. A sandboxed run never touches the owner's
-    /// Trash, where its files would mix with theirs.
-    pub fn sandboxed_in(mut self, sandbox: Option<DataRoot>) -> Self {
-        self.sandbox = sandbox;
-        self
     }
 
     /// Moves a batch out of holding: to the system's Trash, or a sandboxed run's own. The only way
@@ -113,10 +103,6 @@ impl HoldingPlaces {
         }
     }
 
-    pub fn data_dir(&self) -> &Path {
-        &self.data_dir
-    }
-
     /// The holding folder of a root, once the data folder exists.
     pub fn folder_for(&self, root_id: RootId, root_path: &str) -> io::Result<PathBuf> {
         let mut folders = self.folders.lock().unwrap_or_else(PoisonError::into_inner);
@@ -127,7 +113,7 @@ impl HoldingPlaces {
         let name = root_folder_name(root_id, root_path);
         let folder = self
             .on_volume(Path::new(root_path), &name)
-            .unwrap_or_else(|| self.data_dir.join("holding").join(&name));
+            .unwrap_or_else(|| self.holding.join(&name));
         folders.insert(root_id, folder.clone());
         Ok(folder)
     }
@@ -135,7 +121,7 @@ impl HoldingPlaces {
     /// The holding folder at the top of the root's own volume, when the root is on another
     /// volume than the data folder and is not that whole volume. On Windows a volume is told by
     /// its serial number, Node's `dev` there, so a root on `D:\Photos` holds in
-    /// `D:\.latch-works\oriel\holding`, as glazier-core holds in `D:\.latch-works\glazier`.
+    /// `D:\.latch-works\oriel\holding`.
     fn on_volume(&self, root: &Path, name: &str) -> Option<PathBuf> {
         if !self.on_volumes {
             return None;
@@ -148,12 +134,15 @@ impl HoldingPlaces {
         if mount_point == root {
             return None;
         }
-        let folder = mount_point
-            .join(oriel_core_domain::LATCH_WORKS_DIRECTORY_NAME)
-            .join("oriel")
-            .join("holding")
-            .join(name);
-        fs::create_dir_all(&folder).ok()?;
+        let folder = DataRoot::volume_holding(&mount_point).join(name);
+        if let Err(error) = fs::create_dir_all(&folder) {
+            log::warn!(
+                "Tidy holds files from {} in its data folder: {} could not be made: {error}",
+                root.display(),
+                folder.display()
+            );
+            return None;
+        }
         Some(folder)
     }
 
@@ -172,20 +161,17 @@ impl HoldingPlaces {
         {
             return false;
         }
-        let own = self.data_dir.join("holding");
-        if path.starts_with(&own) {
-            return path != own && resolves_inside(path, &own);
+        let own = &self.holding;
+        if path.starts_with(own) {
+            return path != own && resolves_inside(path, own);
         }
         if !self.on_volumes {
             return false;
         }
-        let Some(top) = volume_holding_top(path) else {
+        let Some(top) = DataRoot::volume_holding_mount(path) else {
             return false;
         };
-        let holding = top
-            .join(oriel_core_domain::LATCH_WORKS_DIRECTORY_NAME)
-            .join("oriel")
-            .join("holding");
+        let holding = DataRoot::volume_holding(top);
         let Some(device) = volume_of(top) else {
             return false;
         };
@@ -194,35 +180,6 @@ impl HoldingPlaces {
             && mount_point_of(top, device) == top
             && resolves_inside(path, &holding)
     }
-
-    /// The folder a root's held files go to if it has been chosen already this run.
-    pub fn known_folder(&self, root_id: RootId) -> Option<PathBuf> {
-        self.folders
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&root_id)
-            .cloned()
-    }
-}
-
-/// The folder at whose top `path`'s `.latch-works/oriel/holding` sits, the highest one when
-/// there are several.
-fn volume_holding_top(path: &Path) -> Option<&Path> {
-    path.ancestors()
-        .filter(|folder| {
-            let names: Vec<_> = folder
-                .components()
-                .rev()
-                .take(3)
-                .map(Component::as_os_str)
-                .collect();
-            names.len() == 3
-                && names[0] == "holding"
-                && names[1] == "oriel"
-                && names[2] == oriel_core_domain::LATCH_WORKS_DIRECTORY_NAME
-        })
-        .last()
-        .and_then(|holding| holding.parent()?.parent()?.parent())
 }
 
 /// Whether `path`, once the links in its folders are followed, is still inside `folder`. Its
@@ -255,9 +212,8 @@ fn volume_of(path: &Path) -> Option<u64> {
     (serial != 0).then_some(serial)
 }
 
-/// The folder `path`'s volume is mounted at: its highest ancestor still on `device`
-/// (`mountPointOf`). On Windows that is the drive's top, `D:\`, or the folder a volume is
-/// mounted in.
+/// The folder `path`'s volume is mounted at: its highest ancestor still on `device`. On Windows
+/// that is the drive's top, `D:\`, or the folder a volume is mounted in.
 fn mount_point_of(path: &Path, device: u64) -> PathBuf {
     let mut current = path.to_path_buf();
     while let Some(parent) = current.parent() {
@@ -269,86 +225,17 @@ fn mount_point_of(path: &Path, device: u64) -> PathBuf {
     current
 }
 
-/// Local time's fields (year, month, day, hour, minute, second) at `seconds` from 1970, negative
-/// before it, from the C library, as JavaScript's `Date` getters read them. Holding's batch names
-/// and Tidy's dates use it.
-#[cfg(unix)]
-pub fn local_time(seconds: i64) -> (i32, i32, i32, i32, i32, i32) {
-    let seconds = seconds as libc::time_t;
-    // SAFETY: `tm` is plain data; `localtime_r` fills it from `seconds` and is thread-safe.
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    // SAFETY: both pointers are valid for the call.
-    let filled = unsafe { !libc::localtime_r(&seconds, &mut tm).is_null() };
-    if !filled {
-        return (1970, 1, 1, 0, 0, 0);
-    }
-    (
-        tm.tm_year + 1900,
-        tm.tm_mon + 1,
-        tm.tm_mday,
-        tm.tm_hour,
-        tm.tm_min,
-        tm.tm_sec,
-    )
-}
-
-/// Local time's fields at `seconds` from 1970 on Windows, in the zone and with the daylight saving
-/// rules Windows' clock shows, as JavaScript's `Date` getters read them there. The C library's
-/// `localtime_s` would read a `TZ` variable as POSIX spells it, which Node does not. A `FILETIME`
-/// starts in 1601, so anything earlier, or too far ahead for one, gives 1970.
-#[cfg(windows)]
-pub fn local_time(seconds: i64) -> (i32, i32, i32, i32, i32, i32) {
-    use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
-    use windows_sys::Win32::System::Time::{
-        DYNAMIC_TIME_ZONE_INFORMATION, FileTimeToSystemTime, GetDynamicTimeZoneInformation,
-        SystemTimeToTzSpecificLocalTimeEx,
-    };
-
-    /// Seconds from 1601 to 1970.
-    const EPOCH_DIFFERENCE: i64 = 11_644_473_600;
-    let ticks = seconds
-        .checked_add(EPOCH_DIFFERENCE)
-        .and_then(|since_1601| since_1601.checked_mul(10_000_000))
-        .and_then(|ticks| u64::try_from(ticks).ok());
-    let Some(ticks) = ticks else {
-        return (1970, 1, 1, 0, 0, 0);
-    };
-    let file_time = FILETIME {
-        dwLowDateTime: ticks as u32,
-        dwHighDateTime: (ticks >> 32) as u32,
-    };
-    // SAFETY: plain data, filled by the calls on success.
-    let (mut utc, mut local): (SYSTEMTIME, SYSTEMTIME) = unsafe { std::mem::zeroed() };
-    // SAFETY: plain data, filled by the call.
-    let mut zone: DYNAMIC_TIME_ZONE_INFORMATION = unsafe { std::mem::zeroed() };
-    // SAFETY: every pointer is valid for its call.
-    let filled = unsafe {
-        GetDynamicTimeZoneInformation(&raw mut zone) != u32::MAX
-            && FileTimeToSystemTime(&raw const file_time, &raw mut utc) != 0
-            && SystemTimeToTzSpecificLocalTimeEx(&raw const zone, &raw const utc, &raw mut local)
-                != 0
-    };
-    if !filled {
-        return (1970, 1, 1, 0, 0, 0);
-    }
-    (
-        i32::from(local.wYear),
-        i32::from(local.wMonth),
-        i32::from(local.wDay),
-        i32::from(local.wHour),
-        i32::from(local.wMinute),
-        i32::from(local.wSecond),
-    )
-}
-
 /// One folder per plan run, named so the newest sort last: `2026-10-24_093012-plan-12`, in local
 /// time.
 pub fn holding_batch_name(plan_id: Option<PlanId>, now: SystemTime) -> String {
     let seconds = now
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64);
-    let (year, month, day, hour, minute, second) = local_time(seconds);
-    let stamp = format!("{year}-{month:02}-{day:02}_{hour:02}{minute:02}{second:02}");
+    let at = oriel_core_domain::format::local_time(seconds);
+    let stamp = format!(
+        "{}-{:02}-{:02}_{:02}{:02}{:02}",
+        at.year, at.month, at.day, at.hour, at.minute, at.second
+    );
     match plan_id {
         Some(plan_id) => format!("{stamp}-plan-{plan_id}"),
         None => format!("{stamp}-manual"),
@@ -361,8 +248,7 @@ fn whole_ms_time(time: SystemTime) -> SystemTime {
     UNIX_EPOCH + Duration::from_millis(since.as_millis() as u64)
 }
 
-/// Gives `path` the access and modification times of `like`, in whole milliseconds, as
-/// glazier-core's `utimes(path, stats.atime, stats.mtime)` does.
+/// Gives `path` the access and modification times of `like`, in whole milliseconds.
 pub fn copy_times(path: &Path, like: &fs::Metadata) -> io::Result<()> {
     let times = fs::FileTimes::new()
         .set_accessed(whole_ms_time(like.accessed()?))
@@ -740,9 +626,8 @@ pub fn follow_data_folder(connection: &Connection, data_dir: &Path) -> anyhow::R
     Ok(())
 }
 
-/// Moves a file or folder to the Trash through `NSFileManager`, as Electron's `shell.trashItem`
-/// does on macOS. Emptying holding goes through here, so the owner can still take a batch back
-/// out of the Trash.
+/// Moves a file or folder to the Trash through `NSFileManager`. Emptying holding goes through
+/// here, so the owner can still take a batch back out of the Trash.
 #[cfg(target_os = "macos")]
 fn move_to_system_trash(path: &Path) -> anyhow::Result<()> {
     use objc2_foundation::{NSFileManager, NSString, NSURL};
@@ -757,11 +642,11 @@ fn move_to_system_trash(path: &Path) -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("{}", error.localizedDescription()))
 }
 
-/// Moves a file or folder to the Recycle Bin through the shell's `IFileOperation`, as Electron's
-/// `shell.trashItem` does on Windows, with Chromium's flags: no dialogs, an undo record, and the
-/// Recycle Bin rather than a delete. An item the Recycle Bin cannot take (too large for it, or on
-/// a drive without one) stops the operation rather than being deleted outright, as Chromium's
-/// progress sink stops it, so emptying holding never deletes what the owner cannot take back.
+/// Moves a file or folder to the Recycle Bin through the shell's `IFileOperation`, with the flags
+/// Chromium's `shell.trashItem` uses: no dialogs, an undo record, and the Recycle Bin rather than
+/// a delete. An item the Recycle Bin cannot take (too large for it, or on a drive without one)
+/// stops the operation rather than being deleted outright, as Chromium's progress sink stops it,
+/// so emptying holding never deletes what the owner cannot take back.
 #[cfg(windows)]
 fn move_to_system_trash(path: &Path) -> anyhow::Result<()> {
     let owned = path.to_path_buf();
@@ -978,16 +863,6 @@ mod recycle {
 mod tests {
     use super::*;
 
-    /// The owner's run has no sandbox, so what leaves holding goes to the system's Trash.
-    #[test]
-    fn only_a_sandboxed_run_has_a_trash_of_its_own() {
-        let places = HoldingPlaces::new("/data");
-        assert!(places.sandbox.is_none());
-        let data = DataRoot::at(PathBuf::from("/data")).unwrap();
-        let places = places.sandboxed_in(Some(data));
-        assert!(places.sandbox.is_some());
-    }
-
     #[test]
     fn a_roots_holding_folder_is_named_after_it() {
         assert_eq!(root_folder_name(12, "/a/Photos"), "12-Photos");
@@ -1010,10 +885,11 @@ mod tests {
     fn only_oriels_holding_folders_are_held_places() {
         let scratch = std::env::temp_dir().join(format!("oriel-holds-{}", std::process::id()));
         let _ = fs::remove_dir_all(&scratch);
-        let data_dir = scratch.join("home/.latch-works/oriel/tidy");
+        let data = DataRoot::under_home(&scratch.join("home")).unwrap();
+        let data_dir = data.tidy();
         let batch = data_dir.join("holding/1-Photos/2026-10-31_000000-manual");
         fs::create_dir_all(&batch).unwrap();
-        let places = HoldingPlaces::new(&data_dir).on_volumes(true);
+        let places = HoldingPlaces::new(&data);
         assert!(places.holds(&batch));
         assert!(places.holds(&batch.join("a.jpg")));
         assert!(
@@ -1038,7 +914,9 @@ mod tests {
         std::os::unix::fs::symlink(&glazier, data_dir.join("holding/2-Linked")).unwrap();
         assert!(!places.holds(&data_dir.join("holding/2-Linked/a.jpg")));
         // A sandboxed run holds only in its data folder.
-        assert!(HoldingPlaces::new(&data_dir).holds(&batch));
+        let sandboxed = DataRoot::at(scratch.join("home/.latch-works/oriel")).unwrap();
+        assert!(sandboxed.is_sandboxed());
+        assert!(HoldingPlaces::new(&sandboxed).holds(&batch));
         fs::remove_dir_all(&scratch).unwrap();
     }
 

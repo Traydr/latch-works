@@ -1,21 +1,22 @@
 import * as z from "zod/mini";
+import { COMMANDS, DOWNLOAD_CONCURRENCY } from "../shared/constants";
+import { requireElement } from "../shared/require-element";
 import {
+  type CredentialsChoice,
   CredentialsChoiceSchema,
   CredentialsModeSchema,
   DEFAULT_SETTINGS,
+  type GatherBoxSettings,
   loadSettings,
   saveSettings,
-  type CredentialsChoice,
-  type GatherBoxSettings
 } from "../shared/settings";
-import { LISTED_SITES, type SiteKey } from "../shared/sites";
-import { getGatherSource } from "../shared/source-catalog";
-import { requireElement } from "../gather/dom";
-import { initProfileEditor } from "./profile-editor";
+import { getGatherSource, LISTED_GATHER_SOURCES, type SiteKey } from "../shared/source-catalog";
+import { initProfileEditor, STATUS_MESSAGE_MS } from "./profile-editor";
 
 interface SettingsFormElements {
   form: HTMLFormElement;
   downloadConcurrency: HTMLInputElement;
+  downloadConcurrencyHint: HTMLElement;
   mediaCompatibilityMode: HTMLInputElement;
   xPostFolders: HTMLInputElement;
   verboseLogging: HTMLInputElement;
@@ -54,6 +55,7 @@ function getFormElements(): SettingsFormElements {
   return {
     form: requireElement(document, "settingsForm", HTMLFormElement),
     downloadConcurrency: requireElement(document, "downloadConcurrency", HTMLInputElement),
+    downloadConcurrencyHint: requireElement(document, "downloadConcurrencyHint", HTMLElement),
     mediaCompatibilityMode: requireElement(document, "mediaCompatibilityMode", HTMLInputElement),
     xPostFolders: requireElement(document, "xPostFolders", HTMLInputElement),
     verboseLogging: requireElement(document, "verboseLogging", HTMLInputElement),
@@ -62,22 +64,21 @@ function getFormElements(): SettingsFormElements {
     downloadCommandShortcut: requireElement(document, "downloadCommandShortcut", HTMLElement),
     credentialsMode: requireElement(document, "credentialsMode", HTMLSelectElement),
     perSiteCredentials: requireElement(document, "perSiteCredentials", HTMLElement),
-    saveStatus: requireElement(document, "saveStatus", HTMLElement)
+    saveStatus: requireElement(document, "saveStatus", HTMLElement),
   };
 }
 
 async function renderCommandShortcuts(elements: SettingsFormElements): Promise<void> {
   const commands = await chrome.commands.getAll();
   const shortcuts = new Map(commands.map((command) => [command.name, command.shortcut]));
-  elements.toggleCommandShortcut.textContent = shortcuts.get("toggle-gather-box") || "Not assigned";
-  elements.downloadCommandShortcut.textContent =
-    shortcuts.get("download-active-tab") || "Not assigned";
+  elements.toggleCommandShortcut.textContent = shortcuts.get(COMMANDS.toggle) || "Not assigned";
+  elements.downloadCommandShortcut.textContent = shortcuts.get(COMMANDS.download) || "Not assigned";
 }
 
 function renderPerSiteCredentials(container: HTMLElement, settings: GatherBoxSettings): void {
   container.innerHTML = "";
 
-  for (const site of LISTED_SITES) {
+  for (const site of LISTED_GATHER_SOURCES) {
     const row = document.createElement("div");
     row.className = "per-site-row";
 
@@ -103,6 +104,9 @@ function renderPerSiteCredentials(container: HTMLElement, settings: GatherBoxSet
 }
 
 function applySettingsToForm(elements: SettingsFormElements, settings: GatherBoxSettings): void {
+  elements.downloadConcurrency.min = String(DOWNLOAD_CONCURRENCY.min);
+  elements.downloadConcurrency.max = String(DOWNLOAD_CONCURRENCY.max);
+  elements.downloadConcurrencyHint.textContent = `Parallel file fetches per batch (${DOWNLOAD_CONCURRENCY.min}–${DOWNLOAD_CONCURRENCY.max}).`;
   elements.downloadConcurrency.value = String(settings.downloadConcurrency);
   elements.mediaCompatibilityMode.checked = settings.mediaCompatibilityMode;
   elements.xPostFolders.checked = settings.xPostFolders;
@@ -114,18 +118,18 @@ function applySettingsToForm(elements: SettingsFormElements, settings: GatherBox
   const folderMode = settings.useGlobalFolder ? "global" : "perSite";
 
   const folderInput = elements.form.querySelector<HTMLInputElement>(
-    `input[name="folderMode"][value="${folderMode}"]`
+    `input[name="folderMode"][value="${folderMode}"]`,
   );
 
   if (folderInput) {
     folderInput.checked = true;
   }
-
 }
 
 async function handleSave(elements: SettingsFormElements): Promise<void> {
-  const folderMode = elements.form.querySelector<HTMLInputElement>('input[name="folderMode"]:checked')
-    ?.value;
+  const folderMode = elements.form.querySelector<HTMLInputElement>(
+    'input[name="folderMode"]:checked',
+  )?.value;
 
   const settings: GatherBoxSettings = {
     downloadConcurrency: Number(elements.downloadConcurrency.value),
@@ -137,21 +141,20 @@ async function handleSave(elements: SettingsFormElements): Promise<void> {
     credentialsMode: z
       .catch(CredentialsModeSchema, DEFAULT_SETTINGS.credentialsMode)
       .parse(elements.credentialsMode.value),
-    credentialsPerSite: readPerSiteCredentials(elements.perSiteCredentials)
+    credentialsPerSite: readPerSiteCredentials(elements.perSiteCredentials),
   };
 
   await saveSettings(settings);
   elements.saveStatus.textContent = "Settings saved.";
   window.setTimeout(() => {
     elements.saveStatus.textContent = "";
-  }, 2500);
+  }, STATUS_MESSAGE_MS);
 }
 
 function readPerSiteCredentials(container: HTMLElement) {
   const result: Partial<Record<SiteKey, CredentialsChoice>> = {};
 
   for (const select of container.querySelectorAll<HTMLSelectElement>("select[data-site-key]")) {
-    // The option rows are rendered from GATHER_SOURCES, so every data-site-key is a catalog key.
     const source = getGatherSource(select.dataset.siteKey ?? "");
     const choice = CredentialsChoiceSchema.safeParse(select.value);
 

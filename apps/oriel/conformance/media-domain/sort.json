@@ -1,7 +1,6 @@
 {
   "about": "Made by packages/media-domain/src/conformance.test.ts from sort.ts; do not edit. Regenerate with ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test. Non-ASCII characters are escaped. naturalOrder.classes lists the names in order, names that compare equal sharing a class. Where Rust knowingly differs is listed in apps/oriel/crates/core-domain/tests/conformance.rs.",
   "generatedWith": {
-    "node": "24.18.0",
     "icu": "78.3",
     "unicode": "17.0",
     "cldr": "48.0",

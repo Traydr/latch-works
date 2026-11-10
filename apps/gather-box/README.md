@@ -2,7 +2,7 @@
 
 > Chrome extension for downloading media galleries and story PDFs from supported sites into a local archive.
 
-Gather Box is the **collection** step in [Latch Works](../../README.md): media enters the ecosystem here, gets organized on disk (often alongside [Frame View](../frame-view)), and can later be synced to [Pane View](../pane-view) via [Lockstep](../../apps/lockstep-cli).
+Gather Box is the **collection** step in [Latch Works](../../README.md): media enters the ecosystem here, gets organized on disk (often alongside [Oriel](../../docs/runbooks/oriel.md)), and can later be synced to [Pane View](../pane-view) via [Lockstep](../../apps/lockstep-cli).
 
 ## Profiles
 
@@ -26,15 +26,17 @@ stay on disk.
 | **Reddit** | Community and user-profile post images, galleries, GIFs as MP4, and embedded video posts |
 | **pixiv** | Original artwork pages, including collapsed multi-image works |
 | **Archive of Our Own** | Work PDF download |
-| **fanfiction.net** | All chapters fetched and merged into one local PDF |
+| **FanFiction.Net** | All chapters fetched and merged into one local PDF |
 
 Each site remembers its own destination folder (or one global folder, if chosen in settings).
 Folder and filename inference rules (underscores, nested post paths, `{author}-{story}.pdf` for
 stories) are implemented per collector in `src/content/collectors/`.
 
-`source-catalog.json` is the authoritative list. Entries marked `"unlisted": true` are fully
+`src/shared/source-catalog.ts` is the authoritative list. Entries marked `unlisted: true` are fully
 supported at runtime but are deliberately kept out of enumerated surfaces — this README, the
-options page, and the generated docs site. Read the catalog directly for the complete set.
+options page, the side panel's unsupported-page hint, and the showcase docs. A test checks that
+this table and the showcase's site appendix list exactly the catalog's listed sources. Read the
+catalog directly for the complete set.
 
 ## How it works
 
@@ -59,7 +61,7 @@ For focus-independent shortcuts, Chrome commands default to `Ctrl+Shift+Period`
 (`Command+Shift+Comma` on macOS) to download. They can be remapped in
 `chrome://extensions/shortcuts`.
 
-Downloads use your browser session cookies where needed (AO3, fanfiction.net, and other login-gated sources). Individual file failures do not stop the rest of the batch.
+Downloads send your browser session cookies to the sources that need them (AO3 and pixiv). Individual file failures do not stop the rest of the batch.
 The always-on page script contains only the optional Right Shift shortcuts. When gathering starts,
 the service worker injects exactly one catalog-selected collector into the captured tab's main frame.
 
@@ -71,28 +73,37 @@ exists, Gather Box skips the item before fetching it. The AVIF encoder works ins
 limit. Large hard-edged artwork (from roughly 30 megapixels) can exceed it at speed 6, so Gather Box
 retries such an image at speed 8, which needs half the memory and produces a somewhat larger file.
 Beyond about 64 megapixels no setting fits; Gather Box then saves the original file unconverted and
-notes it in the run log.
+notes it in the run log. A blocked file you hand back from the side panel is converted and saved
+the same way, so the next gather finds it.
 
 ## Project structure
 
 ```text
 gather-box/
-├── manifest.base.json   # Stable MV3 shell; source access is generated
-├── source-catalog.json  # Authoritative Gather Source policy
+├── manifest.base.json   # Stable MV3 shell; source access is generated from the catalog
+├── rules/               # declarativeNetRequest rule files the catalog's sources declare
 ├── sidepanel/           # The sole Gather Box UI
 ├── offscreen/           # Persistent Gather Output execution document
 ├── ui/                  # Shared extension-page styling
-├── src/
-│   ├── background/      # Commands and Gather Run coordination
-│   ├── gather/          # Collection/output adapters and UI helpers
-│   ├── content/         # Per-site collectors (injected scripts)
-│   ├── offscreen/       # Gather Output executor
-│   └── shared/          # Site detection, path helpers
+├── src/                 # One folder per Chrome execution context
+│   ├── background/      # Service worker: commands, Gather Run coordination, media resolvers
+│   ├── content/         # Page-shortcut script and per-source collectors (collectors/<key>.ts)
+│   ├── offscreen/       # Gather Output executor: downloads and story PDFs
+│   ├── sidepanel/       # Side panel controller and DOM
+│   ├── options/         # Settings page
+│   └── shared/          # Catalog, source policies, run/queue model, protocol, storage, the
+│                        # archive writer and AVIF/MP4 conversion (media/)
 ├── scripts/
 │   ├── build.mjs        # Rolldown bundle → dist/
 │   └── clean.mjs
 └── assets/icons/
 ```
+
+`src/shared/source-catalog.ts` defines every Gather Source; `src/shared/source-policies.ts` holds
+the few source rules that are code (X post folders, Hentai Foundry's legacy artist folders). Adding
+a source means a catalog entry and a collector at `src/content/collectors/<key>.ts` that exports
+`collect`; the build generates its content script. Messages between contexts go through one
+protocol module per channel in `src/shared/protocol/`.
 
 ## Development
 
@@ -111,7 +122,7 @@ pnpm --filter @latch-works/gather-box clean
 
 Source lives in `src/` and is bundled into `dist/`. Reload the unpacked extension in Chrome after every rebuild.
 The build emits the reviewable manifest and a host-permission ownership report from
-`source-catalog.json`; generated reports live in `.build-meta/` and are not packaged.
+`src/shared/source-catalog.ts`; generated reports live in `.build-meta/` and are not packaged.
 
 ## Load in Chrome
 
@@ -152,7 +163,7 @@ The build emits the reviewable manifest and a host-permission ownership report f
 **Story PDFs** (AO3, fanfiction.net):
 
 ```text
-<site-folder>/Author_Name-Story_Title.pdf
+<root>/Author_Name-Story_Title.pdf
 ```
 
 Some picture collectors normalize the artist folder, lowercasing only the first ASCII character and
@@ -183,7 +194,7 @@ are converted to underscores.
 
 - [ ] Toolbar action and toggle shortcut open/close the same side panel without console errors
 - [ ] Unsupported pages keep the download action disabled
-- [ ] Image files keep sequential names (`001.webp`, `002.webp`, …)
+- [ ] Image files keep their site filenames (only Reddit galleries get `01_` order prefixes)
 - [ ] Story PDFs use `{author}-{story}.pdf` naming
 - [ ] fanfiction.net: chapter count matches selector; generated PDF has all chapters in order with basic bold/italic preserved
 - [ ] Nested post collectors: files land in `<creator>/<post_title>-<post_id>/`
@@ -193,6 +204,6 @@ are converted to underscores.
 
 ## Related
 
-- [Frame View](../frame-view/README.md) — browse downloaded folders locally
+- [Oriel](../../docs/runbooks/oriel.md) — browse and tidy downloaded folders locally
 - [Lockstep](../../apps/lockstep-cli/README.md) — publish archive to Pane View
 - [Root README](../../README.md) — monorepo overview

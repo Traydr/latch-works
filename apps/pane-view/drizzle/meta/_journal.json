@@ -155,6 +155,13 @@
       "when": 1790734631591,
       "tag": "0021_lowercase_sha256",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794246116557,
+      "tag": "0022_drop_dead_schema",
+      "breakpoints": true
     }
   ]
 }

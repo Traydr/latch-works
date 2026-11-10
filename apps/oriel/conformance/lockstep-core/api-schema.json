@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "PaneViewSyncApi",
-  "description": "Pane View's sync API as @latch-works/lockstep-core's zod schemas describe it. Written by packages/lockstep-core/src/api-schema.test.ts; do not edit by hand.",
+  "description": "Pane View's sync API as @latch-works/sync-protocol's zod schemas describe it. Written by packages/sync-protocol/src/api-schema.test.ts; do not edit by hand.",
   "definitions": {
     "CompleteObjectRequest": {
       "type": "object",
@@ -20,7 +20,7 @@
         },
         "mediaType": {
           "type": "string",
-          "enum": ["image", "gif", "video", "pdf", "unknown"]
+          "enum": ["image", "gif", "video", "pdf"]
         },
         "mtimeMs": {
           "type": "number"
@@ -195,7 +195,7 @@
           "type": "string"
         },
         "uploadUrl": {
-          "type": ["string", "null"]
+          "type": "string"
         }
       },
       "required": ["objectKey", "uploadUrl"]

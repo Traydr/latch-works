@@ -1,62 +1,55 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  deleteLibraryEntry,
-  type GalleryListingRequest,
-  getLibrarySnapshot,
-  type LibrarySnapshot,
-} from "./library-service";
-
-export interface LibrarySnapshotRequest {
-  comicMode: boolean;
-  path: string | undefined;
-  query: string | undefined;
-  recursive: boolean;
-}
-
-export interface GalleryListingQueryRequest extends GalleryListingRequest {}
-
-/**
- * Listing pages are fetched by the browse session through its page source.
- * One key holds every loaded page of a listing, so delete and refresh
- * invalidation re-read them together.
- */
+import { deleteLibraryEntry, getLibrarySnapshot } from "./library-service";
+import type {
+  GalleryComicRequest,
+  GalleryListingRequest,
+  LibrarySnapshotRequest,
+} from "./listing-contract";
 
 export const librarySnapshotKeys = {
   all: ["library-snapshot"] as const,
   snapshot: (request: LibrarySnapshotRequest) => [...librarySnapshotKeys.all, request] as const,
 };
 
+/**
+ * One key holds every loaded page of a listing, so delete and refresh
+ * invalidation re-read them together. The request is the normalized one
+ * (normalizeListingRequest), so equal populations share a key.
+ */
 export const galleryListingKeys = {
   all: ["gallery-listing"] as const,
-  listing: (request: GalleryListingQueryRequest) => [...galleryListingKeys.all, request] as const,
+  listing: (request: GalleryListingRequest) => [...galleryListingKeys.all, request] as const,
 };
+
+/**
+ * The identity of one browse population, as a string: when it changes,
+ * accumulated pages, pagination state, and thumbnail resolution start over.
+ */
+export function browseKeyFor(request: GalleryListingRequest): string {
+  return JSON.stringify(galleryListingKeys.listing(request));
+}
 
 /** Complete comics the reader opened; Refresh invalidates them with the listing. */
 export const galleryComicKeys = {
   all: ["gallery-comic"] as const,
-  comic: (comicId: string, request: GalleryListingQueryRequest) =>
-    [
-      ...galleryComicKeys.all,
-      comicId,
-      request.path ?? "",
-      request.query ?? "",
-      request.showImages,
-      request.showVideos,
-    ] as const,
+  comic: (request: GalleryComicRequest) => [...galleryComicKeys.all, request] as const,
 };
+
+/** Every query a library change can make stale: the snapshot, listings, and opened comics. */
+const libraryContentKeys = [librarySnapshotKeys.all, galleryListingKeys.all, galleryComicKeys.all];
+
+export function invalidateLibraryContent(
+  queryClient: ReturnType<typeof useQueryClient>,
+): Promise<void> {
+  return Promise.all(
+    libraryContentKeys.map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+  ).then(() => undefined);
+}
 
 export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
   return {
     queryKey: librarySnapshotKeys.snapshot(request),
-    queryFn: (): Promise<LibrarySnapshot> =>
-      getLibrarySnapshot({
-        data: {
-          comicMode: request.comicMode,
-          path: request.path,
-          query: request.query,
-          recursive: request.recursive,
-        },
-      }),
+    queryFn: () => getLibrarySnapshot({ data: request }),
     placeholderData: keepPreviousData,
   };
 }
@@ -72,10 +65,7 @@ export function useDeleteLibraryEntryMutation() {
     mutationFn: (entryId: string) => deleteLibraryEntry({ data: { entryId } }),
     onSuccess: (result) => {
       if (result.deleted) {
-        void Promise.all([
-          queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all }),
-          queryClient.invalidateQueries({ queryKey: galleryListingKeys.all }),
-        ]);
+        void invalidateLibraryContent(queryClient);
       }
     },
   });

@@ -1,12 +1,11 @@
+import { CANCELLED_RUN_CLEANUP_MS } from "@latch-works/lockstep-core";
+
 const INTERRUPT_SIGNALS = ["SIGINT", "SIGTERM"] as const;
 
 type InterruptSignal = (typeof INTERRUPT_SIGNALS)[number];
 
 /** Shell convention: 128 plus the signal number. */
 const EXIT_CODES = { SIGINT: 130, SIGTERM: 143 } satisfies Record<InterruptSignal, number>;
-
-/** How long a cancelled push or prune gets to finalize its sync run before the CLI gives up. */
-const CLEANUP_GRACE_MS = 15_000;
 
 export interface InterruptWatch {
   /** The exit code for the signal that aborted the run, or undefined while none has arrived. */
@@ -45,7 +44,7 @@ export function watchInterrupts(): InterruptWatch {
     controller.abort(new Error(`Cancelled by ${signal}.`));
     graceTimer = setTimeout(
       () => forceExit("Cleanup did not finish in time.", EXIT_CODES[signal]),
-      CLEANUP_GRACE_MS,
+      CANCELLED_RUN_CLEANUP_MS,
     );
     graceTimer.unref();
   };

@@ -1,22 +1,25 @@
 // @vitest-environment jsdom
-import type { ComicEntry } from "@latch-works/media-domain";
 import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { galleryListingKeys } from "@/features/library/library-queries";
 import type {
-  GalleryListingQueryRequest,
+  GalleryComic,
+  GalleryListingPage,
+  GalleryListingRequest,
+  GalleryMedia,
   LibrarySnapshotRequest,
-} from "@/features/library/library-queries";
-import type { LibraryMediaItem } from "@/features/library/types";
-import type { GalleryListingPage } from "../../server/library/gallery-listing";
+} from "@/features/library/listing-contract";
 import type { GalleryPageSource } from "./gallery-page-source";
 import { type GalleryBrowseSession, useGalleryBrowse } from "./useGalleryBrowse";
 
 const PAGE_SIZE = 2;
 
-const listingRequest: GalleryListingQueryRequest = {
+const listingRequest: GalleryListingRequest = {
   comicMode: false,
+  excludedPaths: [],
+  limit: PAGE_SIZE,
   path: "photos",
   query: undefined,
   randomSeed: "0123456789abcdef0123456789abcdef",
@@ -27,13 +30,12 @@ const listingRequest: GalleryListingQueryRequest = {
 };
 
 const snapshotRequest: LibrarySnapshotRequest = {
-  comicMode: false,
+  includeAllFolders: false,
   path: "photos",
   query: undefined,
-  recursive: false,
 };
 
-function mediaItem(id: string, sha256 = `sha-${id}`): LibraryMediaItem {
+function mediaItem(id: string, sha256 = `sha-${id}`): GalleryMedia {
   return {
     extension: "jpg",
     id,
@@ -60,9 +62,9 @@ interface Archive {
 }
 
 /**
- * An archive listed two items per page with offset cursors. Every read sees
- * the archive as it is when the request is made; while `holding`, its
- * response waits in `held` until the test releases it, which is how the
+ * An archive listed two items per page with offset cursors. A read sees the
+ * archive as it is when the request is made, or, while `holding`, waits in
+ * `held` and sees it as it is when the test releases it, which is how the
  * tests order overlapping requests.
  */
 function createArchive(initialIds: readonly string[]) {
@@ -74,7 +76,7 @@ function createArchive(initialIds: readonly string[]) {
   };
 
   const source: GalleryPageSource = {
-    loadComic: (request): Promise<ComicEntry<LibraryMediaItem>> => {
+    loadComic: (request): Promise<GalleryComic> => {
       const page = mediaItem("page-1", archive.comicPageHash);
 
       return Promise.resolve({
@@ -85,31 +87,25 @@ function createArchive(initialIds: readonly string[]) {
         pages: [page],
       });
     },
-    loadPage: (request): Promise<GalleryListingPage> => {
-      const cursor = request.cursor ?? null;
-      const start = cursor ? Number(cursor) : 0;
-      const ids = archive.ids.slice(start, start + PAGE_SIZE);
-      const hasMore = start + PAGE_SIZE < archive.ids.length;
+    loadPage: (_request, cursor): Promise<GalleryListingPage> => {
+      const read = (): GalleryListingPage => {
+        const start = cursor ? Number(cursor) : 0;
+        const ids = archive.ids.slice(start, start + PAGE_SIZE);
+        const hasMore = start + PAGE_SIZE < archive.ids.length;
 
-      const page: GalleryListingPage = {
-        comics: [],
-        entries: ids.map((id, index) => ({
-          key: `media:${id}`,
-          kind: "media",
-          media: mediaItem(id),
-          mediaIndex: start + index,
-        })),
-        media: ids.map((id) => mediaItem(id)),
-        page: { cursor: hasMore ? String(start + PAGE_SIZE) : null, hasMore, limit: PAGE_SIZE },
-        subjectKind: "media",
+        return {
+          entries: ids.map((id) => ({ key: `media:${id}`, kind: "media", media: mediaItem(id) })),
+          page: { cursor: hasMore ? String(start + PAGE_SIZE) : null, hasMore, limit: PAGE_SIZE },
+          subjectKind: "media",
+        };
       };
 
       if (!archive.holding) {
-        return Promise.resolve(page);
+        return Promise.resolve(read());
       }
 
       return new Promise((resolve) => {
-        archive.held.push({ cursor, release: () => resolve(page) });
+        archive.held.push({ cursor, release: () => resolve(read()) });
       });
     },
   };
@@ -153,7 +149,7 @@ async function mountBrowse(source: GalleryPageSource) {
 
   await vi.waitFor(() => expect(current().isReady).toBe(true));
 
-  return current;
+  return Object.assign(current, { client });
 }
 
 function ids(session: GalleryBrowseSession): string[] {
@@ -201,20 +197,23 @@ describe("useGalleryBrowse refresh", () => {
     const refreshing = session().refresh();
     await vi.waitFor(() => expect(archive.held).toHaveLength(1));
 
-    // A focus refetch made now, if one is made at all, answers last with a
-    // read from before the sync landed.
-    archive.ids = ["a", "b", "c", "d", "e"];
+    // A focus refetch made now, if one is made at all, waits behind the
+    // Refresh's reads and answers last, with a read from before the sync
+    // landed.
     focusManager.setFocused(false);
     focusManager.setFocused(true);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    archive.ids = ["a", "aa", "b", "c", "d", "e"];
     await release(archive, null);
     await release(archive, "2");
+    await refreshing;
+    archive.ids = ["a", "b", "c", "d", "e"];
     archive.holding = false;
 
     for (const read of archive.held.splice(0)) read.release();
-    await refreshing;
-    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    await vi.waitFor(() =>
+      expect(session.client.isFetching({ queryKey: galleryListingKeys.all })).toBe(0),
+    );
+    archive.ids = ["a", "aa", "b", "c", "d", "e"];
 
     await vi.waitFor(() => expect(ids(session())).toEqual(["a", "aa", "b", "c"]));
     expect(session().page.hasMore).toBe(true);

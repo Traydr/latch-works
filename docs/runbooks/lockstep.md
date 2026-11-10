@@ -7,7 +7,7 @@ Lockstep is the local archive to Pane View sync CLI.
 When run from a terminal with no arguments, Lockstep starts a guided wizard:
 
 ```powershell
-pnpm start:lockstep
+pnpm --filter @latch-works/lockstep start
 ```
 
 If you omit required flags on a command (for example `pnpm --filter @latch-works/lockstep start push`), Lockstep prompts for the missing values instead of failing immediately. Non-TTY environments (CI, pipes) keep the strict flag-based behavior.
@@ -107,7 +107,7 @@ The snapshot file is either a JSON array of entries:
 ]
 ```
 
-or a saved `GET /api/sync/snapshot` response, `{ "entries": [...], "status": "database" }`:
+or a saved `GET /api/sync/snapshot` response, `{ "entries": [...] }`:
 
 ```powershell
 curl.exe -H "Authorization: Bearer $env:LOCKSTEP_API_TOKEN" "$env:LOCKSTEP_API_URL/api/sync/snapshot" -o remote-snapshot.json
@@ -162,8 +162,9 @@ folder went away, still reports the unfinalized run id. `@latch-works/lockstep-c
 `UnfinalizedSyncRunError` for this case, carrying `syncRunId`, the `intendedStatus` it tried to
 record, and the cancellation or fatal error as `cause`. Ctrl+C (or SIGTERM) during a CLI push or
 prune stops new work and finalizes the run as `cancelled` before exiting with status 130 (143 for
-SIGTERM); a second Ctrl+C, or cleanup that takes longer than 15 seconds, quits at once and leaves
-the run for the management page. If finalization fails after the signal, the CLI prints the run id
+SIGTERM); a second Ctrl+C, or cleanup that outlasts its budget (about 26 seconds: up to 10 for run
+creation, then three finalize attempts of up to 5 seconds each), quits at once and leaves the run
+for the management page. If finalization fails after the signal, the CLI prints the run id
 and the management-page step instead of `Cancelled.`, and exits with 130 or 143 only when the run
 was meant to end as `cancelled` (1 otherwise). A signal that arrives while the sync run is being
 created waits for the server's reply (up to 10 seconds), then finalizes that new run as `cancelled`.
@@ -184,7 +185,7 @@ When delete items are present, Lockstep prints every path it will delete (the fi
 
 Before each delete, prune checks the local path again. If the file is back in the source folder, including under a spelling that planning treats as the same entry (different case, Unicode form, or `.jpeg` for `.jpg`), the delete is skipped and reported as `Skipped delete <path>`; the final line counts deleted, skipped, and failed entries. If the source folder itself is missing (an unmounted drive, for example), prune stops before creating a sync run and deletes nothing. If it goes missing or is replaced by a different folder during the run, prune stops before the next delete and finalizes the run as failed.
 
-The desktop app follows the same rule. The main process keeps the last plan for each profile and gives it an id; the **Prune** stage is enabled only when that plan lists at least one delete, its confirmation states how many remote entries will be deleted, and it sends only the plan id back, never paths. A plan can be pruned once: the main process discards it when a prune starts, and a prune is refused if the profile's API URL or source folder changed since the plan.
+Oriel's Sync mode follows the same rule. It keeps the last plan you reviewed and gives it an id; **Prune** is enabled only when that plan lists at least one delete, and its confirmation states how many remote entries will be deleted and from which server. A plan can be pruned once: Sync records the plan's id when a prune starts, and a prune is refused if the profile's API URL or source folder changed since the plan.
 
 ```powershell
 $env:LOCKSTEP_API_URL = "http://localhost:3000"

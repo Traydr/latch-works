@@ -1,44 +1,17 @@
-import { eq, isNull } from "drizzle-orm";
+import { isNull } from "drizzle-orm";
 import { assertSyncApiTokenFromBody } from "../auth/api-token";
-import {
-  collectionItems,
-  collections,
-  favorites,
-  folders,
-  libraryEntries,
-  viewerState,
-} from "../db/schema";
-import {
-  SHUTTER_PURGE_INCOMPLETE_MESSAGE,
-  type ShutterPurgeReadiness,
-  shutterPurgeReadiness,
-} from "../media/shutter-client";
+import { type Database, db } from "../db";
+import { folders, libraryEntries } from "../db/schema";
 import {
   type MaintenanceJobDescriptor,
-  type MaintenanceSchedulerDependencies,
   type MaintenanceTransaction,
-  maintenanceSchedulerDependencies,
   scheduleMaintenanceJob,
 } from "./maintenance-scheduler";
 
 export const LIBRARY_WIPE_CONFIRMATION = "WIPE LIBRARY";
 
-/** The token check, the Shutter configuration, and the scheduler a wipe request runs through. */
-export interface LibraryWipeDependencies {
-  assertSyncApiToken(token: string): void;
-  scheduler: MaintenanceSchedulerDependencies;
-  shutterPurgeReadiness(): ShutterPurgeReadiness;
-}
-
-const defaultLibraryWipeDependencies: LibraryWipeDependencies = {
-  assertSyncApiToken: assertSyncApiTokenFromBody,
-  scheduler: maintenanceSchedulerDependencies,
-  shutterPurgeReadiness: () => shutterPurgeReadiness(),
-};
-
 /**
- * Soft-delete every entry and folder and drop the derived rows inside the
- * scheduling transaction, so the archive is gone from the gallery the moment
+ * Soft-delete every entry and folder inside the scheduling transaction, so the archive is gone from the gallery the moment
  * the wipe is accepted and the worker only has storage and hard deletes left.
  */
 async function softDeleteWholeLibrary(tx: MaintenanceTransaction): Promise<void> {
@@ -46,10 +19,6 @@ async function softDeleteWholeLibrary(tx: MaintenanceTransaction): Promise<void>
 
   await tx.update(libraryEntries).set({ deletedAt: now }).where(isNull(libraryEntries.deletedAt));
   await tx.update(folders).set({ deletedAt: now }).where(isNull(folders.deletedAt));
-  await tx.delete(collectionItems);
-  await tx.delete(collections);
-  await tx.delete(favorites).where(eq(favorites.subjectType, "library_entry"));
-  await tx.delete(viewerState).where(eq(viewerState.subjectType, "library_entry"));
 }
 
 const libraryWipeDescriptor: MaintenanceJobDescriptor = {
@@ -62,23 +31,15 @@ const libraryWipeDescriptor: MaintenanceJobDescriptor = {
 
 export async function scheduleLibraryWipe(
   { confirmation, syncToken }: { confirmation: string; syncToken: string },
-  dependencies: LibraryWipeDependencies = defaultLibraryWipeDependencies,
+  database: Database = db,
 ): Promise<{ jobId: string; phase: "scheduled" }> {
-  // Input validation stays outside the scheduler: it is about the request,
-  // not about when a job may start.
   if (confirmation !== LIBRARY_WIPE_CONFIRMATION) {
     throw new Error(`Type "${LIBRARY_WIPE_CONFIRMATION}" to confirm.`);
   }
 
-  dependencies.assertSyncApiToken(syncToken);
+  assertSyncApiTokenFromBody(syncToken);
 
-  // The wipe deletes the rows that name Shutter's copies; refuse before
-  // anything is touched when those copies could not be purged.
-  if (dependencies.shutterPurgeReadiness() === "incomplete") {
-    throw new Error(SHUTTER_PURGE_INCOMPLETE_MESSAGE);
-  }
-
-  const { jobId } = await scheduleMaintenanceJob(libraryWipeDescriptor, dependencies.scheduler);
+  const { jobId } = await scheduleMaintenanceJob(libraryWipeDescriptor, database);
 
   if (!jobId) {
     throw new Error("Unable to schedule library wipe.");

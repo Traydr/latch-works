@@ -44,13 +44,6 @@ pub struct Instance {
     socket: PathBuf,
 }
 
-/// The lock file in the data folder, beside the modes' folders.
-#[cfg(not(windows))]
-pub const LOCK_FILE: &str = "instance.lock";
-/// The socket a later start hands its paths into, beside [`LOCK_FILE`].
-#[cfg(not(windows))]
-pub const SOCKET_FILE: &str = "instance.sock";
-
 /// Why [`lock`] did not take the data folder.
 #[cfg(not(windows))]
 #[derive(Debug)]
@@ -61,14 +54,14 @@ pub enum LockError {
     Failed(std::io::Error),
 }
 
-/// Takes the exclusive lock on `root`'s [`LOCK_FILE`], which holds while the file stays open.
+/// Takes the exclusive lock on `data`'s lock file, which holds while the file stays open.
 #[cfg(not(windows))]
-pub fn lock(root: &Path) -> Result<std::fs::File, LockError> {
+pub fn lock(data: &DataRoot) -> Result<std::fs::File, LockError> {
     let file = std::fs::OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
-        .open(root.join(LOCK_FILE))
+        .open(data.instance_lock())
         .map_err(LockError::Failed)?;
     match file.try_lock() {
         Ok(()) => Ok(file),
@@ -85,7 +78,7 @@ pub fn lock_name(root: &Path) -> String {
         hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    format!("dev.traydr.latchworks.oriel-{hash:016x}")
+    format!("{}-{hash:016x}", oriel_core_paths::BUNDLE_ID)
 }
 
 /// The paths a launch hands over, one per line; an empty message asks for the window.
@@ -112,8 +105,8 @@ pub fn claim(data: &DataRoot, paths: &[PathBuf]) -> Claim {
     return windows::claim(lock_name(data.root()), paths);
     #[cfg(not(windows))]
     {
-        let socket = data.root().join(SOCKET_FILE);
-        match lock(data.root()) {
+        let socket = data.instance_socket();
+        match lock(data) {
             Ok(file) => Claim::First(Instance {
                 lock: Some(file),
                 socket,
@@ -344,6 +337,9 @@ mod windows {
 mod tests {
     use std::path::{Path, PathBuf};
 
+    #[cfg(not(windows))]
+    use oriel_core_paths::DataRoot;
+
     use super::{decode, encode, lock_name};
 
     #[test]
@@ -363,15 +359,20 @@ mod tests {
     fn a_second_start_on_the_same_data_folder_finds_it_taken() {
         let root = std::env::temp_dir().join(format!("oriel-lock-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
-        let held = super::lock(&root).unwrap();
-        assert!(matches!(super::lock(&root), Err(super::LockError::Taken)));
+        let data = DataRoot::at(root.clone()).unwrap();
+        let held = super::lock(&data).unwrap();
+        assert!(matches!(super::lock(&data), Err(super::LockError::Taken)));
         // The same folder by another spelling is the same file.
         let linked = std::env::temp_dir().join(format!("oriel-lock-link-{}", std::process::id()));
         let _ = std::fs::remove_file(&linked);
         std::os::unix::fs::symlink(&root, &linked).unwrap();
-        assert!(matches!(super::lock(&linked), Err(super::LockError::Taken)));
+        let linked_data = DataRoot::at(linked.clone()).unwrap();
+        assert!(matches!(
+            super::lock(&linked_data),
+            Err(super::LockError::Taken)
+        ));
         drop(held);
-        let again = super::lock(&linked).unwrap();
+        let again = super::lock(&linked_data).unwrap();
         drop(again);
         std::fs::remove_file(&linked).unwrap();
         std::fs::remove_dir_all(&root).unwrap();
@@ -389,7 +390,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("oriel-hand-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
-        let data = oriel_core_paths::DataRoot::at(root.clone()).unwrap();
+        let data = DataRoot::at(root.clone()).unwrap();
         let Claim::First(first) = claim(&data, &[]) else {
             panic!("the first start did not take the lock");
         };
@@ -404,7 +405,7 @@ mod tests {
         assert!(matches!(claim(&data, &[]), Claim::Handed));
         assert_eq!(futures::executor::block_on(received.next()), Some(vec![]));
         // The lock outlives `listen`, so a third start is still turned away.
-        assert!(matches!(super::lock(&root), Err(super::LockError::Taken)));
+        assert!(matches!(super::lock(&data), Err(super::LockError::Taken)));
         std::fs::remove_dir_all(&root).unwrap();
     }
 

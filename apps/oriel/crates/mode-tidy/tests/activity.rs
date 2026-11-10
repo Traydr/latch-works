@@ -4,7 +4,8 @@
 
 use crate::support::*;
 use gpui_kit::{AppContext as _, TestAppContext};
-use oriel_mode_tidy::{TidyPage, last_toast};
+use oriel_mode_tidy::TidyPage;
+use oriel_ui::toast::last_toast;
 use oriel_ui::{JobState, ModeId};
 
 /// Where Tidy's job `key` is, as it published it to the panel.
@@ -26,7 +27,7 @@ fn job_state(cx: &mut TestAppContext, session: &Session, key: &str) -> Option<Jo
 async fn the_panel_lists_running_and_queued_jobs_and_pauses_and_stops_them(
     cx: &mut TestAppContext,
 ) {
-    let session = launch_changing(cx, "activity");
+    let session = launch(cx, "activity");
     add_archive(cx, &session).await;
     go(cx, &session, TidyPage::Convert);
     settle(cx, &session).await;
@@ -40,7 +41,7 @@ async fn the_panel_lists_running_and_queued_jobs_and_pauses_and_stops_them(
         state.update(cx, |state, cx| {
             state.start_scan(root_id, window, cx);
             let scan = state.scan().unwrap().job.clone();
-            scan.update(cx, |job, cx| job.set_paused(true, cx));
+            scan.set_paused(true, cx);
         });
     })
     .unwrap();
@@ -48,9 +49,10 @@ async fn the_panel_lists_running_and_queued_jobs_and_pauses_and_stops_them(
         let jobs = session.shell.read(cx).jobs().read(cx);
         jobs.jobs_of(ModeId::Tidy)
             .iter()
-            .any(|job| job.key().as_ref() == "scan" && job.job_state() == JobState::Paused)
+            .any(|job| job.key().starts_with("scan-") && job.job_state() == JobState::Paused)
     })
     .await;
+    let scan = job_keys(cx, &session, "scan-")[0].clone();
     // It shows once the work has run long enough to say.
     cx.executor()
         .advance_clock(std::time::Duration::from_millis(300));
@@ -67,13 +69,15 @@ async fn the_panel_lists_running_and_queued_jobs_and_pauses_and_stops_them(
         let jobs = session.shell.read(cx).jobs().read(cx);
         jobs.jobs_of(ModeId::Tidy)
             .iter()
-            .any(|job| job.key().as_ref() == "change" && job.job_state() == JobState::Queued)
+            .any(|job| job.key().starts_with("change-") && job.job_state() == JobState::Queued)
     })
     .await;
+    let convert = job_keys(cx, &session, "change-")[0].clone();
     // Clean up, asked for while Convert holds the turn, joins Tidy's queue and says so.
     go(cx, &session, TidyPage::CleanUp);
     click(cx, &session, "cleanup-run-all");
-    assert_eq!(job_state(cx, &session, "queued-0"), Some(JobState::Queued));
+    let cleanup = job_keys(cx, &session, "change-")[1].clone();
+    assert_eq!(job_state(cx, &session, &cleanup), Some(JobState::Queued));
     assert_eq!(
         label(cx, &session, "cleanup-run-all").as_deref(),
         Some("Queued")
@@ -92,34 +96,34 @@ async fn the_panel_lists_running_and_queued_jobs_and_pauses_and_stops_them(
         Some("1 paused · 2 queued")
     );
     assert_eq!(
-        label(cx, &session, "activity-tidy-scan-state").as_deref(),
+        label(cx, &session, format!("activity-tidy-{scan}-state")).as_deref(),
         Some("Paused")
     );
     assert_eq!(
-        label(cx, &session, "activity-tidy-change-state").as_deref(),
+        label(cx, &session, format!("activity-tidy-{convert}-state")).as_deref(),
         Some("Queued")
     );
     assert_eq!(
-        label(cx, &session, "activity-tidy-queued-0").as_deref(),
+        label(cx, &session, format!("activity-tidy-{cleanup}")).as_deref(),
         Some("Tidy · Clean up")
     );
     // Waiting work has nothing to pause yet; the paused scan resumes.
-    assert!(label(cx, &session, "activity-tidy-change-pause").is_none());
+    assert!(label(cx, &session, format!("activity-tidy-{convert}-pause")).is_none());
     assert_eq!(
-        label(cx, &session, "activity-tidy-scan-pause").as_deref(),
+        label(cx, &session, format!("activity-tidy-{scan}-pause")).as_deref(),
         Some("Resume")
     );
 
     // Stop takes the queued Clean up off the queue; its page can start it again.
-    click(cx, &session, "activity-tidy-queued-0-stop");
-    assert_eq!(job_state(cx, &session, "queued-0"), None);
+    click(cx, &session, format!("activity-tidy-{cleanup}-stop"));
+    assert_eq!(job_state(cx, &session, &cleanup), None);
     assert_ne!(
         label(cx, &session, "cleanup-run-all").as_deref(),
         Some("Queued")
     );
     // Stop ends the waiting conversion before it has changed anything.
     let_toast_land(cx, &session);
-    click(cx, &session, "activity-tidy-change-stop");
+    click(cx, &session, format!("activity-tidy-{convert}-stop"));
     wait_for(cx, &session, "the conversion to stop", |cx| {
         !session
             .shell
@@ -128,7 +132,7 @@ async fn the_panel_lists_running_and_queued_jobs_and_pauses_and_stops_them(
             .read(cx)
             .jobs_of(ModeId::Tidy)
             .iter()
-            .any(|job| job.key().as_ref() == "change")
+            .any(|job| job.key().as_ref() == convert)
     })
     .await;
     assert_eq!(cx.read(last_toast).as_deref(), Some("Stopped"));
@@ -136,7 +140,7 @@ async fn the_panel_lists_running_and_queued_jobs_and_pauses_and_stops_them(
 
     // Resume lets the rescan finish, and with Tidy idle the indicator goes.
     let_toast_land(cx, &session);
-    click(cx, &session, "activity-tidy-scan-pause");
+    click(cx, &session, format!("activity-tidy-{scan}-pause"));
     settle(cx, &session).await;
     assert!(label(cx, &session, "activity-panel").is_none());
     assert!(label(cx, &session, "activity-indicator").is_none());

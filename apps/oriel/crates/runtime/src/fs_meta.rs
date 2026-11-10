@@ -1,5 +1,5 @@
-//! A file's size, times and identity as Node's `fs.stat` gives them, on every platform, so the
-//! catalogs hold what Electron Oriel's hold.
+//! A file's size, times and identity as Node's `fs.stat` gives them, on every platform, and a
+//! folder's entries with them.
 //!
 //! On Unix this is `std::os::unix::fs::MetadataExt` as it is. On Windows, [`MetadataExt`] gives
 //! the same names from Windows' own metadata, but std's metadata has neither NTFS's change time
@@ -7,9 +7,20 @@
 //! libuv reports as `st_ctime`, [`dev_ino`] the volume serial number and the file index it
 //! reports as `st_dev` and `st_ino` (hard links to one file share both, as they do on Unix), and
 //! [`identity`] reads all of them with one open.
+//!
+//! [`read_entries`] reads a folder: each name, what it is as `readdir` types it, and a file's
+//! [`FileStat`] when the read gave it. On macOS one `getattrlistbulk` call reads many entries with
+//! each file's size and times, which spares a scan a `stat` per file, most of its time on a folder
+//! of thousands of stills. Elsewhere it is `readdir`, and the scans state each file themselves.
 
+#[cfg(target_os = "macos")]
+mod bulk;
+
+use std::ffi::OsString;
 use std::fs::Metadata;
+use std::io;
 use std::path::Path;
+use std::time::UNIX_EPOCH;
 
 #[cfg(unix)]
 pub use std::os::unix::fs::MetadataExt;
@@ -87,6 +98,97 @@ pub fn identity(path: &Path, metadata: &Metadata) -> Identity {
     }
 }
 
+/// Node's `mtimeMs`: whole seconds in milliseconds plus the nanoseconds as a fraction, summed in
+/// that order so the same file gives the same float. A time before 1970 reads 0.
+pub fn modified_ms(metadata: &Metadata) -> f64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map_or(0.0, |since| {
+            since.as_secs() as f64 * 1e3 + f64::from(since.subsec_nanos()) / 1e6
+        })
+}
+
+/// What `fs.stat` says of a regular file: the length of its data, and its modification and change
+/// times as `mtimeMs` and `ctimeMs`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FileStat {
+    pub size: u64,
+    pub modified_ms: f64,
+    /// `None` where it was not read: [`FileStat::of`] on Windows.
+    pub changed_ms: Option<f64>,
+}
+
+impl FileStat {
+    /// The facts `metadata` holds, which on Windows lack the change time.
+    pub fn of(metadata: &Metadata) -> Self {
+        #[cfg(unix)]
+        let changed_ms = Some(metadata.ctime() as f64 * 1e3 + metadata.ctime_nsec() as f64 / 1e6);
+        #[cfg(not(unix))]
+        let changed_ms = None;
+        Self {
+            size: metadata.len(),
+            modified_ms: modified_ms(metadata),
+            changed_ms,
+        }
+    }
+
+    /// The facts of the file at `path`, whose metadata is `metadata`, with its change time on
+    /// every platform: on Windows NTFS's, which takes a read of the file itself
+    /// ([`change_time`]).
+    pub fn with_change_time(path: &Path, metadata: &Metadata) -> Self {
+        let (seconds, nanoseconds) = change_time(path, metadata);
+        Self {
+            changed_ms: Some(seconds as f64 * 1e3 + nanoseconds as f64 / 1e6),
+            ..Self::of(metadata)
+        }
+    }
+}
+
+/// What an entry is, as `readdir`'s type tells it, without following a symlink.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntryKind {
+    File,
+    Folder,
+    /// A symlink, a socket or anything else.
+    Other,
+}
+
+#[derive(Debug)]
+pub struct DirEntry {
+    pub name: OsString,
+    pub kind: EntryKind,
+    /// A file's facts, when the read gave them.
+    pub stat: Option<FileStat>,
+}
+
+/// A folder's entries in its own order, which on APFS and HFS+ is `readdir`'s.
+#[cfg(target_os = "macos")]
+pub fn read_entries(folder: &Path) -> io::Result<impl Iterator<Item = io::Result<DirEntry>>> {
+    Ok(bulk::read(folder)?.into_iter().map(Ok))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn read_entries(folder: &Path) -> io::Result<impl Iterator<Item = io::Result<DirEntry>>> {
+    Ok(std::fs::read_dir(folder)?.map(|entry| {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let kind = if file_type.is_dir() {
+            EntryKind::Folder
+        } else if file_type.is_file() {
+            EntryKind::File
+        } else {
+            EntryKind::Other
+        };
+        Ok(DirEntry {
+            name: entry.file_name(),
+            kind,
+            stat: None,
+        })
+    }))
+}
+
 #[cfg(windows)]
 pub use windows::MetadataExt;
 
@@ -123,8 +225,8 @@ mod windows {
         fn mtime(&self) -> i64;
         fn mtime_nsec(&self) -> i64;
         /// The last write time, the nearest std's metadata has. libuv's `st_ctime` is NTFS's
-        /// change time, which differs after a change to the attributes alone: whatever is
-        /// compared with Electron Oriel's catalogs reads [`super::change_time`] instead.
+        /// change time, which differs after a change to the attributes alone: whatever must
+        /// match Node's `ctime` reads [`super::change_time`] instead.
         fn ctime(&self) -> i64;
         fn ctime_nsec(&self) -> i64;
     }

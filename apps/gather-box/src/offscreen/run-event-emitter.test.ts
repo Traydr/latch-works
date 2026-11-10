@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GatherRunEvent } from "../shared/gather-run-messages";
+import type { GatherRunEvent } from "../shared/protocol/run-events";
 import { createGatherRunEventEmitter } from "./run-event-emitter";
 
 const complete: GatherRunEvent = {
@@ -8,7 +8,7 @@ const complete: GatherRunEvent = {
   skipped: 0,
   failed: 0,
   failedItems: [],
-  retryImages: []
+  retryImages: [],
 };
 
 const permissionRequired: GatherRunEvent = { kind: "permission-required", scope: "site" };
@@ -32,7 +32,7 @@ describe("Gather Run event delivery", () => {
 
         return accepted;
       },
-      async () => undefined
+      async () => undefined,
     );
 
     await emitter.emit(complete);
@@ -42,8 +42,7 @@ describe("Gather Run event delivery", () => {
     expect(attempts).toEqual([complete, complete, complete]);
   });
 
-  it("keeps redelivering a terminal report past the backoff until the background accepts it", async () => {
-    const delays: number[] = [];
+  it("never gives up redelivering a terminal report the background has not accepted", async () => {
     let attempts = 0;
 
     const emitter = createGatherRunEventEmitter(
@@ -52,16 +51,13 @@ describe("Gather Run event delivery", () => {
 
         return attempts === 20;
       },
-      async (milliseconds) => {
-        delays.push(milliseconds);
-      }
+      async () => undefined,
     );
 
     await emitter.emit(complete);
     emitter.flush();
 
     await expect.poll(() => attempts).toBe(20);
-    expect(Math.max(...delays)).toBe(30_000);
   });
 
   it("holds a permission pause until the slot is released, then redelivers it", async () => {
@@ -73,7 +69,7 @@ describe("Gather Run event delivery", () => {
 
         return attempts.length === 2;
       },
-      async () => undefined
+      async () => undefined,
     );
 
     await emitter.emit(permissionRequired);
@@ -114,7 +110,7 @@ describe("Gather Run event delivery", () => {
       () =>
         new Promise<void>((resolve) => {
           releaseWait = resolve;
-        })
+        }),
     );
 
     await emitter.emit(complete);

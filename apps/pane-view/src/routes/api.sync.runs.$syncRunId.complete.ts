@@ -1,56 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { readJsonBody } from "../server/http/json-body";
 import { SyncRunNotFoundError } from "../server/sync/errors";
-import {
-  type SyncRouteDependencies,
-  syncRouteDependencies,
-} from "../server/sync/route-dependencies";
-import { withSyncRouteErrors } from "../server/sync/route-errors";
-import { SyncRunCountsSchema } from "../server/sync/validation";
-
-const FinalizeSyncRunBodySchema = z.object({
-  counts: SyncRunCountsSchema.optional(),
-  error: z.string({ error: "error must be a string" }).optional(),
-  status: z.enum(["completed", "failed", "cancelled"], {
-    error: "status must be completed, failed, or cancelled",
-  }),
-});
-
-export async function postSyncRunComplete(
-  { params, request }: { params: { syncRunId: string }; request: Request },
-  dependencies: SyncRouteDependencies = syncRouteDependencies,
-): Promise<Response> {
-  const unauthorized = dependencies.requireSyncApiToken(request);
-
-  if (unauthorized) {
-    return unauthorized;
-  }
-
-  if (!z.uuid().safeParse(params.syncRunId).success) {
-    throw new SyncRunNotFoundError();
-  }
-
-  const parsed = await readJsonBody(request, FinalizeSyncRunBodySchema);
-
-  if (!parsed.ok) {
-    return Response.json({ error: parsed.error }, { status: 400 });
-  }
-
-  return Response.json(
-    await dependencies.finalizeSyncRun({
-      input: {
-        counts: parsed.body.counts,
-        error: parsed.body.error,
-        status: parsed.body.status,
-        syncRunId: params.syncRunId,
-      },
-    }),
-  );
-}
+import { syncRoute } from "../server/sync/route";
+import { finalizeSyncRun } from "../server/sync/sync-runs";
+import { parseFinalizeSyncRunBody } from "../server/sync/validation";
 
 export const Route = createFileRoute("/api/sync/runs/$syncRunId/complete")({
   server: {
-    handlers: { POST: withSyncRouteErrors(postSyncRunComplete) },
+    handlers: {
+      POST: syncRoute({
+        parse: parseFinalizeSyncRunBody,
+        handle: (outcome, { syncRunId }: { syncRunId: string }) => {
+          if (!z.uuid().safeParse(syncRunId).success) {
+            throw new SyncRunNotFoundError();
+          }
+
+          return finalizeSyncRun(syncRunId, outcome);
+        },
+      }),
+    },
   },
 });

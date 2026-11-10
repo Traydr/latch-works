@@ -1,50 +1,18 @@
-import type { BrowserEntry, GallerySortMode } from "@latch-works/media-domain";
+import type { GallerySortMode } from "@latch-works/media-domain";
 import { GallerySortModeSchema } from "@latch-works/media-domain";
 import { z } from "zod";
-import { parseJsonWith } from "@/lib/parse-json";
 import {
   GalleryRandomOrderKeySchema,
   type GalleryRandomSeed,
   GalleryRandomSeedSchema,
   type GallerySubjectKind,
-} from "./gallery-order";
-import type { LibraryMediaItem } from "./types";
+} from "@/features/library/listing-contract";
+import { parseJsonWith } from "@/lib/parse-json";
 
-export const DEFAULT_GALLERY_LISTING_LIMIT = 60;
-
-/**
- * One comic as listed in the gallery: identity, display name, cover, and the
- * eligible page count under the current filters. Full pages load only when
- * the reader opens (getGalleryComic), so a listing page's size does not
- * depend on how many pages its comics have.
+/*
+ * The listing cursor: an opaque base64url JSON token naming the last row a
+ * page returned, in the order it was sorted by.
  */
-export interface GalleryComicSummary {
-  cover: LibraryMediaItem;
-  folderPath: string;
-  /** Equal to `folderPath`; the canonical comic identity. */
-  id: string;
-  name: string;
-  pageCount: number;
-}
-
-/**
- * One page of the gallery listing, in final display order. The server owns
- * presentation order; clients append pages and never sort them.
- */
-export interface GalleryListingPage {
-  subjectKind: GallerySubjectKind;
-  /** Media mode: folder + media entries as today. Comic mode: empty. */
-  entries: BrowserEntry[];
-  /** Media mode: the page's media. Comic mode: the covers, in listing order. */
-  media: LibraryMediaItem[];
-  /** Comic mode: the summaries, in listing order. Media mode: empty. */
-  comics: GalleryComicSummary[];
-  page: {
-    cursor: string | null;
-    hasMore: boolean;
-    limit: number;
-  };
-}
 
 /** The request facts a cursor must match to be honoured. */
 export interface GalleryListingCursorRequest {
@@ -58,6 +26,7 @@ const cursorBaseSchema = z.object({
   randomSeed: GalleryRandomSeedSchema,
   /** Present in random mode: the last row's shared random-order key. */
   randomKey: GalleryRandomOrderKeySchema.optional(),
+  /** A comic's newest or oldest page mtime, whichever the sort mode orders by. */
   mtimeMs: z.number(),
 });
 
@@ -72,8 +41,6 @@ const GalleryListingCursorPayloadSchema = z.discriminatedUnion("subjectKind", [
   cursorBaseSchema.extend({
     subjectKind: z.literal("comic"),
     folderPath: z.string(),
-    /** The comic's newest or oldest page mtime, whichever the sort mode orders by. */
-    mtimeMs: z.number(),
   }),
 ]);
 

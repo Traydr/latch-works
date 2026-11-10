@@ -3,20 +3,18 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { LATCH_WORKS_DIRECTORY_NAME, type MediaItem } from "@latch-works/media-domain";
-import { type ArchiveFileFingerprint, fingerprintsMatch } from "@latch-works/media-index";
+import { SHA256_PATTERN } from "@latch-works/sync-protocol";
 import { z } from "zod";
-import { toError } from "./format.js";
+import { isMissingPathError, toError } from "./errors.js";
+import { type ArchiveFileFingerprint, fingerprintsMatch } from "./scan.js";
 
 const CACHE_VERSION = 1;
-
-const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
 export interface HashCacheEntry extends ArchiveFileFingerprint {
   path: string;
   sha256: string;
 }
 
-/** On-disk entry: `mtimeMs` is truncated and `sha256` lower-cased as it is read. */
 const HashCacheEntrySchema = z
   .object({
     ctimeMs: z.number().finite().optional(),
@@ -42,9 +40,6 @@ const PersistedHashCacheSchema = z.object({
 });
 
 type PersistedHashCache = z.output<typeof PersistedHashCacheSchema>;
-
-/** Node's fs rejections carry an `errno` `code`; anything else fails the parse. */
-const FileSystemErrorSchema = z.object({ code: z.string() });
 
 export interface LoadHashCacheOptions {
   cacheRoot?: string;
@@ -182,15 +177,13 @@ export async function loadHashCache({
 
     return { cache: new HashCache(filePath, canonicalRoot, persisted.entries) };
   } catch (error) {
-    const failure = toError(error);
-
-    if (isMissingFileError(failure)) {
+    if (isMissingPathError(error)) {
       return { cache: new HashCache(filePath, canonicalRoot) };
     }
 
     return {
       cache: new HashCache(filePath, canonicalRoot),
-      warning: `Hash cache could not be read and will be rebuilt: ${failure.message}`,
+      warning: `Hash cache could not be read and will be rebuilt: ${toError(error).message}`,
     };
   }
 }
@@ -199,10 +192,4 @@ function canonicalSourceRoot(sourceRoot: string): string {
   const resolved = path.normalize(path.resolve(sourceRoot));
 
   return process.platform === "win32" ? resolved.toLowerCase() : resolved;
-}
-
-function isMissingFileError(error: Error): boolean {
-  const parsed = FileSystemErrorSchema.safeParse(error);
-
-  return parsed.success && parsed.data.code === "ENOENT";
 }

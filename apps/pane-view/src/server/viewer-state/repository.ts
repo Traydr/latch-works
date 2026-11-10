@@ -1,32 +1,27 @@
 import { and, eq } from "drizzle-orm";
+import type {
+  ViewerStateSnapshot,
+  ViewerStateWrite,
+} from "@/features/viewer/viewer-state-contract";
 import { db } from "../db";
 import { viewerState } from "../db/schema";
-import type { ViewerStateSnapshot, ViewerStateWrite } from "./types";
-
-export type { ViewerStateSnapshot, ViewerStateWrite } from "./types";
 
 export async function readViewerState({
   subjectId,
-  subjectType,
   userId,
 }: {
   subjectId: string;
-  subjectType: "library_entry" | "collection";
   userId: string;
 }): Promise<ViewerStateSnapshot | null> {
   const [state] = await db
-    .select()
+    .select({ page: viewerState.page, positionMs: viewerState.positionMs })
     .from(viewerState)
-    .where(
-      and(
-        eq(viewerState.userId, userId),
-        eq(viewerState.subjectId, subjectId),
-        eq(viewerState.subjectType, subjectType),
-      ),
-    )
+    .where(and(eq(viewerState.userId, userId), eq(viewerState.subjectId, subjectId)))
     .limit(1);
 
-  return state ? toSnapshot(state) : null;
+  return state
+    ? { page: state.page ?? undefined, positionMs: state.positionMs ?? undefined }
+    : null;
 }
 
 export async function upsertViewerState({
@@ -35,14 +30,13 @@ export async function upsertViewerState({
 }: {
   state: ViewerStateWrite;
   userId: string;
-}): Promise<ViewerStateSnapshot | null> {
-  const [saved] = await db
+}): Promise<void> {
+  await db
     .insert(viewerState)
     .values({
       page: state.page ?? null,
       positionMs: state.positionMs ?? null,
       subjectId: state.subjectId,
-      subjectType: state.subjectType,
       updatedAt: new Date(),
       userId,
     })
@@ -52,19 +46,6 @@ export async function upsertViewerState({
         positionMs: state.positionMs ?? null,
         updatedAt: new Date(),
       },
-      target: [viewerState.userId, viewerState.subjectId, viewerState.subjectType],
-    })
-    .returning();
-
-  return saved ? toSnapshot(saved) : null;
-}
-
-function toSnapshot(state: typeof viewerState.$inferSelect): ViewerStateSnapshot {
-  return {
-    page: state.page ?? undefined,
-    positionMs: state.positionMs ?? undefined,
-    subjectId: state.subjectId,
-    subjectType: state.subjectType,
-    updatedAt: state.updatedAt.toISOString(),
-  };
+      target: [viewerState.userId, viewerState.subjectId],
+    });
 }

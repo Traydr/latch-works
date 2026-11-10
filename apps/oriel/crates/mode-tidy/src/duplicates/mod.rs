@@ -1,4 +1,4 @@
-//! Duplicates (`views/DuplicatesView.tsx`): the queue of sets on the left (Similar, Variants and
+//! Duplicates: the queue of sets on the left (Similar, Variants and
 //! Identical), the set on the stage (similar versions as the version grid with playing video
 //! tiles, identical copies as the copy list), the loupe, and the decision bar.
 //!
@@ -10,7 +10,7 @@
 //!
 //! Return keeps the suggestion and moves on; 1–9 keep only that version; ⇧1–9 keep it as well;
 //! N keeps every version and marks the set as not duplicates, which its Undo (the toast's, ⌘Z,
-//! or History's, which lists such sets in place of Electron Oriel's list of them) brings back;
+//! or History's, which lists such sets) brings back;
 //! S skips; ↑ ↓
 //! (J K) move through the queue and ← → (H L) through the versions; Page Down goes to the next
 //! line of versions and Page Up back to the first; Space or C looks closer, Z shows actual size, M
@@ -25,7 +25,7 @@ mod video;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -43,24 +43,26 @@ use gpui_kit::{
     UniformListScrollHandle, WeakEntity, Window, canvas, div, prelude::FluentBuilder as _, px,
     rems, uniform_list,
 };
+use oriel_core_domain::format;
 use oriel_core_tidy::contract::{
     DuplicateKind, DuplicateScope, DuplicateSet, DuplicateSetPage, DuplicateSetRequest, FileId,
     FileKind, FileRow, RootId, SimilarityLevel, is_close_call,
 };
 use oriel_ui::TextRole as _;
+use oriel_ui::ToastExt as _;
 use oriel_ui::focus::FocusReveal;
 use oriel_ui::layout::{NavItem, RAIL_WIDTH, SIDEBAR_WIDTH};
 use oriel_ui::{ControlSize as _, Toast, TopBar, checkbox_target};
 
 use crate::actions::PerformOptions;
-use crate::changes::{PlanRequest, ResolveGroup};
-use crate::format;
+use crate::labels;
 use crate::loaded::Loaded;
 use crate::pages::TidyPage;
 use crate::quick_look::{QUICK_LOOK_LABEL, quick_look};
 use crate::state::TidyState;
 use crate::thumbs::{self, Thumb, Thumbs};
 use crate::widgets;
+use oriel_core_tidy::contract::{PlanRequest, ResolveGroup};
 
 use grid::{GridInput, GridPlan, in_view};
 pub use model::SetRow;
@@ -72,9 +74,6 @@ use video::TileVideo;
 
 /// Sets read at once, and how many more as the queue nears its end.
 const PAGE: usize = 100;
-
-/// How long a click on a new set waits, so a double-click never decides two sets.
-const ARM_DELAY: Duration = Duration::from_millis(400);
 
 /// The least height of a version's picture, in rems: a stage too short to give every tile that
 /// much over its facts scrolls, rather than letting the facts cover the picture.
@@ -107,7 +106,7 @@ const OUT_OF_SIGHT_LEAST: f32 = 6.75;
 /// What the grid and the copy list keep clear at their foot for the fade over what is below.
 const FOCUS_FOOT: Pixels = px(48.);
 /// How long the pointer stays on a folder line before its hover text shows.
-const FOLDER_TIP_AFTER: std::time::Duration = std::time::Duration::from_millis(500);
+const FOLDER_TIP_AFTER: Duration = Duration::from_millis(500);
 /// The letters a narrow queue's row holds on its second line.
 const NARROW_QUEUE_LETTERS: usize = 19;
 /// A stage narrower than this, in rems, has no room for "below" and a kept version's number too.
@@ -159,26 +158,6 @@ const LOUPE_LOSS: u32 = 0xfc_d3_4d;
 /// The longest side a version tile's video frames are drawn at: about a tile's at most.
 const TILE_VIDEO_SIDE: u32 = 1024;
 
-/// Opens the top bar's Matching popover when the page first draws, for a check in a real window,
-/// since this Mac allows no scripted clicks.
-const MATCHING_VARIABLE: &str = "ORIEL_DUPLICATES_MATCHING";
-
-/// Opens the set at this place in the queue (from 1), or the first with a file whose path holds
-/// these words, once the queue is read, for the same reason.
-const SET_VARIABLE: &str = "ORIEL_DUPLICATES_SET";
-
-/// Keeps only this version (from 1) of the set on screen at start, for the same reason.
-const KEEP_VARIABLE: &str = "ORIEL_DUPLICATES_KEEP";
-
-/// Opens the loupe on the set on screen at start, for the same reason.
-const LOUPE_VARIABLE: &str = "ORIEL_DUPLICATES_LOUPE";
-
-/// Plays the video the loupe opens on at start, to show its controls, for the same reason.
-const PLAY_VARIABLE: &str = "ORIEL_DUPLICATES_PLAY";
-
-/// Scrolls the version grid to this line (from 0) at start, for the same reason.
-const SCROLL_VARIABLE: &str = "ORIEL_DUPLICATES_SCROLL";
-
 /// The versions a scrolling grid leaves out of sight.
 #[derive(Clone, Debug)]
 struct OutOfSight {
@@ -189,40 +168,6 @@ struct OutOfSight {
     kept: Vec<usize>,
     /// The line a press goes to.
     go_to: usize,
-}
-
-/// What the check variables above still have to do, once the queue is read.
-#[derive(Default)]
-struct AtStart {
-    set: Option<usize>,
-    set_named: Option<String>,
-    /// The name asked for when no set on the page has it, said in the top bar.
-    set_missing: Option<String>,
-    keep: Option<usize>,
-    loupe: bool,
-    play: bool,
-    scroll: Option<usize>,
-}
-
-impl AtStart {
-    fn from_environment() -> Self {
-        let number = |name: &str| {
-            std::env::var(name)
-                .ok()
-                .and_then(|value| value.parse().ok())
-        };
-        Self {
-            set: number(SET_VARIABLE),
-            set_named: std::env::var(SET_VARIABLE)
-                .ok()
-                .filter(|value| value.parse::<usize>().is_err()),
-            set_missing: None,
-            keep: number(KEEP_VARIABLE),
-            loupe: std::env::var_os(LOUPE_VARIABLE).is_some_and(|value| !value.is_empty()),
-            play: std::env::var_os(PLAY_VARIABLE).is_some_and(|value| !value.is_empty()),
-            scroll: number(SCROLL_VARIABLE),
-        }
-    }
 }
 
 /// Lines above and below the screen whose pictures are decoded ahead of a scroll, but not drawn.
@@ -286,7 +231,8 @@ pub struct DuplicatesPage {
     /// A set undone from here comes back into focus once the queue brings it.
     return_to: Option<String>,
     freed_here: i64,
-    armed_at: Instant,
+    /// A new set's versions take no click at first, so a double-click never decides two sets.
+    arming: oriel_ui::Arming,
     active_key: Option<String>,
     /// The video the loupe or the copy list plays, with its sound.
     video: Option<(FileId, Entity<TileVideo>)>,
@@ -311,7 +257,7 @@ pub struct DuplicatesPage {
     bar_slot: Option<gpui_kit::Bounds<Pixels>>,
     /// What the version grid drawn last leaves out of sight, for the decision bar.
     out_of_sight: Option<OutOfSight>,
-    at_start: AtStart,
+
     /// The tile whose folder line has been under the pointer long enough to show its whole path,
     /// and the wait until it does.
     folder_tip: Option<FileId>,
@@ -334,7 +280,11 @@ pub struct DuplicatesPage {
 }
 
 impl DuplicatesPage {
-    pub fn new(state: &Entity<TidyState>, thumbs: &Entity<Thumbs>, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        state: &Entity<TidyState>,
+        thumbs: &Entity<Thumbs>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let subscriptions = vec![
             cx.observe(state, |this, _, cx| this.sync(cx)),
             cx.observe(thumbs, |_, _, cx| cx.notify()),
@@ -362,7 +312,7 @@ impl DuplicatesPage {
             hidden: HashMap::new(),
             return_to: None,
             freed_here: 0,
-            armed_at: Instant::now(),
+            arming: oriel_ui::Arming::default(),
             active_key: None,
             video: None,
             tile_videos: HashMap::new(),
@@ -376,7 +326,6 @@ impl DuplicatesPage {
             rem: 16.,
             bar_slot: None,
             out_of_sight: None,
-            at_start: AtStart::from_environment(),
             folder_tip: None,
             folder_tip_wait: None,
             hover_picture: None,
@@ -446,20 +395,6 @@ impl DuplicatesPage {
             .unwrap_or_default()
     }
 
-    /// The names of the files the set on screen keeps, for checks.
-    pub fn kept_names(&self) -> Vec<String> {
-        let kept = self.kept();
-        self.active()
-            .map(|set| {
-                files_of(set)
-                    .into_iter()
-                    .filter(|file| kept.contains(&file.id))
-                    .map(|file| file.name.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
     /// The decision button's label.
     pub fn decision(&self) -> Option<String> {
         let set = self.active()?;
@@ -496,7 +431,7 @@ impl DuplicatesPage {
     fn sync(&mut self, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
         let visible = state.page() == TidyPage::Duplicates;
-        // Another page on screen: Electron Oriel unmounts Duplicates, and its video with it.
+        // Another page on screen: Duplicates lets its videos go.
         if !visible {
             self.video = None;
             self.tile_videos.clear();
@@ -547,13 +482,12 @@ impl DuplicatesPage {
             scope: self.scope(cx),
             dismissed: false,
         };
-        let answer = engine.duplicate_sets(request);
-        self.queue.load_then(
-            async move { Ok((answer.await?, version)) },
-            |this| &mut this.queue,
-            Self::loaded,
+        let answer = engine.ask(
+            move |engine| async move { Ok((engine.duplicate_sets(request).await?, version)) },
             cx,
         );
+        self.queue
+            .load_then(answer, |this| &mut this.queue, Self::loaded, cx);
     }
 
     /// The first answer picks the tab: similar sets first, unless there are none and identical
@@ -589,41 +523,7 @@ impl DuplicatesPage {
             // The set on screen may only be being checked, so it comes back into focus.
             self.return_to = self.active_key.clone();
         }
-        if let Some(set) = self.at_start.set.take() {
-            self.active_index = set
-                .saturating_sub(1)
-                .min(self.sets().len().saturating_sub(1));
-        }
-        // Asked for by name, it is found or it says so, and never silently shows another set. An
-        // empty queue may still be filling, so it goes on looking for as long as it is not found.
-        if let Some(named) = self.at_start.set_named.clone() {
-            let sets = self.sets();
-            let found = sets.iter().position(|set| {
-                files_of(set)
-                    .iter()
-                    .any(|file| file.rel_path.contains(&named))
-            });
-            let count = sets.len();
-            if let Some(found) = found {
-                self.active_index = found;
-                self.at_start.set_named = None;
-                self.at_start.set_missing = None;
-            } else if count > 0 && self.at_start.set_missing.is_none() {
-                eprintln!(
-                    "{SET_VARIABLE}: none of the {count} sets here has a file matching {named}"
-                );
-                self.at_start.set_missing = Some(named);
-            }
-        }
         self.follow_active(cx);
-        if let Some(keep) = self.at_start.keep.take()
-            && let (Some(set), Some(row)) = (self.active(), self.rows().get(keep.saturating_sub(1)))
-        {
-            self.overrides.insert(set.key.clone(), vec![row.file.id]);
-        }
-        if std::mem::take(&mut self.at_start.loupe) {
-            self.open_loupe(self.target(), cx);
-        }
     }
 
     /// The pointer came onto a tile's folder line, or left it: its whole path shows after the
@@ -657,7 +557,7 @@ impl DuplicatesPage {
             self.video = None;
             self.tile_videos.clear();
             self.paused_tiles.clear();
-            self.armed_at = Instant::now() + ARM_DELAY;
+            self.arming.arm(cx);
             if self.active_key.is_none() {
                 self.looking = false;
             }
@@ -792,7 +692,7 @@ impl DuplicatesPage {
                                 None => Toast::info("Nothing moved"),
                             }
                         };
-                        crate::widgets::show_toast(window, toast, cx);
+                        window.show_toast(toast, cx);
                         return;
                     }
                     let message = if several {
@@ -813,14 +713,7 @@ impl DuplicatesPage {
                     let detail = stayed.or_else(|| {
                         (!several).then(|| {
                             let dir = keeper.as_ref().map_or("", |file| file.dir.as_str());
-                            format!(
-                                "In {}",
-                                if dir.is_empty() {
-                                    "the top folder"
-                                } else {
-                                    dir
-                                }
-                            )
+                            format!("In {}", crate::labels::folder(dir))
                         })
                     });
                     let (undo_state, undo_page, undo_key, undone) =
@@ -843,7 +736,7 @@ impl DuplicatesPage {
                     if let Some(detail) = detail {
                         toast = toast.detail(detail);
                     }
-                    crate::widgets::show_toast(window, toast, cx);
+                    window.show_toast(toast, cx);
                 })
             }),
         };
@@ -872,13 +765,16 @@ impl DuplicatesPage {
         self.hide(&set.key, u64::MAX);
         self.follow_active(cx);
         let ids: Vec<FileId> = files_of(&set).iter().map(|file| file.id).collect();
-        let dismissed = engine.dismiss_duplicate_set(ids);
+        let dismissed = engine.ask(|engine| engine.dismiss_duplicate_set(ids), cx);
         let state = self.state.clone();
-        state.update(cx, |state, _| state.undo_entries_coming += 1);
+        state.update(cx, |state, _| state.expect_undo_entry());
         let coming = state.clone();
         cx.spawn_in(window, async move |this, cx| {
             let dismissed = dismissed.await;
-            coming.update(cx, |state, _| state.undo_entries_coming -= 1);
+            cx.update(|window, cx| {
+                coming.update(cx, |state, cx| state.undo_entry_landed(window, cx));
+            })
+            .ok();
             this.update_in(cx, |this, window, cx| match dismissed {
                 Ok(dismissal_id) => {
                     let page = cx.entity().downgrade();
@@ -887,7 +783,8 @@ impl DuplicatesPage {
                     // nothing yet, and any failure, however it was asked for.
                     let restore = Rc::new(
                         move |done: Option<Toast>, window: &mut Window, cx: &mut App| {
-                            let restored = restore_engine.restore_duplicate_set(dismissal_id);
+                            let restored = restore_engine
+                                .ask(move |engine| engine.restore_duplicate_set(dismissal_id), cx);
                             let (page, key) = (page.clone(), key.clone());
                             window
                                 .spawn(cx, async move |cx| {
@@ -909,7 +806,7 @@ impl DuplicatesPage {
                                             ),
                                         };
                                         if let Some(toast) = toast {
-                                            crate::widgets::show_toast(window, toast, cx);
+                                            window.show_toast(toast, cx);
                                         }
                                     })
                                     .ok();
@@ -932,8 +829,7 @@ impl DuplicatesPage {
                     } else {
                         "Marked as not duplicates"
                     };
-                    crate::widgets::show_toast(
-                        window,
+                    window.show_toast(
                         Toast::done(message)
                             .brief("Kept all")
                             .action("Undo", move |window, cx| {
@@ -948,8 +844,7 @@ impl DuplicatesPage {
                 }
                 Err(error) => {
                     this.unhide(&set.key, cx);
-                    crate::widgets::show_toast(
-                        window,
+                    window.show_toast(
                         Toast::error("Couldn't mark the set as not duplicates")
                             .detail(format!("{error:#}")),
                         cx,
@@ -984,7 +879,7 @@ impl DuplicatesPage {
     }
 
     fn click_keep(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if Instant::now() >= self.armed_at {
+        if !self.arming.holds(cx) {
             self.keep_only(index, window, cx);
         }
     }
@@ -1097,7 +992,7 @@ impl DuplicatesPage {
         }
     }
 
-    /// Open in View, for one of the set's files (`useOpenInView`).
+    /// Open in View, for one of the set's files.
     fn open_in_view(&mut self, file: String, cx: &mut Context<Self>) {
         self.state
             .update(cx, |state, cx| state.open_in_view(file, cx));
@@ -1111,7 +1006,7 @@ impl DuplicatesPage {
         cx.notify();
     }
 
-    /// Closing the loupe stops its video, as Electron Oriel's loupe unmounts its own.
+    /// Closing the loupe stops its video.
     fn close_loupe(&mut self, cx: &mut Context<Self>) {
         self.looking = false;
         self.zoomed = false;
@@ -1120,8 +1015,8 @@ impl DuplicatesPage {
     }
 
     /// The loupe shows one version: a video of another would play on out of sight, with its
-    /// sound, so a flip or a new focus stops it, as the loupe's `<video key={file.id}>` does in
-    /// Electron Oriel. Dropping the player pauses it at once and gives its engine back.
+    /// sound, so a flip or a new focus stops it. Dropping the player pauses it at once and gives
+    /// its engine back.
     fn keep_video_in_sight(&mut self) {
         if !self.looking {
             return;
@@ -1136,7 +1031,7 @@ impl DuplicatesPage {
         }
     }
 
-    /// Pauses the video playing, if any, as Electron Oriel pauses a hidden mode's media: Tidy
+    /// Pauses the video playing, if any, as a hidden mode's media pauses: Tidy
     /// left the screen. Coming back, it shows paused where it was.
     /// The tiles' videos go, giving their engines back, and start again when Tidy is back.
     pub fn pause_video(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1187,8 +1082,8 @@ impl DuplicatesPage {
 
     /// Whether Tidy is the mode on screen, with no Settings over it.
     fn on_screen(&self, cx: &App) -> bool {
-        let shell = self.state.read(cx).shell.read(cx);
-        shell.mode() == oriel_ui::ModeId::Tidy && shell.settings().is_none()
+        let shell = self.state.read(cx).shell().read(cx);
+        shell.shows(oriel_ui::ModeId::Tidy)
     }
 
     /// Keeps a player for each video tile in `shown`, and none for any other: a tile opens its
@@ -1389,8 +1284,7 @@ impl DuplicatesPage {
             cx.stop_propagation();
             return;
         }
-        // Electron reads the key as typed, so ⇧ still means the letter, except for H and L,
-        // which only move as lower case there.
+        // ⇧ still means the letter, except for H and L, which only move as lower case.
         if modifiers.shift && matches!(key, "h" | "l") {
             return;
         }
@@ -1414,7 +1308,9 @@ impl DuplicatesPage {
             "n" => self.dismiss(window, cx),
             "p" => {
                 if let Some(row) = rows.get(self.target()) {
-                    crate::settings::prefer_folder(&self.state, row.file.dir.clone(), window, cx);
+                    self.state.update(cx, |state, cx| {
+                        state.prefer_folder(row.file.dir.clone(), window, cx)
+                    });
                 }
             }
             "c" => {
@@ -1471,7 +1367,7 @@ impl DuplicatesPage {
     /// fingerprints, comparing similar pictures) is in the activity panel with the job's other
     /// work.
     fn render_top_bar(&self, cx: &mut Context<Self>) -> TopBar {
-        let shell = self.state.read(cx).shell.clone();
+        let shell = self.state.read(cx).shell().clone();
         // What counts as similar matters only where similar versions are shown.
         let matching = self.scope(cx) != DuplicateScope::Exact;
         // In the top bar, since a line that came and went in the queue would move every row under
@@ -1481,19 +1377,9 @@ impl DuplicatesPage {
             self.page().map_or(0, |page| page.counts.checking),
             cx,
         );
-        TopBar::new(&shell, "Duplicates")
+        TopBar::new(&shell, TidyPage::Duplicates.label())
             .when_some(checking, |bar, line| bar.trailing(line))
             .when(matching, |bar| bar.trailing(self.render_matching(cx)))
-            .when_some(self.at_start.set_missing.clone(), |bar, named| {
-                bar.trailing(
-                    div()
-                        .id("duplicates-set-missing")
-                        .test_support()
-                        .text_caption()
-                        .text_color(cx.theme().warning)
-                        .child(format!("{SET_VARIABLE}: no set here matches {named}")),
-                )
-            })
     }
 
     /// "Matching: Balanced…": the settings that decide what counts as a duplicate, Settings ›
@@ -1505,11 +1391,8 @@ impl DuplicatesPage {
             .settings()
             .map_or(SimilarityLevel::Balanced, |settings| settings.similarity);
         let state = self.state.clone();
-        let open_at_start =
-            std::env::var_os(MATCHING_VARIABLE).is_some_and(|value| !value.is_empty());
         Popover::new("duplicates-matching-popover")
             .anchor(Anchor::TopRight)
-            .default_open(open_at_start)
             .trigger(oriel_ui::controls::OutlineTrigger::new(
                 Button::new("duplicates-matching")
                     .outline()
@@ -1657,13 +1540,6 @@ impl DuplicatesPage {
             return div().into_any_element();
         };
         let rows = rows_of(&set);
-        if self.looking
-            && std::mem::take(&mut self.at_start.play)
-            && let Some(row) = rows.get(self.focus_row())
-        {
-            let file = row.file.clone();
-            self.play(&file, window, cx);
-        }
         let kept = self.kept();
         let overridden = self.overrides.contains_key(&set.key);
         let reason = reason_of(&set, &rows, &kept, overridden);
@@ -1894,9 +1770,6 @@ impl DuplicatesPage {
         self.grid_plan = Some(plan);
         self.grid_gap = gap;
         self.grid_height = stage.1;
-        if let Some(line) = self.at_start.scroll.take() {
-            scroll.set_offset(gpui_kit::point(px(0.), px(-plan.top_of(line, gap))));
-        }
         let (drawn, near) = if plan.scrolls {
             lines_to_draw(&scroll, total_lines, plan.line, window)
         } else {
@@ -2157,7 +2030,7 @@ impl DuplicatesPage {
 
     /// One version: its picture with its checkbox, number and menu, then what happens to it,
     /// its folder, and its lanes against the keeper. A plain click keeps only this one and goes
-    /// on, as in Electron Oriel; the shortcuts say so. No hover text on the tile, which would land
+    /// on; the shortcuts say so. No hover text on the tile, which would land
     /// on the pictures being judged: the file's path shows from its folder line.
     #[allow(clippy::too_many_arguments)]
     fn render_tile(
@@ -2346,7 +2219,7 @@ impl DuplicatesPage {
                     .child(
                         // The checkbox and its number share one small chip on the picture's own
                         // corner, see-through, so as little of the picture as can be is hidden;
-                        // the whole chip checks the box, as Electron Oriel's label did.
+                        // the whole chip checks the box, as a label does.
                         div()
                             .id(("keep-version-chip", file.id as u64))
                             .test_support()
@@ -2397,9 +2270,15 @@ impl DuplicatesPage {
                                         "Keep version {number}"
                                     )))
                                     .tooltip(if !is_kept {
-                                        format!("Keep this one as well  ⇧{number}")
+                                        oriel_ui::keys::labelled(
+                                            "Keep this one as well",
+                                            &format!("shift-{number}"),
+                                        )
                                     } else if several {
-                                        format!("Don't keep this one  ⇧{number}")
+                                        oriel_ui::keys::labelled(
+                                            "Don't keep this one",
+                                            &format!("shift-{number}"),
+                                        )
                                     } else {
                                         "Kept. Check another to keep more than one".into()
                                     })
@@ -2540,7 +2419,7 @@ impl DuplicatesPage {
             .into_any_element()
     }
 
-    /// Byte-identical copies (`CopyList`): there is nothing to compare, so the picture shows once
+    /// Byte-identical copies: there is nothing to compare, so the picture shows once
     /// (a video plays, with its sound) and the choice is where the file stays. Clicking a place
     /// (or pressing its number) keeps the copy there and moves on; checking several (or
     /// ⇧-clicking) keeps the copy in each, for when one file belongs in more than one folder. Each
@@ -2613,7 +2492,7 @@ impl DuplicatesPage {
         } else {
             16.
         };
-        let sidebar = if self.state.read(cx).shell.read(cx).rail() {
+        let sidebar = if self.state.read(cx).shell().read(cx).rail() {
             RAIL_WIDTH
         } else {
             SIDEBAR_WIDTH
@@ -2640,8 +2519,8 @@ impl DuplicatesPage {
             .children(play);
         let summary = [
             same_name.then(|| first.name.clone()),
-            Some(format::format_label(first.format).to_string()),
-            Some(format::details(&first)).filter(|details| !details.is_empty()),
+            Some(labels::format_label(first.format).to_string()),
+            Some(labels::details(&first)).filter(|details| !details.is_empty()),
             Some(format!("{} each", format::bytes(first.size as f64))),
         ]
         .into_iter()
@@ -2682,11 +2561,7 @@ impl DuplicatesPage {
                     similar: false,
                 };
                 let context_menu = menu.clone();
-                let place = if file.dir.is_empty() {
-                    "the top folder".to_string()
-                } else {
-                    file.dir.clone()
-                };
+                let place = crate::labels::folder(&file.dir).to_owned();
                 let check_tip: SharedString = if is_kept {
                     if reason.is_empty() {
                         format!("Keeping the copy in {place}").into()
@@ -2694,7 +2569,11 @@ impl DuplicatesPage {
                         reason.to_string().into()
                     }
                 } else {
-                    format!("Keep the copy in {place} as well  ⇧{}", index + 1).into()
+                    oriel_ui::keys::labelled(
+                        &format!("Keep the copy in {place} as well"),
+                        &format!("shift-{}", index + 1),
+                    )
+                    .into()
                 };
                 let date = if seconds {
                     format::date_time_seconds(file.mtime_ms)
@@ -2835,11 +2714,7 @@ impl DuplicatesPage {
                                     .whitespace_nowrap()
                                     .overflow_hidden()
                                     .text_ellipsis_start()
-                                    .child(if file.dir.is_empty() {
-                                        "The top folder".to_string()
-                                    } else {
-                                        file.dir.clone()
-                                    }),
+                                    .child(crate::labels::folder_capitalized(&file.dir).to_owned()),
                             )
                             .child(widgets::caption(note, cx).truncate()),
                     )
@@ -2911,9 +2786,6 @@ impl DuplicatesPage {
         self.grid_plan = Some(plan);
         self.grid_gap = 0.;
         self.grid_height = height;
-        if let Some(line) = self.at_start.scroll.take() {
-            scroll.set_offset(gpui_kit::point(px(0.), px(-plan.top_of(line, 0.))));
-        }
         self.out_of_sight = overflows
             .then(|| self.versions_out_of_sight(rows, kept, &plan, &scroll, height, 0., 0.))
             .flatten();
@@ -3325,8 +3197,11 @@ impl DuplicatesPage {
                             .ghost()
                             .bar_size()
                             .icon(Icon::new(IconName::FolderOpen).text_color(gpui_kit::white()))
-                            .accessibility_label("Show in Finder")
-                            .tooltip("Show in Finder  ⇧⌘R")
+                            .accessibility_label(oriel_ui::keys::REVEAL_LABEL)
+                            .tooltip(oriel_ui::keys::labelled(
+                                oriel_ui::keys::REVEAL_LABEL,
+                                "cmd-shift-r",
+                            ))
                             .on_click({
                                 let path = file.abs_path.clone();
                                 move |_, _, cx| cx.reveal_path(Path::new(&path))
@@ -3795,14 +3670,7 @@ fn tile_notes(set: &DuplicateSet, row: &SetRow, index: usize) -> Vec<String> {
     }
     match row.copies.as_slice() {
         [] => {}
-        [copy] => notes.push(format!(
-            "Also in {}",
-            if copy.dir.is_empty() {
-                "the top folder"
-            } else {
-                &copy.dir
-            }
-        )),
+        [copy] => notes.push(format!("Also in {}", crate::labels::folder(&copy.dir))),
         copies => notes.push(format!("Also in {} other folders", copies.len())),
     }
     if set.hard_linked_ids.contains(&row.file.id) {
@@ -4113,7 +3981,7 @@ impl VersionMenu {
         );
         let path = self.file.abs_path.clone();
         let reveal = menu_item(
-            "Show in Finder",
+            oriel_ui::keys::REVEAL_LABEL,
             Some(oriel_ui::cmd_or_ctrl!("shift-r")),
             move |_, cx| {
                 cx.reveal_path(Path::new(&path));
@@ -4126,7 +3994,7 @@ impl VersionMenu {
         });
         let (state, dir) = (self.state.clone(), self.file.dir.clone());
         let prefer = menu_item("Prefer this folder", Some("p"), move |window, cx| {
-            crate::settings::prefer_folder(&state, dir.clone(), window, cx);
+            state.update(cx, |state, cx| state.prefer_folder(dir.clone(), window, cx));
         });
         let mut menu = menu;
         if let Some(look) = look {

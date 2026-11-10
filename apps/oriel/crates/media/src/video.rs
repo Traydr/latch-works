@@ -1,82 +1,92 @@
-//! Video: AVPlayer decodes, and each display frame is drawn with GPUI's `surface()` (plan 063,
-//! "Media in GPUI").
+//! Video through libmpv (plan 063, decision 7): every container and codec FFmpeg reads, MKV,
+//! WebM, AVI, FLV and ASF included, and exact seeks in any of them, AV1 from SVT-AV1 included.
 //!
-//! AVPlayer owns decoding, sound, A/V sync, seeking, volume and rate. A [`VideoPlayer`] asks its
-//! `AVPlayerItemVideoOutput` for the picture due at the next display refresh and hands that
-//! `CVPixelBuffer` to `surface()` as it is: GPUI's Metal renderer makes textures straight from
-//! the buffer's IOSurface, so no pixel is copied on the way. [`pump_frames`] runs that loop for a
-//! view, once per display frame while the player has something to show, and re-renders the view
-//! only when a new picture or a change of state arrives: a 30 fps video on a 120 Hz display
-//! draws the window 30 times a second, and a paused one not at all.
+//! mpv owns decoding, sound, A/V sync and seeking. Its frames reach GPUI on one of two paths
+//! ([`Render`]):
 //!
-//! A player is main-thread only, as AVPlayer is. Containers AVPlayer cannot open (MKV, WebM,
-//! AVI, FLV, ASF) fail at [`VideoPlayer::open`], before AVFoundation sees them, with the error
-//! the viewer shows over the poster.
+//! - OpenGL (the default on macOS): mpv's OpenGL renderer draws into an IOSurface and
+//!   VideoToolbox converts that on the GPU to the `420f` buffer `surface()` takes
+//!   (`video/opengl.rs`).
+//! - Software (the only one elsewhere, as GPUI's `surface()` is macOS only): mpv's software
+//!   renderer draws into memory, shown as a `RenderImage` per frame (`video/software.rs`).
+//!
+//! Each player's engine runs two threads of its own beside mpv's: one reads mpv's events and one
+//! renders (mpv wants its render calls on a thread that never waits on the rest of its API).
+//! The UI thread only sends asynchronous commands and reads the state the event thread keeps,
+//! so it never waits on mpv. [`pump_frames`] takes each finished frame at the window's next
+//! refresh, and re-renders the view only when something it shows changed: a 30 fps video on a
+//! 120 Hz display draws the window 30 times a second, and a paused one not at all. A player that
+//! goes gives its engine back, and the next player plays its file in it (`video/engine.rs`): a
+//! new engine's first frame costs its renderer its shaders, and a kept one has them built.
+//!
+//! libmpv is loaded at run time and never linked, found by `oriel_core_paths::NativeSet::LIBMPV`.
+//! It is Oriel's own LGPL build (mpv `-Dgpl=false`, FFmpeg without `--enable-gpl`), made by
+//! `cargo run -p xtask -- libmpv`. Failing that, a development build falls back to IINA's
+//! libmpv, read in place; that build and its FFmpeg are GPL, fine for measuring here and never
+//! loaded by a packaged app. Where no libmpv loads, a player fails to open with the reason.
 
+mod client;
+mod engine;
+mod ffi;
+#[cfg(feature = "measure")]
+mod measure;
 #[cfg(target_os = "macos")]
-mod av_player;
-mod samples;
-#[cfg(not(target_os = "macos"))]
-mod unsupported;
+mod opengl;
+mod render;
+mod scrubber;
+mod software;
 
 use std::fmt;
 use std::path::Path;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use gpui_kit::{Context, ObjectFit, Surface, Window};
+use gpui_kit::{
+    AnyElement, Context, IntoElement as _, ObjectFit, RenderImage, Styled as _, StyledImage as _,
+    Window, img,
+};
 
-#[cfg(target_os = "macos")]
-use av_player::AvPlayer;
-#[cfg(not(target_os = "macos"))]
-use unsupported::AvPlayer;
+use self::client::Core;
+use self::engine::Engine;
+use self::render::{Picture, Rendered, Shared};
 
-pub use samples::{FrameSample, SeekSample, VideoSamples};
-
-/// The containers Tidy's Convert turns into MP4, because AVPlayer cannot open them.
-const UNPLAYABLE_CONTAINERS: [(&str, &str); 6] = [
-    ("mkv", "MKV"),
-    ("webm", "WebM"),
-    ("avi", "AVI"),
-    ("flv", "FLV"),
-    ("asf", "ASF"),
-    ("wmv", "WMV"),
-];
+#[cfg(not(feature = "measure"))]
+use engine::EngineOptions;
+#[cfg(feature = "measure")]
+pub use engine::{EngineOptions, prewarm_with, prime_with};
+pub use engine::{load_libmpv, prewarm, prime};
+#[cfg(feature = "measure")]
+pub use measure::{FrameTiming, Meter, SeekTiming, Timings};
+pub use scrubber::{Scrub, Scrubber};
 
 /// How long a ready player may go without its first picture before it is called unplayable: the
-/// file opened, but its video track does not decode here (AV1 on a Mac before the M3, say).
+/// file opened, but its video track does not decode here.
 const FIRST_PICTURE_TIMEOUT: Duration = Duration::from_secs(5);
-/// How long a seek, once AVPlayer calls it done, waits for its picture before the pump stops
-/// asking. The seek itself may take longer: an exact one decodes from the keyframe before it.
-const SEEK_PICTURE_TIMEOUT: Duration = Duration::from_secs(2);
-/// How long a finished exact seek may go without its picture before it is taken for one the
-/// decoder cannot show. A working one shows its picture when it finishes, or a frame later.
-const EXACT_PICTURE_GRACE: Duration = Duration::from_millis(250);
-/// How far a picture's time may be from AVPlayer's clock and still be the picture for it.
-const NEAR: Duration = Duration::from_millis(150);
+/// How long a seek may go without finishing before the player stops waiting for it.
+const SEEK_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long a pause or play sent to mpv may go unconfirmed before mpv's word is taken.
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(1);
 /// The refresh assumed when the window cannot say (it is between displays).
 const DEFAULT_REFRESH: Duration = Duration::from_micros(16_667);
+
+/// Software frames retired by players that were dropped, for the next poll to release from
+/// GPUI's sprite atlas: a drop has no window to do it with.
+static RETIRED: Mutex<Vec<Arc<RenderImage>>> = Mutex::new(Vec::new());
 
 /// Why a video does not play.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VideoError {
-    /// A container AVPlayer cannot open, by its short name ("MKV").
-    UnsupportedContainer(&'static str),
-    /// AVFoundation could not open or decode the file, in its own words.
+    /// libmpv could not open or decode the file, or could not start, in its own words.
     Failed { code: i64, message: String },
     /// The file opened and has a video track, but no picture came.
     NoPicture,
-    /// Video does not play here: off the main thread, or off macOS.
+    /// Video does not play this way here.
     Unavailable(&'static str),
 }
 
 impl fmt::Display for VideoError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnsupportedContainer(format) => {
-                write!(f, "Can't play {format} here; Convert makes it MP4")
-            }
             Self::Failed { message, .. } => write!(f, "Can't play this video: {message}"),
             Self::NoPicture => write!(f, "Can't show this video's picture here"),
             Self::Unavailable(why) => write!(f, "Can't play video {why}"),
@@ -103,76 +113,148 @@ pub enum SeekMode {
     Fast,
 }
 
-/// One video file, played by AVPlayer, with the picture due now ready for `surface()`.
-pub struct VideoPlayer {
-    av: AvPlayer,
-    status: VideoStatus,
-    has_video: bool,
-    frame: Option<Frame>,
-    playing: bool,
-    /// Whether it plays again from the start at the end, rather than stopping there.
-    looping: bool,
-    seeks: Seeks,
-    awaiting_picture_since: Option<Instant>,
-    pump_scheduled: bool,
-    opened_at: Instant,
-    samples: Option<VideoSamples>,
+/// How mpv's frames reach GPUI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Render {
+    /// mpv's OpenGL renderer into an IOSurface, converted on the GPU for `surface()`.
+    OpenGl,
+    /// mpv's software renderer into memory, shown with `img()`.
+    Software,
 }
 
-struct Frame {
-    #[cfg(target_os = "macos")]
-    buffer: gpui_kit::SurfaceSource,
-    time: Duration,
-}
-
-impl VideoPlayer {
-    /// Opens `path` for playing, paused at its start. AVFoundation reads the file in the
-    /// background; [`Self::status`] turns `Ready` or `Failed` on a later [`Self::poll`].
-    pub fn open(path: &Path) -> Result<Self, VideoError> {
-        if let Some(format) = unplayable_container(path) {
-            return Err(VideoError::UnsupportedContainer(format));
+impl Render {
+    fn options(self) -> [(&'static str, &'static str); 1] {
+        match self {
+            // VideoToolbox decodes into IOSurfaces mpv maps into GL: no copy.
+            Self::OpenGl => [("hwdec", "videotoolbox")],
+            // The software renderer reads frames in memory, so decoded frames are copied back.
+            #[cfg(target_os = "macos")]
+            Self::Software => [("hwdec", "videotoolbox-copy")],
+            // Direct3D 11's decoder, copied back the same way.
+            #[cfg(not(target_os = "macos"))]
+            Self::Software => [("hwdec", "d3d11va-copy")],
         }
-        Self::open_any(path)
+    }
+}
+
+/// One video file played by libmpv, with its newest frame ready for the window. Main-thread
+/// only, as the view that draws it is.
+pub struct Player {
+    core: Arc<Core>,
+    shared: Arc<Shared>,
+    /// What plays the file; given back when the player goes.
+    engine: Option<Engine>,
+    /// Whether the soundtrack plays (muted or not), rather than not at all.
+    sound: bool,
+    status: VideoStatus,
+    frame: Option<Rendered>,
+    /// Whether the player means to play: true from [`Self::play`] until a pause or the end, even
+    /// while mpv waits for data.
+    playing: bool,
+    /// Whether it plays again from the start at the end, rather than holding the last frame.
+    looping: bool,
+    /// A pause state sent to mpv and not yet seen back, with when it was sent.
+    pause_sent: Option<(bool, Instant)>,
+    seek: Option<PendingSeek>,
+    awaiting_picture_since: Option<Instant>,
+    /// Whether [`pump_frames`] has a poll waiting for the next display frame.
+    pump_scheduled: bool,
+    #[cfg(feature = "measure")]
+    opened_at: Instant,
+    #[cfg(feature = "measure")]
+    timings: Option<Box<dyn Timings>>,
+}
+
+struct PendingSeek {
+    target: Duration,
+    #[cfg(feature = "measure")]
+    mode: SeekMode,
+    requested_at: Instant,
+    /// mpv's count of finished seeks when this one was asked for.
+    restarts: u64,
+    /// The frames the window took since the request, by number, with when from the request.
+    taken: Vec<(u64, Duration)>,
+}
+
+impl Player {
+    /// Opens `path` paused at its start, with its sound. mpv reads the file in the background;
+    /// [`Self::status`] turns `Ready` or `Failed` on a later poll.
+    pub fn open(path: &Path) -> Result<Self, VideoError> {
+        Self::open_on(path, &EngineOptions::default(), true)
     }
 
-    /// Opens `path` without refusing the containers AVPlayer is known not to play, to see what
-    /// AVFoundation itself makes of them.
-    pub fn open_any(path: &Path) -> Result<Self, VideoError> {
+    /// Opens `path` as a gallery tile's preview, with its sound: frames are drawn no larger than
+    /// `max_side` pixels on their longer side, as the tile needs no more, and a 4K picture drawn
+    /// at that size costs a sixtieth of the memory and the GPU time.
+    pub fn open_preview(path: &Path, max_side: u32) -> Result<Self, VideoError> {
+        let player = Self::open(path)?;
+        player.shared.set_max_side(Some(max_side));
+        Ok(player)
+    }
+
+    /// Opens `path` as a gallery tile's preview that plays without sound, for good: its
+    /// soundtrack is neither decoded nor sent to an audio device, so the first picture does not
+    /// wait for the device to start, and playing costs less. [`Self::is_muted`] reads true.
+    pub fn open_silent_preview(path: &Path, max_side: u32) -> Result<Self, VideoError> {
+        let player = Self::open_on(path, &EngineOptions::default(), false)?;
+        player.shared.set_max_side(Some(max_side));
+        Ok(player)
+    }
+
+    /// Opens `path` on an engine made as `options` say, with its sound or without it for good.
+    #[cfg(feature = "measure")]
+    pub fn open_with(
+        path: &Path,
+        options: &EngineOptions,
+        sound: bool,
+    ) -> Result<Self, VideoError> {
+        Self::open_on(path, options, sound)
+    }
+
+    fn open_on(path: &Path, options: &EngineOptions, sound: bool) -> Result<Self, VideoError> {
         if !path.is_file() {
             return Err(VideoError::Failed {
                 code: 0,
                 message: "the file is missing".into(),
             });
         }
+        #[cfg(not(target_os = "macos"))]
+        if options.render == Render::OpenGl {
+            return Err(VideoError::Unavailable("through OpenGL off macOS"));
+        }
+        let file = path
+            .to_str()
+            .ok_or_else(|| VideoError::Failed {
+                code: 0,
+                message: "its path is not UTF-8".into(),
+            })?
+            .to_owned();
+        #[cfg(feature = "measure")]
         let opened_at = Instant::now();
-        Ok(Self {
-            av: AvPlayer::open(path)?,
+        let engine = Engine::take(options)?;
+        engine.load(file, sound);
+        let mut player = Self {
+            core: engine.core.clone(),
+            shared: engine.shared.clone(),
+            engine: Some(engine),
+            sound,
             status: VideoStatus::Loading,
-            has_video: false,
             frame: None,
             playing: false,
             looping: false,
-            seeks: Seeks::default(),
+            pause_sent: None,
+            seek: None,
             awaiting_picture_since: None,
             pump_scheduled: false,
+            #[cfg(feature = "measure")]
             opened_at,
-            samples: None,
-        })
-    }
-
-    /// Starts keeping timings, from the open, of the first picture, each seek and each picture
-    /// shown, for the spike's measurements. Off by default: a long video would keep a sample per
-    /// frame.
-    pub fn record_samples(&mut self) {
-        self.samples = Some(VideoSamples::new(self.opened_at));
-    }
-
-    pub fn samples_mut(&mut self) -> Option<&mut VideoSamples> {
-        self.samples.as_mut()
-    }
-
-    pub fn samples(&self) -> Option<&VideoSamples> {
-        self.samples.as_ref()
+            #[cfg(feature = "measure")]
+            timings: None,
+        };
+        if !sound {
+            player.set_muted(true);
+        }
+        Ok(player)
     }
 
     pub fn status(&self) -> &VideoStatus {
@@ -186,8 +268,6 @@ impl VideoPlayer {
         }
     }
 
-    /// Whether the player means to play: true from [`Self::play`] until a pause or the end, even
-    /// while AVPlayer waits for data.
     pub fn is_playing(&self) -> bool {
         self.playing
     }
@@ -200,13 +280,11 @@ impl VideoPlayer {
         if self.has_ended() {
             self.seek(Duration::ZERO, SeekMode::Exact);
         }
-        self.av.play();
-        self.playing = true;
+        self.send_pause(false);
     }
 
     pub fn pause(&mut self) {
-        self.av.pause();
-        self.playing = false;
+        self.send_pause(true);
     }
 
     pub fn toggle_playback(&mut self) {
@@ -217,9 +295,14 @@ impl VideoPlayer {
         }
     }
 
-    /// Moves to `target`, clamped to the video. While a seek is in flight the newest target
-    /// waits for it rather than cancelling it, so dragging the scrubber keeps showing pictures
-    /// instead of starting a decode it then abandons.
+    fn send_pause(&mut self, pause: bool) {
+        self.core.set_flag(c"pause", pause);
+        self.pause_sent = Some((pause, Instant::now()));
+        self.playing = !pause;
+    }
+
+    /// Moves to `target`, clamped to the video. mpv itself drops a seek still queued when a
+    /// newer one comes, so a scrub shows pictures as it goes.
     pub fn seek(&mut self, target: Duration, mode: SeekMode) {
         if self.error().is_some() {
             return;
@@ -228,72 +311,68 @@ impl VideoPlayer {
             Some(duration) => target.min(duration),
             None => target,
         };
-        let seek = self.seeks.request(target, mode);
-        if self.seeks.in_flight.is_some() {
-            self.seeks.queued = Some(seek);
-        } else {
-            self.start_seek(seek);
-        }
-    }
-
-    /// Moves by `seconds`, back when negative, landing on the exact frame.
-    pub fn skip(&mut self, seconds: f64) {
-        let target = (self.position().as_secs_f64() + seconds).max(0.);
-        self.seek(Duration::from_secs_f64(target), SeekMode::Exact);
+        let flags = match mode {
+            SeekMode::Exact => "absolute+exact",
+            SeekMode::Fast => "absolute+keyframes",
+        };
+        self.core
+            .command(0, &["seek", &format!("{:.6}", target.as_secs_f64()), flags]);
+        self.seek = Some(PendingSeek {
+            target,
+            #[cfg(feature = "measure")]
+            mode,
+            requested_at: Instant::now(),
+            restarts: self.core.observed().restarts,
+            taken: Vec::new(),
+        });
     }
 
     /// Where playback is, or where the newest seek is going while it is under way.
     pub fn position(&self) -> Duration {
-        if let Some(seek) = self.seeks.queued.as_ref().or(self.seeks.in_flight.as_ref()) {
+        if let Some(seek) = &self.seek {
             return seek.target;
         }
-        let position = self.av.current_time();
+        let position = seconds(self.core.observed().time_pos).unwrap_or_default();
         match self.duration() {
             Some(duration) => position.min(duration),
             None => position,
         }
     }
 
-    /// The video's length, once AVFoundation has read it.
+    /// The video's length, once mpv has read it.
     pub fn duration(&self) -> Option<Duration> {
-        self.av.duration()
+        seconds(self.core.observed().duration)
     }
 
     /// Whether it has played to its end and stopped there.
-    pub fn has_ended(&self) -> bool {
+    fn has_ended(&self) -> bool {
         !self.playing
             && self.status == VideoStatus::Ready
-            && self.seeks.in_flight.is_none()
-            && self.at_end()
+            && self.seek.is_none()
+            && self.core.observed().eof_reached
     }
 
-    /// 0 to 1, as AVPlayer's volume.
-    pub fn volume(&self) -> f32 {
-        self.av.volume()
-    }
-
+    /// Sets the volume, 0 to 1: a gain on the sound's amplitude. mpv's own volume runs 0 to 100
+    /// on a cubic curve, so it is given this one's cube root.
     pub fn set_volume(&mut self, volume: f32) {
-        self.av.set_volume(volume.clamp(0., 1.));
+        let gain = f64::from(volume.clamp(0., 1.));
+        self.core.set_double(c"volume", gain.cbrt() * 100.);
+        self.core.observed().volume = gain.cbrt() * 100.;
     }
 
     pub fn is_muted(&self) -> bool {
-        self.av.is_muted()
+        self.core.observed().muted
     }
 
     pub fn set_muted(&mut self, muted: bool) {
-        self.av.set_muted(muted);
+        self.core.set_flag(c"mute", muted);
+        // Shown at once; mpv's own change confirms it a moment later.
+        self.core.observed().muted = muted;
     }
 
-    /// The speed playing runs at, 1 being normal.
-    pub fn rate(&self) -> f32 {
-        self.av.default_rate()
-    }
-
+    /// Sets the speed playing runs at, 1 being normal.
     pub fn set_rate(&mut self, rate: f32) {
-        self.av.set_default_rate(rate);
-        if self.playing {
-            self.av.set_rate(rate);
-        }
+        self.core.set_double(c"speed", f64::from(rate));
     }
 
     /// Whether it plays again from the start at the end (View's "Loop videos").
@@ -303,247 +382,238 @@ impl VideoPlayer {
 
     pub fn set_looping(&mut self, looping: bool) {
         self.looping = looping;
+        // `loop-file` wins over `keep-open`, which holds the last frame only when not looping.
+        self.core
+            .command(0, &["set", "loop-file", if looping { "inf" } else { "no" }]);
     }
 
-    /// The picture's size in pixels, once known, as the video asks to be shown.
-    pub fn picture_size(&self) -> Option<(f64, f64)> {
-        let (width, height) = self.av.presentation_size();
-        (width > 0. && height > 0.).then_some((width, height))
+    /// The picture on screen, fitted inside its bounds and filling them; `None` before the
+    /// first one.
+    pub fn picture(&self) -> Option<AnyElement> {
+        self.picture_fitted(ObjectFit::Contain)
     }
 
-    /// The time of the picture on screen, if one is.
-    pub fn picture_time(&self) -> Option<Duration> {
-        self.frame.as_ref().map(|frame| frame.time)
-    }
-
-    /// The picture on screen as a `surface()`, fitted inside its bounds; `None` before the first
-    /// one. Size it as any element.
-    pub fn surface(&self) -> Option<Surface> {
-        self.surface_fitted(ObjectFit::Contain)
-    }
-
-    /// The picture on screen as a `surface()` that fills its bounds as `fit` says.
-    pub fn surface_fitted(&self, fit: ObjectFit) -> Option<Surface> {
-        #[cfg(target_os = "macos")]
-        {
-            self.frame
-                .as_ref()
-                .map(|frame| gpui_kit::surface(frame.buffer.clone()).object_fit(fit))
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = fit;
-            None
+    /// The picture on screen, filling its bounds as `fit` says: `Cover` crops it to a gallery
+    /// tile, as the tile's thumbnail is.
+    pub fn picture_fitted(&self, fit: ObjectFit) -> Option<AnyElement> {
+        match &self.frame.as_ref()?.picture {
+            Picture::Image(image) => Some(
+                img(image.clone())
+                    .object_fit(fit)
+                    .size_full()
+                    .into_any_element(),
+            ),
+            #[cfg(target_os = "macos")]
+            Picture::Buffer(buffer) => Some(
+                gpui_kit::surface(buffer.0.clone())
+                    .object_fit(fit)
+                    .size_full()
+                    .into_any_element(),
+            ),
         }
     }
 
-    /// Whether the player has pictures to pull: it is loading, playing, or landing a seek.
-    pub fn wants_frames(&self) -> bool {
+    /// Whether the player has pictures to take: it is loading, playing, or landing a seek.
+    fn wants_frames(&self) -> bool {
         match self.status {
             VideoStatus::Failed(_) => false,
             VideoStatus::Loading => true,
             VideoStatus::Ready => {
-                self.playing || self.seeks.is_busy() || self.awaiting_picture_since.is_some()
+                self.playing
+                    || self.seek.is_some()
+                    || self.awaiting_picture_since.is_some()
+                    || self.pause_sent.is_some()
             }
         }
     }
 
-    /// Takes the picture due one display refresh from now, and catches up with AVPlayer's
-    /// state. Returns whether anything a view shows changed. [`pump_frames`] calls it.
-    pub fn poll(&mut self, refresh: Duration) -> bool {
+    /// Takes the newest finished frame and catches up with mpv's state. Returns whether
+    /// anything a view shows changed. [`pump_frames`] calls it once per display refresh.
+    fn poll(&mut self, refresh: Duration, window: &mut Window) -> bool {
+        for image in RETIRED.lock().unwrap_or_else(|p| p.into_inner()).drain(..) {
+            window.drop_image(image).ok();
+        }
+        self.shared.set_refresh(refresh);
+
         let mut changed = self.poll_status();
         if matches!(self.status, VideoStatus::Failed(_)) {
             return changed;
         }
 
-        if let Some(seek) = &self.seeks.in_flight
-            && self.seeks.finished.load(Ordering::Acquire) >= seek.generation
-        {
-            let mut seek = self.seeks.in_flight.take().expect("a seek is in flight");
-            seek.finished_after = Some(seek.requested_at.elapsed());
-            // While playing, the target's picture often comes before AVPlayer calls the seek
-            // done; that one is the landing.
-            match seek.latest_picture {
-                Some((after, time)) if near(time, self.av.current_time()) => {
-                    self.record_seek(&seek, time, after);
-                }
-                _ => self.seeks.landing = Some(seek),
+        #[cfg_attr(
+            not(feature = "measure"),
+            expect(unused_variables, reason = "for timings")
+        )]
+        let (paused, restarts, restart_pos, restarted_at, avsync, time_pos, has_size) = {
+            let observed = self.core.observed();
+            (
+                observed.paused,
+                observed.restarts,
+                observed.restart_pos,
+                observed.restarted_at,
+                observed.avsync,
+                observed.time_pos,
+                observed.picture_size().is_some(),
+            )
+        };
+
+        let taken = Instant::now();
+        let shown = taken + refresh;
+        if let Some(rendered) = self.shared.take(shown) {
+            #[cfg(feature = "measure")]
+            if let Some(timings) = &mut self.timings {
+                let late = rendered.due.map(|due| signed_seconds(shown, due));
+                // mpv's avsync is the sound's time less the picture's at the due time; the
+                // picture then reaches the screen `late` after that.
+                let lead = late.zip(avsync).map(|(late, avsync)| -avsync - late);
+                timings.frame(FrameTiming {
+                    at: Instant::now(),
+                    after_open: self.opened_at.elapsed(),
+                    position: seconds(time_pos),
+                    lead,
+                    late,
+                    draw: rendered.draw_time,
+                    waited: taken.saturating_duration_since(rendered.rendered_at),
+                });
             }
-            if let Some(next) = self.seeks.queued.take() {
-                self.start_seek(next);
+            if let Some(seek) = &mut self.seek
+                && seek.taken.len() < 512
+            {
+                seek.taken
+                    .push((rendered.number, seek.requested_at.elapsed()));
             }
+            if let Some(Rendered {
+                picture: Picture::Image(old),
+                ..
+            }) = self.frame.replace(rendered)
+            {
+                window.drop_image(old).ok();
+            }
+            self.awaiting_picture_since = None;
             changed = true;
         }
 
-        if let Some((buffer, time)) = self.av.take_frame(refresh) {
-            #[cfg(not(target_os = "macos"))]
-            let _ = buffer;
-            self.frame = Some(Frame {
-                #[cfg(target_os = "macos")]
-                buffer: buffer.into(),
-                time,
-            });
-            self.awaiting_picture_since = None;
-            if let Some(seek) = &mut self.seeks.in_flight {
-                seek.latest_picture = Some((seek.requested_at.elapsed(), time));
+        if let Some(seek) = &self.seek {
+            let restarted = restarts > seek.restarts;
+            // The seek's picture is the frame mpv took last before the restart, or the first
+            // after it the window took, if a newer one replaced it before the window's refresh.
+            let landing = restarted_at
+                .filter(|_| restarted)
+                .and_then(|at| self.shared.begun_by(seek.requested_at, at))
+                .and_then(|first| {
+                    seek.taken
+                        .iter()
+                        .find(|(number, _)| *number >= first)
+                        .map(|(_, after)| *after)
+                });
+            let pictured = landing.is_some() || !has_size;
+            if restarted && pictured {
+                #[cfg_attr(
+                    not(feature = "measure"),
+                    expect(unused_variables, reason = "for timings")
+                )]
+                let seek = self.seek.take().expect("a seek is pending");
+                #[cfg(feature = "measure")]
+                if let Some(timings) = &mut self.timings {
+                    let finished = restarted_at
+                        .map(|at| at.saturating_duration_since(seek.requested_at))
+                        .unwrap_or_default();
+                    timings.seek(SeekTiming {
+                        mode: seek.mode,
+                        target: seek.target,
+                        landed: seconds(restart_pos),
+                        took: landing.unwrap_or(finished),
+                        finished,
+                    });
+                }
+                changed = true;
+            } else if seek.requested_at.elapsed() > SEEK_TIMEOUT {
+                log::warn!("a seek to {:?} did not finish", seek.target);
+                self.seek = None;
+                changed = true;
             }
-            if let Some(samples) = &mut self.samples {
-                samples.frame(time, self.av.item_time_at(refresh));
-            }
-            if self.seeks.in_flight.is_none()
-                && let Some(seek) = self.seeks.landing.take()
-            {
-                self.record_seek(&seek, time, seek.requested_at.elapsed());
-            }
-            changed = true;
         }
 
         if let Some(since) = self.awaiting_picture_since
             && since.elapsed() > FIRST_PICTURE_TIMEOUT
         {
-            self.status = VideoStatus::Failed(VideoError::NoPicture);
-            return true;
-        }
-        if let Some(seek) = &self.seeks.landing {
-            let waited = seek
-                .requested_at
-                .elapsed()
-                .saturating_sub(seek.finished_after.unwrap_or_default());
-            let stale = self
-                .picture_time()
-                .is_none_or(|time| !near(time, self.av.current_time()));
-            if seek.tolerance == Tolerance::Exact && waited > EXACT_PICTURE_GRACE && stale {
-                // AVFoundation called an exact seek done that its decoder cannot show: SVT-AV1's
-                // default (random access, with hidden frames) does this. The picture would
-                // stay put until the next keyframe while the sound runs on from the target,
-                // so land on the keyframe before the target instead, here and from now on.
-                let seek = self.seeks.landing.take().expect("a seek is landing");
-                log::warn!(
-                    "an exact seek to {:?} showed no picture; seeking to keyframes instead",
-                    seek.target
-                );
-                self.seeks.exact_falls_short = true;
-                if self.seeks.in_flight.is_none() && self.seeks.queued.is_none() {
-                    let generation = self.seeks.next();
-                    self.start_seek(PendingSeek {
-                        tolerance: Tolerance::KeyframeBefore,
-                        finished_after: None,
-                        latest_picture: None,
-                        generation,
-                        ..seek
-                    });
-                }
-                changed = true;
-            } else if waited > SEEK_PICTURE_TIMEOUT {
-                self.seeks.landing = None;
+            self.awaiting_picture_since = None;
+            if has_size {
+                self.status = VideoStatus::Failed(VideoError::NoPicture);
             }
+            return true;
         }
 
-        let playing = self.av.rate() != 0.;
-        if self.looping && self.playing && !playing && self.at_end() {
-            // AVPlayer pauses at the end; a looping video goes back to the start and plays on.
-            self.seek(Duration::ZERO, SeekMode::Exact);
-            self.av.play();
-            return true;
-        }
-        if playing != self.playing {
-            self.playing = playing;
-            changed = true;
+        // mpv's pause is the truth, but a pause or play just sent shows at once.
+        match self.pause_sent {
+            Some((sent, at)) if sent != paused && at.elapsed() < COMMAND_TIMEOUT => {}
+            _ => {
+                self.pause_sent = None;
+                if self.playing == paused {
+                    self.playing = !paused;
+                    changed = true;
+                }
+            }
         }
         changed
     }
 
-    /// Whether AVPlayer's clock has reached the end of the video.
-    fn at_end(&self) -> bool {
-        self.duration()
-            .is_some_and(|duration| self.av.current_time() + Duration::from_millis(1) >= duration)
-    }
-
     fn poll_status(&mut self) -> bool {
-        if self.status != VideoStatus::Loading {
-            return false;
-        }
-        match self.av.status() {
-            VideoStatus::Loading => false,
-            VideoStatus::Ready => {
-                self.status = VideoStatus::Ready;
-                self.has_video = self.picture_size().is_some();
-                if self.has_video && self.frame.is_none() {
-                    self.awaiting_picture_since = Some(Instant::now());
-                }
-                if let Some(samples) = &mut self.samples {
-                    samples.ready();
-                }
-                true
-            }
-            VideoStatus::Failed(error) => {
+        let failure = self.core.observed().failed.clone().or_else(|| {
+            self.shared
+                .failure()
+                .map(|message| VideoError::Failed { code: 0, message })
+        });
+        if let Some(error) = failure {
+            if self.status != VideoStatus::Failed(error.clone()) {
                 self.status = VideoStatus::Failed(error);
                 self.playing = false;
-                true
+                return true;
             }
+            return false;
         }
-    }
-
-    fn start_seek(&mut self, seek: PendingSeek) {
-        let (before, after) = match seek.tolerance {
-            Tolerance::Exact => (false, false),
-            Tolerance::KeyframeBefore => (true, false),
-            Tolerance::Any => (true, true),
-        };
-        self.av.seek(
-            seek.target,
-            before,
-            after,
-            seek.generation,
-            self.seeks.finished.clone(),
-        );
-        self.seeks.in_flight = Some(seek);
-    }
-
-    fn record_seek(&mut self, seek: &PendingSeek, landed: Duration, took: Duration) {
-        if let Some(samples) = &mut self.samples {
-            samples.seek(SeekSample::new(
-                seek.mode,
-                seek.target,
-                landed,
-                took,
-                seek.finished_after.unwrap_or_default(),
-                seek.tolerance != Tolerance::Exact && seek.mode == SeekMode::Exact,
-            ));
+        if self.status != VideoStatus::Loading || !self.core.observed().file_loaded {
+            return false;
         }
+        self.status = VideoStatus::Ready;
+        if self.frame.is_none() {
+            self.awaiting_picture_since = Some(Instant::now());
+        }
+        #[cfg(feature = "measure")]
+        if let Some(timings) = &mut self.timings {
+            timings.ready(self.opened_at.elapsed());
+        }
+        true
     }
 }
 
-impl Drop for VideoPlayer {
+impl Drop for Player {
     fn drop(&mut self) {
-        // AVPlayer keeps playing sound until it is deallocated, and something else (a pending
-        // seek's block) may hold it a moment longer.
-        self.av.pause();
-    }
-}
-
-/// Hides the pointer until it next moves (`NSCursor.setHiddenUntilMouseMoves`): the viewer does
-/// this as its controls fade over a playing video, as Electron Oriel's viewer turns the cursor
-/// off. Does nothing off macOS, or where AppKit is not loaded.
-pub fn hide_pointer_until_it_moves() {
-    #[cfg(target_os = "macos")]
-    if let Some(cursor) = objc2::runtime::AnyClass::get(c"NSCursor") {
-        // SAFETY: a class method of AppKit's NSCursor taking a BOOL, called on the main thread,
-        // where the viewer runs.
-        unsafe {
-            let _: () =
-                objc2::msg_send![cursor, setHiddenUntilMouseMoves: objc2::runtime::Bool::YES];
+        // Silent at once; the file may take a moment longer to stop.
+        self.core.set_flag(c"pause", true);
+        if let Some(Rendered {
+            picture: Picture::Image(image),
+            ..
+        }) = self.frame.take()
+        {
+            RETIRED
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .push(image);
+        }
+        if let Some(engine) = self.engine.take() {
+            engine.give_back(self.sound);
         }
     }
 }
 
-/// Keeps `player` pulling pictures once per display frame while it has any to show, and
-/// re-renders the view only when [`VideoPlayer::poll`] says something changed. Call it from the
-/// view's `render` and after any command that may start motion (play, seek); while a poll is
-/// already pending it does nothing.
+/// Keeps `player` taking frames once per display refresh while it has any to show, and
+/// re-renders the view only when a poll says something changed. Call it from the view's
+/// `render` and after any command that may start motion (play, seek); while a poll is already
+/// waiting it does nothing.
 pub fn pump_frames<V: 'static>(
     view: &mut V,
-    player: fn(&mut V) -> &mut VideoPlayer,
+    player: fn(&mut V) -> &mut Player,
     window: &mut Window,
     cx: &mut Context<V>,
 ) {
@@ -558,7 +628,7 @@ pub fn pump_frames<V: 'static>(
         view.update(cx, |view, cx| {
             let video = player(view);
             video.pump_scheduled = false;
-            if video.poll(refresh) {
+            if video.poll(refresh, window) {
                 cx.notify();
             }
             pump_frames(view, player, window, cx);
@@ -567,105 +637,17 @@ pub fn pump_frames<V: 'static>(
     });
 }
 
-fn unplayable_container(path: &Path) -> Option<&'static str> {
-    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
-    UNPLAYABLE_CONTAINERS
-        .iter()
-        .find(|(known, _)| *known == extension)
-        .map(|(_, name)| *name)
+fn seconds(value: Option<f64>) -> Option<Duration> {
+    value
+        .filter(|seconds| seconds.is_finite() && *seconds >= 0.)
+        .map(Duration::from_secs_f64)
 }
 
-/// The seek in flight, the one waiting behind it, and the one that finished but whose picture
-/// has not come yet.
-#[derive(Default)]
-struct Seeks {
-    last_generation: u64,
-    /// The newest generation AVPlayer finished (or abandoned), written from its completion block.
-    finished: Arc<AtomicU64>,
-    in_flight: Option<PendingSeek>,
-    queued: Option<PendingSeek>,
-    landing: Option<PendingSeek>,
-    /// Whether an exact seek in this file has shown no picture, so exact seeks land on the
-    /// keyframe before their target.
-    exact_falls_short: bool,
-}
-
-impl Seeks {
-    fn next(&mut self) -> u64 {
-        self.last_generation += 1;
-        self.last_generation
-    }
-
-    fn request(&mut self, target: Duration, mode: SeekMode) -> PendingSeek {
-        let tolerance = match mode {
-            SeekMode::Exact if self.exact_falls_short => Tolerance::KeyframeBefore,
-            SeekMode::Exact => Tolerance::Exact,
-            SeekMode::Fast => Tolerance::Any,
-        };
-        PendingSeek {
-            target,
-            mode,
-            tolerance,
-            generation: self.next(),
-            requested_at: Instant::now(),
-            finished_after: None,
-            latest_picture: None,
-        }
-    }
-
-    fn is_busy(&self) -> bool {
-        self.in_flight.is_some() || self.queued.is_some() || self.landing.is_some()
-    }
-}
-
-/// Where AVPlayer may land relative to a seek's target.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Tolerance {
-    Exact,
-    KeyframeBefore,
-    Any,
-}
-
-struct PendingSeek {
-    target: Duration,
-    mode: SeekMode,
-    tolerance: Tolerance,
-    generation: u64,
-    requested_at: Instant,
-    /// When AVPlayer called the seek done.
-    finished_after: Option<Duration>,
-    /// The newest picture handed out while the seek was in flight: when, and its time.
-    latest_picture: Option<(Duration, Duration)>,
-}
-
-/// Whether a picture's time is the clock's, give or take a few frames.
-fn near(picture: Duration, clock: Duration) -> bool {
-    picture.abs_diff(clock) <= NEAR
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// These fail before AVFoundation sees them, with the words the viewer shows over the poster.
-    #[test]
-    fn refuses_the_containers_convert_turns_into_mp4() {
-        for (name, format) in [
-            ("clip.mkv", "MKV"),
-            ("clip.WEBM", "WebM"),
-            ("clip.avi", "AVI"),
-            ("clip.flv", "FLV"),
-            ("clip.asf", "ASF"),
-        ] {
-            assert_eq!(
-                VideoPlayer::open(Path::new(name)).err(),
-                Some(VideoError::UnsupportedContainer(format)),
-                "{name}"
-            );
-        }
-        assert_eq!(
-            VideoError::UnsupportedContainer("MKV").to_string(),
-            "Can't play MKV here; Convert makes it MP4"
-        );
+/// `a - b` in seconds, either way round.
+#[cfg(feature = "measure")]
+fn signed_seconds(a: Instant, b: Instant) -> f64 {
+    match a.checked_duration_since(b) {
+        Some(after) => after.as_secs_f64(),
+        None => -b.duration_since(a).as_secs_f64(),
     }
 }

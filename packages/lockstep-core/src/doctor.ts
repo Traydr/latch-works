@@ -1,93 +1,65 @@
 import { stat } from "node:fs/promises";
+import { toError } from "./errors.js";
 import { fetchRemoteSnapshot } from "./remote-snapshot.js";
-import type { DoctorOptions, DoctorResult, LockstepObserver } from "./types.js";
+import type { DoctorCheck, DoctorOptions, DoctorResult, LockstepObserver } from "./types.js";
 
 export async function doctor(
   options: DoctorOptions,
   observer?: LockstepObserver,
 ): Promise<DoctorResult> {
-  const checks: DoctorResult["checks"] = [];
+  const checks: DoctorCheck[] = [];
 
   if (options.sourceRoot) {
     try {
       const sourceStat = await stat(options.sourceRoot);
-      const isDirectory = sourceStat.isDirectory();
       checks.push({
         detail: options.sourceRoot,
         label: "Source path",
-        ok: isDirectory,
+        ok: sourceStat.isDirectory(),
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       checks.push({
-        detail: `${options.sourceRoot} (${message})`,
+        detail: `${options.sourceRoot} (${toError(error).message})`,
         label: "Source path",
         ok: false,
       });
     }
   }
 
-  if (options.apiUrl) {
-    checks.push({
-      detail: options.apiUrl,
-      label: "API URL",
-      ok: true,
-    });
-  } else {
-    checks.push({
-      label: "API URL",
-      ok: false,
-    });
-  }
-
-  if (options.apiToken) {
-    checks.push({
-      label: "API token",
-      ok: true,
-    });
-  } else {
-    checks.push({
-      label: "API token",
-      ok: false,
-    });
-  }
+  checks.push(
+    options.apiUrl
+      ? { detail: options.apiUrl, label: "API URL", ok: true }
+      : { label: "API URL", ok: false },
+  );
+  checks.push({ label: "API token", ok: Boolean(options.apiToken) });
 
   if (options.apiUrl && options.apiToken) {
     observer?.onEvent({ type: "status", message: "Checking API snapshot endpoint..." });
 
     try {
-      const entries = await fetchRemoteSnapshot(options.apiUrl, options.apiToken, options.signal);
-      checks.push({
-        detail: `${entries.length} remote entries`,
-        label: "API snapshot",
-        ok: true,
-      });
+      const entries = await fetchRemoteSnapshot(
+        { apiToken: options.apiToken, apiUrl: options.apiUrl },
+        options.signal,
+      );
+
+      checks.push({ detail: `${entries.length} remote entries`, label: "API snapshot", ok: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      checks.push({
-        detail: message,
-        label: "API snapshot",
-        ok: false,
-      });
+      checks.push({ detail: toError(error).message, label: "API snapshot", ok: false });
     }
   }
 
-  const result: DoctorResult = {
-    checks,
-    ok: checks.every((check) => check.ok),
-  };
+  const ok = checks.every((check) => check.ok);
 
-  observer?.onEvent({
-    type: "complete",
+  return {
+    checks,
+    ok,
     summary: {
       action: "doctor",
-      completedAt: new Date().toISOString(),
-      failed: result.ok ? 0 : 1,
-      message: result.ok ? "All checks passed." : "Some checks failed.",
-      pushed: 0,
-      status: result.ok ? "completed" : "failed",
+      applied: 0,
+      failed: ok ? 0 : 1,
+      message: ok ? "All checks passed." : "Some checks failed.",
+      skipped: 0,
+      status: ok ? "completed" : "failed",
     },
-  });
-
-  return result;
+  };
 }

@@ -1,7 +1,9 @@
-import type { PageLocation } from "../collector-entry";
 import * as z from "zod/mini";
 import { lenientArrayOf } from "../../shared/lenient-array";
-import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
+import { getUrlFileName } from "../../shared/path";
+import type { CollectorResult, DownloadableFile } from "../../shared/types";
+import { getText } from "../collector-dom";
+import type { SourcePage } from "../collector-entry";
 
 const FANBOX_IMAGE_LINK_SELECTOR = 'a[href^="https://downloads.fanbox.cc/images/post/"]';
 
@@ -20,121 +22,91 @@ interface FanboxStructuredPost {
 
 /** FANBOX embeds the creator slug in a `meta[name="metadata"]` JSON blob. */
 const FanboxMetadataSchema = z.object({
-  urlContext: z.object({ host: z.object({ creatorId: z.string() }) })
+  urlContext: z.object({ host: z.object({ creatorId: z.string() }) }),
 });
 
 /** The JSON-LD block is either a single node or an array; only BlogPosting nodes are useful. */
 const FanboxBlogPostingSchema = z.object({
   "@type": z.literal("BlogPosting"),
   author: z.optional(z.object({ name: z.string() })),
-  headline: z.optional(z.string())
+  headline: z.optional(z.string()),
 });
 
 const FanboxJsonLdSchema = z.union([
   lenientArrayOf(FanboxBlogPostingSchema),
   z.pipe(
     FanboxBlogPostingSchema,
-    z.transform((post) => [post])
-  )
+    z.transform((post) => [post]),
+  ),
 ]);
 
-export function collectFanboxData(document: Document, location: PageLocation): GalleryCollectResponse {
-  if (!isFanboxPostUrl(location)) {
-    return {
-      ok: false,
-      code: "UNSUPPORTED_SITE",
-      message: "This FANBOX page is not a supported creator post URL."
-    };
+export function collect(document: Document, page: SourcePage): CollectorResult {
+  const { creator, postId } = page.address;
+
+  if (!creator || !postId) {
+    return { ok: false, message: "This FANBOX page is not a supported creator post URL." };
   }
 
-  const creatorId = getCreatorId(document, location);
-
-  if (!creatorId) {
-    return {
-      ok: false,
-      code: "USER_NOT_FOUND",
-      message: "Could not infer the FANBOX creator name from this page."
-    };
-  }
-
-  const postId = getPostId(location);
+  const creatorId = getMetadataCreatorId(document) || creator;
   const title = getPostTitle(document);
 
   if (!title) {
-    return {
-      ok: false,
-      code: "TITLE_NOT_FOUND",
-      message: "Could not find the FANBOX post title on this page."
-    };
+    return { ok: false, message: "Could not find the FANBOX post title on this page." };
   }
 
-  const links = Array.from(document.querySelectorAll<HTMLAnchorElement>(FANBOX_IMAGE_LINK_SELECTOR));
+  const links = Array.from(
+    document.querySelectorAll<HTMLAnchorElement>(FANBOX_IMAGE_LINK_SELECTOR),
+  );
 
   if (links.length === 0) {
-    return {
-      ok: false,
-      code: "NO_IMAGES_FOUND",
-      message: "No FANBOX image download links were found on this page."
-    };
+    return { ok: false, message: "No FANBOX image download links were found on this page." };
   }
 
   const seenUrls = new Set<string>();
-  const imageEntries = links.map((link, index) => buildFanboxImageEntry(link, index, location, seenUrls));
-  const images = imageEntries.filter((image): image is GalleryImage => Boolean(image));
-  const skippedCount = imageEntries.length - images.length;
+
+  const images = links.flatMap((link) => {
+    const image = buildFanboxImageEntry(link, page, seenUrls);
+
+    return image ? [image] : [];
+  });
 
   if (images.length === 0) {
     return {
       ok: false,
-      code: "NO_VALID_IMAGES",
-      message: "No valid FANBOX image download links could be converted into downloads."
+      message: "No valid FANBOX image download links could be converted into downloads.",
     };
   }
 
   return {
     ok: true,
     outputKind: "downloadable-files",
-    site: "fanbox",
     title,
-    pageUrl: location.href,
     galleryId: postId,
-    folderSegments: [creatorId, buildPostFolderName(title, postId)],
-    skippedCount,
-    images
+    folderSegments: [creatorId, `${title}-${postId}`],
+    images,
   };
 }
 
 function buildFanboxImageEntry(
   link: HTMLAnchorElement,
-  index: number,
-  location: PageLocation,
-  seenUrls: Set<string>
-): GalleryImage | null {
+  page: SourcePage,
+  seenUrls: Set<string>,
+): DownloadableFile | null {
   const href = link.getAttribute("href");
 
   if (!href) {
     return null;
   }
 
-  const originalUrl = new URL(href, location.href).toString();
+  const originalUrl = new URL(href, page.location.href).toString();
 
   if (seenUrls.has(originalUrl) || !isFanboxImageUrl(originalUrl)) {
     return null;
   }
 
   seenUrls.add(originalUrl);
-  const thumbnail = link.querySelector<HTMLImageElement>("img");
 
-  return {
-    pageNumber: index + 1,
-    thumbnailUrl: thumbnail ? getImageSource(thumbnail, location) : null,
-    originalUrl,
-    fileName: getFileName(originalUrl)
-  };
-}
-
-function isFanboxPostUrl(location: PageLocation): boolean {
-  return location.hostname.toLowerCase().endsWith(".fanbox.cc") && location.pathname.startsWith("/posts/");
+  return { originalUrl, fileName: getUrlFileName(originalUrl) || "image" };
 }
 
 function isFanboxImageUrl(value: string): boolean {
@@ -142,16 +114,6 @@ function isFanboxImageUrl(value: string): boolean {
   const extension = getFileExtension(url.pathname);
 
   return url.hostname === "downloads.fanbox.cc" && FANBOX_IMAGE_EXTENSIONS.has(extension);
-}
-
-function getCreatorId(document: Document, location: PageLocation): string {
-  const metadataCreatorId = getMetadataCreatorId(document);
-
-  if (metadataCreatorId) {
-    return metadataCreatorId;
-  }
-
-  return location.hostname.replace(/\.fanbox\.cc$/i, "");
 }
 
 function getMetadataCreatorId(document: Document): string {
@@ -201,18 +163,18 @@ function getStructuredPost(document: Document): FanboxStructuredPost {
 
       return {
         authorName: post.author?.name.trim() ?? null,
-        headline: post.headline?.trim() ?? null
+        headline: post.headline?.trim() ?? null,
       };
-    } catch {
-      continue;
-    }
+    } catch {}
   }
 
   return { authorName: null, headline: null };
 }
 
 function getTitleFromOpenGraph(document: Document): string {
-  const title = document.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content.trim();
+  const title = document
+    .querySelector<HTMLMetaElement>('meta[property="og:title"]')
+    ?.content.trim();
 
   if (!title) {
     return "";
@@ -233,40 +195,9 @@ function getTitleFromDocumentTitle(title: string, authorName: string | null): st
   return normalizedTitle.replace(/\bpixivFANBOX\b/i, "").trim();
 }
 
-function getPostId(location: PageLocation): string | null {
-  const match = location.pathname.match(/^\/posts\/([^/]+)/);
-
-  return match ? match[1] : null;
-}
-
-function buildPostFolderName(title: string, postId: string | null): string {
-  return postId ? `${title}-${postId}` : title;
-}
-
-function getFileName(originalUrl: string): string {
-  const url = new URL(originalUrl);
-  const parts = url.pathname.split("/");
-
-  return parts[parts.length - 1] || "image";
-}
-
 function getFileExtension(pathname: string): string {
   const fileName = pathname.split("/").pop() || "";
   const extension = fileName.split(".").pop();
 
   return extension ? extension.toLowerCase() : "";
-}
-
-function getImageSource(image: HTMLImageElement, location: PageLocation): string | null {
-  const rawSource = image.getAttribute("data-src") || image.getAttribute("src");
-
-  if (!rawSource) {
-    return null;
-  }
-
-  return new URL(rawSource, location.href).toString();
-}
-
-function getText(element: Element | null): string {
-  return element ? element.textContent?.trim() || "" : "";
 }

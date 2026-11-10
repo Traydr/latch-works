@@ -42,22 +42,22 @@ To install it like any app, make the DMG ([Making the app](#making-the-app)).
 | --- | --- |
 | Rust | rustup; `apps/oriel/rust-toolchain.toml` pins the toolchain, and rustup installs it on the first `cargo` command |
 | Platform tools | Xcode, or its command-line tools (`xcode-select --install`) |
-| Node and pnpm | Node 24 and pnpm 12 (`pnpm install` at the root), for the conformance vectors, and for sharp's libvips until `xtask vendor` has copied it |
+| Node and pnpm | Node 24 and pnpm 12 (`pnpm install` at the root), for the conformance vectors |
 | ffmpeg | The app's own pinned ffmpeg and ffprobe, fetched once (below); Homebrew's `ffmpeg` only for the fixture script, which needs its encoders |
 | meson, ninja, pkgconf | `brew install meson ninja pkgconf`, to build the LGPL libmpv (below); nothing else from Homebrew is installed or linked (libavif's bottles are fetched by URL and relocated, below) |
 
-Windows builds from this workspace but has not run there yet: see [the Windows
-runbook](oriel-windows.md). Linux is not supported.
+Windows is best effort: it builds and packages from this workspace, and ran on the owner's machine
+in plan 064; see [the Windows runbook](oriel-windows.md). Linux is not supported.
 
 ## Run it
 
 Fetch the pinned ffmpeg and ffprobe once, the builds Electron Oriel pinned, by URL and SHA-256
-(`crates/tools/src/pins.rs`). They land in `apps/oriel/.media-tools`, which Git ignores;
-`ORIEL_MEDIA_TOOLS=<folder>` points the app at others. The tool tests skip, saying so, until
-they are there.
+(`crates/xtask/src/pins.rs`). They land in `apps/oriel/.media-tools`, which Git ignores;
+`ORIEL_MEDIA_TOOLS=<folder>` points a development build at others. The tool tests skip, saying
+so, until they are there.
 
 ```sh
-cd apps/oriel && cargo run -p oriel-tools --bin fetch-media-tools
+cd apps/oriel && cargo run -p xtask -- fetch-media-tools
 ```
 
 From the repository root:
@@ -70,76 +70,83 @@ pnpm oriel:check                       # cargo fmt --check, clippy -D warnings, 
 A crate with several integration test files has them as modules of one test binary, `tests/main.rs`:
 every binary links on its own, and cargo runs one binary at a time, so one per crate links less and
 runs a crate's files side by side. A file whose test changes the whole process keeps a binary of its
-own: `crates/core-tidy/tests/quit.rs`, `crates/tools/tests/shutdown.rs` and
-`crates/app/tests/sync_targets.rs`. `oriel-tools`, `oriel-mode-view` and `oriel-avif` have no
-`main`: each file there is its own binary, named after it, as in `--test run`. In `apps/oriel`,
-`cargo test -p oriel-mode-tidy --test main glazier::` runs one file's tests, and a test's name after
-`glazier::` runs that test.
+own: `crates/core-tidy/tests/quit.rs` and `crates/tools/tests/shutdown.rs`. `oriel-tools`,
+`oriel-mode-view`, `oriel-avif` and `oriel-ui` have no `main`: each file there is its own binary,
+named after it, as in `--test run`. In `apps/oriel`,
+`cargo test -p oriel-mode-tidy --test main cases::` runs one file's tests, and a test's name after
+`cases::` runs that test.
 `ORIEL_TEST_WAIT_SECS=<seconds>` makes Tidy's UI tests give up a wait after that long instead of
 three minutes, for a run that only needs to see a test fail.
 
-Dependencies, and `oriel-core-tidy`, whose pixel work runs on every still a test scans, build at
-`opt-level = 1` even in debug builds (`[profile.dev.package]` in `apps/oriel/Cargo.toml`): a
+Dependencies, and `oriel-core-tidy` and `oriel-vips`, whose pixel work runs on every still a test
+scans, build at `opt-level = 1` even in debug builds (`[profile.dev.package]` in `apps/oriel/Cargo.toml`): a
 clean build takes longer, and the tests run several times faster.
 
 `ORIEL_DATA_DIR=<absolute folder>` moves the data root, as `--user-data-dir` did for
-Electron Oriel. View opens a folder through its Open button,
-or at start with `ORIEL_OPEN=<folder>`.
+Electron Oriel. View opens a folder through its Open button, or at start with
+`ORIEL_OPEN=<folder>`.
 
 Measure release builds: `cargo build --release -p oriel` in `apps/oriel`.
 
 ## Settings files and check variables
 
 The shell keeps Electron Oriel's window state in `shell/window-state.json`, in the same format and
-in coordinates across every display as Electron keeps them, so the window reopens on the display
-it was on. The values Electron keeps in localStorage (`oriel.theme`, `oriel.sidebar`, `oriel.mode`, Tidy's `oriel.tidy.view`)
-in `shell/local-storage.json`. These variables set up a run for a check, since this Mac allows no
-scripted input:
+in coordinates across every display as Electron kept them, so the window reopens on the display
+it was on. The values Electron kept in localStorage (`oriel.theme`, `oriel.sidebar`, `oriel.mode`,
+Tidy's `oriel.tidy.view`, …) are in `shell/local-storage.json`. Each key is named beside the code
+that reads it; the two `xtask measure` seeds are `oriel_launch::storage_keys`.
+
+The app reads its `ORIEL_*` variables once, at launch, into `oriel_launch::Launch`
+(`crates/launch`), and builds the shell and every mode from it: each parses the check variables it
+owns (the shell's in `crates/app/src/check.rs`, each mode's in its `check.rs`). The variables
+`xtask measure` sets are `oriel_launch::variables`, which both read. A state the owner reaches with
+the pointer or the keys is reached with `ORIEL_SCRIPT`, which warns in the log about a step or a
+key it cannot read; the other variables seed what input cannot reach:
 
 | Variable | Effect |
 | --- | --- |
 | `ORIEL_DATA_DIR=<folder>` | The data root, as `--user-data-dir` was for Electron Oriel |
-| `ORIEL_OPEN=<folder>` | View opens the folder at start |
-| `ORIEL_VIEW_SCROLL=<px>` | View scrolls its grid that far down once the folder lists |
-| `ORIEL_VIEW_VIEWER=<n>` | View opens its nth tile (from 0) in the viewer once the folder lists |
-| `ORIEL_VIEW_FOLDERS=1` | View opens its folder overlay once the folder lists |
-| `ORIEL_VIEW_COMIC=1` | View turns comic mode on and opens its first comic in the reader, once the folder lists |
-| `ORIEL_VIEW_PANEL=volume\|speed` | A video the viewer opens stays paused, with that panel of the player open |
-| `ORIEL_SETTINGS=general` | Settings opens at that section (`general`, `view`, `tidy`, `sync`) |
-| `ORIEL_ACTIVITY=tidy=0.4,sync=working` | Fakes mode activity; a faked progress makes ⌘Q wait, so press it twice |
+| `ORIEL_OPEN=<folder or file>` | View opens it at start, and the window opens on View |
+| `ORIEL_SCRIPT=<steps>` | Plays input through the window's own event path once it has drawn, so any state the owner reaches can be reached and captured: hover, focus, tooltips, live scrolling, menus, dialogs. Steps split by `;`: `wait <ms>`; `idle`, which waits until no mode reports work (a folder listed, a scan and its analysis done); `move <x>,<y>`, `click <x>,<y>`, `double <x>,<y>`, `scroll <x>,<y>,<dy>`; `key <keystroke>` (`key cmd-,`, `key ?`, `key alt-cmd-5`); `action <name>`, an action by its GPUI name, sent where a key would go (`action view::OpenFolder`, `action gallery::ActivateSelected`, `action oriel::About`, `action tidy::AddFolder`); `toast <words>` and `fault <words>`, a toast with Undo that stays, or a fault, to see where it sits, with `\| <words>` for a second line. Clicks, keys and actions do what the owner's would: use a scratch data folder |
+| `ORIEL_ACTIVITY=tidy=0.4,sync=working` | Fakes mode activity; a faked progress holds quitting, so press ⌘Q twice |
 | `ORIEL_ACTIVITY_PANEL=1` | Opens the activity panel at the bottom right whenever work runs |
 | `ORIEL_ACTIVITY_JOBS=<n>` | Puts that many pretend jobs on the activity panel, in turn running, paused, in the background and queued, to see it and what stands on it without real work |
-| `ORIEL_TOAST=<words>` | Shows a toast with Undo that stays, once the window draws, to see and measure where it sits; `ORIEL_TOAST_DETAIL=<words>` gives it a second line, and `ORIEL_TOAST_FAULT=1` makes it a fault, which keeps that line in sight |
-| `ORIEL_SCRIPT=<steps>` | Plays pointer and key input through the window's own event path once it has drawn, so hover, focus, tooltips and live scrolling can be captured. Steps split by `;`: `wait <ms>`, `move <x>,<y>`, `click <x>,<y>`, `scroll <x>,<y>,<dy>`, `key <keystroke>`. Clicks and keys do what the owner's would: use a scratch data folder |
-| `ORIEL_SYNC_PLAN=1` | Sync plans the active profile at start |
-| `ORIEL_TOOLS_KEEP_RUNNING=1` | Tools run on when their job is paused, as they do where they cannot be suspended: Pause says "Pausing after …" until the file is done |
-| `ORIEL_SYNC_CHECK=form\|plan\|run\|done\|clean\|log` | Sync shows the new-profile form, or a made-up profile's made-up plan; `run` adds a push under way, `done` one finished with a failure, `clean` one finished without, which leaves Prune enabled, `log` the run log too. Only with `ORIEL_DATA_DIR` set. Nothing goes over the network, and only the check profile is written, in that data folder |
-| `ORIEL_VIDEO=avplayer` | Video through AVPlayer instead of libmpv |
-| `ORIEL_ABOUT=1` | Opens the About dialog at start, to see the version and the licences a bundle lists |
 | `ORIEL_WELCOME=1` | Shows the first-run welcome under `ORIEL_DATA_DIR` (it shows once otherwise, until `shell/welcomed` exists) |
-| `ORIEL_TIDY_ROOT=<folder>` | Tidy opens on that root (in a sandboxed run, one inside the sandbox) |
-| `ORIEL_TIDY_PAGE=<page>` | Tidy opens on that page (`overview`, `library`, `duplicates`, `duplicates:identical`, `duplicates:variants`, …) |
-| `ORIEL_DUPLICATES_MATCHING=1` | Duplicates opens its Matching popover when the page first draws |
-| `ORIEL_DUPLICATES_SET=<n or words>` | Duplicates opens the set at that place in its queue (from 1), or the first with a file whose path holds those words; if none does, the log and the top bar say so |
-| `ORIEL_DUPLICATES_KEEP=<n>` | Duplicates keeps only that version (from 1) of the set it opens, as a pick would |
-| `ORIEL_DUPLICATES_LOUPE=1` | Duplicates opens the loupe on the set it opens |
-| `ORIEL_DUPLICATES_PLAY=1` | With the loupe on a video, plays it, to show its controls |
-| `ORIEL_DUPLICATES_SCROLL=<line>` | Duplicates scrolls the set's versions, or its identical copies' rows, to that line (from 0) when they first draw |
-| `ORIEL_LIBRARY_SELECT=<n>` | Library selects its first n files once they are read, which brings the selection bar |
-| `ORIEL_LIBRARY_VIEW=list\|grid` | Library shows as that |
-| `ORIEL_LIBRARY_INSPECTOR=0\|1` | Library's inspector closed or open |
-| `ORIEL_HOLDING_SELECT=<n>` | Holding selects its first n files, which brings the selection bar |
-| `ORIEL_HISTORY_OPEN=1` | History opens its newest entry |
-| `ORIEL_MOVE_OFFER=1` | Offers the move to Applications even in a run that would skip it |
+| `ORIEL_SYNC_PLAN=1` | Sync plans the active profile at start |
+| `ORIEL_SYNC_CHECK=form\|plan\|run\|done\|clean\|log` | Sync shows the new-profile form, or a made-up profile's made-up plan; `run` adds a push under way, `done` one finished with a failure, `clean` one finished without, which leaves Prune enabled, `log` the run log too. Only with `ORIEL_DATA_DIR` set; another value, or a run without it, logs a warning and shows nothing. Nothing goes over the network, and only the check profile is written, in that data folder |
+| `ORIEL_TOOLS_KEEP_RUNNING=1` | Tools run on when their job is paused, as they do where they cannot be suspended: Pause says "Pausing after …" until the file is done |
+| `ORIEL_TIDY_ROOT=<folder>` | Tidy opens on that root, adding and scanning it if it is not one yet (in a sandboxed run, one inside the sandbox). Input would have to walk Tidy's folder picker to it, so `xtask measure` and the shell's spike seed it |
+| `ORIEL_TIDY_PAGE=<page>` | Tidy opens on that page (`overview`, `library`, `duplicates`, `duplicates:identical`, `duplicates:variants`, …). A script reaches the same with the page's key (`key alt-cmd-2`); the variable stays because `xtask measure` and the shell's spike set it |
+| `ORIEL_MOVE_OFFER=1\|move` | Offers the move to Applications even in a run that would skip it; `move` takes the offer without asking, as Move to Applications (and Replace) would |
 | `ORIEL_APPLICATIONS_DIR=<folder>` | Where that move goes, read only when the offer is forced |
-| `ORIEL_QUICK_LOOK=<file>` | Tidy shows the file in Quick Look once it is up |
-| `ORIEL_TIDY_PICKER=1` | Tidy opens its folder picker (Add Folder…) once it is up |
-| `ORIEL_TIDY_MOVE=1` | Tidy opens the folder picker a Move to… opens, once it is up; choosing does nothing |
-| `ORIEL_TIDY_SHORTCUTS=1` | Tidy opens its keyboard shortcuts once it is up |
-| `ORIEL_TIDY_FORGET=1` | Tidy asks whether to forget the folder on screen once it is up; only its Forget button changes anything |
-| `ORIEL_TIDY_RUN=convert,cleanup` | Once the folder on screen is scanned, Tidy starts those pages' changes; the second queues behind the first. It changes files: point it only at a copy |
-| `ORIEL_LOCATIONS_MENU=1` | Opens the sidebar's location switcher about 4 s after the window first draws |
-| `ORIEL_SPIKE_PANEL=volume\|speed` | `mpv_spike` opens the player's volume or speed panel, for screenshots |
+
+The native-library overrides (`ORIEL_LIBVIPS`, `ORIEL_LIBAVIF`, `ORIEL_LIBMPV`,
+`ORIEL_MEDIA_TOOLS`, under "Video through libmpv") are not launch settings: tests, examples and
+xtask use them with no launch, so they are read where the library is searched for. So are the
+sync stack's `ORIEL_SYNC_STACK_*` (Sync's stack tests and `sync_bench`) and `mpv_spike`'s
+`ORIEL_SPIKE_PANEL=volume|speed`, which opens the player's volume or speed panel for screenshots.
+
+What used to have a variable of its own is a script now, for example:
+
+| Check | `ORIEL_SCRIPT` |
+| --- | --- |
+| About | `action oriel::About` |
+| Settings at the mode's section | `key cmd-,` (then `click` the section in Settings' sidebar for another) |
+| The shortcut sheet | `key ?` |
+| Tidy's folder picker | `idle; key cmd-o` |
+| A Tidy page | `idle; key alt-cmd-<n>`, ⌥⌘1–7 in the sidebar's order (Shrink has none: `click` it) |
+| Tidy's changes running, the second queued behind the first | `idle; key alt-cmd-3; key cmd-enter; key alt-cmd-4; wait 1000; key cmd-enter` (Convert, then Clean up: it changes files, so point it only at a copy) |
+| Duplicates' Matching popover, a video playing in the loupe | `idle; key alt-cmd-2; click <x>,<y>` on the button or the picture |
+| Duplicates on a later set, with another version kept, in the loupe | `idle; key alt-cmd-2; key s` (each `s` skips a set); `key shift-<n>` keeps version n as well; `key space` opens the loupe; `scroll` or `key pagedown` moves down its versions |
+| The Library's first files selected, with the selection bar | `idle; key alt-cmd-5; key down; key shift-down; key shift-down` |
+| The Library's inspector, or the other view | `key i`, or `click` the view switch |
+| Quick Look, the folder picker a Move to… opens | In the Library, `key down; key space`, or `key down; key cmd-shift-m` |
+| Holding's files selected, History's newest entry open | `idle; key alt-cmd-7; key cmd-a`, or `idle; key alt-cmd-6; key down; key right` |
+| The sheet that asks whether to forget a folder | `click` the location switcher, then its `Forget “…”…` |
+| View's viewer on its third tile | `idle; key right; key right; key enter` |
+| View's grid scrolled | `idle; scroll 700,400,-1200` |
+| View's folder overlay, comic mode, a player panel, the location switcher's menu | `idle; click <x>,<y>` on the button |
+| A toast with a second line | `toast Moved 3 files \| Undo in History`, or `fault …` |
 
 View's Debug logging setting prints each thumbnail event to the terminal as a `[thumbnails] …`
 line on stderr; Performance monitoring adds a Timings group to View's Diagnostics.
@@ -149,8 +156,8 @@ line on stderr; Performance monitoring adds a Timings group to View's Diagnostic
 Tidy takes any folder Electron Oriel's Tidy takes, and changes files in it, when the app runs on
 the owner's own data in `~/.latch-works/oriel` (plan 063, decision 18). It keeps Electron's
 refusals: a folder that is missing, a file, or one that holds or lies in another root. A root on
-another volume holds its files on that volume, in `.latch-works/oriel/holding/` at its top,
-as glazier-core holds in `.latch-works/glazier/holding/`.
+another volume holds its files on that volume, in `.latch-works/oriel/holding/` at its top, so
+holding there is a rename.
 
 A run with `ORIEL_DATA_DIR` set (every check, test and agent run) is sandboxed: Tidy takes
 only a root under that data folder's `sandbox/` or the temp folder, refuses a Move to… outside
@@ -168,7 +175,7 @@ node apps/oriel/scripts/fixture/make-fixture.ts                   # spike-fixtur
 ```
 
 The script is seeded and resumable, and refuses any output outside `~/.latch-works/oriel-fixtures`
-or `/tmp`. View, Sync and the benches read a fixture where it is; for Tidy in a sandboxed run,
+or `/tmp`. View, Sync and the examples read a fixture where it is; for Tidy in a sandboxed run,
 clone it into the run's `sandbox/`, or make that `sandbox` a link to the fixtures' folder, as
 `xtask measure` does.
 
@@ -240,30 +247,25 @@ syncs; `.latch-works` is a system folder to `media-domain`, so no scan reads it.
 ## Keeping the two implementations in step
 
 Each rule Oriel ports from a TypeScript package that Pane View, the Lockstep CLI or Gather Box
-still use is pinned by vectors in `apps/oriel/conformance/<package>/` (`media-domain`,
-`media-format`, `media-index`, `lockstep-core`). The package's Vitest suite checks that
-TypeScript still produces them, and `cargo test` checks that Rust does. When a TypeScript rule
-changes on purpose, rewrite the vectors and port the change:
+still use is pinned by vectors in `apps/oriel/conformance/<folder>/` (`media-domain`,
+`media-format`, `lockstep-core`; that folder's README says which suite makes each). The
+package's Vitest suite checks that TypeScript still produces them, CI runs those suites
+on every pull request, and `cargo test` checks that Rust does. When a TypeScript rule changes on
+purpose, rewrite the vectors and port the change:
 
 ```sh
-ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test
-ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-format test
-ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-index test
-ORIEL_UPDATE_VECTORS=1 pnpm --filter @latch-works/lockstep-core test
+ORIEL_UPDATE_VECTORS=1 pnpm -r --filter "./packages/**" test
 ```
 
 Then `pnpm oriel:check` shows what Rust must change. Known differences are listed in the
 tests themselves (the 19 Han pairs in `crates/core-domain/tests/conformance.rs`).
 
-A few small files are frozen: Electron Oriel wrote them, and nothing regenerates them, so change
-one only with the Rust change that needs it.
+Rules only Oriel runs are frozen fixtures: no TypeScript makes them, so change one only with the
+Rust change that needs it. `apps/oriel/conformance/README.md` lists them (the comic and gallery
+entry rules, the video policy, the stored Sync profile and token, and a few keys
+inside files the TypeScript still makes).
 
-- `conformance/media-index/view-index.*`: the View index Electron Oriel's schema made.
-- `conformance/lockstep-core/secret-storage/electron/`: a Sync profile and token Electron Oriel
-  wrote, which Oriel must read.
-
-Tidy has no TypeScript twin left: glazier-core went with Electron Oriel, and Oriel's engine is
-the only implementation. Its rules are pinned by unit tests beside the code (the keeper, similar
+Tidy has no TypeScript twin left: Oriel's engine is the only implementation. Its rules are pinned by unit tests beside the code (the keeper, similar
 groups, duplicate sets and Spot variants, sniffing, fingerprints), and what it does to files by
 `crates/core-tidy/tests/round_trip.rs`, which builds an archive at test time
 (`crates/test-archive`: stills drawn in code, clips from the pinned ffmpeg), makes each change
@@ -284,10 +286,10 @@ on the hardware route alone.
 ## Video through libmpv
 
 Video plays through libmpv (plan 063, decisions 4 and 7), which plays MKV, WebM, AVI, FLV and
-ASF as well as MP4, and seeks AV1 exactly. `ORIEL_VIDEO=avplayer` plays through AVPlayer
-instead, and the app falls back to AVPlayer by itself when no libmpv loads.
-`ORIEL_MPV_RENDER=gl` (the default) draws through OpenGL into an IOSurface; `sw` draws in
-software.
+ASF as well as MP4, and seeks AV1 exactly. It is the only engine: the AVPlayer one is gone, and
+where no libmpv loads a video shows the reason over its poster. On macOS frames draw through
+OpenGL into an IOSurface; elsewhere in software. `mpv_spike` can measure the software path on
+macOS (`ORIEL_MPV_RENDER=sw`, below); the app has no switch for it.
 
 Oriel builds its own LGPL libmpv (decision 8) from pinned sources, in one command:
 
@@ -320,18 +322,21 @@ static archives, and IINA's and mpv's own builds are GPL.
   dylibs: the builds run with `GIT_CEILING_DIRECTORIES` at the work root, so libass and
   libplacebo no longer embed the checkout's `git describe`, and with `ZERO_AR_DATE=1`.
 
-The app looks for libmpv in this order, first found wins. It logs the one it loaded at the
-`log` crate's info level (the app installs no logger yet), and the spike's `single` mode prints
-it:
+The app finds libmpv, libvips, libavif, ffmpeg and ffprobe the same way
+(`NativeSet` in `crates/core-paths/src/native.rs`), and logs each library it loaded at the `log`
+crate's info level (the app installs no logger yet):
 
-1. `Contents/Frameworks/libmpv*.dylib` in the app bundle it runs from;
-2. the file `ORIEL_LIBMPV=<dylib>` names;
-3. the development build, `apps/oriel/.libmpv/current`;
-4. IINA's libmpv (`/Applications/IINA.app`), read in place, and only when not running from a
-   bundle.
+1. in the package it runs from (the bundle's `Contents/Frameworks` and
+   `Contents/Resources/media-tools`, or the Windows install's folder), and nowhere else: a
+   package without one says it was packaged without it;
+2. outside a package, the file `ORIEL_LIBMPV`, `ORIEL_LIBVIPS` or `ORIEL_LIBAVIF` names, or the
+   folder `ORIEL_MEDIA_TOOLS` names;
+3. else the development copy: `apps/oriel/.libmpv/current`, `.vendor/libvips/current/lib`,
+   `.vendor/libavif/current` (`.vendor/libavif-windows` on Windows), `.media-tools/<platform>`.
 
-The bundle's libmpv is the LGPL set. IINA's build is GPL: it is for development only, and a
-bundled app never loads it, even with nothing else to load.
+A development build on macOS without the LGPL libmpv falls back to IINA's
+(`/Applications/IINA.app`), read in place (`NativeSet::LIBMPV`'s fallback). IINA's build is GPL:
+it is for development only, and a packaged app never loads it.
 
 ## Vendored libraries
 
@@ -347,7 +352,8 @@ Each lands in `apps/oriel/.vendor/<name>/<id>/`, git-ignored, with `.vendor/<nam
 pointing at it, beside its licences, `manifest.json` (URLs, hashes, how each hash was checked
 against its publisher, licences, every library's links and minimum macOS) and `SHA256SUMS`. 7 s
 from nothing, 21 MB of downloads (kept in `apps/oriel/target/vendor/downloads/`); a rerun
-checks the hashes and does nothing. The pins are in `crates/xtask/src/vendor/pins.rs`.
+checks the hashes and does nothing. The pins are in `crates/xtask/src/pins.rs`, with Windows'
+and the media tools'.
 
 | Set | What | Size | macOS | Licence |
 | --- | --- | --- | --- | --- |
@@ -357,13 +363,10 @@ checks the hashes and does nothing. The pins are in `crates/xtask/src/vendor/pin
 - libavif publishes only command-line tools for macOS, and no other trusted prebuilt library
   has aom without bringing its own C++ runtime (conda-forge's), so the set is Homebrew's.
   Homebrew builds aom for macOS 15 and later only, so the set needs macOS 15.
-- The vendored libvips is byte for byte the one in `node_modules`. The app finds libvips in its
-  bundle's `Contents/Frameworks`, else the file `ORIEL_LIBVIPS` names, else the vendored set,
-  else `node_modules` (`Vips::open_located` in `oriel-core-tidy`). Tidy's tests find it the
-  same way.
-- `oriel-avif` loads libavif from the app bundle's `Contents/Frameworks`, else the file
-  `ORIEL_LIBAVIF` names, else `.vendor/libavif/current`. Its tests skip, saying so, until the
-  set is vendored.
+- The vendored libvips is byte for byte the one in `node_modules`. `oriel-vips` loads one
+  libvips per process, which View's stills (off macOS) and Tidy share; Tidy reads only through
+  the 8.18 line, the build its fingerprints were tuned on. Tidy's tests find it the same way.
+- `oriel-avif`'s tests skip, saying so, until the set is vendored.
 
 ## Making the app
 
@@ -377,7 +380,7 @@ when that is set) with:
 | The LGPL libmpv set, built first if it is not | `Contents/Frameworks/` | 26.1 MB, 13 dylibs |
 | The vendored libvips, fetched first if it is not | `Contents/Frameworks/` | 18.1 MB |
 | The vendored libavif, fetched first if it is not, its local symbols stripped; libmpv's dav1d 1.5.4 serves it, under the same install name | `Contents/Frameworks/` | 5.1 MB, 3 dylibs |
-| The pinned ffmpeg and ffprobe, fetched first if they are not (`oriel-tools`' own code) | `Contents/Resources/media-tools/` | 126 MB |
+| The pinned ffmpeg and ffprobe, fetched first if they are not (`xtask fetch-media-tools`) | `Contents/Resources/media-tools/` | 126 MB |
 | Each set's licences and manifest | `Contents/Resources/licenses/<set>/` | |
 | The repository's licence | `Contents/Resources/licenses/oriel/` | |
 | FFmpeg's `COPYING.GPLv3` and `LICENSE.md` from its pinned source release, and `NOTICE.txt`: download URLs and hashes, ffmpeg's configure flags, the licence those flags make it (GPL-3.0-or-later) and where its source is | `Contents/Resources/licenses/media-tools/` | |
@@ -394,8 +397,8 @@ bundle. Ad hoc signing runs on the Mac that built it. `ORIEL_MACOS_SIGN_IDENTITY
 Developer ID identity instead, signed with the hardened runtime and a timestamp as for Electron
 Oriel (not yet tried with a real identity); notarizing is a follow-up (decision 15). The dist
 build takes about 4.5 minutes from clean on an M5 Pro, and about 3 minutes after any change,
-since fat LTO relinks the whole program; `cargo build --release`, which the spikes, examples and
-benches use, keeps Cargo's defaults and its seconds-long rebuilds. The bundled binary has no
+since fat LTO relinks the whole program; `cargo build --release`, which the spikes and examples
+use, keeps Cargo's defaults and its seconds-long rebuilds. The bundled binary has no
 symbol table, so read a crash report against the unstripped build of the same UUID: `atos -o
 <target>/dist/oriel`. The app carries no data: it uses
 `~/.latch-works/oriel/` as a development build does.
@@ -521,8 +524,8 @@ cargo run -p xtask -- measure scroll idle \
 - **What it reads.** The spikes' own events and memory, as the scorecard did (a spike moves on
   the moment it writes a reading, so its own is the one at rest); CPU time, resident memory and
   footprint from outside through `proc_pid_rusage`, at each event and for the modes at rest; the
-  `footprint` tool only at rest, never while something is timed; the Tidy catalog's counts through `/usr/bin/sqlite3`, once the
-  app has quit. Each launch drops the shell's `ORIEL_*` variables; `--env K=V` adds one to
+  `footprint` tool only at rest, never while something is timed; the Tidy catalog's counts, read
+  with `oriel-core-tidy`'s own reader once the app has quit. Each launch drops the shell's `ORIEL_*` variables; `--env K=V` adds one to
   every launch. `--fixture` moves View's, video's and Tidy's fixture (the 21k fixture by default);
   Tidy's must be in `~/.latch-works/oriel-fixtures`, which the run's data folder's `sandbox`
   links to.
@@ -545,19 +548,21 @@ The spikes' variables, for a run by hand, are documented at the top of each spik
   library,grid,duplicates` picks groups, `ORIEL_SPIKE_TIDY_SETS=<n>` steps through that many of
   Duplicates' sets (10), reading memory every 50, and `ORIEL_SPIKE_TIDY_HOLD=1` keeps the app open;
   `keep`, only when named, decides that many sets for real, so only on a copy;
-- the shell's in `crates/app/src/spike.rs`: `ORIEL_SPIKE_SHELL=<log>` times the launch, each
+- the shell's in `crates/app/src/spike.rs`: `ORIEL_SPIKE_SHELL=<log>` rests, then times each
   mode switch and Settings at each section.
 
 `mpv_spike`'s own switches mirror the gallery: `ORIEL_SPIKE_SILENT=1` (a preview with sound off),
 `ORIEL_SPIKE_PREWARM=<ms>` (an engine started that long before the first open, as hovering a video
 tile does), `ORIEL_SPIKE_PRIME=<ms>` (an engine started and primed that long before, as View
 showing a folder with videos does; it plays nothing, and makes its clip once with the pinned
-ffmpeg, in `<data>/view/cache/`), `ORIEL_SPIKE_WARM=<video>` (the first open on an engine a player
-gave back) and `ORIEL_SPIKE_REST=<seconds>` (the footprint after that rest). Video through
-AVPlayer, which `video_spike` forces: `cargo run --release -p oriel-media --example video_spike --
-<single|tiles|sweep|errors>`, and the same through libmpv with `--example mpv_spike` (also
-`verify`, `colour`, and `rest <seconds>`, which opens nothing and prints the footprint every 5 s:
-with `ORIEL_SPIKE_PRIME=0`, what a primed engine holds while it waits and after it shuts down).
+ffmpeg, in the temp folder), `ORIEL_SPIKE_WARM=<video>` (the first open on an engine a player
+gave back) and `ORIEL_SPIKE_REST=<seconds>` (the footprint after that rest). Three more make its
+engine differently from the app's: `ORIEL_MPV_RENDER=sw` (the software renderer),
+`ORIEL_MPV_LEAD_MS=<ms>` (how early frames are handed out) and `ORIEL_MPV_OPTIONS=name=value,…`
+(more mpv options). Run it with `cargo run --release -p oriel-mode-view --example mpv_spike --
+<single|tiles|sweep|errors|verify|colour|rest>`; `rest <seconds>` opens nothing and prints the
+footprint every 5 s: with `ORIEL_SPIKE_PRIME=0`, what a primed engine holds while it waits and
+after it shuts down.
 
 Phase 9's scorecard, and how its rows map to these, is in
 [docs/research/oriel-rs/scorecard.md](../research/oriel-rs/scorecard.md) under "Run it again".

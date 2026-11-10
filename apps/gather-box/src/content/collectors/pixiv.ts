@@ -1,38 +1,33 @@
-import type { PageLocation } from "../collector-entry";
-import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
+import { getUrlFileName } from "../../shared/path";
+import type { CollectorResult, DownloadableFile } from "../../shared/types";
+import type { PageLocation, SourcePage } from "../collector-entry";
 
 const ORIGINAL_IMAGE_PREFIX = "https://i.pximg.net/img-original/";
 
-export function collectPixivData(document: Document, location: PageLocation): GalleryCollectResponse {
-  const artworkId = getArtworkId(location);
+export function collect(document: Document, page: SourcePage): CollectorResult {
+  const { artworkId } = page.address;
 
   if (!artworkId) {
-    return {
-      ok: false,
-      code: "UNSUPPORTED_SITE",
-      message: "This pixiv page is not a supported artwork URL."
-    };
+    return { ok: false, message: "This pixiv page is not a supported artwork URL." };
   }
 
   const firstOriginal = document.querySelector<HTMLAnchorElement>(
-    `a[href^="${ORIGINAL_IMAGE_PREFIX}"][href*="/${artworkId}_p0."]`
+    `a[href^="${ORIGINAL_IMAGE_PREFIX}"][href*="/${artworkId}_p0."]`,
   );
 
   if (!firstOriginal?.href) {
     return {
       ok: false,
-      code: "NO_IMAGES_FOUND",
-      message: "Could not find the original pixiv image URL on this page."
+      message: "Could not find the original pixiv image URL on this page.",
     };
   }
 
-  const creator = getCreator(firstOriginal, location);
+  const creator = getCreator(firstOriginal, page.location);
 
   if (!creator) {
     return {
       ok: false,
-      code: "USER_NOT_FOUND",
-      message: "Could not find the pixiv creator name and user ID on this page."
+      message: "Could not find the pixiv creator name and user ID on this page.",
     };
   }
 
@@ -41,33 +36,29 @@ export function collectPixivData(document: Document, location: PageLocation): Ga
   if (images.length === 0) {
     return {
       ok: false,
-      code: "NO_VALID_IMAGES",
-      message: "No valid original pixiv images could be prepared for download."
+      message: "No valid original pixiv images could be prepared for download.",
     };
   }
 
   return {
     ok: true,
     outputKind: "downloadable-files",
-    site: "pixiv",
     title: getArtworkTitle(document) || `pixiv artwork ${artworkId}`,
-    pageUrl: location.href,
     galleryId: artworkId,
     folderSegments: [`${creator.name}-${creator.id}`],
-    skippedCount: 0,
-    images
+    images,
   };
 }
 
 function buildPixivImages(
   document: Document,
   firstOriginalUrl: string,
-  artworkId: string
-): GalleryImage[] {
+  artworkId: string,
+): DownloadableFile[] {
   const explicitUrls = new Map<number, string>();
 
   const originalLinks = document.querySelectorAll<HTMLAnchorElement>(
-    `a[href^="${ORIGINAL_IMAGE_PREFIX}"][href*="/${artworkId}_p"]`
+    `a[href^="${ORIGINAL_IMAGE_PREFIX}"][href*="/${artworkId}_p"]`,
   );
 
   for (const link of originalLinks) {
@@ -80,7 +71,7 @@ function buildPixivImages(
 
   const explicitPageCount = Math.max(0, ...Array.from(explicitUrls.keys(), (index) => index + 1));
   const pageCount = Math.max(getPageCount(document), explicitPageCount, 1);
-  const images: GalleryImage[] = [];
+  const images: DownloadableFile[] = [];
 
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
     const originalUrl = explicitUrls.get(pageIndex) ?? derivePageUrl(firstOriginalUrl, pageIndex);
@@ -89,12 +80,7 @@ function buildPixivImages(
       continue;
     }
 
-    images.push({
-      pageNumber: pageIndex + 1,
-      thumbnailUrl: null,
-      originalUrl,
-      fileName: getUrlFileName(originalUrl)
-    });
+    images.push({ originalUrl, fileName: getUrlFileName(originalUrl) });
   }
 
   return images;
@@ -102,18 +88,22 @@ function buildPixivImages(
 
 function getCreator(
   firstOriginal: HTMLAnchorElement,
-  location: PageLocation
+  location: PageLocation,
 ): { id: string; name: string } | null {
   const artworkSection = firstOriginal.closest("section");
-  const candidates = artworkSection?.querySelectorAll<HTMLAnchorElement>('a[href*="/users/"]') ?? [];
+
+  const candidates =
+    artworkSection?.querySelectorAll<HTMLAnchorElement>('a[href*="/users/"]') ?? [];
 
   for (const link of candidates) {
     const url = new URL(link.href, location.href);
     const match = url.pathname.match(/^\/(?:[a-z]{2}\/)?users\/(\d+)\/?$/i);
     const name = getCreatorName(link);
 
-    if (match && name) {
-      return { id: match[1], name };
+    const id = match?.[1];
+
+    if (id && name) {
+      return { id, name };
     }
   }
 
@@ -140,7 +130,7 @@ function getCreatorName(profileLink: HTMLAnchorElement): string {
 
 function getDirectText(element: Element): string {
   return Array.from(element.childNodes, (node) =>
-    node.nodeType === node.TEXT_NODE ? (node.textContent ?? "") : ""
+    node.nodeType === node.TEXT_NODE ? (node.textContent ?? "") : "",
   )
     .join("")
     .trim();
@@ -157,10 +147,6 @@ function getPageCount(document: Document): number {
   const match = previewText.match(/\d+\s*\/\s*(\d+)/);
 
   return match ? Number(match[1]) : 1;
-}
-
-function getArtworkId(location: PageLocation): string | null {
-  return location.pathname.match(/^\/(?:[a-z]{2}\/)?artworks\/(\d+)/i)?.[1] ?? null;
 }
 
 function getPixivPageNumber(urlValue: string, artworkId: string): number | null {
@@ -185,8 +171,4 @@ function isOriginalPixivUrl(urlValue: string, artworkId: string, pageIndex: numb
     url.pathname.startsWith("/img-original/") &&
     getUrlFileName(urlValue).startsWith(`${artworkId}_p${pageIndex}.`)
   );
-}
-
-function getUrlFileName(urlValue: string): string {
-  return decodeURIComponent(new URL(urlValue).pathname.split("/").pop() ?? "image");
 }

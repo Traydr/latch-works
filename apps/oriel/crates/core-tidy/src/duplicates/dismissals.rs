@@ -1,5 +1,4 @@
-//! The owner's word that some files are not duplicates of each other, from glazier-core's
-//! `duplicates/dismissals.ts`.
+//! The owner's word that some files are not duplicates of each other.
 
 use std::collections::{HashMap, HashSet};
 

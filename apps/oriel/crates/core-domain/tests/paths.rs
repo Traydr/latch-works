@@ -2,7 +2,7 @@
 
 use crate::support::{GeneratedWith, check, describe, fail_with, read_vectors};
 use oriel_core_domain::{
-    canonicalize_extension, display_name_from_path, format_bytes, get_base_name, get_parent_path,
+    canonicalize_extension, display_name_from_path, get_base_name, get_parent_path,
     join_archive_path, normalize_path_for_compare, normalize_path_for_compare_keeping_extensions,
     pair_sync_paths, to_archive_path, trim_trailing_slash,
 };
@@ -16,7 +16,6 @@ struct PathVectors {
     extensions: Vec<ExtensionCase>,
     joins: Vec<JoinCase>,
     pairs: Vec<PairCase>,
-    format_bytes: Vec<BytesCase>,
 }
 
 #[derive(Deserialize)]
@@ -50,12 +49,6 @@ struct PairCase {
     locals: Vec<String>,
     remotes: Vec<String>,
     pairs: Vec<(String, String)>,
-}
-
-#[derive(Deserialize)]
-struct BytesCase {
-    bytes: f64,
-    formatted: String,
 }
 
 fn vectors() -> PathVectors {
@@ -144,23 +137,4 @@ fn pairs_sync_paths_as_the_typescript_does_in_its_order() {
         check(&mut problems, || case.about.clone(), &case.pairs, &rust);
     }
     fail_with(&problems, "pairings differ", &vectors.generated_with);
-}
-
-#[test]
-fn formats_byte_counts_as_the_typescript_does() {
-    let vectors = vectors();
-    let mut problems = Vec::new();
-    for case in &vectors.format_bytes {
-        check(
-            &mut problems,
-            || format!("formatBytes({:?})", case.bytes),
-            &case.formatted,
-            &format_bytes(case.bytes),
-        );
-    }
-    fail_with(
-        &problems,
-        "byte counts format differently",
-        &vectors.generated_with,
-    );
 }

@@ -2,21 +2,15 @@ import tailwindcss from "@tailwindcss/vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
-import { defineConfig } from "vite";
+import { defaultClientConditions, defaultServerConditions, defineConfig } from "vite";
 
 const serverExternal = [
   "@aws-sdk/client-s3",
   "@aws-sdk/s3-request-presigner",
   "@better-auth/drizzle-adapter",
-  // Externalized so the heavy generation package (and its sharp/ffmpeg deps) is
-  // resolved at runtime via dynamic import only in inline mode, never bundled
-  // into the always-loaded Pane View server graph.
-  "@latch-works/media-storage",
-  // Native canvas backend for PDF rendering — must not be scanned by Vite's
-  // dep optimizer (the platform binary is not valid UTF-8).
+  // pdfjs-dist's native canvas backend: Vite's dep optimizer must not scan it
+  // (the platform binary is not valid UTF-8).
   "@napi-rs/canvas",
-  "ffmpeg-static",
-  "sharp",
   "better-auth",
   "better-auth/tanstack-start",
 ];
@@ -28,10 +22,13 @@ export default defineConfig({
     },
   },
   resolve: {
+    // Workspace packages resolve to their source, so dev and builds never use a stale build.
+    conditions: ["source", ...defaultClientConditions],
     tsconfigPaths: true,
   },
   ssr: {
     external: [...serverExternal, "pdfjs-dist"],
+    resolve: { conditions: ["source", ...defaultServerConditions] },
   },
   optimizeDeps: {
     exclude: ["@napi-rs/canvas", "pdfjs-dist"],

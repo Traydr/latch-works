@@ -1,16 +1,12 @@
-//! The comic reader (`ComicReader.tsx`): a comic's pages one under another, as wide as the
-//! window allows up to 980 px, on the viewer's dark ground. → or E and ← or Q go a page on or
-//! back, Escape or Close returns to the gallery; the top bar has the page count, Scroll to top and
-//! Reveal in folder. The top bar fades after 2.5 s without the pointer moving, a key or a scroll,
-//! with the pointer, and comes back with any of them, as the viewer's does (`useViewerChromeIdle`).
+//! The comic reader: a comic's pages one under another, as wide as the window allows up to 980 px,
+//! on the viewer's dark ground. → or E and ← or Q go a page on or back, Escape or Close returns to
+//! the gallery; the top bar has the page count, Scroll to top and Reveal in folder. The top bar
+//! fades as the viewer's controls do ([`crate::chrome`]).
 //!
-//! Pages decode through ImageIO (GPUI's own decoder reads neither AVIF nor HEIC) at the width
-//! they show at, the ones near the page in view first; pages further away are released, so a
-//! long comic holds a few decoded pages at a time.
+//! Pages decode at the width they show at, the ones near the page in view first; pages further
+//! away are let go of, so a long comic holds a few decoded pages at a time ([`NeighbourStills`]).
 
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
@@ -18,34 +14,23 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants as _},
 };
 use gpui_kit::{
-    App, AppContext as _, Context, DispatchPhase, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement as _, IntoElement, KeyBinding, MouseMoveEvent, ObjectFit,
-    ParentElement as _, Render, RenderImage, Role, ScrollHandle, SharedString,
-    StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Task,
-    TestSupportExt as _, Window, actions, canvas, div, img, linear_color_stop, linear_gradient,
-    prelude::FluentBuilder as _, px,
+    App, Context, DispatchPhase, EventEmitter, FocusHandle, Focusable, InteractiveElement as _,
+    IntoElement, MouseMoveEvent, ObjectFit, ParentElement as _, Priority, Render, Role,
+    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _,
+    Subscription, TestSupportExt as _, Window, canvas, div, img, linear_color_stop,
+    linear_gradient, prelude::FluentBuilder as _, px,
 };
 use oriel_ui::ControlSize as _;
 use oriel_ui::TextRole as _;
 
 use crate::browser::Comic;
-use crate::viewer::{CHROME_IDLE, on_any_key};
-
-actions!(
-    comic_reader,
-    [
-        /// The next page (→ or `e`).
-        NextPage,
-        /// The previous page (← or `q`).
-        PreviousPage,
-        /// Back to the gallery (Escape).
-        CloseReader
-    ]
-);
+use crate::chrome::{self, ChromeFade, Fading};
+use crate::shortcuts::{Close, Next, OVERLAY_KEYS, Previous};
+use crate::stills::NeighbourStills;
 
 const KEY_CONTEXT: &str = "ComicReader";
 
-/// The widest a page shows (`w-[min(100%,980px)]`).
+/// The widest a page shows.
 const MAX_PAGE_WIDTH: f32 = 980.;
 /// A page not decoded yet holds this shape, a portrait page's.
 const PLACEHOLDER_ASPECT: f32 = 1.4;
@@ -54,14 +39,7 @@ const AHEAD: usize = 3;
 const BEHIND: usize = 1;
 
 pub(crate) fn bind_keys(cx: &mut App) {
-    let context = Some(KEY_CONTEXT);
-    cx.bind_keys([
-        KeyBinding::new("right", NextPage, context),
-        KeyBinding::new("e", NextPage, context),
-        KeyBinding::new("left", PreviousPage, context),
-        KeyBinding::new("q", PreviousPage, context),
-        KeyBinding::new("escape", CloseReader, context),
-    ]);
+    cx.bind_keys(OVERLAY_KEYS.bindings(KEY_CONTEXT, cx));
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,26 +47,13 @@ pub enum ComicReaderEvent {
     Closed,
 }
 
-enum Page {
-    Loading { _task: Task<()> },
-    Ready(Arc<RenderImage>),
-    Failed,
-}
-
 pub struct ComicReader {
     comic: Arc<Comic>,
     focus: FocusHandle,
     scroll: ScrollHandle,
-    pages: HashMap<usize, Page>,
+    pages: NeighbourStills,
     current: usize,
-    /// Whether the top bar shows.
-    chrome_visible: bool,
-    /// When the pointer last moved, a key was pressed or the pages scrolled.
-    last_activity: Instant,
-    /// Hides the top bar once it has been left alone for [`CHROME_IDLE`].
-    _idle: Option<Task<()>>,
-    /// Every key brings the top bar back, the page keys too.
-    _keys: Subscription,
+    chrome: ChromeFade,
     _release: Subscription,
 }
 
@@ -106,86 +71,38 @@ impl ComicReader {
             comic,
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
-            pages: HashMap::new(),
+            pages: NeighbourStills::default(),
             current: 0,
-            chrome_visible: true,
-            last_activity: cx.background_executor().now(),
-            _idle: None,
-            _keys: on_any_key(cx, Self::reveal_chrome),
-            // Decoded pages live in GPUI's sprite atlas until released there.
-            _release: cx.on_release(|reader, cx| {
-                for (_, page) in reader.pages.drain() {
-                    if let Page::Ready(image) = page {
-                        cx.drop_image(image, None);
-                    }
-                }
-            }),
+            chrome: ChromeFade::new(cx),
+            _release: cx.on_release(|reader, cx| reader.pages.release_all(cx)),
         };
         reader.decode_near(window, cx);
         reader.reveal_chrome(window, cx);
         reader
     }
 
-    /// Whether the top bar shows.
     pub fn is_chrome_visible(&self) -> bool {
-        self.chrome_visible
+        self.chrome.is_visible()
     }
 
-    /// `revealChrome`: the top bar shows, and fades again once left alone.
+    /// The top bar shows, and fades again once left alone.
     pub fn reveal_chrome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // The executor's clock, which a test can move on.
-        self.last_activity = cx.background_executor().now();
-        if !self.chrome_visible {
-            self.chrome_visible = true;
-            cx.notify();
-        }
-        if self._idle.is_some() {
-            return;
-        }
-        self._idle = Some(cx.spawn_in(window, async move |this, cx| {
-            loop {
-                let Ok(wait) = this.update(cx, |this, cx| {
-                    let idle = cx
-                        .background_executor()
-                        .now()
-                        .saturating_duration_since(this.last_activity);
-                    CHROME_IDLE.saturating_sub(idle)
-                }) else {
-                    return;
-                };
-                if wait.is_zero() {
-                    break;
-                }
-                cx.background_executor().timer(wait).await;
-            }
-            this.update(cx, |this, cx| {
-                this._idle = None;
-                this.chrome_visible = false;
-                oriel_media::video::hide_pointer_until_it_moves();
-                cx.notify();
-            })
-            .ok();
-        }));
+        chrome::reveal(self, window, cx);
     }
 
     /// View left the screen: the top bar stops fading, so the pointer is never hidden over
     /// another mode. [`Self::reveal_chrome`] starts it again.
     pub fn stop_fading(&mut self) {
-        self._idle = None;
+        self.chrome.stop();
     }
 
     pub fn comic(&self) -> &Arc<Comic> {
         &self.comic
     }
 
-    /// The page in view, from 0.
-    pub fn current_page(&self) -> usize {
-        self.current
-    }
-
     /// Whether page `ix` is decoded.
     pub fn is_page_ready(&self, ix: usize) -> bool {
-        matches!(self.pages.get(&ix), Some(Page::Ready(_)))
+        self.pages.ready(ix).is_some()
     }
 
     fn close(&mut self, cx: &mut Context<Self>) {
@@ -212,45 +129,18 @@ impl ComicReader {
             return;
         }
         let wanted = self.current.saturating_sub(BEHIND)..(self.current + AHEAD + 1).min(count);
-        let stale: Vec<usize> = self
-            .pages
-            .keys()
-            .copied()
-            .filter(|ix| !wanted.contains(ix))
-            .collect();
-        for ix in stale {
-            if let Some(Page::Ready(image)) = self.pages.remove(&ix) {
-                cx.drop_image(image, Some(window));
-            }
-        }
+        self.pages.keep(|ix| wanted.contains(&ix), window, cx);
         let size = (Self::page_width(window) * window.scale_factor() * 2.).ceil() as u32;
+        self.pages.set_size(size);
         for ix in wanted {
-            if self.pages.contains_key(&ix) {
-                continue;
-            }
-            let path = self.comic.pages()[ix].path().clone();
-            let decoding = cx.background_spawn(async move {
-                oriel_media::still::decode(&path, size).map(|still| still.into_render_image())
-            });
-            let task = cx.spawn(async move |this, cx| {
-                let decoded = decoding.await;
-                this.update(cx, |this, cx| {
-                    if !matches!(this.pages.get(&ix), Some(Page::Loading { .. })) {
-                        return;
-                    }
-                    let page = match decoded {
-                        Ok(image) => Page::Ready(image),
-                        Err(error) => {
-                            log::warn!("the reader cannot show page {ix}: {error:#}");
-                            Page::Failed
-                        }
-                    };
-                    this.pages.insert(ix, page);
-                    cx.notify();
-                })
-                .ok();
-            });
-            self.pages.insert(ix, Page::Loading { _task: task });
+            self.pages.decode(
+                ix,
+                self.comic.pages()[ix].path().clone(),
+                Priority::Medium,
+                cx,
+                |reader| &mut reader.pages,
+                |_, _, cx| cx.notify(),
+            );
         }
     }
 
@@ -275,8 +165,8 @@ impl ComicReader {
             .bg(gpui_kit::rgb(0x18181b))
             .border_1()
             .border_color(gpui_kit::white().opacity(0.1));
-        match self.pages.get(&ix) {
-            Some(Page::Ready(image)) => {
+        match self.pages.ready(ix) {
+            Some(image) => {
                 let size = image.size(0);
                 let aspect = size.height.0 as f32 / size.width.0.max(1) as f32;
                 ground
@@ -288,7 +178,7 @@ impl ComicReader {
                     )
                     .into_any_element()
             }
-            Some(Page::Failed) => ground
+            None if self.pages.failed(ix) => ground
                 .h(px(width * 0.5))
                 .flex()
                 .items_center()
@@ -319,15 +209,15 @@ impl Render for ComicReader {
             .aria_label(format!("Comic reader for {}", self.comic.name()))
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus)
-            .on_action(cx.listener(|this, _: &NextPage, window, cx| {
+            .on_action(cx.listener(|this, _: &Next, window, cx| {
                 let next = this.current + 1;
                 this.go_to(next, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &PreviousPage, window, cx| {
+            .on_action(cx.listener(|this, _: &Previous, window, cx| {
                 let previous = this.current.saturating_sub(1);
                 this.go_to(previous, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &CloseReader, _, cx| this.close(cx)))
+            .on_action(cx.listener(|this, _: &Close, _, cx| this.close(cx)))
             .relative()
             .size_full()
             .bg(gpui_kit::rgb(0x09090b))
@@ -369,7 +259,7 @@ impl Render for ComicReader {
                 .absolute()
                 .size_full(),
             )
-            .when(self.chrome_visible, |this| {
+            .when(self.chrome.is_visible(), |this| {
                 this.child(
                     // macOS draws the window buttons over the top left, so the title starts to their
                     // right, as the reader pads it.
@@ -447,5 +337,15 @@ impl Render for ComicReader {
                         ),
                 )
             })
+    }
+}
+
+impl Fading for ComicReader {
+    fn fade(&mut self) -> &mut ChromeFade {
+        &mut self.chrome
+    }
+
+    fn shown(&mut self, _: bool, cx: &mut Context<Self>) {
+        cx.notify();
     }
 }

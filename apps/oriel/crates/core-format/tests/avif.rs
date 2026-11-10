@@ -2,8 +2,7 @@
 
 use crate::support::{check, fail_with, json, read_vectors};
 use oriel_core_format::{
-    ARCHIVE_AVIF_LOW_MEMORY_SPEED, ARCHIVE_AVIF_OPTIONS, ARCHIVE_AVIF_QUALITY,
-    ARCHIVE_AVIF_SHARP_OPTIONS, ARCHIVE_AVIF_SPEED, ARCHIVE_AVIF_WASM_PIXEL_LIMIT,
+    ARCHIVE_AVIF_LOW_MEMORY_SPEED, ARCHIVE_AVIF_OPTIONS, ARCHIVE_AVIF_QUALITY, ARCHIVE_AVIF_SPEED,
     AvifEncodeOptions, encode_archive_avif,
 };
 use serde::Deserialize;
@@ -15,9 +14,7 @@ struct AvifVectors {
     quality: i32,
     speed: i32,
     low_memory_speed: i32,
-    wasm_pixel_limit: u64,
     options: Value,
-    sharp_options: Value,
     attempts: Vec<AttemptCase>,
 }
 
@@ -60,9 +57,7 @@ fn encodes_with_the_settings_the_typescript_uses() {
     assert_eq!(vectors.quality, ARCHIVE_AVIF_QUALITY);
     assert_eq!(vectors.speed, ARCHIVE_AVIF_SPEED);
     assert_eq!(vectors.low_memory_speed, ARCHIVE_AVIF_LOW_MEMORY_SPEED);
-    assert_eq!(vectors.wasm_pixel_limit, ARCHIVE_AVIF_WASM_PIXEL_LIMIT);
     assert_eq!(vectors.options, json(&ARCHIVE_AVIF_OPTIONS));
-    assert_eq!(vectors.sharp_options, json(&ARCHIVE_AVIF_SHARP_OPTIONS));
 }
 
 #[test]

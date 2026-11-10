@@ -1,7 +1,8 @@
 //! The gallery's entries, from `media-domain`'s `browser-entries.ts`: a folder's subfolders, then
 //! its comics or its media.
 
-use crate::{ComicEntry, FolderNode, GallerySortMode, comics::ComicMediaItem, sort::compare_names};
+use crate::collation::Collation;
+use crate::{ComicEntry, FolderNode, GallerySortMode, comics::ComicMediaItem};
 
 /// One tile in the gallery. Each borrows what it shows: comics of `C`, media of `T`.
 #[derive(Debug, PartialEq)]
@@ -31,6 +32,19 @@ impl<C, T> BrowserEntry<'_, C, T> {
     }
 }
 
+/// A folder tile's key.
+pub fn folder_key(path: &str) -> String {
+    format!("folder:{path}")
+}
+
+/// What every media tile's key starts with, before the item's id.
+pub const MEDIA_KEY_PREFIX: &str = "media:";
+
+/// A media tile's key, from the item's id.
+pub fn media_key(id: &str) -> String {
+    format!("{MEDIA_KEY_PREFIX}{id}")
+}
+
 /// What the gallery is showing. Comics and items are separate types, so comics built from
 /// `items.iter()` can sit beside the items they borrow.
 #[derive(Clone, Copy, Debug)]
@@ -57,12 +71,12 @@ pub fn build_browser_entries<'a, C, T: ComicMediaItem>(
 
     if !listing.recursive {
         let mut folders: Vec<&FolderNode> = listing.folders.iter().collect();
-        folders.sort_by(|a, b| compare_names(&a.name, &b.name));
+        folders.sort_by(|a, b| Collation::Natural.compare(&a.name, &b.name));
         if listing.sort_mode == GallerySortMode::NameDesc {
             folders.reverse();
         }
         entries.extend(folders.into_iter().map(|folder| BrowserEntry::Folder {
-            key: format!("folder:{}", folder.path),
+            key: folder_key(&folder.path),
             folder,
         }));
     }
@@ -79,7 +93,7 @@ pub fn build_browser_entries<'a, C, T: ComicMediaItem>(
                 .iter()
                 .enumerate()
                 .map(|(media_index, media)| BrowserEntry::Media {
-                    key: format!("media:{}", media.id()),
+                    key: media_key(media.id()),
                     media,
                     media_index,
                 }),

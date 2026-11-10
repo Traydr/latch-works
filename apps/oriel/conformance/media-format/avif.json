@@ -3,7 +3,6 @@
   "quality": 70,
   "speed": 6,
   "lowMemorySpeed": 8,
-  "wasmPixelLimit": 64000000,
   "options": {
     "quality": 70,
     "qualityAlpha": -1,
@@ -18,7 +17,6 @@
     "tune": 0,
     "bitDepth": 8
   },
-  "sharpOptions": { "bitdepth": 8, "chromaSubsampling": "4:2:0", "effort": 3, "quality": 70 },
   "attempts": [
     {
       "script": ["encodes"],

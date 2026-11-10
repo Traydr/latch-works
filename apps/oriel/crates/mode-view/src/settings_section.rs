@@ -1,6 +1,6 @@
-//! View's section of the one Settings page (`ViewSettings.tsx`, `ViewDiagnostics.tsx`): the
-//! gallery and viewer preferences, the caches, the keys, and Diagnostics. The theme is the
-//! shell's (General). Each switch is named by its row's label, as Electron Oriel's are.
+//! View's section of the one Settings page: the gallery and viewer preferences, the caches, the
+//! keys, and Diagnostics. The theme is the shell's (General). Each switch is named by its row's
+//! label.
 
 use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _, button::Button};
@@ -10,17 +10,16 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
     px,
 };
-use oriel_core_index::MediaIndexStats;
+use oriel_tools::MediaTools;
 use oriel_ui::ControlSize as _;
 use oriel_ui::TextRole as _;
 use oriel_ui::{SettingsGroup, SettingsRow};
 
 use crate::ViewMode;
 use crate::gallery::display_name;
-use crate::media_tools::ViewMediaTools;
 use crate::settings::ViewSettings;
 
-/// The thumbnail size slider's range and step (`min={140} max={340} step={10}`).
+/// The thumbnail size slider's range and step.
 const THUMBNAIL_SIZE_RANGE: (f32, f32, f32) = (140., 340., 10.);
 
 /// What the section keeps between frames.
@@ -30,7 +29,6 @@ pub(crate) struct SettingsPanel {
     thumbnail_draft: Option<u32>,
     diagnostics_shown: bool,
     diagnostics_status: Option<SharedString>,
-    index_stats: Option<MediaIndexStats>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -63,7 +61,6 @@ impl SettingsPanel {
             thumbnail_draft: None,
             diagnostics_shown: false,
             diagnostics_status: None,
-            index_stats: None,
             _subscriptions: subscriptions,
         }
     }
@@ -80,7 +77,7 @@ impl SettingsPanel {
 }
 
 /// A titled group of rows, in the card every section's groups have.
-fn group(title: &'static str, rows: Vec<AnyElement>, _: &App) -> AnyElement {
+fn group(title: &'static str, rows: Vec<AnyElement>) -> AnyElement {
     SettingsGroup::new(title).children(rows).into_any_element()
 }
 
@@ -89,7 +86,6 @@ fn row(
     label: impl Into<SharedString>,
     description: Option<SharedString>,
     control: impl IntoElement,
-    _: &App,
 ) -> AnyElement {
     let row = SettingsRow::new(label);
     match description {
@@ -122,20 +118,10 @@ impl ViewMode {
                 })
                 .ok();
             });
-        row(
-            label,
-            description.map(SharedString::new_static),
-            control,
-            cx,
-        )
+        row(label, description.map(SharedString::new_static), control)
     }
 
-    pub(crate) fn render_settings_section(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let _ = window;
+    pub(crate) fn render_settings_section(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let settings = self.settings.settings().clone();
         let draft = self
             .settings_panel
@@ -182,7 +168,6 @@ impl ViewMode {
                             .accessibility_label("Thumbnail size")
                             .h_8(),
                     ),
-                cx,
             ),
             self.switch_row(
                 "show-images",
@@ -245,19 +230,7 @@ impl ViewMode {
             ),
         ];
 
-        let tools = ViewMediaTools::shared().status();
-        let index_description: SharedString = match &self.settings_panel.index_stats {
-            Some(stats) => format!(
-                "{} from {}",
-                count(stats.total_items, "item", "items"),
-                count(stats.unique_roots, "folder", "folders")
-            )
-            .into(),
-            None => "Counting…".into(),
-        };
-        if self.settings_panel.index_stats.is_none() {
-            self.refresh_index_stats(cx);
-        }
+        let tools = MediaTools::shared().ok();
         let storage = vec![
             row(
                 "Thumbnail cache",
@@ -276,40 +249,23 @@ impl ViewMode {
                         window.push_notification("Thumbnail cache cleared", cx);
                         this.rebuild_tiles(cx);
                     })),
-                cx,
-            ),
-            row(
-                "Media index",
-                Some(index_description),
-                Button::new("clear-media-index")
-                    .bar_size()
-                    .outline()
-                    .quiet_edge(cx)
-                    .label("Clear media index")
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.clear_media_index(window, cx)),
-                    ),
-                cx,
             ),
             row(
                 "ffmpeg and ffprobe",
                 Some(
                     tools
-                        .ffmpeg_path
-                        .as_ref()
-                        .map(|path| path.display().to_string())
+                        .map(|tools| tools.ffmpeg().display().to_string())
                         .unwrap_or_else(|| "No ffmpeg in this build".into())
                         .into(),
                 ),
                 div()
                     .text_caption()
                     .text_color(cx.theme().muted_foreground)
-                    .child(if tools.available() {
+                    .child(if tools.is_some() {
                         "Available"
                     } else {
                         "Not available"
                     }),
-                cx,
             ),
         ];
 
@@ -322,83 +278,41 @@ impl ViewMode {
                 .outline()
                 .quiet_edge(cx)
                 .label("Show")
-                .on_click(|_, window, cx| crate::shortcuts::open(window, cx))
+                .on_click(|_, window, cx| {
+                    window.dispatch_action(Box::new(oriel_ui::shortcuts::ShowShortcuts), cx);
+                })
                 .into_any_element(),
-            cx,
         )];
 
         div()
             .id("view-settings")
             .flex()
             .flex_col()
-            .child(group("Gallery", gallery, cx))
-            .child(group("Viewer", viewer, cx))
-            .child(group("Storage", storage, cx))
-            .child(group("Keys", shortcuts, cx))
+            .child(group("Gallery", gallery))
+            .child(group("Viewer", viewer))
+            .child(group("Storage", storage))
+            .child(group("Keys", shortcuts))
             .child(self.render_diagnostics(&settings, cx))
             .into_any_element()
     }
 
-    fn refresh_index_stats(&mut self, cx: &mut Context<Self>) {
-        let index = self.catalog.read(cx).index().clone();
-        cx.spawn(async move |this, cx| {
-            let stats = cx.background_spawn(async move { index.stats() }).await;
-            this.update(cx, |this, cx| {
-                this.settings_panel.index_stats = stats;
-                cx.notify();
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    fn clear_media_index(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let index = self.catalog.read(cx).index().clone();
-        let view = cx.entity().downgrade();
-        let window_handle = window.window_handle();
-        cx.spawn(async move |_, cx| {
-            let cleared = cx.background_spawn(async move { index.clear() }).await;
-            let message = match cleared {
-                Ok(()) => "Media index cleared".to_string(),
-                Err(error) => format!("Media index clear failed: {error:#}"),
-            };
-            cx.update_window(window_handle, |_, window, cx| {
-                window.push_notification(message, cx);
-            })
-            .ok();
-            view.update(cx, |view, cx| {
-                view.settings_panel.index_stats = None;
-                cx.notify();
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    /// What Diagnostics shows, as Electron Oriel's `ViewDiagnostics` groups it: facts under a
-    /// title each, then lists of recent lines. Oriel has no worker processes, so Electron
-    /// Oriel's worker crashes, restarts and probe errors have nothing to count, and the media
-    /// tools take the thumbnail worker's place.
+    /// What Diagnostics shows: facts under a title each, then lists of recent lines.
     pub fn diagnostics(&self, cx: &App) -> Diagnostics {
         let catalog = self.catalog.read(cx);
         let gallery = self.gallery.read(cx);
         let thumbnails = gallery.thumbnails().read(cx);
         let stats = thumbnails.stats();
         let state = thumbnails.diagnostics();
-        let tools = ViewMediaTools::shared().status();
+        let tools = MediaTools::shared().ok();
         let debug = self.settings.settings().debug;
         let fact = |label: &str, value: String| (label.to_owned(), value);
-        let available = |path: &Option<std::path::PathBuf>| {
-            if path.is_some() {
-                "available"
-            } else {
-                "not available"
-            }
-            .to_owned()
+        let available = if tools.is_some() {
+            "available"
+        } else {
+            "not available"
         };
-        let path = |path: &Option<std::path::PathBuf>| {
-            path.as_ref()
-                .map_or("unknown".into(), |path| path.display().to_string())
+        let path = |path: Option<&std::path::Path>| {
+            path.map_or("unknown".into(), |path| path.display().to_string())
         };
 
         let mut facts = vec![
@@ -425,7 +339,10 @@ impl ViewMode {
                         "Platform",
                         format!("{} / {}", std::env::consts::OS, std::env::consts::ARCH),
                     ),
-                    fact("Packaged", yes_no(is_packaged()).into()),
+                    fact(
+                        "Packaged",
+                        yes_no(oriel_core_paths::Package::of_running_app().is_some()).into(),
+                    ),
                     fact("Debug logging", yes_no(debug.enable_debug_logging).into()),
                     fact(
                         "Performance monitoring",
@@ -458,10 +375,10 @@ impl ViewMode {
             FactGroup {
                 title: "Media tools",
                 facts: vec![
-                    fact("ffmpeg", available(&tools.ffmpeg_path)),
-                    fact("ffmpeg path", path(&tools.ffmpeg_path)),
-                    fact("ffprobe", available(&tools.ffprobe_path)),
-                    fact("ffprobe path", path(&tools.ffprobe_path)),
+                    fact("ffmpeg", available.into()),
+                    fact("ffmpeg path", path(tools.map(MediaTools::ffmpeg))),
+                    fact("ffprobe", available.into()),
+                    fact("ffprobe path", path(tools.map(MediaTools::ffprobe))),
                 ],
             },
         ];
@@ -472,16 +389,6 @@ impl ViewMode {
                     fact("Disk hit", timing(&timings.disk_hit)),
                     fact("Made", timing(&timings.generation)),
                     fact("End to end", timing(&timings.end_to_end)),
-                ],
-            });
-        }
-        if let Some(index) = &self.settings_panel.index_stats {
-            facts.push(FactGroup {
-                title: "Media index",
-                facts: vec![
-                    fact("Items", index.total_items.to_string()),
-                    fact("Folders", index.unique_roots.to_string()),
-                    fact("Database", index.db_path.display().to_string()),
                 ],
             });
         }
@@ -500,7 +407,7 @@ impl ViewMode {
         }
     }
 
-    /// The diagnostics report, as text to paste into a bug report (`buildDiagnosticsReport`):
+    /// The diagnostics report, as text to paste into a bug report:
     /// each group's title, then its facts or lines, "None" for an empty list.
     pub fn diagnostics_report(&self, cx: &App) -> String {
         let diagnostics = self.diagnostics(cx);
@@ -580,7 +487,6 @@ impl ViewMode {
                             .outline().quiet_edge(cx)
                             .label("Refresh")
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.refresh_index_stats(cx);
                                 this.settings_panel.diagnostics_status =
                                     Some("Diagnostics refreshed".into());
                                 cx.notify();
@@ -598,9 +504,7 @@ impl ViewMode {
                                     Some("Copied to the clipboard".into());
                                 cx.notify();
                             })),
-                    ),
-                cx,
-            ),
+                    )),
         ];
         if shown {
             let diagnostics = self.diagnostics(cx);
@@ -648,7 +552,7 @@ impl ViewMode {
             }
             rows.push(details.into_any_element());
         }
-        group("Diagnostics", rows, cx)
+        group("Diagnostics", rows)
     }
 }
 
@@ -679,48 +583,6 @@ fn timing(aggregate: &crate::thumbnails::TimingAggregate) -> String {
     )
 }
 
-/// Whether the app runs from its bundle (`app.isPackaged`).
-fn is_packaged() -> bool {
-    std::env::current_exe().is_ok_and(|path| {
-        path.parent()
-            .is_some_and(|folder| folder.ends_with("Contents/MacOS"))
-    })
-}
-
-fn count(value: u64, one: &str, many: &str) -> String {
-    format!(
-        "{} {}",
-        group_digits(value),
-        if value == 1 { one } else { many }
-    )
-}
-
-/// `toLocaleString()` in English: thousands separated by commas.
-fn group_digits(value: u64) -> String {
-    let digits = value.to_string();
-    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
-    for (ix, digit) in digits.chars().enumerate() {
-        if ix > 0 && (digits.len() - ix).is_multiple_of(3) {
-            grouped.push(',');
-        }
-        grouped.push(digit);
-    }
-    grouped
-}
-
 fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn counts_read_as_electron_oriel_writes_them() {
-        assert_eq!(count(1, "item", "items"), "1 item");
-        assert_eq!(count(21_135, "item", "items"), "21,135 items");
-        assert_eq!(group_digits(1_000_000), "1,000,000");
-        assert_eq!(group_digits(999), "999");
-    }
 }

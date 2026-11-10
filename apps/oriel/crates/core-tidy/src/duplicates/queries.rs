@@ -1,9 +1,9 @@
-//! What duplicate sets read from the catalog, from glazier-core's `duplicates/queries.ts`.
+//! What duplicate sets read from the catalog.
 
 use rusqlite::Connection;
 
 use super::keeper::KeeperCandidate;
-use crate::catalog::files::SqlParams;
+use crate::catalog::files::{SqlParams, exact_copies_sql};
 use crate::catalog::rows::{FINGERPRINTABLE_SQL, FileRecord};
 use crate::contract::{RootId, Settings, SimilarityLevel};
 use crate::similarity::{Fingerprint, FingerprintedFile, SimilarCluster, group_similar_files};
@@ -40,23 +40,12 @@ pub fn to_keeper_candidate(record: &FileRecord, settings: &Settings) -> KeeperCa
     }
 }
 
-/// Hashes held by more than one file on disk (hard links to one file count once), as a subquery
-/// over `files` yielding `sha256`. Sets `$root` in `params` when a root is given.
+/// [`exact_copies_sql`] under a root (or every root), setting `$root` in `params` for one.
 pub fn exact_group_sql(root_id: Option<RootId>, params: &mut SqlParams) -> String {
     if let Some(root_id) = root_id {
         params.set("root", root_id);
     }
-    format!(
-        "SELECT sha256 FROM files
-    WHERE sha256 IS NOT NULL AND is_junk = 0 AND size > 0 {}
-    GROUP BY sha256
-    HAVING COUNT(DISTINCT dev || ':' || ino) > 1",
-        if root_id.is_some() {
-            "AND root_id = $root"
-        } else {
-            ""
-        }
-    )
+    exact_copies_sql(root_id.map(|_| "$root"))
 }
 
 /// How many files can be fingerprinted, and how many have been (or failed).

@@ -28,13 +28,14 @@ use std::time::{Duration, Instant};
 
 use futures::executor::block_on;
 use oriel_core_paths::DataRoot;
-use oriel_core_tidy::TidyEngine;
-use oriel_core_tidy::catalog::rows::{FINGERPRINT_VERSION, FINGERPRINTABLE_SQL};
 use oriel_core_tidy::contract::{
     DuplicateScope, DuplicateSetRequest, OptimizeCategory, PlanRequest, PlanSummary,
     SimilarityLevel,
 };
-use oriel_core_tidy::passes::{Media, Progress, Quiet};
+use oriel_core_tidy::internals::FINGERPRINT_VERSION;
+use oriel_core_tidy::internals::FINGERPRINTABLE_SQL;
+use oriel_core_tidy::{AnalysisKind, TidyEngine};
+use oriel_core_tidy::{Media, Progress, Quiet};
 use oriel_runtime::{CancelToken, PauseToken};
 
 /// CPU seconds so far, this process's and its waited-for children's.
@@ -413,11 +414,12 @@ fn make_changes(engine: &TidyEngine, root_id: i64, timed: &Timed) {
         let performed = timed_change(
             label,
             timed,
-            || engine.perform_blocking(request, timed),
+            || engine.perform(request).run(timed),
             |performed| {
                 if let Ok(performed) = performed {
                     engine
-                        .follow_up_blocking(&performed.applied.follow_up, timed)
+                        .follow_up(performed.applied.follow_up.clone())
+                        .run(timed)
                         .unwrap();
                 }
             },
@@ -433,9 +435,12 @@ fn make_changes(engine: &TidyEngine, root_id: i64, timed: &Timed) {
     let undone = timed_change(
         "Undo of all three",
         timed,
-        || engine.undo_plans_blocking(&plans, timed).unwrap(),
+        || engine.undo(plans.to_vec()).run(timed).unwrap(),
         |undone| {
-            engine.follow_up_blocking(&undone.follow_up, timed).unwrap();
+            engine
+                .follow_up(undone.follow_up.clone())
+                .run(timed)
+                .unwrap();
         },
     );
     println!(
@@ -449,19 +454,23 @@ fn make_changes(engine: &TidyEngine, root_id: i64, timed: &Timed) {
         timed,
         || {
             engine
-                .tidy_up_blocking(
+                .tidy_up(
                     root_id,
-                    &[
+                    [
                         OptimizeCategory::StillToAvif,
                         OptimizeCategory::RenameAvif,
                         OptimizeCategory::RenameMp4,
-                    ],
-                    timed,
+                    ]
+                    .to_vec(),
                 )
+                .run(timed)
                 .unwrap()
         },
         |tidied| {
-            engine.follow_up_blocking(&tidied.follow_up, timed).unwrap();
+            engine
+                .follow_up(tidied.follow_up.clone())
+                .run(timed)
+                .unwrap();
         },
     );
     for plan in &tidied.plans {
@@ -470,13 +479,12 @@ fn make_changes(engine: &TidyEngine, root_id: i64, timed: &Timed) {
     let undone = timed_change(
         "Undo of Tidy up",
         timed,
-        || {
-            engine
-                .undo_plans_blocking(&tidied.undoable(), timed)
-                .unwrap()
-        },
+        || engine.undo(tidied.undoable().to_vec()).run(timed).unwrap(),
         |undone| {
-            engine.follow_up_blocking(&undone.follow_up, timed).unwrap();
+            engine
+                .follow_up(undone.follow_up.clone())
+                .run(timed)
+                .unwrap();
         },
     );
     println!(
@@ -509,7 +517,7 @@ fn print_memory(when: &str) {
 
 /// The scan, the analysis it calls for, and the queries Overview and Duplicates make, timed.
 fn scan_and_analyse(engine: &TidyEngine, root_id: i64, timed: &Timed, started: Instant) {
-    let scanned = engine.scan_blocking(root_id, timed).unwrap();
+    let scanned = engine.scan(root_id).run(timed).unwrap();
     // The fingerprint pass takes stills first, then videos (it orders by kind).
     let images: u64 = block_on(engine.catalog().call(move |connection| {
         Ok(connection.query_row(
@@ -523,9 +531,12 @@ fn scan_and_analyse(engine: &TidyEngine, root_id: i64, timed: &Timed, started: I
     }))
     .unwrap() as u64;
     timed.split_after("Fingerprinting pictures and videos", images);
-    engine
-        .follow_up_blocking(&scanned.follow_up, timed)
-        .unwrap();
+    if scanned.analysis_due {
+        engine
+            .analyze(root_id, AnalysisKind::CatchingUp)
+            .run(timed)
+            .unwrap();
+    }
     let total = timed.report(&format!(
         "scan and analysis of {} files ({images} images to fingerprint first)",
         scanned.files
@@ -572,7 +583,7 @@ fn main() {
     let started = Instant::now();
     let engine = block_on(TidyEngine::open_with(
         data_root.clone(),
-        data_root.tidy().join("catalog.sqlite"),
+        data_root.tidy_catalog(),
         Media::locate(),
     ))
     .unwrap();
@@ -622,10 +633,13 @@ fn main() {
     for round in 1..=rescans {
         let started = Instant::now();
         let cpu = cpu_now();
-        let scanned = engine.scan_blocking(root.id, &timed).unwrap();
-        engine
-            .follow_up_blocking(&scanned.follow_up, &timed)
-            .unwrap();
+        let scanned = engine.scan(root.id).run(&timed).unwrap();
+        if scanned.analysis_due {
+            engine
+                .analyze(root.id, AnalysisKind::CatchingUp)
+                .run(&timed)
+                .unwrap();
+        }
         timed.report(&format!("rescan {round}"));
         println!(
             "  rescan {round}: {:.2} s wall, {:.2} s cpu",

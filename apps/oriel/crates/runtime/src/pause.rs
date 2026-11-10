@@ -4,18 +4,25 @@
 use std::fmt;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
 use futures::StreamExt as _;
 use futures::channel::mpsc;
 use futures::future::{self, Either};
 
 use crate::cancel::{CancelToken, Cancelled};
+use crate::watchers::Watchers;
 
-/// Asks work to wait. Nothing is suspended by force: the work waits at its own checkpoints, with
-/// [`PauseToken::wait_blocking`] on a thread of its own or [`PauseToken::resumed`] in async code,
-/// so a step in flight always finishes first. Clones share one state. A cancel ends any wait at
-/// once, so a paused job still stops when asked to.
+/// Asks work to wait. The work's own code is never suspended by force: it waits at its own
+/// checkpoints, with [`PauseToken::wait_blocking`] on a thread of its own or
+/// [`PauseToken::resumed`] in async code, so a step in flight always finishes first. Clones share
+/// one state. A cancel ends any wait at once, so a paused job still stops when asked to.
+///
+/// A token made with [`PauseToken::holding`] also holds the tools started under its work's
+/// [`CancelToken`] ([`CancelToken::hold`]), which cannot wait at a checkpoint: while it is paused,
+/// unless the work is background work ([`PauseToken::set_background`]). Background work must reach
+/// a checkpoint to step aside for what the owner asks for, and a suspended tool never would, so
+/// its item finishes and it pauses there.
 #[derive(Clone, Default)]
 pub struct PauseToken {
     shared: Arc<Shared>,
@@ -26,25 +33,46 @@ type Watcher = Arc<dyn Fn() + Send + Sync>;
 #[derive(Default)]
 struct Shared {
     paused: AtomicBool,
-    watchers: Mutex<Watchers>,
-}
-
-#[derive(Default)]
-struct Watchers {
-    next_id: u64,
-    list: Vec<(u64, Watcher)>,
-}
-
-impl Shared {
-    /// The watchers never run under this lock, so a panic in one cannot poison it.
-    fn watchers(&self) -> MutexGuard<'_, Watchers> {
-        self.watchers.lock().unwrap_or_else(PoisonError::into_inner)
-    }
+    watchers: Watchers<Watcher>,
+    background: AtomicBool,
+    /// The token whose tools this one holds, and the lock each change works the hold out under,
+    /// since the owner pauses and the work says it is background from different threads.
+    tools: Option<(CancelToken, Mutex<()>)>,
 }
 
 impl PauseToken {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A token that holds the tools started under `cancel` while it is paused, unless its work is
+    /// background work.
+    pub fn holding(cancel: &CancelToken) -> Self {
+        Self {
+            shared: Arc::new(Shared {
+                tools: Some((cancel.clone(), Mutex::new(()))),
+                ..Shared::default()
+            }),
+        }
+    }
+
+    /// Says the work is background work (true) or work the owner asked for (false), which
+    /// decides whether a pause holds its tools.
+    pub fn set_background(&self, background: bool) {
+        self.shared.background.store(background, Ordering::Release);
+        self.hold_tools();
+    }
+
+    /// Whether the tools are held: paused, and not background work.
+    pub fn holds_tools(&self) -> bool {
+        self.is_paused() && !self.shared.background.load(Ordering::Acquire)
+    }
+
+    fn hold_tools(&self) {
+        if let Some((cancel, lock)) = &self.shared.tools {
+            let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
+            cancel.hold(self.holds_tools());
+        }
     }
 
     pub fn pause(&self) -> bool {
@@ -60,17 +88,14 @@ impl PauseToken {
     pub fn set_paused(&self, paused: bool) -> bool {
         // The flag changes under the lock `on_change` registers under, so a watcher is either
         // registered before the change and called, or registered after and sees the new state.
-        let watchers: Vec<Watcher> = {
-            let watchers = self.shared.watchers();
+        let watchers = {
+            let watchers = self.shared.watchers.lock();
             if self.shared.paused.swap(paused, Ordering::AcqRel) == paused {
                 return false;
             }
-            watchers
-                .list
-                .iter()
-                .map(|(_, watcher)| watcher.clone())
-                .collect()
+            watchers.snapshot()
         };
+        self.hold_tools();
         for watcher in watchers {
             watcher();
         }
@@ -85,10 +110,7 @@ impl PauseToken {
     /// the returned guard is dropped. It is how a wait on several things at once (a pause, a
     /// cancel, a queue) learns that one of them moved.
     pub fn on_change(&self, callback: impl Fn() + Send + Sync + 'static) -> PauseCallback {
-        let mut watchers = self.shared.watchers();
-        let id = watchers.next_id;
-        watchers.next_id += 1;
-        watchers.list.push((id, Arc::new(callback)));
+        let id = self.shared.watchers.lock().add(Arc::new(callback));
         PauseCallback {
             shared: self.shared.clone(),
             id,
@@ -172,7 +194,7 @@ pub struct PauseCallback {
 
 impl Drop for PauseCallback {
     fn drop(&mut self) {
-        self.shared.watchers().list.retain(|(id, _)| *id != self.id);
+        self.shared.watchers.remove(self.id);
     }
 }
 

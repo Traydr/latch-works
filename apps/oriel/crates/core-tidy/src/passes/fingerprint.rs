@@ -1,25 +1,22 @@
-//! The fingerprint pass, from glazier-core's `passes/fingerprint-pass.ts`: a perceptual hash for
-//! stills, five frame hashes for videos and animations. It decodes every picture, so it runs as
-//! analysis after the scan. Each file is checked against the catalog just before and after.
+//! The fingerprint pass: a perceptual hash for stills, five frame hashes for videos and
+//! animations. It decodes every picture, so it runs as analysis after the scan. Each file is
+//! checked against the catalog just before and after.
 
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock, PoisonError};
 
 use oriel_runtime::Cancelled;
 use rusqlite::{Connection, OptionalExtension as _};
 
-use crate::catalog::files::SqlParams;
-use crate::catalog::rows::{
-    FINGERPRINT_VERSION, FINGERPRINTABLE_SQL, kind_column, to_absolute_path,
-};
+use crate::catalog::files::{SelectedFile, SqlParams, record_fingerprint, still_selected};
+use crate::catalog::rows::{FINGERPRINTABLE_SQL, kind_column, to_absolute_path};
+use crate::catalog::state::prints_changed;
 use crate::contract::{FileId, FileKind, RootId};
-use crate::passes::{
-    PassContext, SAME_ROW_SQL, SelectedFile, error_text, per_core, run_concurrently,
-    same_row_params, still_selected,
-};
+use crate::passes::{PassContext, per_core, run_concurrently};
 use crate::similarity::{
-    Fingerprint, FingerprintError, FrameRun, Hash64, SAMPLE_POSITIONS, animation_frame_times,
-    fingerprint_animation, fingerprint_still, frame_run_hashes, plan_frame_runs, single_frame_runs,
+    FINGERPRINT_VERSION, Fingerprint, FingerprintError, FrameRun, Hash64, SAMPLE_POSITIONS,
+    animation_frame_times, fingerprint_animation, fingerprint_still, frame_run_hashes,
+    plan_frame_runs, single_frame_runs,
 };
 
 /// How many files of a root the pass would fingerprint now.
@@ -58,7 +55,21 @@ struct Pending {
     height: Option<i64>,
 }
 
+/// Fingerprints what has no print yet. The fingerprints' generation moves once, when the pass
+/// ends or stops: clusters made afresh from half the prints would break up a set whose files a
+/// change has just rewritten, under the owner reviewing it, until the pass had printed them all.
 pub fn run_fingerprint_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
+    let printed = AtomicBool::new(false);
+    let outcome = fingerprint_pending(context, &printed);
+    if printed.load(Ordering::Acquire) {
+        context
+            .catalog
+            .blocking(|connection| prints_changed(connection))?;
+    }
+    outcome
+}
+
+fn fingerprint_pending(context: &PassContext<'_>, printed: &AtomicBool) -> anyhow::Result<()> {
     let mut params = SqlParams::new().with("version", FINGERPRINT_VERSION);
     let sql = format!(
         "SELECT f.id, f.root_id, r.path AS root_path, f.rel_path, f.size, f.mtime_ms, f.kind,
@@ -104,7 +115,7 @@ pub fn run_fingerprint_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
         if is_current(context, &pending.file)?
             && let Some(made) = fingerprint_picture(context, pending)
         {
-            record_print(context, &pending.file, made)?;
+            record_print(context, &pending.file, made, printed)?;
         }
         count_done();
         Ok(())
@@ -162,7 +173,7 @@ pub fn run_fingerprint_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
         }
         slot.frames_in(run, frames);
         if slot.last_run_done() {
-            record_print(context, &slot.pending.file, slot.print())?;
+            record_print(context, &slot.pending.file, slot.print(), printed)?;
             count_done();
         }
         Ok(())
@@ -284,25 +295,20 @@ fn record_print(
     context: &PassContext<'_>,
     file: &SelectedFile,
     made: Result<Fingerprint, FingerprintError>,
+    printed: &AtomicBool,
 ) -> anyhow::Result<()> {
     let (print, error) = match made {
         Ok(print) => (Some(print.to_string()), None),
         Err(FingerprintError::Cancelled) => return Err(Cancelled.into()),
         Err(FingerprintError::Interrupted) => return Ok(()),
-        Err(error) => (None, Some(error_text(&error.to_string()))),
+        Err(error) => (None, Some(error.to_string())),
     };
-    let params = same_row_params(file)
-        .with("version", FINGERPRINT_VERSION)
-        .with("print", print)
-        .with("error", error);
-    context.catalog.blocking(move |connection| {
-        connection.execute(
-            &format!(
-                "UPDATE files SET fingerprint_version = $version, fingerprint = $print,
-          fingerprint_error = $error WHERE {SAME_ROW_SQL}"
-            ),
-            &*params.named(),
-        )?;
-        Ok(())
-    })
+    let file = file.clone();
+    let written = context.catalog.blocking(move |connection| {
+        record_fingerprint(connection, &file, FINGERPRINT_VERSION, print, error)
+    })?;
+    if written {
+        printed.store(true, Ordering::Release);
+    }
+    Ok(())
 }

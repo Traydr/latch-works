@@ -4,6 +4,3 @@ import { z } from "zod";
 const JsonValueSchema = z.json();
 
 export type JsonValue = z.infer<typeof JsonValueSchema>;
-
-/** A JSON object — the value type of jsonb columns that hold free-form records. */
-export type JsonObject = Record<string, JsonValue>;

@@ -1,128 +1,84 @@
-import type { MediaItem } from "@latch-works/media-domain";
-import type {
-  RemoteEntrySnapshot,
-  ScanArchiveProgress,
-  SyncPlanAction,
-} from "@latch-works/media-index";
+import type { SyncRunStatus } from "@latch-works/sync-protocol";
+import type { ScanArchiveProgress, SkippedArchiveEntry } from "./scan.js";
+import type { SyncPlan, SyncPlanAction } from "./sync-plan.js";
 
-export interface LockstepPlanItem {
-  action: SyncPlanAction;
-  local?: MediaItem;
-  path: string;
-  remote?: RemoteEntrySnapshot;
-}
-
-export interface LockstepPlanCounts {
-  delete: number;
-  keep: number;
-  update: number;
-  upload: number;
-}
-
-export interface LockstepPlan {
-  counts: LockstepPlanCounts;
-  items: LockstepPlanItem[];
-  skipped: number;
-  skippedEntries: Array<{ path: string; reason: string }>;
+export interface LockstepPlan extends SyncPlan {
+  skippedEntries: SkippedArchiveEntry[];
   sourceRoot: string;
   totalBytes: number;
   totalFiles: number;
 }
 
-export interface LockstepRunSummary {
-  action: "plan" | "push" | "prune" | "doctor";
-  completedAt: string;
+/** How a run ended, for the command that started it. */
+export interface RunSummary {
+  action: "doctor" | "prune" | "push";
+  /** Changes applied: items pushed, or remote entries deleted. */
+  applied: number;
   failed: number;
   message?: string;
-  planCounts?: LockstepPlanCounts;
-  profileId?: string;
-  pushed: number;
   /** Prune only: planned deletes left alone because the file is back in the source folder. */
-  skipped?: number;
-  status: "cancelled" | "completed" | "failed";
+  skipped: number;
+  status: SyncRunStatus;
+}
+
+/** What one item of a push or prune is doing while it runs. */
+export type PushStage = "deleting" | "hashing" | "registering" | "uploading";
+
+/** One item's place in its run's work list. */
+interface RunItem {
+  action: SyncPlanAction;
+  current: number;
+  path: string;
+  total: number;
 }
 
 export type LockstepRunEvent =
-  | { type: "cancelled" }
-  | { type: "complete"; summary: LockstepRunSummary }
-  | {
-      type: "item-failure";
-      action: string;
-      /** Size of the local file, when the item uploads one. */
-      bytes?: number;
-      current: number;
-      error: string;
-      path: string;
-      total: number;
-    }
-  | {
-      type: "item-skipped";
-      action: string;
-      current: number;
-      path: string;
-      reason: string;
-      total: number;
-    }
-  | {
-      type: "item-start";
-      action: string;
-      /** Size of the local file, when the item uploads one. */
-      bytes?: number;
-      current: number;
-      path: string;
-      total: number;
-    }
-  | {
-      type: "item-success";
-      action: string;
-      /** Size of the local file, when the item uploads one. */
-      bytes?: number;
-      current: number;
-      path: string;
-      total: number;
-    }
-  /** Sent once a run knows its work list, before the first item starts. */
-  | { type: "items-queued"; action: string; total: number; totalBytes: number }
+  | ({ type: "item-failure"; error: string } & RunItem)
+  | ({ type: "item-skipped"; reason: string } & RunItem)
+  | ({ type: "item-success" } & RunItem)
+  | ({ type: "item-stage"; bytes?: { done: number; total: number }; stage: PushStage } & RunItem)
   | { type: "scan-progress"; progress: ScanArchiveProgress }
-  | { type: "status"; message: string };
+  /** Progress the next status replaces. */
+  | { type: "status"; message: string }
+  /** Something the user has to see after the run, such as a sync run left unfinalized. */
+  | { type: "warning"; message: string };
 
 export interface LockstepObserver {
   onEvent(event: LockstepRunEvent): void;
 }
 
-export type HashMode = "all" | "none" | "remote-aware";
+type HashMode = "all" | "none" | "remote-aware";
+
+/** What a plan compares the local archive against. */
+export type SnapshotSource =
+  | { kind: "file"; path: string }
+  | { apiToken: string; apiUrl: string; kind: "live" }
+  | { kind: "none" };
+
+/** Where a run reaches Pane View's sync API. */
+export interface PaneViewApi {
+  apiToken: string;
+  apiUrl: string;
+}
 
 export interface PlanSyncOptions {
-  apiToken?: string;
-  apiUrl?: string;
   hashCacheRoot?: string;
-  hashMode?: HashMode;
-  directoryConcurrency?: number;
-  fileConcurrency?: number;
-  hashFiles?: boolean;
-  remoteSnapshotPath?: string;
+  hashMode: HashMode;
+  remote: SnapshotSource;
   signal?: AbortSignal;
   sourceRoot: string;
 }
 
-export interface PushChangesOptions {
-  apiToken: string;
-  apiUrl: string;
-  hashFiles?: boolean;
+export interface PushChangesOptions extends PaneViewApi {
   hashCacheRoot?: string;
-  hashMode?: HashMode;
   maxChanges?: number;
-  plan?: LockstepPlan;
-  remoteSnapshotPath?: string;
+  /** The plan the user reviewed; push uploads and updates its items and never plans again. */
+  plan: LockstepPlan;
   signal?: AbortSignal;
-  sourceRoot: string;
-  /** Bounded concurrent upload workers. Defaults to 3. Valid range: 1-8. */
   uploadConcurrency?: number;
 }
 
-export interface PruneDeletedOptions {
-  apiToken: string;
-  apiUrl: string;
+export interface PruneDeletedOptions extends PaneViewApi {
   /** Applies at most this many of the plan's deletes, in plan order. */
   maxChanges?: number;
   /**
@@ -150,4 +106,5 @@ export interface DoctorCheck {
 export interface DoctorResult {
   checks: DoctorCheck[];
   ok: boolean;
+  summary: RunSummary;
 }

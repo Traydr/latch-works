@@ -3,6 +3,6 @@ interface FileSystemHandlePermissionDescriptor {
 }
 
 interface FileSystemHandle {
-  queryPermission?(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>;
-  requestPermission?(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>;
+  queryPermission(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>;
+  requestPermission(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>;
 }

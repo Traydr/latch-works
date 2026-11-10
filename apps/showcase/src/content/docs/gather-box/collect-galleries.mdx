@@ -43,7 +43,7 @@ gathered from as well.
 - Reddit multi-image posts use `01_<filename>` style prefixes inside a post folder.
 - Nested paths vary by site. See [Supported sources](/docs/supported-sources).
 - Individual file failures are logged; the rest of the batch continues.
-- Identical files are skipped; name collisions get a short random suffix before the extension.
+- Identical files are skipped; a different file with the same name gets a four-character suffix, derived from its content, before the extension.
 
 ## AVIF conversion
 

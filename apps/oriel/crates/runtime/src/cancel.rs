@@ -3,13 +3,15 @@
 
 use std::fmt;
 use std::future::Future;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::channel::oneshot;
 
-/// The error cancelled work returns. A [`Job`](crate::Job) finds it anywhere in an error's chain
-/// and finishes as cancelled rather than failed.
+use crate::watchers::Watchers;
+
+/// The error cancelled work returns. A job finds it anywhere in an error's chain and finishes as
+/// cancelled rather than failed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Cancelled;
 
@@ -20,6 +22,23 @@ impl fmt::Display for Cancelled {
 }
 
 impl std::error::Error for Cancelled {}
+
+/// Set by [`set_keep_running`].
+static KEEP_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Makes tools run on when their job is paused, as they do where they cannot be suspended, to
+/// see what the app says then on a machine where they can. The shell calls it once at start,
+/// from the launch's `ORIEL_TOOLS_KEEP_RUNNING`.
+pub fn set_keep_running(on: bool) {
+    KEEP_RUNNING.store(on, Ordering::Relaxed);
+}
+
+/// Whether a tool in the middle of a file stops at once when its token is held
+/// ([`CancelToken::hold`]). Where it cannot, it runs to the end of that file, and the app says
+/// "Pausing" until it has.
+pub fn tools_suspend() -> bool {
+    cfg!(unix) && !KEEP_RUNNING.load(Ordering::Relaxed)
+}
 
 /// Asks work to stop. Nothing is interrupted by force: the work calls [`CancelToken::check`]
 /// between steps, awaits [`CancelToken::cancelled`], or registers [`CancelToken::on_cancel`] to
@@ -32,43 +51,17 @@ pub struct CancelToken {
 #[derive(Default)]
 struct Shared {
     cancelled: AtomicBool,
-    callbacks: Mutex<Callbacks>,
-    holds: Mutex<Holds>,
-}
-
-/// Whether the work is held, and who wants to hear when that changes.
-#[derive(Default)]
-struct Holds {
-    held: bool,
-    next_id: u64,
-    watchers: Vec<(u64, HoldWatcher)>,
+    callbacks: Watchers<Callback>,
+    held: AtomicBool,
+    hold_watchers: Watchers<HoldWatcher>,
 }
 
 type HoldWatcher = Arc<dyn Fn(bool) + Send + Sync>;
 
 type Callback = Box<dyn FnOnce() + Send>;
 
-#[derive(Default)]
-struct Callbacks {
-    next_id: u64,
-    pending: Vec<(u64, Callback)>,
-}
-
-impl Shared {
-    fn holds(&self) -> MutexGuard<'_, Holds> {
-        self.holds.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// The callbacks never run under this lock, so a panic in one cannot poison it; a poisoned
-    /// lock still holds a consistent list.
-    fn callbacks(&self) -> MutexGuard<'_, Callbacks> {
-        self.callbacks
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
 /// Keeps a watcher given to [`CancelToken::on_hold`] listening; dropping it stops the watcher.
+#[must_use = "dropping the guard stops the watcher"]
 pub struct HoldWatch {
     shared: Arc<Shared>,
     id: u64,
@@ -76,10 +69,7 @@ pub struct HoldWatch {
 
 impl Drop for HoldWatch {
     fn drop(&mut self) {
-        self.shared
-            .holds()
-            .watchers
-            .retain(|(id, _)| *id != self.id);
+        self.shared.hold_watchers.remove(self.id);
     }
 }
 
@@ -94,13 +84,13 @@ impl CancelToken {
         // The flag is set under the lock that `on_cancel` checks it under, so a callback is
         // either registered before this takes the list or sees the flag and runs at once.
         let callbacks = {
-            let mut callbacks = self.shared.callbacks();
+            let mut callbacks = self.shared.callbacks.lock();
             if self.shared.cancelled.swap(true, Ordering::AcqRel) {
                 return;
             }
-            std::mem::take(&mut callbacks.pending)
+            callbacks.take_all()
         };
-        for (_, callback) in callbacks {
+        for callback in callbacks {
             callback();
         }
     }
@@ -121,7 +111,7 @@ impl CancelToken {
     /// Runs `callback` when the token is cancelled, on the cancelling thread, or now if it already
     /// is. Dropping the returned guard unregisters a callback that has not run.
     pub fn on_cancel(&self, callback: impl FnOnce() + Send + 'static) -> CancelCallback {
-        let mut callbacks = self.shared.callbacks();
+        let mut callbacks = self.shared.callbacks.lock();
         if self.is_cancelled() {
             drop(callbacks);
             callback();
@@ -130,26 +120,24 @@ impl CancelToken {
                 id: 0,
             };
         }
-        let id = callbacks.next_id;
-        callbacks.next_id += 1;
-        callbacks.pending.push((id, Box::new(callback)));
+        let id = callbacks.add(Box::new(callback));
         CancelCallback {
             shared: Some(self.shared.clone()),
             id,
         }
     }
 
-    /// Asks what is running under this token to hold still, or to go on: a paused job holds the
-    /// tools it started, which cannot wait at a checkpoint as its own code does. Every watcher
-    /// hears of a change, on this thread.
+    /// Asks what is running under this token to hold still, or to go on. A
+    /// [`PauseToken::holding`](crate::PauseToken::holding) this token sets it as its work is paused
+    /// and resumed; tests of the tools set it themselves. Every watcher hears of a change, on this
+    /// thread.
     pub fn hold(&self, held: bool) {
-        let watchers: Vec<HoldWatcher> = {
-            let mut holds = self.shared.holds();
-            if holds.held == held {
+        let watchers = {
+            let watchers = self.shared.hold_watchers.lock();
+            if self.shared.held.swap(held, Ordering::AcqRel) == held {
                 return;
             }
-            holds.held = held;
-            holds.watchers.iter().map(|(_, w)| w.clone()).collect()
+            watchers.snapshot()
         };
         for watcher in watchers {
             watcher(held);
@@ -161,11 +149,11 @@ impl CancelToken {
     pub fn on_hold(&self, watcher: impl Fn(bool) + Send + Sync + 'static) -> HoldWatch {
         let watcher: HoldWatcher = Arc::new(watcher);
         let (id, held) = {
-            let mut holds = self.shared.holds();
-            let id = holds.next_id;
-            holds.next_id += 1;
-            holds.watchers.push((id, watcher.clone()));
-            (id, holds.held)
+            let mut watchers = self.shared.hold_watchers.lock();
+            (
+                watchers.add(watcher.clone()),
+                self.shared.held.load(Ordering::Acquire),
+            )
         };
         if held {
             watcher(true);
@@ -211,7 +199,7 @@ pub struct CancelCallback {
 impl Drop for CancelCallback {
     fn drop(&mut self) {
         if let Some(shared) = self.shared.take() {
-            shared.callbacks().pending.retain(|(id, _)| *id != self.id);
+            shared.callbacks.remove(self.id);
         }
     }
 }

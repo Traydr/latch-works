@@ -3,6 +3,7 @@ import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import {
   type MaintenanceJobDescriptor,
   type MaintenanceTransaction,
+  type ScheduleMaintenanceJobResult,
   scheduleMaintenanceJob,
 } from "./maintenance-scheduler";
 import { orphanedMediaObjectCondition } from "./orphaned-sources";
@@ -47,9 +48,6 @@ const softDeletedPurgeDescriptor: MaintenanceJobDescriptor = {
   type: "soft_deleted_purge",
 };
 
-export function scheduleSoftDeletedPurge(): Promise<{
-  jobId: string | null;
-  phase: "empty" | "scheduled";
-}> {
+export function scheduleSoftDeletedPurge(): Promise<ScheduleMaintenanceJobResult> {
   return scheduleMaintenanceJob(softDeletedPurgeDescriptor);
 }

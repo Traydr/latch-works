@@ -1,4 +1,4 @@
-//! Tidy's section of Settings (`views/SettingsView.tsx`): how duplicates are chosen (preferred
+//! Tidy's section of Settings: how duplicates are chosen (preferred
 //! folders, similar versions, Spot variants) and converted (video quality, the tools found), and
 //! background analysis. Preferred folders belong to the folder being tidied, so they show only
 //! once there is one. A sandboxed run (`ORIEL_DATA_DIR` set) adds a line on the sandbox Tidy
@@ -15,10 +15,9 @@ use gpui_kit::{
     Role, SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
     div, px,
 };
-use oriel_core_tidy::contract::{
-    EncoderCapabilities, PreferredFolder, Settings, SimilarityLevel, VideoQuality,
-};
+use oriel_core_tidy::contract::{EncoderCapabilities, Settings, SimilarityLevel, VideoQuality};
 use oriel_ui::TextRole as _;
+use oriel_ui::ToastExt as _;
 use oriel_ui::segmented::{Segmented, SegmentedItem};
 use oriel_ui::{ControlSize as _, SettingsGroup, SettingsRow, Toast};
 
@@ -49,65 +48,24 @@ const VIDEO_QUALITIES: [(VideoQuality, &str); 3] = [
     (VideoQuality::VeryHigh, "Very high"),
 ];
 
-/// A picked folder as a path inside the root, with forward slashes ("" for the root itself), or
-/// `None` when it lies outside (`insideRoot`).
-pub fn inside_root(root: &Path, folder: &Path) -> Option<String> {
-    let rest = folder.strip_prefix(root).ok()?;
-    Some(
-        rest.components()
-            .map(|part| part.as_os_str().to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join("/"),
-    )
-}
+/// What Spot variants does, wherever its switch is.
+const SPOT_VARIANTS_DESCRIPTION: &str = "Keep pictures that differ in one area, like a face, an \
+     outfit or a caption's language, and keep each picture's copy in the folder with the rest of \
+     its set";
 
-/// Makes a folder preferred for duplicate review, with a toast and ⌘Z to take it back
-/// (`usePreferFolder`).
-pub fn prefer_folder(state: &Entity<TidyState>, dir: String, window: &mut Window, cx: &mut App) {
-    let current = state.read(cx);
-    let (Some(settings), Some(root_id)) = (current.settings().cloned(), current.root_id()) else {
-        return;
-    };
-    let label = if dir.is_empty() {
-        "the top folder".to_string()
-    } else {
-        dir.clone()
-    };
-    if settings
-        .preferred_folders
-        .iter()
-        .any(|entry| entry.root_id == root_id && entry.dir == dir)
-    {
-        crate::widgets::show_toast(
-            window,
-            Toast::info(format!("{label} is already preferred")),
-            cx,
-        );
-        return;
-    }
-    let before = settings.clone();
-    let mut next = settings;
-    next.preferred_folders
-        .push(PreferredFolder { root_id, dir });
-    state.update(cx, |state, cx| {
-        state.update_settings(next, window, cx);
-        let restore = before.clone();
-        state.push_undo(move |state, window, cx| {
-            state.update_settings(restore.clone(), window, cx);
-            crate::widgets::show_toast(window, Toast::info("Undid the preferred folder"), cx);
-        });
+/// The Spot variants switch, its control named `{id}-spot-variants`.
+fn spot_variants_switch(
+    state: &Entity<TidyState>,
+    settings: &Settings,
+    id: &str,
+) -> oriel_ui::controls::HouseSwitch {
+    let toggle = change_settings(state, |settings| {
+        settings.spot_variants = !settings.spot_variants;
     });
-    let undo_state = state.clone();
-    crate::widgets::show_toast(
-        window,
-        Toast::done(format!("Preferring {label}"))
-            .detail("Duplicate sets keep their copy there first.")
-            .action("Undo", move |window, cx| {
-                let before = before.clone();
-                undo_state.update(cx, |state, cx| state.update_settings(before, window, cx));
-            }),
-        cx,
-    );
+    oriel_ui::switch(SharedString::from(format!("{id}-spot-variants")))
+        .checked(settings.spot_variants)
+        .accessibility_label("Spot variants")
+        .on_click(move |_, window, cx| toggle(window, cx))
 }
 
 /// A handler that changes Tidy's settings through `change`, as each control here does.
@@ -169,13 +127,7 @@ pub fn matching_popover(
                         .child(similarity_description(level)),
                 )
         }));
-    let toggle = change_settings(state, |settings| {
-        settings.spot_variants = !settings.spot_variants;
-    });
-    let spot = oriel_ui::switch(SharedString::from(format!("{id}-spot-variants")))
-        .checked(settings.spot_variants)
-        .accessibility_label("Spot variants")
-        .on_click(move |_, window, cx| toggle(window, cx));
+    let spot = spot_variants_switch(state, settings, id);
     let heading = |text: &'static str| {
         div()
             .text_base()
@@ -229,11 +181,12 @@ pub fn matching_popover(
                         .min_w_0()
                         .gap_0p5()
                         .child(heading("Spot variants"))
-                        .child(div().text_sm().text_color(muted).child(
-                            "Keep pictures that differ in one area, like a face, an outfit or a \
-                             caption's language, and keep each picture's copy in the folder with \
-                             the rest of its set",
-                        )),
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(muted)
+                                .child(SPOT_VARIANTS_DESCRIPTION),
+                        ),
                 )
                 .child(div().flex_shrink_0().child(spot)),
         )
@@ -258,28 +211,19 @@ pub fn matching_rows(state: &Entity<TidyState>, settings: &Settings, id: &str) -
         .selected(settings.similarity == level)
         .on_click(move |_, window, cx| pick(window, cx))
     }));
-    let toggle = change_settings(state, |settings| {
-        settings.spot_variants = !settings.spot_variants;
-    });
-    let spot = oriel_ui::switch(SharedString::from(format!("{id}-spot-variants")))
-        .checked(settings.spot_variants)
-        .accessibility_label("Spot variants")
-        .on_click(move |_, window, cx| toggle(window, cx));
+    let spot = spot_variants_switch(state, settings, id);
     [
         SettingsRow::new("Similar versions")
             .description("How alike two pictures or videos must look to count as one")
             .child(similarity),
         SettingsRow::new("Spot variants")
-            .description(
-                "Keep pictures that differ in one area, like a face, an outfit or a caption's \
-                 language, and keep each picture's copy in the folder with the rest of its set",
-            )
+            .description(SPOT_VARIANTS_DESCRIPTION)
             .child(spot),
     ]
 }
 
-/// The encoders Settings lists (`ENCODERS`), and whether this machine has each. Oriel adds
-/// libavif and libvips, which it converts pictures with where Electron Oriel uses wasm and sharp.
+/// The encoders Settings lists, and whether this machine has each. Oriel adds
+/// libavif and libvips, which it converts pictures with.
 fn encoder_rows(capabilities: &EncoderCapabilities, vips: bool) -> [(&'static str, bool); 8] {
     [
         ("H.264 video", capabilities.video.avc),
@@ -409,8 +353,7 @@ impl SettingsSection {
 
     fn add_preferred(&self, window: &mut Window, cx: &mut App) {
         let current = self.state.read(cx);
-        let (Some(root), Some(settings)) = (current.root().cloned(), current.settings().cloned())
-        else {
+        let Some(root) = current.root().cloned() else {
             return;
         };
         let options = crate::folder_picker::PickOptions {
@@ -423,38 +366,15 @@ impl SettingsSection {
         };
         let state = self.state.clone();
         crate::folder_picker::open(options, window, cx, move |folder, window, cx| {
-            let Some(dir) = inside_root(Path::new(&root.path), &folder) else {
-                crate::widgets::show_toast(
-                    window,
+            let Some(dir) = oriel_core_tidy::relative_within(&folder, Path::new(&root.path)) else {
+                window.show_toast(
                     Toast::error(format!("That folder is outside {}", root.name))
                         .detail("Preferred folders have to be inside the folder being tidied."),
                     cx,
                 );
                 return;
             };
-            if settings
-                .preferred_folders
-                .iter()
-                .any(|entry| entry.root_id == root.id && entry.dir == dir)
-            {
-                let label = if dir.is_empty() {
-                    root.name.clone()
-                } else {
-                    dir
-                };
-                crate::widgets::show_toast(
-                    window,
-                    Toast::info(format!("{label} is already preferred")),
-                    cx,
-                );
-                return;
-            }
-            let mut next = settings.clone();
-            next.preferred_folders.push(PreferredFolder {
-                root_id: root.id,
-                dir,
-            });
-            state.update(cx, |state, cx| state.update_settings(next, window, cx));
+            state.update(cx, |state, cx| state.prefer_folder(dir, window, cx));
         });
     }
 
@@ -592,7 +512,7 @@ impl SettingsSection {
         let sandbox_group = sandboxed.then(|| {
             SettingsGroup::new("Sandbox").child(
                 SettingsRow::new("Tidy changes files only in its sandbox")
-                    .description(crate::links::sandbox_rule(&data)),
+                    .description(oriel_core_tidy::sandbox_rule(&data)),
             )
         });
 
@@ -604,24 +524,5 @@ impl SettingsSection {
             .child(analysis)
             .children(sandbox_group)
             .into_any_element()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn preferred_folders_are_paths_inside_the_root() {
-        let root = Path::new("/archive");
-        assert_eq!(
-            inside_root(root, Path::new("/archive")).as_deref(),
-            Some("")
-        );
-        assert_eq!(
-            inside_root(root, Path::new("/archive/a/b")).as_deref(),
-            Some("a/b")
-        );
-        assert_eq!(inside_root(root, Path::new("/elsewhere")), None);
     }
 }

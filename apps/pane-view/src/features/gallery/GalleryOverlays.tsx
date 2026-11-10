@@ -1,16 +1,16 @@
-import type { ComicEntry } from "@latch-works/media-domain";
 import type { FormEvent, JSX } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { ComicReader } from "@/features/comics/ComicReader";
-import { MediaViewerModal, type MediaViewerModalProps } from "@/features/gallery/MediaViewerModal";
+import type { GalleryComic } from "@/features/library/listing-contract";
 import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
 import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
 import type { AppSettings, AppSettingsPatch } from "@/features/settings/types";
+import { ComicReader } from "@/features/viewer/ComicReader";
+import { MediaViewerModal, type MediaViewerModalProps } from "@/features/viewer/MediaViewerModal";
 
 export interface GalleryOverlaysProps {
-  activeComic: ComicEntry | null;
+  activeComic: GalleryComic | null;
   hotkeysOpen: boolean;
   mobileSearchOpen: boolean;
   onCloseComicReader: () => void;

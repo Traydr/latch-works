@@ -1,6 +1,6 @@
 import { Archive } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef } from "react";
-import { entryMedia, type GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
+import { entryMedia, type GalleryBrowseEntry } from "@/features/library/listing-contract";
 import { BrowserEntryCard } from "./BrowserEntryCard";
 import { FLOATING_TOOLBAR_SELECTOR, GALLERY_GRID_SCROLL_ID } from "./gallery-grid-scroll";
 import { useVirtualGridMetrics } from "./useVirtualGridMetrics";
@@ -73,7 +73,7 @@ export function BrowserGrid({
     [entries, windowedItems],
   );
 
-  const { resolvedThumbnailUrls } = useWindowedThumbnailResolution({
+  const { thumbnails } = useWindowedThumbnailResolution({
     entries: windowedEntries,
     key: contentKey,
   });
@@ -169,7 +169,7 @@ export function BrowserGrid({
                 opening={entry.kind === "comic" && entry.comic.id === openingComicId}
                 priority={Math.abs(slot.index - focusedIndex) <= columnCount}
                 selected={selected}
-                thumbnailUrl={mediaId === undefined ? undefined : resolvedThumbnailUrls[mediaId]}
+                thumbnail={mediaId === undefined ? undefined : thumbnails.get(mediaId)}
                 top={slot.top}
               />
             );

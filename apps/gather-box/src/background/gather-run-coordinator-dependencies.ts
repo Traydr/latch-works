@@ -1,35 +1,39 @@
-import { injectCollectorAndCollect } from "../gather/active-tab";
-import { getDirectoryDestinationId } from "../gather/directory-store";
+import { getDirectoryDestinationId } from "../shared/directory-store";
 import {
-  loadGatherQueue,
-  saveGatherQueue,
-  type GatherOutput,
   type GatherQueueState,
-  type OutputGatherQueueJob
+  loadGatherQueue,
+  type OutputGatherQueueJob,
+  saveGatherQueue,
 } from "../shared/gather-queue";
-import { CANCEL_GATHER_RUN, EXECUTE_GATHER_RUN } from "../shared/gather-run-messages";
-import type { GatherRunState } from "../shared/gather-run";
-import { loadProfiles, type GatherProfilesState } from "../shared/profiles";
-import { getGatherSource } from "../shared/source-catalog";
-import { loadSettings, type GatherBoxSettings } from "../shared/settings";
-import type { SiteKey } from "../shared/sites";
-import { OffscreenDocument } from "./offscreen-document";
+import type { FolderScope, GatherRunState } from "../shared/gather-run";
+import type { ChannelFailure } from "../shared/messaging";
+import { type GatherProfilesState, loadProfiles } from "../shared/profiles";
+import {
+  CANCEL_GATHER_RUN,
+  EXECUTE_GATHER_RUN,
+  type ExecutorResponses,
+  sendExecutorRequest,
+} from "../shared/protocol/executor";
+import { type GatherBoxSettings, loadSettings } from "../shared/settings";
+import type { MatchedPage } from "../shared/source-catalog";
+import type { GatherOutput } from "../shared/types";
+import { injectCollectorAndCollect } from "./collect";
+import { type ExecutorStatus, OffscreenDocument } from "./offscreen-document";
 
 export interface GatherRunCoordinatorDependencies {
   loadQueue(): Promise<GatherQueueState>;
   saveQueue(queue: GatherQueueState): Promise<void>;
-  getActiveRunId(): Promise<string | null>;
+  getExecutorStatus(): Promise<ExecutorStatus>;
   getTab(tabId: number): Promise<chrome.tabs.Tab>;
-  collect(tab: chrome.tabs.Tab, run: GatherRunState): Promise<GatherOutput>;
+  collect(tab: chrome.tabs.Tab, page: MatchedPage, run: GatherRunState): Promise<GatherOutput>;
   loadSettings(): Promise<GatherBoxSettings>;
   loadProfiles(): Promise<GatherProfilesState>;
   /** Which remembered folder an output queued now would be written to. */
-  getDestinationId(
-    siteKey: SiteKey,
-    useGlobalFolder: boolean,
-    profileId: string
-  ): Promise<string | null>;
-  execute(job: OutputGatherQueueJob): Promise<boolean>;
+  getDestinationId(scope: FolderScope, profileId: string): Promise<string | null>;
+  execute(
+    job: OutputGatherQueueJob,
+  ): Promise<ExecutorResponses[typeof EXECUTE_GATHER_RUN] | ChannelFailure>;
+  /** Whether the executor took the abort; false when it is not running this run. */
   abort(runId: string): Promise<boolean>;
   now(): number;
   randomUUID(): string;
@@ -41,61 +45,43 @@ export function createChromeCoordinatorDependencies(): GatherRunCoordinatorDepen
   return {
     loadQueue: loadGatherQueue,
     saveQueue: saveGatherQueue,
-    getActiveRunId: () => offscreenDocument.getActiveRunId(),
+    getExecutorStatus: () => offscreenDocument.getExecutorStatus(),
     getTab: (tabId) => chrome.tabs.get(tabId),
-    collect: async (tab, run) => {
-      const source = getGatherSource(run.siteKey);
-
-      if (!source) {
-        throw new Error("The Gather Source no longer has a collector adapter.");
-      }
-
-      const response = await injectCollectorAndCollect({
-        tabId: tab.id!,
-        pageUrl: run.tabUrl,
+    collect: (tab, page, run) =>
+      injectCollectorAndCollect(tab.id ?? run.tabId, page, {
         requestId: run.id,
-        source,
-        onInjecting: () => undefined
-      });
-
-      if (!response || response.ok !== true) {
-        throw new Error(response?.message || "The source page did not return collection data.");
-      }
-
-      return response;
-    },
+        pageUrl: run.tabUrl,
+      }),
     loadSettings,
     loadProfiles,
     getDestinationId: getDirectoryDestinationId,
     execute: async (job) => {
       await offscreenDocument.ensure();
 
-      const response = await chrome.runtime.sendMessage({
+      return sendExecutorRequest({
         type: EXECUTE_GATHER_RUN,
         target: "offscreen",
         runId: job.run.id,
         payload: job.payload,
         settings: job.settings,
         destinationId: job.destinationId,
-        profileId: job.profileId
+        profileId: job.profileId,
       });
-
-      return response?.accepted === true;
     },
     abort: async (runId) => {
       if (!(await offscreenDocument.isOpen())) {
         return false;
       }
 
-      const response = await chrome.runtime.sendMessage({
+      const response = await sendExecutorRequest({
         type: CANCEL_GATHER_RUN,
         target: "offscreen",
-        runId
+        runId,
       });
 
-      return response?.aborted === true;
+      return "aborted" in response && response.aborted;
     },
     now: Date.now,
-    randomUUID: () => crypto.randomUUID()
+    randomUUID: () => crypto.randomUUID(),
   };
 }

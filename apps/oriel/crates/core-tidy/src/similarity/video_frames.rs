@@ -21,13 +21,13 @@ use std::ops::Range;
 use std::path::Path;
 use std::time::Duration;
 
+use oriel_core_domain::number::to_fixed;
 use oriel_runtime::CancelToken;
 use oriel_tools::ToolRun;
 use serde_json::Value;
 
 use super::fingerprint::{
-    FRAME_TIMEOUT, Fingerprint, FingerprintError, SAMPLE_POSITIONS, hash_of, to_fixed_3,
-    video_frame_hash,
+    FRAME_TIMEOUT, Fingerprint, FingerprintError, SAMPLE_POSITIONS, hash_of, video_frame_hash,
 };
 use super::phash::{Hash64, PHASH_INPUT_SIZE};
 
@@ -103,7 +103,7 @@ pub fn plan_frame_runs(
     cancel: Option<&CancelToken>,
 ) -> Result<Vec<FrameRun>, FingerprintError> {
     let seconds = sample_seconds(duration_ms);
-    let seeks = seconds.map(to_fixed_3);
+    let seeks = seconds.map(|seconds| to_fixed(seconds, 3));
     let intervals: Vec<String> = seeks.iter().map(|seek| format!("{seek}%+#1")).collect();
     let mut run = ToolRun::new(ffprobe, PLAN_TIMEOUT)
         .args(["-v", "error", "-select_streams", "v", "-read_intervals"])
@@ -122,7 +122,15 @@ pub fn plan_frame_runs(
     let output = match run.run() {
         Ok(output) => output,
         Err(error) if error.is_cancelled() => return Err(FingerprintError::Cancelled),
-        Err(_) => return Ok(single_frame_runs(duration_ms)),
+        // Prints already stored were made this way, so the fallback stays; it is said, since
+        // it samples differently.
+        Err(error) => {
+            log::warn!(
+                "ffprobe could not plan {}'s frames, so it is sampled frame by frame: {error}",
+                path.display()
+            );
+            return Ok(single_frame_runs(duration_ms));
+        }
     };
     let probe = output
         .success()
@@ -202,8 +210,8 @@ fn runs_from_probe(
     Some(runs)
 }
 
-/// `-ss`'s seconds in microseconds, as `av_parse_time` reads the three decimals
-/// [`to_fixed_3`] writes.
+/// `-ss`'s seconds in microseconds, as `av_parse_time` reads the three decimals the seeks are
+/// written with.
 fn seek_microseconds(seek: &str) -> Option<i128> {
     let (whole, millis) = seek.split_once('.')?;
     if millis.len() != 3 || !(whole.bytes().chain(millis.bytes())).all(|b| b.is_ascii_digit()) {
@@ -305,7 +313,7 @@ pub fn frame_run_pixels(
             "-threads",
             "1",
             "-ss",
-            &to_fixed_3(run.seconds[0]),
+            &to_fixed(run.seconds[0], 3),
             "-i",
         ])
         .arg(path)
@@ -355,7 +363,7 @@ mod tests {
     fn samples_from_one_keyframe_share_a_run() {
         // A 9 s video with keyframes at 0 and 8.333 s: every sample starts from the first.
         let seconds = sample_seconds(9000.0);
-        let seeks = seconds.map(to_fixed_3);
+        let seeks = seconds.map(|seconds| to_fixed(seconds, 3));
         let runs = runs_from_probe(&probe([0; 5]), &seconds, &seeks).unwrap();
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].positions(), 0..5);
@@ -374,7 +382,7 @@ mod tests {
     #[test]
     fn files_it_cannot_be_sure_of_get_single_runs() {
         let seconds = sample_seconds(9000.0);
-        let seeks = seconds.map(to_fixed_3);
+        let seeks = seconds.map(|seconds| to_fixed(seconds, 3));
         let with = |change: &dyn Fn(&mut Value)| {
             let mut probe = probe([0; 5]);
             change(&mut probe);

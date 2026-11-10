@@ -9,9 +9,9 @@
 //! copy for comparison), where the id names mpv's and FFmpeg's versions and a hash of every pin
 //! and flag, and `.libmpv/current` points at the newest. Each dylib is named `@rpath/<file>` and
 //! finds the others through `@loader_path`, links nothing but the set and the system, and is
-//! signed ad hoc. `manifest.json` beside them records versions, hashes, flags, licences and what
-//! the libraries said about themselves; `SHA256SUMS` lets a later run, and the bundle, check the
-//! files are still the ones built.
+//! signed ad hoc. The set ([`crate::set`]) records versions, hashes, flags, licences and what the
+//! libraries said about themselves, and lets a later run, and the bundle, check the files are
+//! still the ones built.
 //!
 //! Resumable: downloads are kept by hash, and each step of each source leaves a stamp, so an
 //! interrupted run picks up at the step that did not finish. Only meson, ninja and pkgconf are
@@ -28,6 +28,7 @@ use std::time::Instant;
 use anyhow::{Context as _, Result, bail};
 use serde::Serialize;
 
+use crate::set::{self, Staging};
 use crate::support::{
     self, Download, MachO, Pairs, Step, capture, compare_versions, find_on_path, format_json,
     is_system, log, megabytes, read_macho, run, sha256_file, sha256_text,
@@ -41,8 +42,6 @@ const LGPL: &str = "LGPL version 2.1 or later";
 
 /// The set's own name for the library the player loads.
 pub const LIBMPV_FILE: &str = "libmpv.2.dylib";
-
-const CHECKSUMS_FILE: &str = "SHA256SUMS";
 
 /// The program that asks the built set what it is.
 const CHECK_PROGRAM: &str = include_str!("check-libmpv.c");
@@ -59,13 +58,12 @@ pub struct BuildOptions {
 impl Default for BuildOptions {
     /// The defaults the command line and the bundle share.
     fn default() -> Self {
-        let workspace = support::workspace();
+        let workspace = oriel_core_paths::workspace();
         Self {
             jobs: std::thread::available_parallelism().map_or(1, usize::from),
             // Under Cargo's target folder, which tools ignore.
             work: workspace.join("target").join("libmpv"),
-            // `apps/oriel/.libmpv`, git-ignored.
-            out: workspace.join(".libmpv"),
+            out: oriel_core_paths::libmpv_root(),
             keep_work: false,
         }
     }
@@ -93,7 +91,7 @@ impl WorkTree {
     fn new(base: &Path, id: &str) -> Self {
         let root = base.join(id);
         Self {
-            downloads: base.join("downloads"),
+            downloads: crate::support::workspace_downloads(),
             src: root.join("src"),
             build: root.join("build"),
             prefix: root.join("prefix"),
@@ -630,24 +628,17 @@ fn check_set(work: &WorkTree, out: &Path, env: &[(String, OsString)]) -> Result<
 fn copy_licences(work: &WorkTree, out: &Path) -> Result<()> {
     for source in SOURCES {
         let from = work.source_dir(source);
-        let mut entries: Vec<(String, PathBuf)> = source
-            .licence_files
-            .iter()
-            .map(|file| (source.name.to_owned(), from.join(file)))
-            .collect();
-        for part in source.parts.iter().filter(|part| part.ships) {
-            entries.extend(part.licence_files.iter().map(|file| {
-                (
-                    format!("{}-{}", source.name, part.name),
-                    from.join(part.folder).join(file),
-                )
-            }));
+        for file in source.licence_files {
+            set::copy_licence(out, source.name, &from.join(file))?;
         }
-        for (name, file) in entries {
-            let folder = out.join("licenses").join(name);
-            fs::create_dir_all(&folder)?;
-            let target = folder.join(file.file_name().context("a licence file has no name")?);
-            fs::copy(&file, &target).with_context(|| format!("copying {}", file.display()))?;
+        for part in source.parts.iter().filter(|part| part.ships) {
+            for file in part.licence_files {
+                set::copy_licence(
+                    out,
+                    &format!("{}-{}", source.name, part.name),
+                    &from.join(part.folder).join(file),
+                )?;
+            }
         }
     }
     Ok(())
@@ -734,14 +725,10 @@ struct Manifest<'a> {
     reported: &'a Pairs,
 }
 
-fn write_manifest(
-    set: &LibmpvSet,
-    libraries: &[Library],
-    report: &Pairs,
-    seconds: f64,
-) -> Result<()> {
+/// The set's manifest, as JSON.
+fn manifest(id: &str, libraries: &[Library], report: &Pairs, seconds: f64) -> Result<String> {
     let manifest = Manifest {
-        id: &set.id,
+        id,
         built_at: support::iso_now(),
         run_seconds: seconds.round() as u64,
         platform: "darwin-arm64",
@@ -780,46 +767,7 @@ fn write_manifest(
         reported: report,
     };
 
-    fs::write(set.folder.join("manifest.json"), format_json(&manifest)?)?;
-    let sums: String = libraries
-        .iter()
-        .map(|library| format!("{}  {}\n", library.sha256, library.file))
-        .collect();
-    fs::write(set.folder.join(CHECKSUMS_FILE), sums)?;
-    Ok(())
-}
-
-/// Whether `folder` holds a whole set whose files still hash to what was recorded, with
-/// `entry` among them.
-pub fn is_intact(folder: &Path, entry: &str) -> bool {
-    if !folder.join("manifest.json").is_file() {
-        return false;
-    }
-    let Ok(sums) = fs::read_to_string(folder.join(CHECKSUMS_FILE)) else {
-        return false;
-    };
-    let lines: Vec<&str> = sums.split('\n').filter(|line| !line.is_empty()).collect();
-    for line in &lines {
-        let Some((sha256, file)) = line.split_once("  ") else {
-            return false;
-        };
-        let well_formed = sha256.len() == 64
-            && sha256
-                .chars()
-                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
-            && !file.is_empty()
-            && !file.chars().any(char::is_whitespace);
-        if !well_formed {
-            return false;
-        }
-        let target = folder.join(file);
-        if !target.is_file() || sha256_file(&target).ok().as_deref() != Some(sha256) {
-            return false;
-        }
-    }
-    lines
-        .iter()
-        .any(|line| line.ends_with(&format!("  {entry}")))
+    format_json(&manifest)
 }
 
 /// Makes sure the pinned set is built and intact, building it when it is not, and returns it.
@@ -828,12 +776,12 @@ pub fn ensure_libmpv(options: &BuildOptions) -> Result<LibmpvSet> {
     let id = set_id();
     let folder = options.out.join(&id);
 
-    if is_intact(&folder, LIBMPV_FILE) {
+    if set::is_intact(&folder, LIBMPV_FILE) {
         log(format!(
             "The LGPL libmpv set {id} is built: {}",
             folder.display()
         ));
-        support::point_current_at(&options.out, &id)?;
+        set::point_current_at(&options.out, &id)?;
         return Ok(LibmpvSet { id, folder });
     }
 
@@ -863,25 +811,17 @@ pub fn ensure_libmpv(options: &BuildOptions) -> Result<LibmpvSet> {
         build_source(&work, source, &env, options.jobs)?;
     }
 
-    let partial = options.out.join(format!("{id}.partial"));
+    let staging = Staging::begin(&options.out, &id)?;
+    let partial = staging.folder().to_path_buf();
     let libraries = assemble(&work, &partial)?;
     let report = check_set(&work, &partial, &env)?;
     copy_licences(&work, &partial)?;
     let seconds = started.elapsed().as_secs_f64();
-    write_manifest(
-        &LibmpvSet {
-            id: id.clone(),
-            folder: partial.clone(),
-        },
-        &libraries,
-        &report,
-        seconds,
-    )?;
-    if folder.exists() {
-        fs::remove_dir_all(&folder)?;
-    }
-    fs::rename(&partial, &folder)?;
-    support::point_current_at(&options.out, &id)?;
+    let sums: Vec<(String, String)> = libraries
+        .iter()
+        .map(|library| (library.sha256.clone(), library.file.clone()))
+        .collect();
+    let folder = staging.finish(&manifest(&id, &libraries, &report, seconds)?, &sums)?;
 
     log(format!(
         "\nThe LGPL libmpv set {id} is built in {} s: {}",
@@ -940,14 +880,6 @@ pub fn command(args: &[String]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The id hashes the recipe as the TypeScript this was ported from did (revision 1 gave
-    /// `adabfe19d7` in both), so a change to how it is hashed shows here rather than as a second
-    /// copy of the same set. Revision 2 is the first the TypeScript never built.
-    #[test]
-    fn the_id_hashes_the_recipe_as_the_typescript_did() {
-        assert_eq!(set_id(), "mpv-0.41.0-ffmpeg-9.0.2-lgpl-83e766fd1f");
-    }
 
     #[test]
     fn only_whole_licence_flags_count() {

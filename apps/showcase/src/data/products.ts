@@ -1,19 +1,19 @@
-export type ProductKind = "app" | "tool";
+type ProductKind = "app" | "tool";
 
-export type ProductScreenshot = {
+type ProductScreenshot = {
   src: string;
   alt: string;
   caption?: string;
 };
 
-export type ProductFeature = {
+type ProductFeature = {
   title: string;
   description: string;
   icon: string;
 };
 
 /** One of a product's modes, when the product is split into several (Oriel). */
-export type ProductMode = {
+type ProductMode = {
   name: string;
   kicker: string;
   tagline: string;
@@ -38,7 +38,7 @@ export type Product = {
   highlights: string[];
 };
 
-export const pipelineSlugs = ["gather-box", "oriel", "pane-view"] as const;
+const pipelineSlugs = ["gather-box", "oriel", "pane-view"] as const;
 
 export type PipelineSlug = (typeof pipelineSlugs)[number];
 
@@ -89,7 +89,7 @@ export const productEnamel = {
   "pane-view": "#38A8E8",
 } satisfies Record<PipelineSlug, string>;
 
-export const products: Product[] = [
+const products: Product[] = [
   {
     slug: "gather-box",
     name: "Gather Box",
@@ -118,6 +118,7 @@ export const products: Product[] = [
     features: [
       {
         title: "Site collectors",
+        // Gather Box's `source-catalog.test.ts` checks this list against the catalog.
         description:
           "Dedicated collectors for X, Reddit, pixiv, Archive of Our Own, and FanFiction.Net.",
         icon: "globe",
@@ -255,7 +256,7 @@ export const products: Product[] = [
       {
         title: "Native and fast",
         description:
-          "Rust on GPUI with a local media index and thumbnail cache. Video plays through libmpv, so MKV, WebM, and AV1 work as well as MP4.",
+          "Rust on GPUI with a local thumbnail cache. Video plays through libmpv, so MKV, WebM, and AV1 work as well as MP4.",
         icon: "zap",
       },
       {

@@ -4,22 +4,26 @@
 //! - `oriel/`: the repository's own licence, which Oriel is under;
 //! - `media-tools/`: ffmpeg and ffprobe. They are Martin Riedl's static builds, configured with
 //!   `--enable-gpl --enable-version3`, so GPL-3.0-or-later: the GPL's text and FFmpeg's
-//!   `LICENSE.md`, from the FFmpeg 9.0.2 source release the libmpv set is built from (the same
-//!   pinned, hash-checked tarball), and a notice saying what the two programs are, how they were
+//!   `LICENSE.md`, from the FFmpeg source release the libmpv set is built from (the same pinned,
+//!   hash-checked tarball), and a notice saying what the two programs are, how they were
 //!   fetched, how they were configured, and where their corresponding source is. They run as
 //!   separate programs, so their licence does not reach Oriel's own code;
 //! - `rust-crates/`: every crate compiled into the app, with the licence files its package
 //!   carries, listed in `README.txt` with its licence expression, from `cargo metadata`;
-//! - `index.json`: one entry per folder, which the app's About dialog lists.
+//! - the index (`oriel_core_paths::NoticeIndex`): one entry per folder, which the app's About
+//!   dialog lists.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result, bail};
-use serde::Serialize;
+use oriel_core_paths::{
+    APP_NAME, MEDIA_TOOLS_VERSION, NOTICE_INDEX_FILE, Notice, NoticeIndex, media_tools_files,
+};
 use serde_json::Value;
 
-use crate::libmpv::{self, sources::source_by_name};
+use crate::libmpv::sources::source_by_name;
+use crate::pins::MediaToolsPin;
 use crate::support::{self, Download, capture, log};
 
 /// The target the app is built for, whose dependencies the bundle carries.
@@ -28,34 +32,15 @@ const TARGET: &str = "aarch64-apple-darwin";
 /// Where Martin Riedl publishes the scripts his ffmpeg builds are made with.
 const MEDIA_TOOLS_BUILD_SCRIPT: &str = "https://git.martin-riedl.de/ffmpeg/build-script";
 
-/// One folder of notices, as `index.json` lists it for the About dialog.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct Notice {
-    /// The folder under `licenses/`.
-    pub folder: String,
-    pub name: String,
-    /// The version or set id.
-    pub version: String,
-    /// An SPDX expression, or a short phrase where there are many.
-    pub licence: String,
-}
-
-#[derive(Serialize)]
-struct Index<'a> {
-    app: &'a str,
-    version: &'a str,
-    notices: &'a [Notice],
-}
-
-/// Writes `licenses/index.json`.
+/// Writes the index of `licenses`.
 pub fn write_index(licenses: &Path, version: &str, notices: &[Notice]) -> Result<()> {
-    let index = Index {
-        app: "Oriel",
-        version,
-        notices,
+    let index = NoticeIndex {
+        app: APP_NAME.into(),
+        version: version.into(),
+        notices: notices.to_vec(),
     };
     fs::write(
-        licenses.join("index.json"),
+        licenses.join(NOTICE_INDEX_FILE),
         format!("{}\n", support::format_json(&index)?),
     )?;
     Ok(())
@@ -129,13 +114,10 @@ fn tool_licence(configuration: &str) -> &'static str {
     }
 }
 
-fn media_tools_text(pin: &oriel_tools::MediaToolsPin, build: &ToolBuild, licence: &str) -> String {
+fn media_tools_text(pin: &MediaToolsPin, build: &ToolBuild, licence: &str) -> String {
     let ffmpeg = source_by_name("ffmpeg");
     let mut text = vec![
-        format!(
-            "ffmpeg and ffprobe {}, in Contents/Resources/media-tools",
-            pin.version
-        ),
+        format!("ffmpeg and ffprobe {MEDIA_TOOLS_VERSION}, in Contents/Resources/media-tools"),
         String::new(),
         "Oriel runs these two programs as separate processes, to read and convert media. \
          They are not linked into Oriel."
@@ -189,13 +171,9 @@ fn read_member(archive: &Path, member: &str) -> Result<String> {
 
 /// `licenses/media-tools/`: the GPL's text and FFmpeg's `LICENSE.md` from the pinned FFmpeg
 /// source release, and the notice above.
-pub fn media_tools(
-    tools: &Path,
-    pin: &oriel_tools::MediaToolsPin,
-    licenses: &Path,
-) -> Result<Notice> {
+pub fn media_tools(tools: &Path, pin: &MediaToolsPin, licenses: &Path) -> Result<Notice> {
     let ffmpeg = source_by_name("ffmpeg");
-    let downloads = libmpv::BuildOptions::default().work.join("downloads");
+    let downloads = support::workspace_downloads();
     let archive = support::download(
         &downloads,
         &Download {
@@ -214,7 +192,7 @@ pub fn media_tools(
             read_member(&archive, &format!("{root}/{file}"))?,
         )?;
     }
-    let build = read_build(&tools.join(oriel_tools::tool_files(pin.platform)[0]))?;
+    let build = read_build(&tools.join(media_tools_files(pin.platform)[0]))?;
     let licence = tool_licence(&build.configuration);
     if !licence.starts_with("GPL-3.0") {
         bail!("the pinned ffmpeg reports {licence}, not the GPL-3.0 its notice is written for");
@@ -226,7 +204,7 @@ pub fn media_tools(
     Ok(Notice {
         folder: "media-tools".into(),
         name: "ffmpeg and ffprobe".into(),
-        version: pin.version.into(),
+        version: MEDIA_TOOLS_VERSION.into(),
         licence: licence.into(),
     })
 }
@@ -235,9 +213,9 @@ pub fn media_tools(
 /// too. Its configuration is `--enable-gpl --enable-version3`, as its README says, so it is
 /// GPL-3.0-or-later; the licence's text comes from the FFmpeg source release as for macOS. The
 /// tools are not run here, since this may be a Mac staging the Windows package.
-pub fn media_tools_windows(pin: &oriel_tools::MediaToolsPin, licenses: &Path) -> Result<Notice> {
+pub fn media_tools_windows(pin: &MediaToolsPin, licenses: &Path) -> Result<Notice> {
     let ffmpeg = source_by_name("ffmpeg");
-    let downloads = libmpv::BuildOptions::default().work.join("downloads");
+    let downloads = support::workspace_downloads();
     let archive = support::download(
         &downloads,
         &Download {
@@ -258,7 +236,7 @@ pub fn media_tools_windows(pin: &oriel_tools::MediaToolsPin, licenses: &Path) ->
     }
     let licence = "GPL-3.0-or-later";
     let mut text = vec![
-        format!("ffmpeg.exe and ffprobe.exe {}, in media-tools", pin.version),
+        format!("ffmpeg.exe and ffprobe.exe {MEDIA_TOOLS_VERSION}, in media-tools"),
         String::new(),
         "Oriel runs these two programs as separate processes, to read and convert media. \
          They are not linked into Oriel."
@@ -291,7 +269,7 @@ pub fn media_tools_windows(pin: &oriel_tools::MediaToolsPin, licenses: &Path) ->
     Ok(Notice {
         folder: "media-tools".into(),
         name: "ffmpeg and ffprobe".into(),
-        version: pin.version.into(),
+        version: MEDIA_TOOLS_VERSION.into(),
         licence: licence.into(),
     })
 }

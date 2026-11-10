@@ -1,10 +1,9 @@
-//! A catalog's connection: Electron Oriel's settings, glazier-core's migration rule, and calls
-//! from GPUI tasks that run in order on the catalog's own thread.
+//! A catalog's connection: Electron Oriel's settings, the migration rule, and calls from other
+//! threads that run in order on the catalog's own thread.
 
 use std::path::PathBuf;
 
 use futures::executor::block_on;
-use gpui_kit::{AppContext as _, TestAppContext};
 use oriel_runtime::Database;
 
 /// A folder of its own under the temp folder, emptied first.
@@ -96,7 +95,7 @@ fn migrations_run_once_each_and_count_in_user_version() {
     assert!(foreign_key.is_err(), "a file needs its root");
     block_on(db.close()).unwrap();
 
-    // An app older than the catalog leaves its version alone, as glazier-core does.
+    // An app older than the catalog leaves its version alone.
     let db = block_on(Database::open(&path, FIRST)).unwrap();
     assert_eq!(user_version(&db), 3);
 }
@@ -123,62 +122,64 @@ fn a_failed_migration_rolls_back_alone_and_the_open_fails() {
     );
 }
 
-#[gpui_kit::test]
-async fn gpui_tasks_call_the_catalog_in_order(cx: &mut TestAppContext) {
-    // The catalog answers from its own thread, so the test scheduler has to be allowed to wait.
-    cx.executor().allow_parking();
-    let path = scratch("gpui").join("catalog.sqlite");
-    let db = cx
-        .background_spawn(Database::open(
-            path,
-            &["CREATE TABLE log (step INTEGER NOT NULL);"],
-        ))
-        .await
-        .unwrap();
+#[test]
+fn calls_reach_the_catalog_in_order() {
+    let path = scratch("ordered").join("catalog.sqlite");
+    let db = block_on(Database::open(
+        path,
+        &["CREATE TABLE log (step INTEGER NOT NULL);"],
+    ))
+    .unwrap();
 
     let inserts: Vec<_> = (0..20)
         .map(|step| {
-            let insert = db.call(move |connection| {
+            db.call(move |connection| {
                 connection.execute("INSERT INTO log (step) VALUES (?1)", [step])?;
                 Ok(connection.last_insert_rowid())
-            });
-            cx.spawn(async move |_| insert.await)
+            })
         })
         .collect();
-    for (step, insert) in inserts.into_iter().enumerate() {
-        assert_eq!(insert.await.unwrap(), step as i64 + 1);
-    }
+    // Awaited from another thread, in reverse: each answer is the place it was asked in.
+    let rows = std::thread::spawn(move || {
+        inserts
+            .into_iter()
+            .rev()
+            .map(|insert| block_on(insert).unwrap())
+            .collect::<Vec<_>>()
+    })
+    .join()
+    .unwrap();
+    assert_eq!(rows, (1..=20).rev().collect::<Vec<i64>>());
 
     // An error and a panic come back to their caller, and the connection carries on.
     let failed =
         db.call(|connection| Ok(connection.execute("INSERT INTO nowhere VALUES (1)", [])?));
     assert!(
-        failed
-            .await
+        block_on(failed)
             .unwrap_err()
             .to_string()
             .contains("no such table")
     );
     let panicked = db.call(|_| -> anyhow::Result<()> { panic!("bad row") });
-    assert_eq!(panicked.await.unwrap_err().to_string(), "panicked: bad row");
+    assert_eq!(
+        block_on(panicked).unwrap_err().to_string(),
+        "panicked: bad row"
+    );
 
-    let steps = cx
-        .background_spawn(db.call(|connection| {
-            let mut statement = connection.prepare("SELECT step FROM log ORDER BY rowid")?;
-            let steps = statement
-                .query_map([], |row| row.get::<_, i64>(0))?
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(steps)
-        }))
-        .await
-        .unwrap();
+    let steps = block_on(db.call(|connection| {
+        let mut statement = connection.prepare("SELECT step FROM log ORDER BY rowid")?;
+        let steps = statement
+            .query_map([], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(steps)
+    }))
+    .unwrap();
     assert_eq!(steps, (0..20).collect::<Vec<i64>>());
 
     let closing = db.clone();
-    closing.close().await.unwrap();
+    block_on(closing.close()).unwrap();
     assert!(
-        db.call(|_| Ok(()))
-            .await
+        block_on(db.call(|_| Ok(())))
             .unwrap_err()
             .to_string()
             .ends_with("is closed")

@@ -1,26 +1,25 @@
 import type { GatherBoxSettings } from "./settings";
-import type { SiteKey } from "./sites";
-import { getGatherSource } from "./source-catalog";
+import { getGatherSource, type SiteKey } from "./source-catalog";
 
-export function shouldIncludeCredentials(
+/** Whether a source's requests carry your browser session cookies. */
+export function requestCredentials(
   payload: { site: SiteKey },
-  settings: GatherBoxSettings
-): boolean {
+  settings: GatherBoxSettings,
+): RequestCredentials {
   if (settings.credentialsMode === "always") {
-    return true;
+    return "include";
   }
 
   if (settings.credentialsMode === "never") {
-    return false;
+    return "omit";
   }
 
-  if (settings.credentialsMode === "perSite") {
-    const choice = settings.credentialsPerSite[payload.site];
+  const choice =
+    settings.credentialsMode === "perSite" ? settings.credentialsPerSite[payload.site] : undefined;
 
-    return choice
-      ? choice === "include"
-      : (getGatherSource(payload.site)?.includeCredentialsByDefault ?? false);
+  if (choice) {
+    return choice;
   }
 
-  return getGatherSource(payload.site)?.includeCredentialsByDefault ?? false;
+  return getGatherSource(payload.site)?.includeCredentialsByDefault ? "include" : "omit";
 }

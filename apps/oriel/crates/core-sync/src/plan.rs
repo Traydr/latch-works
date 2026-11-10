@@ -1,6 +1,6 @@
 //! Planning, from `plan-sync.ts`: the source folder scanned, its hashes taken from the cache or
 //! the files as the hash mode asks, and paired with Pane View's snapshot into uploads, updates,
-//! keeps and deletes (`media-index`'s `createSyncPlan`, in `oriel-core-index`).
+//! keeps and deletes ([`crate::sync_plan`]).
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -8,24 +8,20 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use anyhow::Context as _;
-use oriel_core_domain::{MediaItem, pair_sync_paths};
-use oriel_core_index::{
-    HashArchiveItems, RemoteEntrySnapshot, ScanArchive, ScanArchiveProgress, SkippedArchiveEntry,
-    SyncPlanAction, SyncPlanItem, create_sync_plan,
-};
+use oriel_core_domain::{MediaItem, format, pair_sync_paths};
 use oriel_runtime::{CancelToken, Cancelled};
-use serde::{Deserialize, Serialize};
 
 use crate::api::PaneViewClient;
-use crate::events::{
-    Observer, PlanCounts, RunAction, RunEvent, RunStatus, RunSummary, emit, status,
+use crate::events::{Observer, RunEvent, RunSummary, emit, status};
+use crate::hash_cache::load_hash_cache;
+use crate::rust_only::PLAN_HASH_CONCURRENCY;
+use crate::scan::{HashArchiveItems, ScanArchive, ScanArchiveProgress, SkippedArchiveEntry};
+use crate::sync_plan::{
+    PlanCounts, RemoteEntrySnapshot, SyncPlanAction, SyncPlanItem, create_sync_plan,
 };
-use crate::format::format_count;
-use crate::hash_cache::{HashCache, load_hash_cache};
 
 /// Which files a plan hashes, `HashMode`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum HashMode {
     /// Every file without a cached hash.
     All,
@@ -40,51 +36,26 @@ pub enum HashMode {
 pub struct LockstepPlan {
     pub counts: PlanCounts,
     pub items: Vec<SyncPlanItem>,
-    pub skipped: usize,
     pub skipped_entries: Vec<SkippedArchiveEntry>,
     pub source_root: PathBuf,
     pub total_bytes: u64,
     pub total_files: usize,
 }
 
-impl LockstepPlan {
-    /// The bytes a push would send: the local sizes of the uploads and updates.
-    pub fn push_bytes(&self) -> u64 {
-        self.items
-            .iter()
-            .filter(|item| matches!(item.action, SyncPlanAction::Upload | SyncPlanAction::Update))
-            .filter_map(|item| item.local.as_ref().map(|local| local.size))
-            .sum()
-    }
+/// A plan, and the summary its run ended with.
+#[derive(Clone, Debug)]
+pub struct PlanResult {
+    pub plan: LockstepPlan,
+    pub summary: RunSummary,
 }
 
 /// `PlanSyncOptions`, less the snapshot file the CLI reads, which Sync never uses.
 #[derive(Clone, Debug)]
 pub struct PlanOptions {
     pub source_root: PathBuf,
-    /// The cache's version folder, `cache_root(DataRoot::hash_cache())`.
-    pub hash_cache_root: PathBuf,
+    /// The hash cache's folder, `DataRoot::hash_cache()`.
+    pub hash_cache: PathBuf,
     pub hash_mode: HashMode,
-    pub directory_concurrency: Option<usize>,
-    /// How many files the scan reads, and the plan hashes, at once. Unset, the scan reads 4 at
-    /// once, as lockstep-core's does, and the plan hashes [`PLAN_HASH_CONCURRENCY`].
-    pub file_concurrency: Option<usize>,
-}
-
-/// How many files a plan hashes at once when the options leave it unset: 16, where Electron
-/// Oriel's lockstep-core hashes 4 (owner's decision 22). Phase 0 measured cold hashing about 2.5
-/// times faster at 16 on this Mac's SSD. The hashes, and the cache that keeps them, are the same
-/// at any width.
-pub const PLAN_HASH_CONCURRENCY: usize = 16;
-
-pub(crate) fn counts_of(items: &[SyncPlanItem]) -> PlanCounts {
-    let count = |action| items.iter().filter(|item| item.action == action).count();
-    PlanCounts {
-        delete: count(SyncPlanAction::Delete),
-        keep: count(SyncPlanAction::Keep),
-        update: count(SyncPlanAction::Update),
-        upload: count(SyncPlanAction::Upload),
-    }
 }
 
 /// `planSync`: compares the source folder with Pane View's snapshot (or with nothing, without a
@@ -94,18 +65,7 @@ pub async fn plan_sync(
     client: Option<&PaneViewClient>,
     observer: Option<&Observer>,
     cancel: &CancelToken,
-) -> anyhow::Result<LockstepPlan> {
-    Ok(plan_with_cache(options, client, observer, cancel).await?.0)
-}
-
-/// [`plan_sync`], with the hash cache it saved when the plan used one, so a push that plans
-/// first need not read the file it was just written to.
-pub(crate) async fn plan_with_cache(
-    options: PlanOptions,
-    client: Option<&PaneViewClient>,
-    observer: Option<&Observer>,
-    cancel: &CancelToken,
-) -> anyhow::Result<(LockstepPlan, Option<HashCache>)> {
+) -> anyhow::Result<PlanResult> {
     cancel.check()?;
     let mut remote = Vec::new();
     if let Some(client) = client {
@@ -115,7 +75,7 @@ pub(crate) async fn plan_with_cache(
             observer,
             format!(
                 "Remote snapshot loaded ({} entries).",
-                format_count(remote.len())
+                format::count(remote.len())
             ),
         );
     }
@@ -125,7 +85,7 @@ pub(crate) async fn plan_with_cache(
     let observer_for_scan = observer.cloned();
     let cancel_for_scan = cancel.clone();
     let remote_for_scan = remote.clone();
-    let (local, scan, cache) = tokio::task::spawn_blocking(move || {
+    let (local, scan) = tokio::task::spawn_blocking(move || {
         scan_and_hash(
             &options,
             &remote_for_scan,
@@ -138,24 +98,23 @@ pub(crate) async fn plan_with_cache(
     cancel.check()?;
 
     let plan = create_sync_plan(&local, &remote);
-    let counts = counts_of(&plan.items);
     let result = LockstepPlan {
-        counts,
+        counts: plan.counts,
         items: plan.items,
-        skipped: scan.skipped,
         skipped_entries: scan.skipped_entries,
         source_root: scan.source_root,
         total_bytes: local.iter().map(|item| item.size).sum(),
         total_files: local.len(),
     };
-    let mut summary = RunSummary::now(RunAction::Plan, RunStatus::Completed);
-    summary.plan_counts = Some(counts);
-    emit(observer, RunEvent::Complete(summary));
-    Ok((result, cache))
+    let summary = RunSummary::planned(result.counts);
+    emit(observer, RunEvent::Complete(summary.clone()));
+    Ok(PlanResult {
+        plan: result,
+        summary,
+    })
 }
 
 struct ScanOutcome {
-    skipped: usize,
     skipped_entries: Vec<SkippedArchiveEntry>,
     source_root: PathBuf,
 }
@@ -165,24 +124,17 @@ fn scan_and_hash(
     remote: &[RemoteEntrySnapshot],
     observer: Option<&Observer>,
     cancel: &CancelToken,
-) -> anyhow::Result<(Vec<MediaItem>, ScanOutcome, Option<HashCache>)> {
+) -> anyhow::Result<(Vec<MediaItem>, ScanOutcome)> {
     let coalescer = ProgressCoalescer::new(observer);
     let on_progress = |progress| coalescer.report(progress);
-    let mut scan = ScanArchive::new(&options.source_root)
+    let scanned = ScanArchive::new(&options.source_root)
         .cancel_on(cancel)
-        .on_progress(&on_progress);
-    if let Some(concurrency) = options.directory_concurrency {
-        scan = scan.directory_concurrency(concurrency);
-    }
-    if let Some(concurrency) = options.file_concurrency {
-        scan = scan.file_concurrency(concurrency);
-    }
-    let scanned = scan.run()?;
+        .on_progress(&on_progress)
+        .run()?;
     let mut local = scanned.items;
-    let mut saved = None;
 
     if options.hash_mode != HashMode::None {
-        let loaded = load_hash_cache(&scanned.source_root, &options.hash_cache_root);
+        let loaded = load_hash_cache(&scanned.source_root, &options.hash_cache);
         if let Some(warning) = loaded.warning {
             status(observer, format!("Warning: {warning}"));
         }
@@ -194,8 +146,8 @@ fn scan_and_hash(
             observer,
             format!(
                 "Hash cache: {} hit(s); {} file(s) require hashing.",
-                format_count(hits),
-                format_count(hash_paths.len())
+                format::count(hits),
+                format::count(hash_paths.len())
             ),
         );
         if !hash_paths.is_empty() {
@@ -203,19 +155,18 @@ fn scan_and_hash(
             local = HashArchiveItems::new(&scanned.source_root, local)
                 .fingerprints(&scanned.fingerprints)
                 .paths(&paths)
-                .file_concurrency(options.file_concurrency.unwrap_or(PLAN_HASH_CONCURRENCY))
+                .file_concurrency(PLAN_HASH_CONCURRENCY)
                 .cancel_on(cancel)
                 .on_progress(&on_progress)
                 .run()?;
         }
         cache.update_from_items(&local, &scanned.fingerprints);
-        cache.retain_items(&local);
-        match cache.save() {
-            Ok(()) => saved = Some(cache),
-            Err(error) => status(
+        cache.retain(local.iter().map(|item| item.path.as_str()));
+        if let Err(error) = cache.save() {
+            status(
                 observer,
                 format!("Warning: hash cache could not be saved: {error}"),
-            ),
+            );
         }
     }
     coalescer.flush();
@@ -223,27 +174,30 @@ fn scan_and_hash(
     Ok((
         local,
         ScanOutcome {
-            skipped: scanned.skipped,
             skipped_entries: scanned.skipped_entries,
             source_root: scanned.source_root,
         },
-        saved,
     ))
 }
 
-/// `selectPlanningHashPaths`: the files a plan hashes, in the local order. `None` hashes nothing.
-pub fn select_planning_hash_paths(
+/// `selectPlanningHashPaths`: the files a plan hashes, each once, in the local order. `None`
+/// hashes nothing.
+pub(crate) fn select_planning_hash_paths(
     mode: HashMode,
     local: &[MediaItem],
     remote: &[RemoteEntrySnapshot],
 ) -> Vec<String> {
     match mode {
         HashMode::None => Vec::new(),
-        HashMode::All => local
-            .iter()
-            .filter(|item| item.sha256.is_none())
-            .map(|item| item.path.clone())
-            .collect(),
+        HashMode::All => {
+            let mut seen = HashSet::new();
+            local
+                .iter()
+                .filter(|item| item.sha256.is_none())
+                .filter(|item| seen.insert(item.path.as_str()))
+                .map(|item| item.path.clone())
+                .collect()
+        }
         HashMode::RemoteAware => {
             let local_paths: Vec<&str> = local.iter().map(|item| item.path.as_str()).collect();
             let remote_paths: Vec<&str> = remote.iter().map(|entry| entry.path.as_str()).collect();
@@ -271,39 +225,37 @@ pub fn select_planning_hash_paths(
     }
 }
 
-/// `selectChangedItems`: everything but the keeps.
-pub fn select_changed_items(items: &[SyncPlanItem]) -> Vec<&SyncPlanItem> {
+/// `plannedChanges`: every item that is not a keep, in plan order.
+pub(crate) fn planned_changes(items: &[SyncPlanItem]) -> Vec<&SyncPlanItem> {
     items
         .iter()
         .filter(|item| item.action != SyncPlanAction::Keep)
         .collect()
 }
 
-/// `selectUploadUpdateItems`: the uploads and updates, the first `max_changes` of them when
-/// capped, with how many the cap left out.
-pub fn select_upload_update_items<'a>(
-    changed: &[&'a SyncPlanItem],
+/// `plannedUploads`: the uploads and updates, the first `max_changes` of them when capped, with
+/// how many the cap left out.
+pub(crate) fn planned_uploads(
+    items: &[SyncPlanItem],
     max_changes: Option<usize>,
-) -> (Vec<&'a SyncPlanItem>, usize) {
+) -> (Vec<&SyncPlanItem>, usize) {
     cap(
-        changed
+        items
             .iter()
-            .copied()
             .filter(|item| matches!(item.action, SyncPlanAction::Upload | SyncPlanAction::Update))
             .collect(),
         max_changes,
     )
 }
 
-/// `selectDeleteItems`: the deletes, capped as uploads are.
-pub fn select_delete_items<'a>(
-    changed: &[&'a SyncPlanItem],
+/// `plannedDeletes`.
+pub(crate) fn planned_deletes(
+    items: &[SyncPlanItem],
     max_changes: Option<usize>,
-) -> (Vec<&'a SyncPlanItem>, usize) {
+) -> (Vec<&SyncPlanItem>, usize) {
     cap(
-        changed
+        items
             .iter()
-            .copied()
             .filter(|item| item.action == SyncPlanAction::Delete)
             .collect(),
         max_changes,

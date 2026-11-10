@@ -1,18 +1,16 @@
-//! Fetches the prebuilt native libraries in [`pins`] into `apps/oriel/.vendor/<name>/<id>/`,
-//! git-ignored, with `.vendor/<name>/current` pointing at the newest:
+//! Fetches the prebuilt native libraries in [`crate::pins`] into
+//! `apps/oriel/.vendor/<name>/<id>/`, git-ignored, with `.vendor/<name>/current` pointing at the
+//! newest:
 //!
 //! ```text
 //! cargo run -p xtask -- vendor [libvips] [libavif]
 //! ```
 //!
-//! Each package must hash to its pin before it is unpacked. A set holds its dylibs, the licence
-//! files its packages carry, `manifest.json` (versions, URLs, hashes, licences, each library's
-//! links and minimum macOS) and `SHA256SUMS`, which a later run and the bundle check the files
-//! against. A relocated set's libraries are stripped of their local symbols, as libmpv's are,
+//! Each package must hash to its pin before it is unpacked. A set ([`crate::set`]) holds its
+//! dylibs, the licence files its packages carry, and a manifest of versions, URLs, hashes,
+//! licences, each library's links and minimum macOS. A relocated set's libraries are stripped of their local symbols, as libmpv's are,
 //! renamed `@rpath/<file>` and find each other through `@loader_path`, so nothing in it names
 //! Homebrew's prefix; the command refuses a set where anything still does.
-
-pub mod pins;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,19 +19,12 @@ use std::time::Instant;
 use anyhow::{Context as _, Result, bail};
 use serde::Serialize;
 
-use crate::libmpv::is_intact;
+use crate::pins::{Layout, Package, SETS, VENDOR_REVISION, VendorSet};
+use crate::set::{self, Staging};
 use crate::support::{
     self, Download, Step, compare_versions, format_json, is_system, log, megabytes, read_macho,
     sha256_file, sha256_text,
 };
-use pins::{Layout, Package, SETS, VENDOR_REVISION, VendorSet};
-
-const CHECKSUMS_FILE: &str = "SHA256SUMS";
-
-/// `apps/oriel/.vendor`, one folder per set name.
-pub fn vendor_root() -> PathBuf {
-    support::workspace().join(".vendor")
-}
 
 /// A fetched set: which one, its id and its folder.
 pub struct Vendored {
@@ -310,26 +301,16 @@ fn set_mode(path: &Path, mode: u32) -> Result<()> {
 
 fn copy_licences(set: &'static VendorSet, unpacked: &Path, out: &Path) -> Result<()> {
     for package in set.packages {
-        let folder = out.join("licenses").join(package.name);
-        fs::create_dir_all(&folder)?;
         for file in package.licence_files {
-            let from = unpacked.join(package.name).join(file);
-            let name = Path::new(file)
-                .file_name()
-                .context("a licence file has no name")?;
-            fs::copy(&from, folder.join(name))
-                .with_context(|| format!("copying {}", from.display()))?;
+            set::copy_licence(out, package.name, &unpacked.join(package.name).join(file))?;
         }
     }
     for notice in set.notices {
-        let from = unpacked.join("notices").join(notice.member);
-        let name = Path::new(notice.member)
-            .file_name()
-            .context("a notice has no name")?;
-        let folder = out.join("licenses").join(notice.package);
-        fs::create_dir_all(&folder)?;
-        fs::copy(&from, folder.join(name))
-            .with_context(|| format!("copying {}", from.display()))?;
+        set::copy_licence(
+            out,
+            notice.package,
+            &unpacked.join("notices").join(notice.member),
+        )?;
     }
     Ok(())
 }
@@ -338,16 +319,16 @@ fn copy_licences(set: &'static VendorSet, unpacked: &Path, out: &Path) -> Result
 /// The bundle calls this; it is quick once the set exists.
 pub fn ensure(set: &'static VendorSet) -> Result<Vendored> {
     let id = set_id(set);
-    let root = vendor_root().join(set.name);
+    let root = oriel_core_paths::vendor_root().join(set.name);
     let folder = root.join(&id);
 
-    if is_intact(&folder, &entry_path(set)) {
+    if set::is_intact(&folder, &entry_path(set)) {
         log(format!(
             "The {} set {id} is in place: {}",
             set.name,
             folder.display()
         ));
-        support::point_current_at(&root, &id)?;
+        set::point_current_at(&root, &id)?;
         return Ok(Vendored { set, id, folder });
     }
     if !support::is_mac_arm64() {
@@ -356,9 +337,11 @@ pub fn ensure(set: &'static VendorSet) -> Result<Vendored> {
 
     let started = Instant::now();
     log(format!("Fetching the {} set {id}", set.name));
-    let workspace = support::workspace();
-    let downloads = workspace.join("target").join("vendor").join("downloads");
-    let work = workspace.join("target").join("vendor").join(&id);
+    let downloads = support::workspace_downloads();
+    let work = oriel_core_paths::workspace()
+        .join("target")
+        .join("vendor")
+        .join(&id);
     if work.exists() {
         fs::remove_dir_all(&work)?;
     }
@@ -414,11 +397,8 @@ pub fn ensure(set: &'static VendorSet) -> Result<Vendored> {
         })?;
     }
 
-    let partial = root.join(format!("{id}.partial"));
-    if partial.exists() {
-        fs::remove_dir_all(&partial)?;
-    }
-    fs::create_dir_all(&partial)?;
+    let staging = Staging::begin(&root, &id)?;
+    let partial = staging.folder().to_path_buf();
     let libraries = match set.layout {
         Layout::PackageLib => assemble_package_lib(set, &work, &partial)?,
         Layout::Relocated => assemble_relocated(set, &work, &partial)?,
@@ -473,22 +453,15 @@ pub fn ensure(set: &'static VendorSet) -> Result<Vendored> {
             })
             .collect(),
     };
-    fs::write(partial.join("manifest.json"), format_json(&manifest)?)?;
     let prefix = match set.layout {
         Layout::PackageLib => "lib/",
         Layout::Relocated => "",
     };
-    let sums: String = libraries
+    let sums: Vec<(String, String)> = libraries
         .iter()
-        .map(|library| format!("{}  {prefix}{}\n", library.sha256, library.file))
+        .map(|library| (library.sha256.clone(), format!("{prefix}{}", library.file)))
         .collect();
-    fs::write(partial.join(CHECKSUMS_FILE), sums)?;
-
-    if folder.exists() {
-        fs::remove_dir_all(&folder)?;
-    }
-    fs::rename(&partial, &folder)?;
-    support::point_current_at(&root, &id)?;
+    let folder = staging.finish(&format_json(&manifest)?, &sums)?;
     fs::remove_dir_all(&work)?;
 
     log(format!(
@@ -562,24 +535,23 @@ mod tests {
     fn bottle_placeholders_and_rpaths_name_set_members() {
         assert_eq!(
             member_of(
-                &pins::LIBAVIF,
+                &crate::pins::LIBAVIF,
                 "@@HOMEBREW_PREFIX@@/opt/aom/lib/libaom.3.dylib"
             )
             .unwrap(),
             Some("libaom.3.dylib".to_owned())
         );
         assert_eq!(
-            member_of(&pins::LIBAVIF, "/usr/lib/libSystem.B.dylib").unwrap(),
+            member_of(&crate::pins::LIBAVIF, "/usr/lib/libSystem.B.dylib").unwrap(),
             None
         );
-        assert!(member_of(&pins::LIBAVIF, "/opt/homebrew/opt/aom/lib/libaom.3.dylib").is_err());
-        assert!(member_of(&pins::LIBAVIF, "@rpath/libjxl.0.dylib").is_err());
-    }
-
-    #[test]
-    fn each_set_has_its_own_id() {
-        let ids: Vec<String> = SETS.iter().map(|set| set_id(set)).collect();
-        assert!(ids[0].starts_with("vips-8.18.7-sharp-1.3.4-"), "{}", ids[0]);
-        assert!(ids[1].starts_with("avif-1.4.2-aom-3.15.2-"), "{}", ids[1]);
+        assert!(
+            member_of(
+                &crate::pins::LIBAVIF,
+                "/opt/homebrew/opt/aom/lib/libaom.3.dylib"
+            )
+            .is_err()
+        );
+        assert!(member_of(&crate::pins::LIBAVIF, "@rpath/libjxl.0.dylib").is_err());
     }
 }

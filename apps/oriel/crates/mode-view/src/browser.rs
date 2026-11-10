@@ -1,9 +1,8 @@
-//! What the gallery shows for a folder, from `media-domain`'s rules through `oriel-core-domain`:
-//! its subfolders unless the listing is recursive, then its comics in comic mode or its media,
-//! as Electron Oriel's `buildBrowserEntryCollection` and `utils/comics.ts` make them.
+//! What the gallery shows for a folder, through `oriel-core-domain`'s rules: its subfolders unless
+//! the listing is recursive, then its comics in comic mode or its media.
 //!
-//! Comics group absolute paths, so they take Electron Oriel's absolute-path adapter
-//! ([`AbsoluteComicPaths`]) rather than the archive-path one Pane View uses.
+//! Comics group absolute paths, so they take an absolute-path adapter ([`AbsoluteComicPaths`])
+//! rather than the archive-path one Pane View uses.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -100,7 +99,7 @@ impl Tile {
     }
 }
 
-/// Electron Oriel's `absolutePathComicAdapter`.
+/// Comic folders from absolute OS paths.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AbsoluteComicPaths;
 
@@ -129,13 +128,12 @@ impl ComicPathAdapter for AbsoluteComicPaths {
     }
 }
 
-/// The items in the order the settings give, as `sortMediaItems` sorts them.
+/// The items in the order the settings give.
 pub fn sort_media(items: &[MediaEntry], mode: GallerySortMode, seed: i64) -> Vec<MediaEntry> {
     sort_media_items(items.to_vec(), mode, seed)
 }
 
-/// `buildComicEntries` then `sortComicEntries`: the folders of stills under `root`, not `root`
-/// itself, ordered by their covers.
+/// The folders of stills under `root`, not `root` itself, ordered by their covers.
 pub fn build_comics(
     items: &[MediaEntry],
     root: Option<&str>,
@@ -247,26 +245,29 @@ mod tests {
     use super::*;
     use crate::listing::MediaKind;
 
+    fn entry(path: &str, kind: MediaKind, modified_ms: f64) -> MediaEntry {
+        let name = path.rsplit('/').next().unwrap();
+        let extension = oriel_core_domain::get_extension(name);
+        MediaEntry::new(Path::new(path), name, &extension, kind, 1, modified_ms)
+    }
+
     fn still(path: &str, modified_ms: f64) -> MediaEntry {
-        MediaEntry::new(Path::new(path), MediaKind::Image, 1, modified_ms)
+        entry(path, MediaKind::Image, modified_ms)
     }
 
     fn folder(path: &str) -> FolderNode {
         FolderNode {
             path: path.into(),
-            parent_path: "/r".into(),
-            parent_id: None,
             name: Path::new(path)
                 .file_name()
                 .unwrap()
                 .to_string_lossy()
                 .into_owned(),
-            has_children: true,
         }
     }
 
     #[test]
-    fn the_absolute_path_adapter_reads_folders_as_electron_oriel_does() {
+    fn the_absolute_path_adapter_reads_absolute_folders() {
         let adapter = AbsoluteComicPaths;
         assert_eq!(
             adapter.display_name_from_path("/r/My_Comic-01/"),
@@ -289,7 +290,7 @@ mod tests {
             still("/r/alpha/10.jpg", 3.),
             still("/r/alpha/1.jpg", 4.),
             still("/r/beta_two/page.png", 5.),
-            MediaEntry::new(Path::new("/r/videos/clip.mp4"), MediaKind::Video, 1, 6.),
+            entry("/r/videos/clip.mp4", MediaKind::Video, 6.),
         ];
         let comics = build_comics(&items, Some("/r"), GallerySortMode::NameAsc, 1);
         let names: Vec<&str> = comics.iter().map(|comic| comic.name().as_ref()).collect();

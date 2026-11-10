@@ -1,7 +1,6 @@
 import { inArray, lt, sql } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { loginThrottleAttempts } from "../db/schema";
-import { createLoginThrottle, type LoginThrottleStore } from "./login-throttle-core";
 
 type ThrottleExecutor = Pick<Database, "insert">;
 
@@ -48,45 +47,80 @@ function buildLoginThrottleUpsert(
     .returning({ count: loginThrottleAttempts.count });
 }
 
-function createDatabaseLoginThrottleStore(database: Database): LoginThrottleStore {
-  return {
-    async clear(keys) {
-      await database.delete(loginThrottleAttempts).where(inArray(loginThrottleAttempts.key, keys));
-    },
+const MAX_FAILED_ATTEMPTS = 5;
 
-    async reserve(keys, now, expiresAt) {
-      const currentTime = new Date(now);
-      const nextExpiry = new Date(expiresAt);
+const WINDOW_MS = 5 * 60 * 1000;
 
-      // Prune before the transaction, not inside it. A global delete holds locks
-      // in scan order, so folding it into the upsert transaction would let two
-      // concurrent login attempts acquire row locks in opposite orders.
-      await database
-        .delete(loginThrottleAttempts)
-        .where(lt(loginThrottleAttempts.expiresAt, currentTime));
+function throttleKeys(ip: string, username: string): string[] {
+  const user = username.trim().toLowerCase();
 
-      return database.transaction(async (tx) => {
-        const counts: number[] = [];
-
-        for (const key of keys) {
-          // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stable lock order prevents concurrent login transactions from deadlocking.
-          const [row] = await buildLoginThrottleUpsert(tx, key, currentTime, nextExpiry);
-
-          if (!row) {
-            throw new Error(`login throttle upsert returned no row for ${key}`);
-          }
-
-          counts.push(row.count);
-        }
-
-        return counts;
-      });
-    },
-  };
+  return [`${ip}:${user}`, `user:${user}`];
 }
 
-export function createDatabaseLoginThrottle(database: Database, now?: () => number) {
-  return createLoginThrottle({ now, store: createDatabaseLoginThrottleStore(database) });
+/**
+ * Atomically counts one attempt against every key and returns each key's
+ * count within its current window, including this attempt. Concurrent calls
+ * each observe a distinct count, so a burst cannot all read the same
+ * pre-attempt total.
+ */
+async function reserveAttempts(
+  database: Database,
+  keys: string[],
+  currentTime: Date,
+  nextExpiry: Date,
+): Promise<number[]> {
+  // Prune before the transaction, not inside it. A global delete holds locks
+  // in scan order, so folding it into the upsert transaction would let two
+  // concurrent login attempts acquire row locks in opposite orders.
+  await database
+    .delete(loginThrottleAttempts)
+    .where(lt(loginThrottleAttempts.expiresAt, currentTime));
+
+  return database.transaction(async (tx) => {
+    const counts: number[] = [];
+
+    for (const key of keys) {
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stable lock order prevents concurrent login transactions from deadlocking.
+      const [row] = await buildLoginThrottleUpsert(tx, key, currentTime, nextExpiry);
+
+      if (!row) {
+        throw new Error(`login throttle upsert returned no row for ${key}`);
+      }
+
+      counts.push(row.count);
+    }
+
+    return counts;
+  });
+}
+
+export function createDatabaseLoginThrottle(database: Database, now: () => number = Date.now) {
+  return {
+    async clearLoginThrottle(ip: string, username: string): Promise<void> {
+      await database
+        .delete(loginThrottleAttempts)
+        .where(inArray(loginThrottleAttempts.key, throttleKeys(ip, username)));
+    },
+
+    /**
+     * Counts an attempt before the credentials are checked and reports whether
+     * it may proceed. Every attempt counts as a failure until a successful
+     * sign-in clears the buckets, so parallel guesses cannot slip past the
+     * limit between a check and a later write.
+     */
+    async reserveLoginAttempt(ip: string, username: string): Promise<boolean> {
+      const currentTime = now();
+
+      const counts = await reserveAttempts(
+        database,
+        throttleKeys(ip, username),
+        new Date(currentTime),
+        new Date(currentTime + WINDOW_MS),
+      );
+
+      return counts.every((count) => count <= MAX_FAILED_ATTEMPTS);
+    },
+  };
 }
 
 const sharedLoginThrottle = createDatabaseLoginThrottle(db);

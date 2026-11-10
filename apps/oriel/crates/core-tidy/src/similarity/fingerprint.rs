@@ -1,28 +1,43 @@
-//! A file's fingerprint, as `glazier-core/src/similarity/fingerprint.ts` makes and stores it: a
-//! perceptual hash for a still, five frames' for anything that moves.
+//! A file's fingerprint: a perceptual hash for a still, five frames' for anything that moves,
+//! stored in the catalog's `fingerprint` column in the text form Electron Oriel's catalogs hold.
 
 use std::{error::Error, fmt, path::Path, time::Duration};
 
+use oriel_core_domain::number::{js_number, js_round, to_fixed};
 use oriel_runtime::CancelToken;
 use oriel_tools::{ToolError, ToolRun};
+use oriel_vips::{Vips, VipsError};
 
-use super::{
-    phash::{Hash64, PHASH_INPUT_SIZE, perceptual_hash},
-    vips::{Vips, VipsError},
-};
+use super::phash::{Hash64, PHASH_INPUT_SIZE, perceptual_hash};
+
+/// Bumped when prints are made differently, so the catalog makes the old ones again.
+pub const FINGERPRINT_VERSION: i64 = 1;
+
+/// How a still's stored print starts; a moving picture's starts `m:`.
+const STILL_PREFIX: &str = "s:";
+
+/// Whether a stored print is a still's, the only kind detail prints are made for.
+pub fn is_still_print(stored: &str) -> bool {
+    stored.starts_with(STILL_PREFIX)
+}
+
+/// [`is_still_print`] as a SQL condition on the column `column`.
+pub fn still_print_sql(column: &str) -> String {
+    format!("{column} LIKE '{STILL_PREFIX}%'")
+}
 
 /// A video is sampled at these points of its duration; an animation at the same share of its
 /// frames' time.
 pub const SAMPLE_POSITIONS: [f64; 5] = [0.1, 0.3, 0.5, 0.7, 0.9];
 
-/// How long ffmpeg may take to hand back one frame, as glazier-core allows.
+/// How long ffmpeg may take to hand back one frame.
 pub(super) const FRAME_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// A still's fingerprint, or five frames' for anything that moves.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Fingerprint {
     Still(Hash64),
-    /// `duration_ms` is a JavaScript number in glazier-core, so it stays an f64 here.
+    /// Stored as a JavaScript number, so prints made before match the ones made now.
     Motion {
         duration_ms: f64,
         frames: Vec<Hash64>,
@@ -33,12 +48,12 @@ pub enum Fingerprint {
 impl fmt::Display for Fingerprint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Fingerprint::Still(hash) => write!(f, "s:{hash}"),
+            Fingerprint::Still(hash) => write!(f, "{STILL_PREFIX}{hash}"),
             Fingerprint::Motion {
                 duration_ms,
                 frames,
             } => {
-                write!(f, "m:{}:", js_integer(js_round(*duration_ms)))?;
+                write!(f, "m:{}:", to_fixed(js_round(*duration_ms), 0))?;
                 for (index, frame) in frames.iter().enumerate() {
                     if index > 0 {
                         f.write_str(".")?;
@@ -52,9 +67,9 @@ impl fmt::Display for Fingerprint {
 }
 
 impl Fingerprint {
-    /// Reads what [`fmt::Display`] writes. `None` where glazier-core's `parseFingerprint` throws.
+    /// Reads what [`fmt::Display`] writes; `None` for a malformed print.
     pub fn parse(stored: &str) -> Option<Fingerprint> {
-        if let Some(hash) = stored.strip_prefix("s:") {
+        if let Some(hash) = stored.strip_prefix(STILL_PREFIX) {
             return Hash64::parse(hash).map(Fingerprint::Still);
         }
         let mut parts = stored.split(':');
@@ -67,7 +82,7 @@ impl Fingerprint {
             .map(Hash64::parse)
             .collect::<Option<Vec<_>>>()?;
         Some(Fingerprint::Motion {
-            duration_ms: js_number(duration),
+            duration_ms: js_number(duration).unwrap_or(f64::NAN),
             frames,
         })
     }
@@ -155,8 +170,9 @@ pub fn fingerprint_animation(
     })
 }
 
-/// Fingerprints a video from single frames ffmpeg decodes at the sample positions, with
-/// glazier-core's arguments and its timeout for each frame, plus one decoding thread. FFmpeg's
+/// Fingerprints a video from single frames ffmpeg decodes at the sample positions, with the
+/// arguments Electron Oriel's prints were made with and a timeout for each frame, plus one
+/// decoding thread. FFmpeg's
 /// decoders give the same frame whatever their thread count; a threaded one also decodes frames
 /// past the one asked for, which cost a quarter of these runs' CPU on the fixture's videos.
 pub fn fingerprint_video(
@@ -210,7 +226,7 @@ pub fn video_frame_pixels(
             "-threads",
             "1",
             "-ss",
-            &to_fixed_3(seconds),
+            &to_fixed(seconds, 3),
             "-i",
         ])
         .arg(path)
@@ -254,72 +270,6 @@ pub(super) fn hash_of(pixels: &[u8]) -> Result<Hash64, FingerprintError> {
     })
 }
 
-/// `Math.round`: halves round up, toward positive infinity.
-fn js_round(value: f64) -> f64 {
-    let floor = value.floor();
-    if value - floor >= 0.5 {
-        floor + 1.0
-    } else {
-        floor
-    }
-}
-
-/// An integral number as JavaScript prints it.
-fn js_integer(value: f64) -> String {
-    if value.is_nan() {
-        "NaN".to_owned()
-    } else if value.is_infinite() {
-        if value > 0.0 { "Infinity" } else { "-Infinity" }.to_owned()
-    } else if value == 0.0 {
-        // `-0` prints as `0`.
-        "0".to_owned()
-    } else {
-        format!("{value:.0}")
-    }
-}
-
-/// `Number(text)` for the decimal forms a stored duration takes: blank is 0, junk is NaN.
-fn js_number(text: &str) -> f64 {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        0.0
-    } else {
-        trimmed.parse().unwrap_or(f64::NAN)
-    }
-}
-
-/// `value.toFixed(3)` for a non-negative value: the exact binary value rounded to three decimals,
-/// a tie going up, where Rust's formatting would round a tie to even.
-pub(super) fn to_fixed_3(value: f64) -> String {
-    // Eighty decimals hold every bit of any value from 2⁻²⁷ up, and anything smaller is 0.000.
-    let exact = format!("{value:.80}");
-    let (whole, fraction) = exact.split_once('.').unwrap_or((&exact, ""));
-    let mut digits: Vec<u8> = whole.bytes().chain(fraction.bytes().take(3)).collect();
-    if fraction
-        .as_bytes()
-        .get(3)
-        .is_some_and(|&digit| digit >= b'5')
-    {
-        let mut index = digits.len();
-        loop {
-            if index == 0 {
-                digits.insert(0, b'1');
-                break;
-            }
-            index -= 1;
-            if digits[index] == b'9' {
-                digits[index] = b'0';
-            } else {
-                digits[index] += 1;
-                break;
-            }
-        }
-    }
-    let split = digits.len() - 3;
-    let text = String::from_utf8_lossy(&digits).into_owned();
-    format!("{}.{}", &text[..split], &text[split..])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -358,15 +308,5 @@ mod tests {
             [0, 2, 3, 4, 4]
         );
         assert_eq!(sampled_pages(&[]), [0; 5]);
-    }
-
-    #[test]
-    fn seek_times_round_like_to_fixed() {
-        assert_eq!(to_fixed_3(0.3), "0.300");
-        assert_eq!(to_fixed_3(2.7), "2.700");
-        // 0.0625 is exact in binary, so it is a true tie: toFixed takes the larger.
-        assert_eq!(to_fixed_3(0.0625), "0.063");
-        assert_eq!(to_fixed_3(9.9996), "10.000");
-        assert_eq!(to_fixed_3(0.0), "0.000");
     }
 }

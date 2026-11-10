@@ -1,5 +1,6 @@
-//! `ORIEL_SYNC_CHECK` sets Sync up for a check in a real window, without a server: this Mac allows
-//! no scripted input, and the plan tree, the run panel and the log otherwise need the local stack.
+//! What a launch asks of Sync for a check: `ORIEL_SYNC_PLAN=1` plans the active profile at start,
+//! and `ORIEL_SYNC_CHECK` sets Sync up in a real window without a server: the plan tree,
+//! the run panel and the log otherwise need the local stack.
 //! Everything here is made up on the spot and stays in this process: nothing goes over the network,
 //! and no file is read or written except the check profile in the run's own data folder.
 //!
@@ -11,20 +12,78 @@
 //! - `log` shows the same with the run log open.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use gpui_kit::{Context, Window};
 use oriel_core_domain::{MediaItem, MediaType};
-use oriel_core_index::{RemoteEntrySnapshot, SyncPlanAction, SyncPlanItem};
-use oriel_core_sync::{LockstepPlan, PlanCounts, RunAction, RunEvent, RunStatus, RunSummary};
+use oriel_core_sync::{LockstepPlan, PlanCounts, RunAction, RunEvent};
+use oriel_core_sync::{RemoteEntrySnapshot, SyncPlanAction, SyncPlanItem};
+use oriel_launch::Launch;
 
 use crate::profiles::ProfileInput;
+use crate::run::RunPhase;
 use crate::{PlanFacts, ReviewedPlan, SyncMode};
 
-pub const CHECK_VARIABLE: &str = "ORIEL_SYNC_CHECK";
+const SYNC_PLAN: &str = "ORIEL_SYNC_PLAN";
+pub const SYNC_CHECK: &str = "ORIEL_SYNC_CHECK";
+
+/// What `ORIEL_SYNC_CHECK` shows; the module's doc says each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SyncCheck {
+    Form,
+    Plan,
+    Run,
+    Done,
+    Clean,
+    Log,
+}
+
+impl SyncCheck {
+    fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "form" => Self::Form,
+            "plan" => Self::Plan,
+            "run" => Self::Run,
+            "done" => Self::Done,
+            "clean" => Self::Clean,
+            "log" => Self::Log,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SyncChecks {
+    pub plan: bool,
+    pub check: Option<SyncCheck>,
+}
+
+impl SyncChecks {
+    pub(crate) fn of(launch: &Launch) -> Self {
+        let check = launch.variables.get(SYNC_CHECK).and_then(|value| {
+            let Some(check) = SyncCheck::parse(value) else {
+                log::warn!("{SYNC_CHECK} has no check {value:?}");
+                return None;
+            };
+            if !launch.data.is_sandboxed() {
+                log::warn!("{SYNC_CHECK} runs only with ORIEL_DATA_DIR set");
+                return None;
+            }
+            Some(check)
+        });
+        Self {
+            plan: launch.variables.is_on(SYNC_PLAN),
+            check,
+        }
+    }
+}
 
 /// The server a check profile names. Nothing listens there and nothing is sent.
 const CHECK_SERVER: &str = "http://127.0.0.1:9";
+
+/// The push's item that fails, when one does.
+const FAILING_ITEM: usize = 5;
 
 /// A pretend picture of `size` bytes at `path`.
 fn local(path: &str, size: u64) -> MediaItem {
@@ -84,18 +143,11 @@ fn pretend_plan(source_root: PathBuf) -> LockstepPlan {
         .iter()
         .filter_map(|item| item.local.as_ref().map(|local| local.size))
         .sum();
-    let count = |action| items.iter().filter(|item| item.action == action).count();
     LockstepPlan {
-        counts: PlanCounts {
-            delete: count(SyncPlanAction::Delete),
-            keep: count(SyncPlanAction::Keep),
-            update: count(SyncPlanAction::Update),
-            upload: count(SyncPlanAction::Upload),
-        },
+        counts: PlanCounts::of(&items),
         total_files: items.len(),
         total_bytes,
         items,
-        skipped: 0,
         skipped_entries: Vec::new(),
         source_root,
     }
@@ -103,14 +155,13 @@ fn pretend_plan(source_root: PathBuf) -> LockstepPlan {
 
 impl SyncMode {
     /// Sets the page up as `ORIEL_SYNC_CHECK` asks, in a run with its own data folder.
-    pub(crate) fn apply_check(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Ok(check) = std::env::var(CHECK_VARIABLE) else {
-            return;
-        };
-        if std::env::var_os("ORIEL_DATA_DIR").is_none() {
-            return;
-        }
-        if check == "form" {
+    pub(crate) fn apply_check(
+        &mut self,
+        check: SyncCheck,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if check == SyncCheck::Form {
             self.start_create_profile(window, cx);
             return;
         }
@@ -130,8 +181,8 @@ impl SyncMode {
         let Some(profile) = self.store.active_profile().cloned() else {
             return;
         };
-        let plan = pretend_plan(source_root);
-        self.plan_facts = PlanFacts::of(&plan);
+        let plan = Arc::new(pretend_plan(source_root));
+        let facts = PlanFacts::of(&plan);
         let changes: Vec<(String, u64)> = plan
             .items
             .iter()
@@ -143,20 +194,26 @@ impl SyncMode {
                 )
             })
             .collect();
-        self.plan = Some(ReviewedPlan {
+        let reviewed = ReviewedPlan {
             id: "check".to_owned(),
             plan,
             profile_id: profile.id.clone(),
             api_url: profile.api_url.clone(),
             source_root: profile.source_root.clone(),
             planned_at: SystemTime::now(),
-        });
-        self.refresh_plan_states();
-        if check != "plan" {
-            self.push_completed = check == "clean";
-            self.pretend_push(&changes, check != "run", check != "clean", cx);
+        };
+        self.show_plan(reviewed, facts, cx);
+        let push = match check {
+            SyncCheck::Form | SyncCheck::Plan => None,
+            SyncCheck::Run => Some((false, true)),
+            SyncCheck::Done | SyncCheck::Log => Some((true, true)),
+            SyncCheck::Clean => Some((true, false)),
+        };
+        if let Some((finished, fails)) = push {
+            self.push_completed = check == SyncCheck::Clean;
+            self.pretend_push(&changes, finished, fails, cx);
         }
-        self.log_open = check == "log";
+        self.log_open = check == SyncCheck::Log;
         self.rebuild_rows(cx);
     }
 
@@ -174,7 +231,7 @@ impl SyncMode {
         let total = changes.len();
         let total_bytes = changes.iter().map(|(_, size)| size).sum();
         let mut events = vec![RunEvent::ItemsQueued {
-            action: "push".to_owned(),
+            action: RunAction::Push,
             total,
             total_bytes,
         }];
@@ -182,15 +239,15 @@ impl SyncMode {
         for (at, (path, size)) in changes.iter().take(reach).enumerate() {
             let current = at + 1;
             events.push(RunEvent::ItemStart {
-                action: "upload".to_owned(),
+                action: SyncPlanAction::Upload,
                 bytes: Some(*size),
                 current,
                 path: path.clone(),
                 total,
             });
-            if at == 5 && fails {
+            if at == FAILING_ITEM && fails {
                 events.push(RunEvent::ItemFailure {
-                    action: "upload".to_owned(),
+                    action: SyncPlanAction::Upload,
                     bytes: Some(*size),
                     current,
                     error: "The server said 503".to_owned(),
@@ -199,7 +256,7 @@ impl SyncMode {
                 });
             } else {
                 events.push(RunEvent::ItemSuccess {
-                    action: "upload".to_owned(),
+                    action: SyncPlanAction::Upload,
                     bytes: Some(*size),
                     current,
                     path: path.clone(),
@@ -209,30 +266,20 @@ impl SyncMode {
         }
         if !finished && let Some((path, size)) = changes.get(reach) {
             events.push(RunEvent::ItemStart {
-                action: "upload".to_owned(),
+                action: SyncPlanAction::Upload,
                 bytes: Some(*size),
                 current: reach + 1,
                 path: path.clone(),
                 total,
             });
         }
-        if finished {
-            let status = if fails {
-                RunStatus::Failed
-            } else {
-                RunStatus::Completed
-            };
-            let mut summary = RunSummary::now(RunAction::Push, status);
-            summary.failed = usize::from(fails);
-            summary.pushed = total - summary.failed;
-            events.push(RunEvent::Complete(summary));
-        }
         for event in events {
-            self.note_item_state(&event);
             self.run.apply(event);
         }
         if finished {
-            self.run.running = false;
+            let status = if fails { "failed" } else { "completed" };
+            self.run
+                .finish(RunPhase::Done, Some(format!("push {status}")));
         }
         self.report_activity(cx);
     }

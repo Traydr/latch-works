@@ -45,7 +45,6 @@ impl<K: Clone + Eq + Hash> Default for Windowed<K> {
 }
 
 impl<K: Clone + Eq + Hash> Windowed<K> {
-    /// The scroll the column's element tracks.
     pub fn scroll(&self) -> &ScrollHandle {
         &self.scroll
     }

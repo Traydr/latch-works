@@ -2,8 +2,9 @@ import { sql } from "drizzle-orm";
 import type { Database } from "./index";
 
 /**
- * Stable PostgreSQL advisory lock key for library-mutating startup coordination
- * (sync run start and hard-wipe scheduling). Transaction-scoped via pg_advisory_xact_lock.
+ * Stable PostgreSQL advisory lock key that serializes starting anything that
+ * changes the library: a sync run, any maintenance job, and the folder and
+ * entry deletes behind guardLibraryChange. Transaction-scoped via pg_advisory_xact_lock.
  */
 const LIBRARY_MUTATION_STARTUP_LOCK_KEY = 0x4c57_4d53; // "LWMS"
 

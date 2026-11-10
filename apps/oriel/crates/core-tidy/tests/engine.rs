@@ -1,25 +1,24 @@
-//! The engine as the Tidy UI drives it: a scan runs as an `oriel-runtime` job whose progress
-//! names its phases, a stopped scan stops, a root outside the sandbox is refused in a sandboxed
+//! The engine as the Tidy UI drives it: a scan runs on a thread of its own and its progress names
+//! its phases, a stopped scan stops, a root outside the sandbox is refused in a sandboxed
 //! run and taken in the owner's, and the Library's filters answer from the catalog the scan made.
-//! A change runs as a job too, and its Undo puts things back; a file that changed since the scan
+//! A change runs so too, and its Undo puts things back; a file that changed since the scan
 //! is left alone; and a change in a root outside the sandbox is refused before anything moves.
 
-use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 use futures::executor::block_on;
-use gpui_kit::TestAppContext;
 use oriel_core_paths::DataRoot;
+use oriel_core_tidy::TidyEngine;
 use oriel_core_tidy::contract::{
     FileFilter, FileFlag, FileKind, FileQuery, FileSortColumn, HoldingRequest, OptimizeCategory,
     PlanListRequest, PlanRequest, PlanStatus, PlanStepsRequest, StepStatus,
 };
-use oriel_core_tidy::passes::{Media, Quiet};
-use oriel_core_tidy::{Applied, ScanReport, TidyEngine, Undone};
-use oriel_runtime::JobStatus;
+use oriel_core_tidy::{Media, Quiet};
 use oriel_test_archive::Built;
+
+use crate::running::Running;
+use crate::support;
 
 /// A scratch folder under the temp folder, which Tidy's sandbox admits, removed when dropped.
 struct Scratch(PathBuf);
@@ -54,7 +53,7 @@ impl Scratch {
         let data = DataRoot::at(self.0.join("data")).unwrap();
         block_on(TidyEngine::open_with(
             data.clone(),
-            data.tidy().join("catalog.sqlite"),
+            data.tidy_catalog(),
             media,
         ))
         .unwrap()
@@ -77,41 +76,20 @@ fn all_files(root_id: i64) -> FileQuery {
     }
 }
 
-#[gpui_kit::test]
-async fn a_scan_runs_as_a_job_that_names_its_phases(cx: &mut TestAppContext) {
-    // The work runs on threads of its own, so the test scheduler has to be allowed to wait.
-    cx.executor().allow_parking();
+#[test]
+fn a_scan_names_its_phases() {
     let scratch = Scratch::new("job");
     let (archive, built) = scratch.archive_built();
     // No libvips or ffmpeg: the walk, sniffing and hashing still run.
     let engine = scratch.engine(Media::default());
-    let root = engine.add_root(&archive).await.unwrap();
+    let root = block_on(engine.add_root(&archive)).unwrap();
 
-    let job = cx.update(|cx| engine.start_scan(root.id, cx));
-    let phases = Rc::new(RefCell::new(Vec::<String>::new()));
-    let seen = phases.clone();
-    let _watching = cx.update(|cx| {
-        cx.observe(&job, move |job, cx| {
-            let phase = job.read(cx).progress().phase().to_string();
-            let mut seen = seen.borrow_mut();
-            if !phase.is_empty() && seen.last() != Some(&phase) {
-                seen.push(phase);
-            }
-        })
-    });
-    while cx.read(|cx| job.read(cx).is_running()) {
-        cx.background_executor
-            .timer(std::time::Duration::from_millis(10))
-            .await;
-    }
-
-    let report: ScanReport = cx.read(|cx| match job.read(cx).status() {
-        JobStatus::Succeeded(report) => report.clone(),
-        other => panic!("the scan did not succeed: {other:?}"),
-    });
+    let scan = Running::start(engine.scan(root.id));
+    let progress = scan.progress.clone();
+    let report = scan.finish().expect("the scan succeeded");
     assert_eq!(report.files, built.files());
     assert_eq!(report.empty_folders, 1);
-    let phases = phases.borrow().clone();
+    let phases = progress.phases();
     assert!(
         phases.iter().any(|phase| phase.starts_with("Walking ")),
         "{phases:?}"
@@ -121,7 +99,7 @@ async fn a_scan_runs_as_a_job_that_names_its_phases(cx: &mut TestAppContext) {
         "{phases:?}"
     );
 
-    let overview = engine.overview(root.id).await.unwrap();
+    let overview = block_on(engine.overview(root.id)).unwrap();
     assert_eq!(overview.files as usize, built.files());
     assert_eq!(overview.cleanup.junk, 1);
     assert_eq!(overview.cleanup.empty_folders, 1);
@@ -137,7 +115,7 @@ fn a_stopped_scan_stops_before_it_records_anything() {
     let progress = Quiet::new();
     progress.token().cancel();
 
-    let error = engine.scan_blocking(root.id, &progress).unwrap_err();
+    let error = engine.scan(root.id).run(&progress).unwrap_err();
     assert!(
         error
             .chain()
@@ -169,7 +147,7 @@ fn a_root_outside_the_sandbox_is_refused() {
     let archive = scratch.0.join("archive");
     fs::create_dir_all(archive.join("inner")).unwrap();
     block_on(engine.add_root(&archive)).unwrap();
-    assert!(block_on(engine.add_root(archive.join("inner"))).is_err());
+    assert!(block_on(engine.add_root(&archive.join("inner"))).is_err());
 }
 
 #[test]
@@ -210,16 +188,14 @@ fn the_owners_run_takes_a_root_anywhere_with_electrons_refusals() {
 
 #[test]
 fn the_library_filters_the_catalog_a_scan_made() {
-    let media = Media::locate();
-    if media.vips.is_none() || media.ffprobe.is_none() {
-        eprintln!("skipped: needs libvips and the pinned ffprobe");
+    let (Some(media), Some(_)) = (support::media(), oriel_test_archive::media_tools()) else {
         return;
-    }
+    };
     let scratch = Scratch::new("library");
     let archive = scratch.archive();
     let engine = scratch.engine(media);
     let root = block_on(engine.add_root(&archive)).unwrap();
-    engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+    engine.scan(root.id).run(&Quiet::new()).unwrap();
 
     let videos = block_on(engine.list_files(FileQuery {
         filter: FileFilter {
@@ -307,43 +283,20 @@ fn file_id(engine: &TidyEngine, root_id: i64, rel_path: &str) -> i64 {
         .id
 }
 
-#[gpui_kit::test]
-async fn a_change_runs_as_a_job_and_one_undo_puts_it_back(cx: &mut TestAppContext) {
-    cx.executor().allow_parking();
+#[test]
+fn a_change_names_its_phases_and_one_undo_puts_it_back() {
     let scratch = Scratch::new("change-job");
     let archive = scratch.archive();
     // Clean up needs no tools: renames, holds and a folder removal.
     let engine = scratch.engine(Media::default());
-    let root = engine.add_root(&archive).await.unwrap();
-    engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+    let root = block_on(engine.add_root(&archive)).unwrap();
+    engine.scan(root.id).run(&Quiet::new()).unwrap();
 
-    let task = cx.update(|cx| engine.perform(PlanRequest::Cleanup { root_id: root.id }, cx));
-    let (preview, job) = task.await.unwrap();
-    assert_eq!(preview.steps, 3);
-    assert_eq!(
-        cx.read(|cx| job.read(cx).name().to_string()),
-        "Cleaning up 3 items"
-    );
-    let phases = Rc::new(RefCell::new(Vec::<String>::new()));
-    let seen = phases.clone();
-    let _watching = cx.update(|cx| {
-        cx.observe(&job, move |job, cx| {
-            let phase = job.read(cx).progress().phase().to_string();
-            let mut seen = seen.borrow_mut();
-            if !phase.is_empty() && seen.last() != Some(&phase) {
-                seen.push(phase);
-            }
-        })
-    });
-    while cx.read(|cx| job.read(cx).is_running()) {
-        cx.background_executor
-            .timer(std::time::Duration::from_millis(10))
-            .await;
-    }
-    let applied: Applied = cx.read(|cx| match job.read(cx).status() {
-        JobStatus::Succeeded(applied) => applied.clone(),
-        other => panic!("the change did not succeed: {other:?}"),
-    });
+    let change = Running::start(engine.perform(PlanRequest::Cleanup { root_id: root.id }));
+    let progress = change.progress.clone();
+    let performed = change.finish().expect("the change succeeded");
+    assert_eq!(performed.preview.steps, 3);
+    let applied = performed.applied;
     assert_eq!(applied.plan.status, PlanStatus::Applied);
     assert_eq!(applied.plan.title, "Cleaned up 3 items");
     assert_eq!((applied.plan.done, applied.plan.held.files), (3, 1));
@@ -351,43 +304,40 @@ async fn a_change_runs_as_a_job_and_one_undo_puts_it_back(cx: &mut TestAppContex
     assert!(archive.join("photos/cover.avif").is_file());
     assert!(!archive.join("._sunset.png").exists());
     assert!(!archive.join("empty").exists());
-    let held = engine
-        .list_holding(HoldingRequest {
-            root_id: root.id,
-            offset: 0,
-            limit: 50,
-        })
-        .await
-        .unwrap();
+    let held = block_on(engine.list_holding(HoldingRequest {
+        root_id: root.id,
+        offset: 0,
+        limit: 50,
+    }))
+    .unwrap();
     assert_eq!(held.total, 1);
     // Holding is outside the root, in Tidy's data folder.
     assert!(!Path::new(&held.items[0].hold_path).starts_with(&archive));
-    let phases = phases.borrow().clone();
-    for phase in ["Renaming files", "Removing empty folders"] {
+    let phases = progress.phases();
+    for phase in [
+        "Cleaning up 3 items",
+        "Renaming files",
+        "Removing empty folders",
+    ] {
         assert!(phases.iter().any(|seen| seen == phase), "{phases:?}");
     }
 
-    let undo = cx.update(|cx| engine.start_undo(applied.plan.id, cx));
-    while cx.read(|cx| undo.read(cx).is_running()) {
-        cx.background_executor
-            .timer(std::time::Duration::from_millis(10))
-            .await;
-    }
-    let undone: Undone = cx.read(|cx| undo.read(cx).value().cloned().unwrap());
+    let undone = Running::start(engine.undo(vec![applied.plan.id]))
+        .finish()
+        .unwrap();
     assert!(undone.complete, "{:?}", undone.message);
     assert_eq!(undone.plans[0].status, PlanStatus::Undone);
     assert_eq!(undone.follow_up.rescan, [root.id]);
+    drop(undone);
     assert!(archive.join("photos/cover.jpg").is_file());
     assert!(archive.join("._sunset.png").is_file());
     assert!(archive.join("empty").is_dir());
-    let history = engine
-        .list_plans(PlanListRequest {
-            root_id: Some(root.id),
-            offset: 0,
-            limit: 20,
-        })
-        .await
-        .unwrap();
+    let history = block_on(engine.list_plans(PlanListRequest {
+        root_id: Some(root.id),
+        offset: 0,
+        limit: 20,
+    }))
+    .unwrap();
     assert_eq!(history.len(), 1);
     assert!(!history[0].can_undo());
 }
@@ -398,7 +348,7 @@ fn a_file_that_changed_since_the_scan_is_left_alone() {
     let archive = scratch.archive();
     let engine = scratch.engine(Media::default());
     let root = block_on(engine.add_root(&archive)).unwrap();
-    engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+    engine.scan(root.id).run(&Quiet::new()).unwrap();
     let forest = file_id(&engine, root.id, "photos/forest.png");
     let copy = file_id(&engine, root.id, "photos/forest copy.png");
 
@@ -412,9 +362,6 @@ fn a_file_that_changed_since_the_scan_is_left_alone() {
     // Only the ctime moved, as a sync client tagging a file does: the bytes still hash the
     // same, so the change goes ahead.
     let copy_path = archive.join("photos/forest copy.png");
-    let mode = fs::metadata(&copy_path).unwrap().permissions();
-    fs::set_permissions(&copy_path, mode).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(5));
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -429,12 +376,10 @@ fn a_file_that_changed_since_the_scan_is_left_alone() {
     }
 
     let performed = engine
-        .perform_blocking(
-            PlanRequest::Hold {
-                file_ids: vec![forest, copy],
-            },
-            &Quiet::new(),
-        )
+        .perform(PlanRequest::Hold {
+            file_ids: vec![forest, copy],
+        })
+        .run(&Quiet::new())
         .unwrap();
     let plan = performed.applied.plan;
     assert_eq!((plan.done, plan.skipped), (1, 1));
@@ -464,7 +409,7 @@ fn a_change_in_a_root_outside_the_sandbox_is_refused() {
     let archive = scratch.archive();
     let engine = scratch.engine(Media::default());
     let root = block_on(engine.add_root(&archive)).unwrap();
-    engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+    engine.scan(root.id).run(&Quiet::new()).unwrap();
     let junk = file_id(&engine, root.id, "._sunset.png");
 
     // A catalog whose root has moved outside the sandbox (an old catalog, or one edited by
@@ -478,12 +423,10 @@ fn a_change_in_a_root_outside_the_sandbox_is_refused() {
     }))
     .unwrap();
     let refused = engine
-        .perform_blocking(
-            PlanRequest::Hold {
-                file_ids: vec![junk],
-            },
-            &Quiet::new(),
-        )
+        .perform(PlanRequest::Hold {
+            file_ids: vec![junk],
+        })
+        .run(&Quiet::new())
         .unwrap_err();
     assert!(
         format!("{refused:#}").contains("outside Tidy's sandbox"),
@@ -508,15 +451,13 @@ fn only_oriels_holding_is_restored_undone_or_emptied() {
     let archive = scratch.archive();
     let engine = scratch.engine(Media::default());
     let root = block_on(engine.add_root(&archive)).unwrap();
-    engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+    engine.scan(root.id).run(&Quiet::new()).unwrap();
     let junk = file_id(&engine, root.id, "._sunset.png");
     let performed = engine
-        .perform_blocking(
-            PlanRequest::Hold {
-                file_ids: vec![junk],
-            },
-            &Quiet::new(),
-        )
+        .perform(PlanRequest::Hold {
+            file_ids: vec![junk],
+        })
+        .run(&Quiet::new())
         .unwrap();
     let listed = |engine: &TidyEngine| {
         block_on(engine.list_holding(HoldingRequest {
@@ -551,18 +492,19 @@ fn only_oriels_holding_is_restored_undone_or_emptied() {
     fs::create_dir_all(&electron_batch).unwrap();
     fs::write(&electron, b"Electron Oriel's").unwrap();
     set_place(&electron, &electron_batch);
-    let restored = block_on(engine.restore_holding(vec![id])).unwrap();
+    let restored = engine.restore_holding(vec![id]).run(&Quiet::new()).unwrap();
     assert_eq!(restored.restored, 0);
     assert!(
         restored.failed[0].contains("not in Oriel's holding"),
         "{restored:?}"
     );
     let undone = engine
-        .undo_blocking(performed.applied.plan.id, &Quiet::new())
+        .undo(vec![performed.applied.plan.id])
+        .run(&Quiet::new())
         .unwrap();
-    // The step stays done, with why, as glazier-core records a step that did not come back.
+    // The step stays done, with why it did not come back.
     assert_eq!(undone.plans[0].undone, 0, "{undone:?}");
-    let emptied = block_on(engine.empty_holding(root.id)).unwrap();
+    let emptied = engine.empty_holding(root.id).run(&Quiet::new()).unwrap();
     assert_eq!(emptied.emptied, 0);
     assert_eq!(emptied.failed.len(), 1, "{emptied:?}");
     assert_eq!(fs::read(&electron).unwrap(), b"Electron Oriel's");
@@ -571,12 +513,12 @@ fn only_oriels_holding_is_restored_undone_or_emptied() {
     // Back in Oriel's holding, but gone from there.
     fs::remove_dir_all(own.parent().unwrap()).unwrap();
     set_place(&own, own.parent().unwrap());
-    let restored = block_on(engine.restore_holding(vec![id])).unwrap();
+    let restored = engine.restore_holding(vec![id]).run(&Quiet::new()).unwrap();
     assert!(
         restored.failed[0].contains("missing from holding"),
         "{restored:?}"
     );
-    let emptied = block_on(engine.empty_holding(root.id)).unwrap();
+    let emptied = engine.empty_holding(root.id).run(&Quiet::new()).unwrap();
     assert_eq!(
         (emptied.emptied, emptied.failed.len()),
         (1, 0),

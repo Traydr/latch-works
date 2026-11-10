@@ -2,17 +2,16 @@
 //! closes it, keys belong to the menu while it is open, an Undo that did not finish is still the
 //! next Undo, and a decision with a failed step says so.
 
-use std::time::Duration;
-
 use crate::support::*;
 use gpui_kit::base::GlobalState;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AppContext as _, TestAppContext};
-use oriel_mode_tidy::{TidyPage, last_toast};
+use oriel_mode_tidy::TidyPage;
+use oriel_ui::toast::last_toast;
 
 /// Past the moment after a new set arrives in which a click on it does nothing.
-fn past_the_arming_delay() {
-    std::thread::sleep(Duration::from_millis(450));
+fn past_the_arming_delay(cx: &mut TestAppContext) {
+    cx.executor().advance_clock(oriel_ui::ARM_DELAY);
 }
 
 /// The Duplicates page on similar sets, with the ids of the first two versions on the stage.
@@ -32,7 +31,7 @@ async fn on_a_set(cx: &mut TestAppContext, session: &Session) -> (u64, u64) {
         click(cx, session, ("set-row", index + 1));
         settle(cx, session).await;
     }
-    past_the_arming_delay();
+    past_the_arming_delay(cx);
     let ids = stage_ids(cx, session);
     assert!(ids.len() >= 2, "{ids:?}");
     (ids[0], ids[1])
@@ -77,7 +76,7 @@ async fn clicking_a_tile_to_close_a_menu_only_closes_it(cx: &mut TestAppContext)
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "press-menu");
+    let session = launch(cx, "press-menu");
     let (first, second) = on_a_set(cx, &session).await;
     let stage = stage_ids(cx, &session);
     click(cx, &session, ("version-menu", first));
@@ -99,7 +98,7 @@ async fn clicking_a_tile_to_close_a_popover_only_closes_it(cx: &mut TestAppConte
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "press-popover");
+    let session = launch(cx, "press-popover");
     let (_, second) = on_a_set(cx, &session).await;
     let stage = stage_ids(cx, &session);
     click(cx, &session, "duplicates-matching");
@@ -115,7 +114,7 @@ async fn clicking_a_tile_to_close_a_right_click_menu_only_closes_it(cx: &mut Tes
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "press-context");
+    let session = launch(cx, "press-context");
     let (first, second) = on_a_set(cx, &session).await;
     let stage = stage_ids(cx, &session);
     right_click(cx, &session, ("version", first));
@@ -130,7 +129,7 @@ async fn clicking_a_copy_row_to_close_a_menu_only_closes_it(cx: &mut TestAppCont
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "press-copy");
+    let session = launch(cx, "press-copy");
     add_archive(cx, &session).await;
     go(cx, &session, TidyPage::Duplicates);
     settle(cx, &session).await;
@@ -138,7 +137,7 @@ async fn clicking_a_copy_row_to_close_a_menu_only_closes_it(cx: &mut TestAppCont
     settle(cx, &session).await;
     click(cx, &session, ("set-row", 0usize));
     settle(cx, &session).await;
-    past_the_arming_delay();
+    past_the_arming_delay(cx);
     let stage = stage_ids(cx, &session);
     click(cx, &session, ("version-menu", stage[0]));
     assert!(popup_open(cx), "the menu is open");
@@ -156,7 +155,7 @@ async fn clicking_convert_to_close_its_options_only_closes_them(cx: &mut TestApp
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "press-convert");
+    let session = launch(cx, "press-convert");
     add_archive(cx, &session).await;
     go(cx, &session, TidyPage::Convert);
     settle(cx, &session).await;
@@ -177,7 +176,7 @@ async fn a_press_inside_a_menu_still_works(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "press-inside");
+    let session = launch(cx, "press-inside");
     let (first, _) = on_a_set(cx, &session).await;
     click(cx, &session, ("version-menu", first));
     assert!(popup_open(cx));
@@ -205,7 +204,7 @@ async fn undo_does_nothing_under_an_open_menu(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "undo-menu");
+    let session = launch(cx, "undo-menu");
     on_a_set(cx, &session).await;
     press(cx, &session, "enter");
     wait_for_change(cx, &session).await;
@@ -233,7 +232,7 @@ async fn keys_do_not_decide_a_set_under_an_open_menu(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "keys-menu");
+    let session = launch(cx, "keys-menu");
     let (first, _) = on_a_set(cx, &session).await;
     let stage = stage_ids(cx, &session);
     click(cx, &session, ("version-menu", first));
@@ -248,7 +247,7 @@ async fn keys_do_not_decide_a_set_under_an_open_menu(cx: &mut TestAppContext) {
     settle(cx, &session).await;
     assert!(!popup_open(cx));
     // With it closed, the same key decides.
-    past_the_arming_delay();
+    past_the_arming_delay(cx);
     press(cx, &session, "2");
     wait_for_change(cx, &session).await;
     assert!(!held_files(&session).is_empty());
@@ -259,7 +258,7 @@ async fn keys_do_not_decide_a_set_under_an_open_popover(cx: &mut TestAppContext)
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "keys-popover");
+    let session = launch(cx, "keys-popover");
     let (_, _) = on_a_set(cx, &session).await;
     let stage = stage_ids(cx, &session);
     click(cx, &session, "duplicates-matching");
@@ -302,7 +301,7 @@ async fn undo_again_after_a_stopped_undo_is_the_same_plan(cx: &mut TestAppContex
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "undo-stopped");
+    let session = launch(cx, "undo-stopped");
     let (older, newer) = two_decisions(cx, &session).await;
     cx.update_window(session.handle, |_, window, cx| {
         session.state.update(cx, |state, cx| {
@@ -329,7 +328,7 @@ async fn undo_again_after_stopping_a_queued_undo_is_the_same_plan(cx: &mut TestA
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "undo-queued");
+    let session = launch(cx, "undo-queued");
     let (older, newer) = two_decisions(cx, &session).await;
 
     // A rescan paused before its first step keeps its turn, so a change asked for next holds the
@@ -340,7 +339,7 @@ async fn undo_again_after_stopping_a_queued_undo_is_the_same_plan(cx: &mut TestA
         state.update(cx, |state, cx| {
             state.start_scan(root_id, window, cx);
             let scan = state.scan().unwrap().job.clone();
-            scan.update(cx, |job, cx| job.set_paused(true, cx));
+            scan.set_paused(true, cx);
         });
     })
     .unwrap();
@@ -353,14 +352,15 @@ async fn undo_again_after_stopping_a_queued_undo_is_the_same_plan(cx: &mut TestA
         jobs.update(cx, |jobs, cx| jobs.set_open(true, cx));
     });
     render(cx, &session);
-    click(cx, &session, "activity-tidy-queued-0-stop");
-    assert!(label(cx, &session, "activity-tidy-queued-0").is_none());
+    let queued = job_keys(cx, &session, "change-")[1].clone();
+    click(cx, &session, format!("activity-tidy-{queued}-stop"));
+    assert!(label(cx, &session, format!("activity-tidy-{queued}")).is_none());
 
     cx.update(|cx| {
         state.update(cx, |state, cx| {
             state.stop_change(cx);
             let scan = state.scan().unwrap().job.clone();
-            scan.update(cx, |job, cx| job.set_paused(false, cx));
+            scan.set_paused(false, cx);
         });
     });
     wait_for_change(cx, &session).await;
@@ -383,7 +383,7 @@ async fn two_quick_undos_take_back_the_two_newest_changes(cx: &mut TestAppContex
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "undo-twice");
+    let session = launch(cx, "undo-twice");
     let (older, newer) = two_decisions(cx, &session).await;
     cx.update_window(session.handle, |_, window, cx| {
         session.state.update(cx, |state, cx| {
@@ -407,7 +407,7 @@ async fn a_quick_undo_behind_a_stopped_undo_leaves_it_stopped(cx: &mut TestAppCo
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "undo-twice-stopped");
+    let session = launch(cx, "undo-twice-stopped");
     let (older, newer) = two_decisions(cx, &session).await;
     cx.update_window(session.handle, |_, window, cx| {
         session.state.update(cx, |state, cx| {
@@ -437,7 +437,7 @@ async fn an_undo_behind_a_change_that_never_lands_undoes_nothing_older(cx: &mut 
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "undo-behind-stopped");
+    let session = launch(cx, "undo-behind-stopped");
     let (older, newer) = two_decisions(cx, &session).await;
 
     // A rescan paused before its first step keeps the change asked for next waiting with the turn,
@@ -448,7 +448,7 @@ async fn an_undo_behind_a_change_that_never_lands_undoes_nothing_older(cx: &mut 
         state.update(cx, |state, cx| {
             state.start_scan(root_id, window, cx);
             let scan = state.scan().unwrap().job.clone();
-            scan.update(cx, |job, cx| job.set_paused(true, cx));
+            scan.set_paused(true, cx);
         });
     })
     .unwrap();
@@ -460,7 +460,7 @@ async fn an_undo_behind_a_change_that_never_lands_undoes_nothing_older(cx: &mut 
         state.update(cx, |state, cx| {
             state.stop_change(cx);
             let scan = state.scan().unwrap().job.clone();
-            scan.update(cx, |job, cx| job.set_paused(false, cx));
+            scan.set_paused(false, cx);
         });
     });
     wait_for_change(cx, &session).await;
@@ -483,7 +483,7 @@ async fn undo_again_after_an_undo_that_did_not_finish_is_the_same_plan(cx: &mut 
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "undo-unfinished");
+    let session = launch(cx, "undo-unfinished");
     let (older, newer) = two_decisions(cx, &session).await;
     // Something now stands where one of the newer plan's files was.
     let rel = newer[0].splitn(3, '/').nth(2).unwrap().to_owned();
@@ -513,7 +513,7 @@ async fn a_decision_with_a_failed_step_says_so(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "failed-step");
+    let session = launch(cx, "failed-step");
     add_archive(cx, &session).await;
     let source = session.archive.join("photos/forest.png");
     for folder in ["fr-a", "fr-b", "fr-c", "fr-d"] {
@@ -563,7 +563,7 @@ async fn the_first_arrow_goes_to_the_version_after_the_suggestion(cx: &mut TestA
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "first-arrow");
+    let session = launch(cx, "first-arrow");
     add_archive(cx, &session).await;
     go(cx, &session, TidyPage::Duplicates);
     settle(cx, &session).await;
@@ -593,7 +593,7 @@ async fn a_press_on_the_loupe_decides_nothing_behind_it(cx: &mut TestAppContext)
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "press-on-loupe");
+    let session = launch(cx, "press-on-loupe");
     on_a_set(cx, &session).await;
     press(cx, &session, "space");
     settle(cx, &session).await;

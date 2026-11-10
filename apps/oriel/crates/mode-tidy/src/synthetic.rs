@@ -1,4 +1,4 @@
-//! Phase 0's Library: GPUI Kit's data table with synthetic rows, to measure it with 100,000 of
+//! A Library of synthetic rows: GPUI Kit's data table, to measure it with 100,000 of
 //! them (sort, scroll and select). The real Library reads the catalog ([`crate::library`]); this
 //! one shows only when the spike asks for it with `ORIEL_SPIKE_LIBRARY`.
 
@@ -9,7 +9,7 @@ use gpui_kit::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, SharedString,
     Styled as _, Window, div,
 };
-use oriel_core_domain::{NamedPath, compare_by_name, name_ranks};
+use oriel_core_domain::{NamedPath, compare_by_name, format, name_ranks};
 
 use crate::spike::LibrarySpike;
 
@@ -164,7 +164,7 @@ impl LibraryColumn {
     }
 
     /// A row's value in this column as one number that orders as the column does ascending:
-    /// names and folders by their ranks in the shared natural order, as Electron Oriel's
+    /// names and folders by their ranks in the shared natural order, as the Library's
     /// Library sorts them (the ranks answer as `compare_by_name` does), formats by their place
     /// among `formats`, sorted. Every column but those two breaks its ties by name.
     fn value(self, row: &LibraryRow, formats: &[&str]) -> u64 {
@@ -227,6 +227,7 @@ impl LibraryDelegate {
         }
     }
 
+    #[cfg(test)]
     pub fn rows(&self) -> &[LibraryRow] {
         &self.rows
     }
@@ -332,11 +333,11 @@ impl LibraryDelegate {
             LibraryColumn::Folder => row.folder.clone(),
             LibraryColumn::Kind => row.kind.label().into(),
             LibraryColumn::Format => row.format.into(),
-            LibraryColumn::Size => format_bytes(row.bytes).into(),
+            LibraryColumn::Size => format::bytes(row.bytes).into(),
             LibraryColumn::Dimensions => format!("{} × {}", row.width, row.height).into(),
             LibraryColumn::Duration => row
                 .duration_ms
-                .map(format_duration)
+                .map(|ms| format::clock(Duration::from_millis(u64::from(ms))))
                 .unwrap_or_default()
                 .into(),
             LibraryColumn::Modified => format_date(row.modified_ms).into(),
@@ -486,46 +487,10 @@ pub fn synthetic_rows(count: usize) -> Vec<LibraryRow> {
         .collect()
 }
 
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
-    let mut value = bytes as f64 / 1000.;
-    let mut unit = 0;
-    while value >= 1000. && unit < UNITS.len() - 1 {
-        value /= 1000.;
-        unit += 1;
-    }
-    if value < 10. {
-        format!("{value:.1} {}", UNITS[unit])
-    } else {
-        format!("{value:.0} {}", UNITS[unit])
-    }
-}
-
-fn format_duration(ms: u32) -> String {
-    let seconds = ms / 1000;
-    let (hours, minutes, seconds) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
-    if hours > 0 {
-        format!("{hours}:{minutes:02}:{seconds:02}")
-    } else {
-        format!("{minutes}:{seconds:02}")
-    }
-}
-
-/// A date as year, month and day, from milliseconds since 1970 (UTC; the spike has no time
-/// zone).
+/// A date as year, month and day, in UTC (the spike has no time zone).
 fn format_date(ms: i64) -> String {
-    let days = ms.div_euclid(86_400_000);
-    // Howard Hinnant's days-to-civil.
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("{year}-{month:02}-{day:02}")
+    let at = std::time::UNIX_EPOCH + Duration::from_millis(ms.max(0) as u64);
+    format::iso_timestamp(at)[..10].to_owned()
 }
 
 #[cfg(test)]
@@ -553,15 +518,5 @@ mod tests {
         let first = delegate.rows()[0].path.clone();
         delegate.sort(LibraryColumn::Name, ColumnSort::Descending);
         assert_eq!(delegate.rows().last().unwrap().path, first);
-    }
-
-    #[test]
-    fn formats_cells_as_the_library_does() {
-        assert_eq!(format_bytes(1_500), "1.5 KB");
-        assert_eq!(format_bytes(250_000_000), "250 MB");
-        assert_eq!(format_duration(65_000), "1:05");
-        assert_eq!(format_duration(3_725_000), "1:02:05");
-        assert_eq!(format_date(0), "1970-01-01");
-        assert_eq!(format_date(1_700_000_000_000), "2023-11-14");
     }
 }

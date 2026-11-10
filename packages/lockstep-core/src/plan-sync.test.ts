@@ -29,7 +29,7 @@ describe("planSync hash modes", () => {
       {
         hashCacheRoot: fixture.cacheRoot,
         hashMode: "remote-aware",
-        remoteSnapshotPath: fixture.snapshotPath,
+        remote: { kind: "file", path: fixture.snapshotPath },
         sourceRoot: fixture.sourceRoot,
       },
       { onEvent: (event) => events.push(event) },
@@ -48,7 +48,7 @@ describe("planSync hash modes", () => {
     await planSync({
       hashCacheRoot: fixture.cacheRoot,
       hashMode: "remote-aware",
-      remoteSnapshotPath: fixture.snapshotPath,
+      remote: { kind: "file", path: fixture.snapshotPath },
       sourceRoot: fixture.sourceRoot,
     });
     const events: LockstepRunEvent[] = [];
@@ -57,7 +57,7 @@ describe("planSync hash modes", () => {
       {
         hashCacheRoot: fixture.cacheRoot,
         hashMode: "remote-aware",
-        remoteSnapshotPath: fixture.snapshotPath,
+        remote: { kind: "file", path: fixture.snapshotPath },
         sourceRoot: fixture.sourceRoot,
       },
       { onEvent: (event) => events.push(event) },
@@ -76,7 +76,7 @@ describe("planSync hash modes", () => {
       {
         hashCacheRoot: fixture.cacheRoot,
         hashMode: "all",
-        remoteSnapshotPath: fixture.snapshotPath,
+        remote: { kind: "file", path: fixture.snapshotPath },
         sourceRoot: fixture.sourceRoot,
       },
       { onEvent: (event) => coldEvents.push(event) },
@@ -88,7 +88,7 @@ describe("planSync hash modes", () => {
       {
         hashCacheRoot: fixture.cacheRoot,
         hashMode: "all",
-        remoteSnapshotPath: fixture.snapshotPath,
+        remote: { kind: "file", path: fixture.snapshotPath },
         sourceRoot: fixture.sourceRoot,
       },
       { onEvent: (event) => warmEvents.push(event) },
@@ -112,17 +112,17 @@ describe("planSync hash modes", () => {
       {
         hashCacheRoot,
         hashMode: "remote-aware",
-        remoteSnapshotPath: fixture.snapshotPath,
+        remote: { kind: "file", path: fixture.snapshotPath },
         sourceRoot: fixture.sourceRoot,
       },
       { onEvent: (event) => events.push(event) },
     );
 
     expect(plan.counts).toEqual({ delete: 0, keep: 2, update: 2, upload: 1 });
-    expect(events.flatMap((event) => (event.type === "status" ? [event.message] : []))).toEqual(
+    expect(events.flatMap((event) => (event.type === "warning" ? [event.message] : []))).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("Warning: Hash cache could not be read"),
-        expect.stringContaining("Warning: hash cache could not be saved"),
+        expect.stringContaining("Hash cache could not be read"),
+        expect.stringContaining("hash cache could not be saved"),
       ]),
     );
   });
@@ -146,7 +146,7 @@ describe("planSync hash modes", () => {
       {
         hashCacheRoot: cacheRoot,
         hashMode: "remote-aware",
-        remoteSnapshotPath: snapshotPath,
+        remote: { kind: "file", path: snapshotPath },
         sourceRoot,
       },
       { onEvent: (event) => events.push(event) },

@@ -1,0 +1,57 @@
+import * as z from "zod/mini";
+
+/** A rejected promise can carry a bare string or a plain object rather than an Error. */
+const ThrownMessageSchema = z.union([
+  z.string(),
+  z.pipe(
+    z.object({ message: z.string() }),
+    z.transform((thrown) => thrown.message),
+  ),
+]);
+
+/**
+ * JavaScript allows any value to be thrown, so a `catch` binding is the boundary where one
+ * becomes an Error. Everything downstream takes `Error` and reads `message` and `name` directly.
+ */
+export function toError(cause: unknown): Error {
+  if (cause instanceof Error) {
+    return cause;
+  }
+
+  const thrown = ThrownMessageSchema.safeParse(cause);
+
+  if (thrown.success) {
+    return new Error(thrown.data || "Unknown error", { cause });
+  }
+
+  return new Error(cause === null || cause === undefined ? "Unknown error" : String(cause), {
+    cause,
+  });
+}
+
+/**
+ * The site answered with a bot challenge (Cloudflare marks these with `cf-mitigated: challenge`)
+ * instead of the file. Opening the link yourself still works, so the item is handed back to you
+ * rather than retried here.
+ */
+export class SiteCheckError extends Error {
+  constructor(status: number) {
+    super(`Blocked by the site's bot check (HTTP ${status}). Open it and add the file yourself.`);
+    this.name = "SiteCheckError";
+  }
+}
+
+export function isAbortError(error: Error): boolean {
+  return error.name === "AbortError";
+}
+
+export function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) {
+    return;
+  }
+
+  const reason = toError(signal.reason);
+  throw isAbortError(reason)
+    ? reason
+    : new DOMException("The operation was aborted.", "AbortError");
+}

@@ -1,30 +1,9 @@
 const APP_CONTENT_SECURITY_POLICY = "frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
 
-const MEDIA_DELIVERY_PATH_PATTERN = /^\/api\/media\/[^/]+\/(original|thumbnail|preview)$/;
-
-export function isMediaDeliveryPath(pathname: string): boolean {
-  return MEDIA_DELIVERY_PATH_PATTERN.test(pathname);
-}
-
-function applyAppSecurityHeaders(headers: Headers): void {
-  headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("Referrer-Policy", "same-origin");
-  headers.set("Content-Security-Policy", APP_CONTENT_SECURITY_POLICY);
-}
-
-function applyMediaDeliverySecurityHeaders(headers: Headers): void {
-  headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("Referrer-Policy", "same-origin");
-}
-
-export function applySecurityHeadersToResponse(response: Response, pathname: string): Response {
-  if (isMediaDeliveryPath(pathname)) {
-    applyMediaDeliverySecurityHeaders(response.headers);
-
-    return response;
-  }
-
-  applyAppSecurityHeaders(response.headers);
+export function applySecurityHeadersToResponse(response: Response): Response {
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Referrer-Policy", "same-origin");
+  response.headers.set("Content-Security-Policy", APP_CONTENT_SECURITY_POLICY);
 
   return response;
 }

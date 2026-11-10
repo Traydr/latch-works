@@ -45,12 +45,11 @@ set +a
 pnpm db:migrate
 ```
 
-Build workspace packages before starting Pane View:
+Start Pane View from the repository root:
 
 ```bash
 cd ../..
-pnpm build
-pnpm dev:pane
+pnpm --filter @latch-works/pane-view dev
 ```
 
 `GET http://127.0.0.1:3000/api/health` should return:

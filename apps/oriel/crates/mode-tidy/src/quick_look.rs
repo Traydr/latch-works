@@ -1,12 +1,11 @@
-//! Quick Look (`desktop.quickLook`): the system's preview panel over the window, as Finder's Space
-//! shows it. Electron Oriel calls `BrowserWindow.previewFile`, which drives `QLPreviewPanel` with
-//! its window as the panel's controller; Oriel does the same through the Objective-C runtime,
-//! with a small responder after GPUI's window in its responder chain, since the panel looks for
-//! its controller there.
+//! Quick Look: the system's preview panel over the window, as Finder's Space
+//! shows it: `QLPreviewPanel` with the window as the panel's controller, through the Objective-C
+//! runtime, with a small responder after GPUI's window in its responder chain, since the panel
+//! looks for its controller there.
 //!
 //! Where the panel cannot be driven (no Quick Look, or a platform without it), the file opens in
 //! its default app instead. On Windows, which has no Quick Look, that is all it does, and
-//! [`QUICK_LOOK_LABEL`] says so where Electron Oriel's `previewFile` did nothing at all. A window
+//! [`QUICK_LOOK_LABEL`] says so. A window
 //! with no platform handle, as in a test, shows nothing; the path asked for is kept for
 //! [`last_quick_look`] either way.
 
@@ -74,7 +73,7 @@ mod macos {
         static CONTROLLER: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
     }
 
-    /// An `NSResponder` that takes the panel's control and is its data source, as Electron's
+    /// An `NSResponder` that takes the panel's control and is its data source, as a window's
     /// window and its delegate are.
     fn controller_class() -> &'static AnyClass {
         static CLASS: OnceLock<usize> = OnceLock::new();

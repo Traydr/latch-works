@@ -5,12 +5,12 @@ use std::fmt;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
+use std::sync::{Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use futures::channel::oneshot;
-use gpui_kit::Global;
 
 use crate::cancel::Cancelled;
 use crate::panic_message;
@@ -19,9 +19,12 @@ use crate::panic_message;
 /// it stops waiting. Its tasks are cancelled at once.
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
 
+/// The shared runtime's thread.
+const SHARED_THREAD: &str = "oriel-http";
+
 /// A current-thread tokio runtime, driven by a thread of its own. Futures go to it through
 /// [`TokioHandle::spawn`] from any thread. Dropping it cancels what still runs and stops the
-/// thread. The app keeps one as a GPUI global.
+/// thread.
 pub struct TokioRuntime {
     handle: TokioHandle,
     shutdown: Option<oneshot::Sender<()>>,
@@ -54,6 +57,24 @@ impl TokioRuntime {
         })
     }
 
+    /// The process's one runtime for HTTP clients, started on first use and kept until the
+    /// process ends. The app asks for it at launch, so a failure to start it shows then.
+    pub fn shared() -> io::Result<TokioHandle> {
+        static SHARED: OnceLock<TokioRuntime> = OnceLock::new();
+        static STARTING: Mutex<()> = Mutex::new(());
+        if let Some(runtime) = SHARED.get() {
+            return Ok(runtime.handle());
+        }
+        let _starting = STARTING
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(runtime) = SHARED.get() {
+            return Ok(runtime.handle());
+        }
+        let runtime = Self::start(SHARED_THREAD)?;
+        Ok(SHARED.get_or_init(|| runtime).handle())
+    }
+
     pub fn handle(&self) -> TokioHandle {
         self.handle.clone()
     }
@@ -84,8 +105,6 @@ impl fmt::Debug for TokioRuntime {
         f.debug_struct("TokioRuntime").finish_non_exhaustive()
     }
 }
-
-impl Global for TokioRuntime {}
 
 /// Spawns futures on a [`TokioRuntime`] from any thread. Cheap to clone.
 #[derive(Clone, Debug)]

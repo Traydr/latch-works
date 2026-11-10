@@ -13,9 +13,9 @@
 //! one, and prints the widths it ran at; `prune` also prints the time of the prune alone, after
 //! its plan. Each run prints one JSON line: its wall
 //! time, the time of each status line the run reported, and how many events it sent, which is
-//! what Sync's window has to fold in. The URL is the e2e suite's Pane View unless
-//! `ORIEL_SYNC_STACK_URL` names another on this machine; the bench refuses any other host, so
-//! it can never push anywhere but the local stack.
+//! what Sync's window has to fold in. The URL is the e2e stack's Pane View (`e2e/stack.json`)
+//! unless `ORIEL_SYNC_STACK_URL` names another on this machine; the bench refuses any other host,
+//! so it can never push anywhere but the local stack.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -24,15 +24,12 @@ use std::time::Instant;
 
 use anyhow::{Context as _, bail};
 use futures::StreamExt as _;
+use oriel_core_sync::testing::E2eStack;
 use oriel_core_sync::{
     ApiTarget, HashMode, Observer, PaneViewClient, PlanOptions, PruneOptions, PushOptions,
-    RunEvent, cache_root, plan_sync, prune_deleted, push_changes,
+    RunEvent, SyncPlanAction, plan_sync, prune_deleted, push_changes,
 };
 use oriel_runtime::{CancelToken, TokioRuntime};
-
-/// The e2e suite's Pane View and sync token (`e2e/src/env.ts`), not a secret.
-const E2E_URL: &str = "http://127.0.0.1:3100";
-const E2E_TOKEN: &str = "e2e-sync-token-0123456789abcdef";
 
 /// What the observer saw: each status line's time, and how many events of each kind.
 #[derive(Default)]
@@ -114,7 +111,6 @@ fn observer(started: Instant) -> (Observer, std::thread::JoinHandle<Seen>) {
                 RunEvent::ItemSkipped { .. } => "item-skipped",
                 RunEvent::ItemsQueued { .. } => "items-queued",
                 RunEvent::Complete(_) => "complete",
-                RunEvent::Cancelled => "cancelled",
             };
             *seen.counts.entry(kind).or_default() += 1;
         }
@@ -127,14 +123,15 @@ fn observer(started: Instant) -> (Observer, std::thread::JoinHandle<Seen>) {
 }
 
 fn target() -> anyhow::Result<ApiTarget> {
-    let url = std::env::var("ORIEL_SYNC_STACK_URL").unwrap_or_else(|_| E2E_URL.to_owned());
+    let stack = E2eStack::get();
+    let url = std::env::var("ORIEL_SYNC_STACK_URL").unwrap_or(stack.url);
     let host = host_of(&url)?;
     if !matches!(host.as_str(), "127.0.0.1" | "localhost" | "[::1]") {
         bail!("{url} is not on this machine; the bench only syncs to the local stack");
     }
     Ok(ApiTarget {
         url,
-        token: std::env::var("ORIEL_SYNC_STACK_TOKEN").unwrap_or_else(|_| E2E_TOKEN.to_owned()),
+        token: std::env::var("ORIEL_SYNC_STACK_TOKEN").unwrap_or(stack.sync_token),
     })
 }
 
@@ -197,16 +194,15 @@ fn main() -> anyhow::Result<()> {
                         plan_sync(
                             PlanOptions {
                                 source_root: source.clone(),
-                                hash_cache_root: cache_root(&cache),
+                                hash_cache: cache.clone(),
                                 hash_mode,
-                                directory_concurrency: None,
-                                file_concurrency: None,
                             },
                             (!offline).then_some(&client),
                             Some(&watcher),
                             &cancel,
                         )
-                        .await?,
+                        .await?
+                        .plan,
                     );
                 }
                 anyhow::Ok(plan.expect("planned at least once"))
@@ -228,14 +224,24 @@ fn main() -> anyhow::Result<()> {
                 Some(width) => Some(width.parse()?),
             };
             let result = futures::executor::block_on(runtime.spawn(async move {
+                let plan = plan_sync(
+                    PlanOptions {
+                        source_root: source,
+                        hash_cache: cache.clone(),
+                        hash_mode: HashMode::RemoteAware,
+                    },
+                    Some(&client),
+                    Some(&watcher),
+                    &cancel,
+                )
+                .await?
+                .plan;
                 push_changes(
                     PushOptions {
                         api,
-                        source_root: source,
-                        hash_cache_root: cache_root(&cache),
-                        hash_mode: None,
+                        hash_cache: cache,
                         max_changes: None,
-                        plan: None,
+                        plan,
                         upload_concurrency: width,
                     },
                     &client,
@@ -249,11 +255,19 @@ fn main() -> anyhow::Result<()> {
                 .iter()
                 .map(|(at, width)| format!("[{:.0},{width}]", at.as_secs_f64() * 1e3))
                 .collect();
+            let bytes: u64 = result
+                .plan
+                .items
+                .iter()
+                .filter(|item| {
+                    matches!(item.action, SyncPlanAction::Upload | SyncPlanAction::Update)
+                })
+                .filter_map(|item| item.local.as_ref().map(|local| local.size))
+                .sum();
             format!(
-                r#""pushed":{},"failed":{},"bytes":{},"widths":[{}]"#,
-                result.pushed,
-                result.failed,
-                result.plan.push_bytes(),
+                r#""pushed":{},"failed":{},"bytes":{bytes},"widths":[{}]"#,
+                result.summary.applied,
+                result.summary.failed,
                 widths.join(",")
             )
         }
@@ -263,16 +277,15 @@ fn main() -> anyhow::Result<()> {
                 let plan = plan_sync(
                     PlanOptions {
                         source_root: source,
-                        hash_cache_root: cache_root(&cache),
+                        hash_cache: cache,
                         hash_mode: HashMode::None,
-                        directory_concurrency: None,
-                        file_concurrency: None,
                     },
                     Some(&client),
                     None,
                     &cancel,
                 )
-                .await?;
+                .await?
+                .plan;
                 let pruning = Instant::now();
                 let result = prune_deleted(
                     PruneOptions {
@@ -290,8 +303,8 @@ fn main() -> anyhow::Result<()> {
             let (result, pruning) = result;
             format!(
                 r#""pruned":{},"skipped":{},"failed":{},"prune_ms":{:.1}"#,
-                result.pruned,
-                result.skipped,
+                result.applied,
+                result.skipped.unwrap_or(0),
                 result.failed,
                 pruning.as_secs_f64() * 1e3
             )

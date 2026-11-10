@@ -1,4 +1,5 @@
 import * as z from "zod/mini";
+import { PROFILES_KEY } from "./constants";
 
 /**
  * The profile every install starts with. Its folders keep the storage keys used before profiles
@@ -12,7 +13,7 @@ export const MAX_PROFILES = 12;
 export const MAX_PROFILE_NAME_LENGTH = 32;
 
 /** A named set of remembered destination folders. */
-export interface GatherProfile {
+interface GatherProfile {
   id: string;
   name: string;
 }
@@ -22,14 +23,16 @@ export interface GatherProfilesState {
   activeProfileId: string;
 }
 
+const DEFAULT_PROFILE: GatherProfile = { id: DEFAULT_PROFILE_ID, name: "Default" };
+
 export const DEFAULT_PROFILES: GatherProfilesState = {
-  profiles: [{ id: DEFAULT_PROFILE_ID, name: "Default" }],
-  activeProfileId: DEFAULT_PROFILE_ID
+  profiles: [DEFAULT_PROFILE],
+  activeProfileId: DEFAULT_PROFILE_ID,
 };
 
 const GatherProfileSchema = z.object({
   id: z.string().check(z.minLength(1)),
-  name: z.string()
+  name: z.string(),
 });
 
 /**
@@ -41,11 +44,11 @@ export const GatherProfilesStateSchema = z.catch(
   z.pipe(
     z.object({
       profiles: z.array(z.catch(z.nullable(GatherProfileSchema), null)),
-      activeProfileId: z.catch(z.string(), DEFAULT_PROFILE_ID)
+      activeProfileId: z.catch(z.string(), DEFAULT_PROFILE_ID),
     }),
     z.transform((stored): GatherProfilesState => {
       const seen = new Set<string>();
-      let defaultProfile: GatherProfile = { ...DEFAULT_PROFILES.profiles[0] };
+      let defaultProfile: GatherProfile = { ...DEFAULT_PROFILE };
       const others: GatherProfile[] = [];
 
       for (const profile of stored.profiles) {
@@ -54,7 +57,7 @@ export const GatherProfilesStateSchema = z.catch(
 
           const named = {
             id: profile.id,
-            name: normalizeProfileName(profile.name) || `Profile ${seen.size}`
+            name: normalizeProfileName(profile.name) || `Profile ${seen.size}`,
           };
 
           if (named.id === DEFAULT_PROFILE_ID) {
@@ -70,12 +73,10 @@ export const GatherProfilesStateSchema = z.catch(
       const active = profiles.find((profile) => profile.id === stored.activeProfileId);
 
       return { profiles, activeProfileId: (active ?? defaultProfile).id };
-    })
+    }),
   ),
-  () => copyProfiles(DEFAULT_PROFILES)
+  () => copyProfiles(DEFAULT_PROFILES),
 );
-
-export const PROFILES_KEY = "gather-box-profiles";
 
 export async function loadProfiles(): Promise<GatherProfilesState> {
   const stored = await chrome.storage.sync.get(PROFILES_KEY);
@@ -83,7 +84,7 @@ export async function loadProfiles(): Promise<GatherProfilesState> {
   return GatherProfilesStateSchema.parse(stored[PROFILES_KEY]);
 }
 
-export async function saveProfiles(state: GatherProfilesState): Promise<void> {
+async function saveProfiles(state: GatherProfilesState): Promise<void> {
   await chrome.storage.sync.set({ [PROFILES_KEY]: GatherProfilesStateSchema.parse(state) });
 }
 
@@ -93,7 +94,7 @@ export async function saveProfiles(state: GatherProfilesState): Promise<void> {
  * change; edits are made by hand, one click at a time, which keeps that window small.
  */
 export async function updateProfiles(
-  change: (state: GatherProfilesState) => GatherProfilesState
+  change: (state: GatherProfilesState) => GatherProfilesState,
 ): Promise<GatherProfilesState> {
   const next = change(await loadProfiles());
   await saveProfiles(next);
@@ -108,7 +109,7 @@ export function getProfileName(state: GatherProfilesState, profileId: string): s
 /** A profile's name when there are several to tell apart. With only one, messages leave it out. */
 export function getDistinguishingProfileName(
   state: GatherProfilesState,
-  profileId: string
+  profileId: string,
 ): string | null {
   return state.profiles.length > 1 ? getProfileName(state, profileId) : null;
 }
@@ -116,7 +117,7 @@ export function getDistinguishingProfileName(
 /** IDs of profiles in the previous state that the next one no longer lists. */
 export function getRemovedProfileIds(
   previous: GatherProfilesState,
-  next: GatherProfilesState
+  next: GatherProfilesState,
 ): string[] {
   const kept = new Set(next.profiles.map((profile) => profile.id));
 
@@ -125,7 +126,7 @@ export function getRemovedProfileIds(
 
 export function setActiveProfile(
   state: GatherProfilesState,
-  profileId: string
+  profileId: string,
 ): GatherProfilesState {
   return state.profiles.some((profile) => profile.id === profileId)
     ? { ...state, activeProfileId: profileId }
@@ -133,18 +134,14 @@ export function setActiveProfile(
 }
 
 /** Adds a profile, unnamed ones numbered after the list. Unchanged once the list is full. */
-export function addProfile(
-  state: GatherProfilesState,
-  id: string,
-  name = ""
-): GatherProfilesState {
+export function addProfile(state: GatherProfilesState, id: string, name = ""): GatherProfilesState {
   if (state.profiles.length >= MAX_PROFILES) {
     return state;
   }
 
   const profile = {
     id,
-    name: normalizeProfileName(name) || nextProfileName(state)
+    name: normalizeProfileName(name) || nextProfileName(state),
   };
 
   return { ...state, profiles: [...state.profiles, profile] };
@@ -154,7 +151,7 @@ export function addProfile(
 export function renameProfile(
   state: GatherProfilesState,
   profileId: string,
-  name: string
+  name: string,
 ): GatherProfilesState {
   const normalized = normalizeProfileName(name);
 
@@ -165,8 +162,8 @@ export function renameProfile(
   return {
     ...state,
     profiles: state.profiles.map((profile) =>
-      profile.id === profileId ? { ...profile, name: normalized } : profile
-    )
+      profile.id === profileId ? { ...profile, name: normalized } : profile,
+    ),
   };
 }
 
@@ -174,10 +171,7 @@ export function renameProfile(
  * The default profile cannot be removed, so there is always one left. Removing the active profile
  * activates its neighbour.
  */
-export function removeProfile(
-  state: GatherProfilesState,
-  profileId: string
-): GatherProfilesState {
+export function removeProfile(state: GatherProfilesState, profileId: string): GatherProfilesState {
   const index = state.profiles.findIndex((profile) => profile.id === profileId);
 
   if (index < 0 || profileId === DEFAULT_PROFILE_ID) {
@@ -188,7 +182,7 @@ export function removeProfile(
 
   const activeProfileId =
     state.activeProfileId === profileId
-      ? profiles[Math.min(index, profiles.length - 1)].id
+      ? (profiles[Math.min(index, profiles.length - 1)]?.id ?? DEFAULT_PROFILE_ID)
       : state.activeProfileId;
 
   return { profiles, activeProfileId };

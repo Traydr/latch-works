@@ -1,0 +1,13 @@
+[package]
+name = "oriel-launch"
+description = "What an Oriel launch is told: its data root, what to open and its ORIEL_* variables, and the variables and stored preferences xtask's measure sets and seeds."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+oriel-core-paths.workspace = true
+
+[lints]
+workspace = true

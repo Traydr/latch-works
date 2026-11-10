@@ -1,4 +1,4 @@
-//! The Library as a grid (`components/library/FileGrid.tsx`): Frame View's tiles, square pictures
+//! The Library as a grid of tiles: square pictures
 //! at least 220 px wide with the name and size under each, paged in as the grid scrolls. Only the
 //! lines in view are drawn, so a large archive scrolls as fast as a small one.
 
@@ -13,11 +13,11 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, canvas, div,
     prelude::FluentBuilder as _, px, uniform_list,
 };
+use oriel_core_domain::format;
 use oriel_ui::TextRole as _;
 use oriel_ui::{ControlSize as _, checkbox_target};
 
 use super::{LibraryPage, PAGE};
-use crate::format;
 use crate::thumbs;
 
 /// The narrowest a tile gets before the grid drops a column.
