@@ -1,7 +1,7 @@
-//! The executor, from glazier-core's `plans/executor.ts`: it applies a reviewed plan step by step
+//! The executor: it applies a reviewed plan step by step
 //! and undoes one, newest step first.
 //!
-//! This is the code that moves the owner's files, so it keeps glazier-core's guarantees exactly:
+//! This is the code that moves the owner's files, so it keeps these guarantees exactly:
 //!
 //! - each file is read again just before it is touched, and one that changed since the scan (its
 //!   size, its mtime, or its ctime unless its bytes still hash the same) is skipped, never acted
@@ -25,11 +25,13 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Instant, SystemTime};
 
 use anyhow::{Context as _, anyhow, bail};
 use oriel_avif::Libavif;
+use oriel_core_domain::format;
+use oriel_core_domain::is_folder_system_file;
 use oriel_core_format::{AudioTrackPlan, VideoTrackPlan};
 use oriel_runtime::Cancelled;
 use oriel_runtime::fs_meta::{MetadataExt as _, change_time, identity};
@@ -40,22 +42,28 @@ use super::holding::{
     HoldRequest, HoldingPlaces, HoldingStore, copy_times, hold_file, holding_batch_name,
     holding_record_by_id, move_file, path_exists, restorable, restore_held,
 };
+use super::journal::SkipReason;
 use super::journal::{
     StepRecord, forget_dismissals_of_idle_plan, load_steps, plan_subject, temp_path_of,
 };
-use super::planner::{Keeper, StepSpec, is_within};
-use crate::catalog::rows::{PROBE_VERSION, to_absolute_path};
+use super::planner::{Keeper, StepSpec};
+use crate::catalog::files::{
+    ConvertedFile, FileIdentity, NotSmaller, file_record_at, forget_empty_folder, forget_file,
+    mark_not_smaller as catalog_mark_not_smaller, point_back_at_original, relocate_file,
+    replace_converted_file,
+};
+use crate::catalog::rows::FileRecord;
+use crate::catalog::timings::{EncodeTiming, record_encode_timing};
 use crate::catalog::{Catalog, now_ms};
 use crate::contract::{
     FileFormat, HoldingId, PlanId, PlanKind, PlanStepAction, Root, RootId, StepStatus,
 };
-use crate::media::still::encode_still_to_avif;
-use crate::media::transcode::{TranscodeJob, transcode_with_ffmpeg};
-use crate::media::{ToolFailure, probe_video};
-use crate::number::format_bytes;
+use crate::media::convert::{Conversion, Converter, pixels};
 use crate::passes::hash::{HashError, hash_edges, hash_whole_file};
 use crate::passes::{Media, Progress, run_concurrently};
-use crate::scan::{extension_of, is_extension_mismatch, is_folder_system_file, whole_ms};
+use crate::paths::is_within;
+use crate::scan::{dir_of, whole_ms};
+use oriel_tools::{ToolError, probe_video};
 
 /// A conversion is kept only when it saves at least this share of the original's bytes.
 const MINIMUM_SAVING: f64 = 0.05;
@@ -63,13 +71,12 @@ const MINIMUM_SAVING: f64 = 0.05;
 /// Holding's reason for a `.DS_Store` or `Thumbs.db` that left with the empty folder it was in.
 const FOLDER_FILES_REASON: &str = "Left by Finder or Explorer in an empty folder";
 
-/// The same reason as glazier-core 0.1.2 to 0.1.4 wrote it, when only `.DS_Store` left with its
+/// The same reason as Electron Oriel's engine 0.1.2 to 0.1.4 wrote it, when only `.DS_Store` left with its
 /// folder; an undo still brings those back.
 const FINDER_SETTINGS_REASON: &str = "Finder's settings for an empty folder";
 
 const CHANGED_SINCE_SCAN: &str = "The file changed since the scan; rescan before changing it.";
 
-// The summary counts these by how they start (`journal::PLAN_SUMMARY_SQL`).
 const KEPT_FILE_CHANGED: &str = "The file kept instead has changed since the scan.";
 
 const KEPT_FILE_GONE: &str = "The file kept instead is no longer there.";
@@ -80,22 +87,18 @@ pub const SAME_RESULT: &str = "Same result as its identical copy";
 /// How a step that kept its original because of the result's size starts saying so.
 const KEPT_THE_ORIGINAL: &str = "Kept the original: ";
 
-/// How the plan kinds that keep only a smaller result remember a file that did not shrink, so
-/// they stop offering it: Convert and Shrink each keep their own mark.
-fn not_smaller_sql(kind: Option<PlanKind>) -> Option<&'static str> {
+/// Which mark the plan kinds that keep only a smaller result leave on a file that did not
+/// shrink, so they stop offering it.
+fn not_smaller_mark(kind: Option<PlanKind>) -> Option<NotSmaller> {
     match kind? {
-        PlanKind::Optimize => {
-            Some("UPDATE files SET optimize_not_smaller = 1 WHERE root_id = ?1 AND rel_path = ?2")
-        }
-        PlanKind::ShrinkVideos => {
-            Some("UPDATE files SET shrink_not_smaller = 1 WHERE root_id = ?1 AND rel_path = ?2")
-        }
+        PlanKind::Optimize => Some(NotSmaller::Convert),
+        PlanKind::ShrinkVideos => Some(NotSmaller::Shrink),
         _ => None,
     }
 }
 
 /// What the executor works with.
-pub struct ExecutorDeps<'a> {
+pub(crate) struct ExecutorDeps<'a> {
     pub catalog: &'a Catalog,
     /// Where each root's held files go.
     pub places: &'a HoldingPlaces,
@@ -106,15 +109,20 @@ pub struct ExecutorDeps<'a> {
     pub svt_av1: bool,
     /// AVIF encodes run this many at once, within the memory [`EncodeBudget`] allows.
     pub still_concurrency: usize,
-    pub encode_budget: EncodeBudget,
+    pub encode_budget: &'a EncodeBudget,
     pub roots: Vec<Root>,
     pub progress: &'a dyn Progress,
-    /// Moved after every file a step changes, so what is read during a run sees it: duplicate sets
-    /// cached against it would otherwise keep showing paths that have gone.
-    pub generation: &'a AtomicU64,
 }
 
 impl ExecutorDeps<'_> {
+    fn converter(&self) -> Converter<'_> {
+        Converter {
+            media: self.media,
+            libavif: self.libavif.clone(),
+            budget: self.encode_budget,
+        }
+    }
+
     fn store(&self) -> HoldingStore<'_> {
         HoldingStore {
             catalog: self.catalog,
@@ -138,6 +146,8 @@ pub enum StepOutcome {
         output_sha256: Option<String>,
     },
     Skipped(String),
+    /// Skipped for a reason the plan's summary counts.
+    SkippedFor(String, SkipReason),
     Failed(String),
 }
 
@@ -147,6 +157,7 @@ pub enum StepOutcome {
 pub struct StepSkip {
     pub message: String,
     pub stale: bool,
+    pub reason: Option<SkipReason>,
 }
 
 impl StepSkip {
@@ -154,6 +165,20 @@ impl StepSkip {
         anyhow::Error::new(Self {
             message: message.to_owned(),
             stale: true,
+            reason: None,
+        })
+    }
+
+    /// A duplicate decision's file left alone because the copy kept instead changed or went.
+    fn kept_file(reason: SkipReason) -> anyhow::Error {
+        let message = match reason {
+            SkipReason::KeptFileChanged => KEPT_FILE_CHANGED,
+            SkipReason::KeptFileGone => KEPT_FILE_GONE,
+        };
+        anyhow::Error::new(Self {
+            message: message.to_owned(),
+            stale: true,
+            reason: Some(reason),
         })
     }
 }
@@ -196,10 +221,6 @@ fn base_name(path: &str) -> &str {
     path.rsplit(['/', std::path::MAIN_SEPARATOR])
         .next()
         .unwrap_or(path)
-}
-
-fn dir_of(rel_path: &str) -> &str {
-    rel_path.rfind('/').map_or("", |index| &rel_path[..index])
 }
 
 /// The root a path lies in, the deepest if roots nest, with the path relative to it.
@@ -245,7 +266,7 @@ fn whole_ctime(path: &Path, metadata: &fs::Metadata) -> i64 {
 /// it sees arrive, the bytes decide: a file that still hashes to the catalog's SHA-256 is the
 /// file the plan was drafted for.
 fn check_source(deps: &ExecutorDeps<'_>, step: &StepRecord) -> anyhow::Result<fs::Metadata> {
-    let source = step.from_abs();
+    let source = step.source_path();
     let Ok(current) = fs::symlink_metadata(&source) else {
         return Err(StepSkip::stale("The file is no longer there."));
     };
@@ -270,18 +291,18 @@ fn check_keepers(deps: &ExecutorDeps<'_>, keepers: &[Keeper]) -> anyhow::Result<
     for keeper in keepers {
         let path = Path::new(&keeper.path);
         let Ok(current) = fs::symlink_metadata(path) else {
-            return Err(StepSkip::stale(KEPT_FILE_GONE));
+            return Err(StepSkip::kept_file(SkipReason::KeptFileGone));
         };
         if !current.is_file()
             || current.size() as i64 != keeper.size
             || whole_mtime(&current) != keeper.mtime_ms.trunc() as i64
         {
-            return Err(StepSkip::stale(KEPT_FILE_CHANGED));
+            return Err(StepSkip::kept_file(SkipReason::KeptFileChanged));
         }
         if whole_ctime(path, &current) != keeper.ctime_ms.trunc() as i64
             && !hashes_to(deps, path, &current, keeper.sha256.as_deref())?
         {
-            return Err(StepSkip::stale(KEPT_FILE_CHANGED));
+            return Err(StepSkip::kept_file(SkipReason::KeptFileChanged));
         }
     }
     Ok(())
@@ -293,18 +314,8 @@ fn holds_catalogued_bytes(
     step: &StepRecord,
     current: &fs::Metadata,
 ) -> anyhow::Result<bool> {
-    let (root_id, rel_path) = (step.root_id, step.from_rel.clone());
-    let catalogued: Option<String> = deps.catalog.blocking(move |connection| {
-        Ok(connection
-            .query_row(
-                "SELECT sha256 FROM files WHERE root_id = ?1 AND rel_path = ?2",
-                params![root_id, rel_path],
-                |row| row.get::<_, Option<String>>(0),
-            )
-            .optional()?
-            .flatten())
-    })?;
-    hashes_to(deps, &step.from_abs(), current, catalogued.as_deref())
+    let catalogued = catalogued_record(deps, step)?.and_then(|record| record.sha256);
+    hashes_to(deps, &step.source_path(), current, catalogued.as_deref())
 }
 
 /// Whether a file's bytes hash to `sha256`; false without one, or unread.
@@ -329,6 +340,26 @@ fn hashes_to(
     }
 }
 
+/// The catalog's row of a step's source.
+fn catalogued_record(
+    deps: &ExecutorDeps<'_>,
+    step: &StepRecord,
+) -> anyhow::Result<Option<FileRecord>> {
+    let (root_id, rel_path) = (step.root_id, step.from_rel.clone());
+    deps.catalog
+        .blocking(move |connection| file_record_at(connection, root_id, &rel_path))
+}
+
+/// Where a file now on disk is, as the catalog records it.
+fn identity_of(path: &Path, metadata: &fs::Metadata) -> FileIdentity {
+    let identity = identity(path, metadata);
+    FileIdentity {
+        ctime_ms: whole_ms(identity.ctime, identity.ctime_nsec),
+        dev: identity.dev.to_string(),
+        ino: identity.ino.to_string(),
+    }
+}
+
 /// Points a catalog row at a file's new path when the bytes did not change (move, rename). A
 /// file moved out of every root leaves the catalog.
 fn relocate_row(
@@ -339,57 +370,18 @@ fn relocate_row(
 ) -> anyhow::Result<()> {
     let from = from.to_owned();
     let Some((new_root, rel_path)) = locate(&deps.roots, target) else {
-        return deps.catalog.blocking(move |connection| {
-            connection.execute(
-                "DELETE FROM files WHERE root_id = ?1 AND rel_path = ?2",
-                params![root_id, from],
-            )?;
-            Ok(())
-        });
+        return deps
+            .catalog
+            .blocking(move |connection| forget_file(connection, root_id, &from));
     };
-    let moved = fs::metadata(target)?;
-    let name = base_name(&rel_path).to_owned();
-    let ext = extension_of(&name);
-    let dir = dir_of(&rel_path).to_owned();
-    let identity = identity(target, &moved);
-    let (ctime, dev, ino) = (
-        whole_ms(identity.ctime, identity.ctime_nsec),
-        identity.dev.to_string(),
-        identity.ino.to_string(),
-    );
+    let identity = identity_of(target, &fs::metadata(target)?);
     deps.catalog.blocking(move |connection| {
-        let format: Option<String> = connection
-            .query_row(
-                "SELECT format FROM files WHERE root_id = ?1 AND rel_path = ?2",
-                params![root_id, from],
-                |row| row.get(0),
-            )
-            .optional()?
-            .flatten();
-        let mismatch = format
-            .as_deref()
-            .and_then(FileFormat::parse)
-            .is_some_and(|format| is_extension_mismatch(format, &ext));
-        connection.execute(
-            "UPDATE files SET root_id = ?1, rel_path = ?2, dir = ?3, name = ?4, ext = ?5,
-          ctime_ms = ?6, dev = ?7, ino = ?8,
-          ext_mismatch = CASE WHEN format IS NULL THEN 0 ELSE ?9 END
-          WHERE root_id = ?10 AND rel_path = ?11",
-            params![
-                new_root,
-                rel_path,
-                dir,
-                name,
-                ext,
-                ctime,
-                dev,
-                ino,
-                i64::from(mismatch),
-                root_id,
-                from
-            ],
-        )?;
-        Ok(())
+        relocate_file(
+            connection,
+            (root_id, &from),
+            (new_root, &rel_path),
+            &identity,
+        )
     })
 }
 
@@ -426,9 +418,7 @@ struct ReplacedRow {
     reencoded: bool,
 }
 
-/// Rewrites a catalog row for a converted file, which keeps its id: new path, new bytes, the facts
-/// just checked. Other rows of the same inode, which a hard link of the result has just touched,
-/// take its change time.
+/// Rewrites a catalog row for a converted file; see [`replace_converted_file`].
 fn replace_row(
     deps: &ExecutorDeps<'_>,
     step: &StepRecord,
@@ -445,70 +435,32 @@ fn replace_row(
         return Ok(());
     };
     let written = fs::metadata(target)?;
-    let identity = identity(target, &written);
-    let name = base_name(&rel_path).to_owned();
-    let row = (
-        dir_of(&rel_path).to_owned(),
-        extension_of(&name),
-        written.size() as i64,
-        whole_mtime(&written),
-        whole_ms(identity.ctime, identity.ctime_nsec),
-        identity.dev.to_string(),
-        identity.ino.to_string(),
-    );
+    let file = ConvertedFile {
+        rel_path,
+        size: written.size() as i64,
+        mtime_ms: whole_mtime(&written),
+        identity: identity_of(target, &written),
+        kind: facts.kind,
+        format: facts.format,
+        width: facts.width,
+        height: facts.height,
+        frames: facts.frames,
+        duration_ms: facts.duration_ms,
+        video_codec: facts.video_codec,
+        audio_codec: facts.audio_codec,
+        audio_streams: facts.audio_streams,
+        bitrate: facts.bitrate,
+        hashes: hashes.map(|hashes| (hashes.head_hash, hashes.sha256)),
+        keep_loudness,
+        reencoded,
+    };
     let (root_id, from) = (step.root_id, step.from_rel.clone());
-    deps.catalog.blocking(move |connection| {
-        connection.execute(
-            "UPDATE files SET rel_path = ?1, dir = ?2, name = ?3, ext = ?4, size = ?5,
-          mtime_ms = ?6, ctime_ms = ?7, dev = ?8, ino = ?9, kind = ?10, format = ?11,
-          ext_mismatch = 0, probe_version = ?12, probe_error = NULL, width = ?13,
-          height = ?14, frames = ?15, duration_ms = ?16, video_codec = ?17,
-          audio_codec = ?18, audio_streams = ?19, bitrate = ?20, head_hash = ?21,
-          sha256 = ?22, fingerprint_version = 0, fingerprint = NULL, fingerprint_error = NULL,
-          loudness_version = CASE WHEN ?23 = 1 THEN loudness_version ELSE 0 END,
-          loudness_max_db = CASE WHEN ?23 = 1 THEN loudness_max_db ELSE NULL END,
-          optimize_not_smaller = 0, shrink_not_smaller = 0, reencoded = ?24
-          WHERE root_id = ?25 AND rel_path = ?26",
-            params![
-                rel_path,
-                row.0,
-                name,
-                row.1,
-                row.2,
-                row.3,
-                row.4,
-                row.5,
-                row.6,
-                facts.kind,
-                facts.format.as_str(),
-                PROBE_VERSION,
-                facts.width,
-                facts.height,
-                facts.frames,
-                facts.duration_ms,
-                facts.video_codec,
-                facts.audio_codec,
-                facts.audio_streams,
-                facts.bitrate,
-                hashes.as_ref().map(|hashes| hashes.head_hash.as_str()),
-                hashes.as_ref().map(|hashes| hashes.sha256.as_str()),
-                i64::from(keep_loudness),
-                i64::from(reencoded),
-                root_id,
-                from
-            ],
-        )?;
-        connection.execute(
-            "UPDATE files SET ctime_ms = ?1 WHERE dev = ?2 AND ino = ?3",
-            params![row.4, row.5, row.6],
-        )?;
-        Ok(())
-    })
+    deps.catalog
+        .blocking(move |connection| replace_converted_file(connection, root_id, &from, &file))
 }
 
-/// After a conversion's undo, points its row back at the original, so the file keeps its id and
-/// what the owner said about it. The row's change time goes, so the scan an undo asks for takes it
-/// as changed and reads the original afresh.
+/// After a conversion's undo, points its row back at the original; see
+/// [`point_back_at_original`].
 fn point_row_at_original(
     deps: &ExecutorDeps<'_>,
     step: &StepRecord,
@@ -518,16 +470,8 @@ fn point_row_at_original(
         return Ok(());
     };
     let (root_id, from) = (step.root_id, step.from_rel.clone());
-    let (dir, name) = (dir_of(&from).to_owned(), base_name(&from).to_owned());
-    let ext = extension_of(&name);
-    deps.catalog.blocking(move |connection| {
-        connection.execute(
-            "UPDATE OR IGNORE files SET rel_path = ?1, dir = ?2, name = ?3, ext = ?4, ctime_ms = 0
-          WHERE root_id = ?5 AND rel_path = ?6",
-            params![from, dir, name, ext, root_id, rel_path],
-        )?;
-        Ok(())
-    })
+    deps.catalog
+        .blocking(move |connection| point_back_at_original(connection, root_id, &rel_path, &from))
 }
 
 /// What the catalog knew of the source, which the conversion's result is checked against.
@@ -540,25 +484,14 @@ struct SourceFacts {
 }
 
 fn source_facts(deps: &ExecutorDeps<'_>, step: &StepRecord) -> anyhow::Result<SourceFacts> {
-    let (root_id, rel_path) = (step.root_id, step.from_rel.clone());
-    deps.catalog.blocking(move |connection| {
-        Ok(connection
-            .query_row(
-                "SELECT width, height, duration_ms, audio_streams FROM files
-          WHERE root_id = ?1 AND rel_path = ?2",
-                params![root_id, rel_path],
-                |row| {
-                    Ok(SourceFacts {
-                        width: row.get(0)?,
-                        height: row.get(1)?,
-                        duration_ms: row.get(2)?,
-                        audio_streams: row.get(3)?,
-                    })
-                },
-            )
-            .optional()?
-            .unwrap_or_default())
-    })
+    Ok(catalogued_record(deps, step)?
+        .map(|record| SourceFacts {
+            width: record.width,
+            height: record.height,
+            duration_ms: record.duration_ms,
+            audio_streams: record.audio_streams,
+        })
+        .unwrap_or_default())
 }
 
 fn close_to(actual: Option<f64>, expected: Option<f64>, tolerance: f64) -> bool {
@@ -576,7 +509,7 @@ struct ConvertContext<'a> {
     /// Keep the result only when it saves at least [`MINIMUM_SAVING`].
     require_smaller: bool,
     /// Marks a file whose result was not kept for that, so it is not offered again.
-    not_smaller: Option<&'static str>,
+    not_smaller: Option<NotSmaller>,
     /// The result carries the original's audio track unchanged.
     keep_loudness: bool,
 }
@@ -717,13 +650,12 @@ fn earlier_not_smaller(
 fn mark_not_smaller(
     deps: &ExecutorDeps<'_>,
     step: &StepRecord,
-    not_smaller: Option<&'static str>,
+    not_smaller: Option<NotSmaller>,
 ) -> anyhow::Result<()> {
-    if let Some(sql) = not_smaller {
+    if let Some(mark) = not_smaller {
         let (root_id, rel_path) = (step.root_id, step.from_rel.clone());
         deps.catalog.blocking(move |connection| {
-            connection.execute(sql, params![root_id, rel_path])?;
-            Ok(())
+            catalog_mark_not_smaller(connection, mark, root_id, &rel_path)
         })?;
     }
     Ok(())
@@ -743,7 +675,7 @@ fn convert(
     let Some(target) = step.to_abs.as_deref().map(PathBuf::from) else {
         return Ok(StepOutcome::Failed("The step has no target.".into()));
     };
-    let source = step.from_abs();
+    let source = step.source_path();
     let source_change_time = whole_ctime(&source, context.source);
     let same_path = std::path::absolute(&target)? == std::path::absolute(&source)?;
     if !same_path && path_exists(&target) {
@@ -807,8 +739,8 @@ fn convert(
         };
         return Ok(StepOutcome::Skipped(format!(
             "{KEPT_THE_ORIGINAL}{why} ({} → {})",
-            format_bytes(original as f64),
-            format_bytes(written as f64)
+            format::bytes(original),
+            format::bytes(written)
         )));
     }
 
@@ -852,8 +784,14 @@ fn convert(
                 // new file back out, which nothing was at before, so the step leaves things as it
                 // found them. An original already in holding (its record failed) keeps the new
                 // file in its place.
-                if path_exists(&source) {
-                    let _ = fs::remove_file(&target);
+                if path_exists(&source)
+                    && let Err(removing) = fs::remove_file(&target)
+                {
+                    log::warn!(
+                        "Tidy could not take {} back out after holding its original failed: \
+                         {removing}",
+                        target.display()
+                    );
                 }
                 return Err(error);
             }
@@ -879,11 +817,10 @@ fn convert(
     })
 }
 
-fn tool_error(failure: ToolFailure) -> anyhow::Error {
-    match failure {
-        ToolFailure::Cancelled => Cancelled.into(),
-        ToolFailure::Failed(message) => anyhow!(message),
-        failure @ ToolFailure::Interrupted => anyhow!("{failure}"),
+fn tool_error(error: ToolError) -> anyhow::Error {
+    match error {
+        ToolError::Cancelled => Cancelled.into(),
+        error => anyhow!("{error}"),
     }
 }
 
@@ -892,7 +829,7 @@ fn remove_folder(
     step: &StepRecord,
     batch: &str,
 ) -> anyhow::Result<StepOutcome> {
-    let folder = step.from_abs();
+    let folder = step.source_path();
     let Ok(entries) = fs::read_dir(&folder) else {
         return Ok(StepOutcome::Skipped(
             "The folder is no longer there.".into(),
@@ -929,13 +866,8 @@ fn remove_folder(
     }
     remove_empty_folder(&folder)?;
     let (root_id, rel_path) = (step.root_id, step.from_rel.clone());
-    deps.catalog.blocking(move |connection| {
-        connection.execute(
-            "DELETE FROM empty_folders WHERE root_id = ?1 AND rel_path = ?2",
-            params![root_id, rel_path],
-        )?;
-        Ok(())
-    })?;
+    deps.catalog
+        .blocking(move |connection| forget_empty_folder(connection, root_id, &rel_path))?;
     Ok(StepOutcome::Done {
         bytes_after: 0,
         holding_id: None,
@@ -978,7 +910,7 @@ fn execute_step(
     deps: &ExecutorDeps<'_>,
     step: &StepRecord,
     batch: &str,
-    not_smaller: Option<&'static str>,
+    not_smaller: Option<NotSmaller>,
 ) -> anyhow::Result<StepOutcome> {
     if step.spec == StepSpec::RemoveFolder {
         return remove_folder(deps, step, batch);
@@ -996,7 +928,7 @@ fn execute_step(
         // reads only attributes; libvips and ffmpeg would then call it an unknown format. One
         // open here gives Windows' sharing violation, which `is_file_in_use` reads. Any other
         // failure, such as a denied permission, is the file's own and must not read as in use.
-        if let Err(error) = fs::File::open(step.from_abs()) {
+        if let Err(error) = fs::File::open(step.source_path()) {
             if is_sharing_violation(&error) {
                 return Err(error.into());
             }
@@ -1020,13 +952,8 @@ fn execute_step(
                 },
             )?;
             let (root_id, rel_path) = (step.root_id, step.from_rel.clone());
-            deps.catalog.blocking(move |connection| {
-                connection.execute(
-                    "DELETE FROM files WHERE root_id = ?1 AND rel_path = ?2",
-                    params![root_id, rel_path],
-                )?;
-                Ok(())
-            })?;
+            deps.catalog
+                .blocking(move |connection| forget_file(connection, root_id, &rel_path))?;
             Ok(StepOutcome::Done {
                 bytes_after: 0,
                 holding_id: Some(holding_id),
@@ -1038,7 +965,7 @@ fn execute_step(
             let Some(target) = step.to_abs.as_deref().map(PathBuf::from) else {
                 return Ok(StepOutcome::Failed("The step has no target.".into()));
             };
-            if std::path::absolute(&target)? != std::path::absolute(step.from_abs())?
+            if std::path::absolute(&target)? != std::path::absolute(step.source_path())?
                 && path_exists(&target)
             {
                 return Ok(StepOutcome::Skipped(format!(
@@ -1046,7 +973,7 @@ fn execute_step(
                     base_name(&target.to_string_lossy())
                 )));
             }
-            move_file(&step.from_abs(), &target)?;
+            move_file(&step.source_path(), &target)?;
             relocate_row(deps, step.root_id, &step.from_rel, &target)?;
             Ok(StepOutcome::Done {
                 bytes_after: source.size() as i64,
@@ -1061,7 +988,7 @@ fn execute_step(
                 .media
                 .loaded_vips()
                 .context("libvips is unavailable, so stills cannot be converted.")?;
-            let libavif = deps.libavif.clone().map_err(|error| anyhow!(error))?;
+            deps.libavif.clone().map_err(|error| anyhow!(error))?;
             convert(
                 deps,
                 step,
@@ -1073,12 +1000,14 @@ fn execute_step(
                     keep_loudness: false,
                 },
                 |temp| {
-                    let pixels = expected
-                        .width
-                        .zip(expected.height)
-                        .map(|(width, height)| (width.max(0) * height.max(0)) as u64);
-                    let _memory = deps.encode_budget.reserve(pixels, deps.progress)?;
-                    encode_still_to_avif(vips, libavif, &step.from_abs(), temp)?;
+                    let pixels = pixels(expected.width, expected.height);
+                    deps.converter().convert(
+                        Conversion::Still { pixels },
+                        &step.source_path(),
+                        temp,
+                        deps.progress,
+                        &|_| {},
+                    )?;
                     Ok(None)
                 },
                 |temp| {
@@ -1120,11 +1049,11 @@ fn execute_step(
                     "ffprobe is unavailable, so the result cannot be checked.".into(),
                 ));
             };
-            let Some(ffmpeg) = deps.media.ffmpeg.as_deref() else {
+            if deps.media.ffmpeg.is_none() {
                 return Ok(StepOutcome::Failed(
                     "ffmpeg is unavailable, so the file cannot be converted.".into(),
                 ));
-            };
+            }
             let expected = source_facts(deps, step)?;
             let animation = matches!(step.spec, StepSpec::ConvertAnimation { .. });
             let (tracks, quality, require_smaller) = match &step.spec {
@@ -1147,7 +1076,7 @@ fn execute_step(
                         _
                     ))
                 );
-            let source_path = step.from_abs();
+            let source_path = step.source_path();
             let cancel = deps.progress.cancel_token();
             let known_length = expected.duration_ms.is_some_and(|length| length > 0.);
             let verify =
@@ -1155,7 +1084,7 @@ fn execute_step(
             let context = ConvertContext {
                 batch,
                 source: &source,
-                // An animation is converted only to save space, as Electron Oriel's main path.
+                // An animation is converted only to save space.
                 require_smaller: if svt {
                     require_smaller
                 } else {
@@ -1169,18 +1098,13 @@ fn execute_step(
                 step,
                 context,
                 |temp| {
-                    let job = match tracks {
-                        Some((video, audio)) => TranscodeJob::Video {
-                            src: &source_path,
-                            out: temp,
+                    let conversion = match tracks {
+                        Some((video, audio)) => Conversion::Video {
                             video,
                             audio,
                             quality,
                         },
-                        None => TranscodeJob::Animation {
-                            src: &source_path,
-                            out: temp,
-                        },
+                        None => Conversion::Animation,
                     };
                     let started = Instant::now();
                     // Encoding a video can take minutes, so it says which and how far along.
@@ -1193,7 +1117,13 @@ fn execute_step(
                             .map(|length| (seconds * 1000. / length).clamp(0., 1.) as f32);
                         deps.progress.item(Some((name, share)));
                     };
-                    transcode_with_ffmpeg(ffmpeg, &job, cancel, &on_seconds).map_err(tool_error)?;
+                    deps.converter().convert(
+                        conversion,
+                        &source_path,
+                        temp,
+                        deps.progress,
+                        &on_seconds,
+                    )?;
                     if !svt {
                         return Ok(None);
                     }
@@ -1201,13 +1131,13 @@ fn execute_step(
                     if let (Some(width), Some(height), Some(duration_ms)) =
                         (expected.width, expected.height, expected.duration_ms)
                     {
-                        let wall_ms = started.elapsed().as_secs_f64() * 1000.0;
-                        record_encode_timing(
-                            deps.catalog,
-                            (width * height) as f64,
-                            duration_ms,
-                            wall_ms,
-                        )?;
+                        let timing = EncodeTiming {
+                            pixels: (width * height) as f64,
+                            media_ms: duration_ms,
+                            wall_ms: started.elapsed().as_secs_f64() * 1000.0,
+                        };
+                        deps.catalog
+                            .blocking(move |connection| record_encode_timing(connection, timing))?;
                     }
                     Ok(Some("Encoded with SVT-AV1".to_owned()))
                 },
@@ -1217,32 +1147,7 @@ fn execute_step(
     }
 }
 
-/// Encode timings kept; older ones are dropped as new ones come in.
-const KEPT_TIMINGS: i64 = 500;
-
-/// Records how long one SVT-AV1 encode took, which Shrink's estimate of encode times learns
-/// from. The catalog lives in this machine's data folder, so these are this machine's speeds.
-pub fn record_encode_timing(
-    catalog: &Catalog,
-    pixels: f64,
-    media_ms: f64,
-    wall_ms: f64,
-) -> anyhow::Result<()> {
-    catalog.blocking(move |connection| {
-        connection.execute(
-            "INSERT INTO encode_timings (encoder, pixels, media_ms, wall_ms, at)
-        VALUES ('svt-av1', ?1, ?2, ?3, ?4)",
-            params![pixels, media_ms, wall_ms, now_ms()],
-        )?;
-        connection.execute(
-            "DELETE FROM encode_timings WHERE id <= (SELECT MAX(id) FROM encode_timings) - ?1",
-            [KEPT_TIMINGS],
-        )?;
-        Ok(())
-    })
-}
-
-/// Checks a video or animation conversion's result as glazier-core does: a picture, the
+/// Checks a video or animation conversion's result: a picture, the
 /// source's length (within half a second, a quarter for an animation, or 2%), its size (within
 /// 2 pixels), its sound when it had some, and no sound when the plan dropped it.
 fn verify_video(
@@ -1331,6 +1236,10 @@ fn record_outcome(catalog: &Catalog, step_id: i64, outcome: StepOutcome) -> anyh
                 "UPDATE plan_steps SET status = 'skipped', message = ?1 WHERE id = ?2",
                 params![message, step_id],
             )?,
+            StepOutcome::SkippedFor(message, reason) => connection.execute(
+                "UPDATE plan_steps SET status = 'skipped', message = ?1, reason = ?2 WHERE id = ?3",
+                params![message, reason.code(), step_id],
+            )?,
             StepOutcome::Failed(message) => connection.execute(
                 "UPDATE plan_steps SET status = 'failed', message = ?1 WHERE id = ?2",
                 params![message, step_id],
@@ -1399,7 +1308,7 @@ impl StepCount<'_> {
 /// Applies a reviewed plan. AVIF encodes run several at once; every other step runs in order, so
 /// a folder's junk leaves before the folder does. Each step settles on its own, and a stopped run
 /// leaves the remaining steps pending and the plan `cancelled`.
-pub fn apply_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<ApplyResult> {
+pub(crate) fn apply_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<ApplyResult> {
     let (steps, kind) = deps.catalog.blocking(move |connection| {
         connection.execute(
             "UPDATE plans SET status = 'applying' WHERE id = ?1",
@@ -1410,7 +1319,7 @@ pub fn apply_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<Ap
         Ok((steps, kind))
     })?;
     let batch = holding_batch_name(Some(plan_id), SystemTime::now());
-    let not_smaller = not_smaller_sql(kind);
+    let not_smaller = not_smaller_mark(kind);
     let stale = AtomicUsize::new(0);
     let count = StepCount {
         progress: deps.progress,
@@ -1433,7 +1342,10 @@ pub fn apply_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<Ap
                     if skip.stale {
                         stale.fetch_add(1, Ordering::AcqRel);
                     }
-                    StepOutcome::Skipped(skip.message.clone())
+                    match skip.reason {
+                        Some(reason) => StepOutcome::SkippedFor(skip.message.clone(), reason),
+                        None => StepOutcome::Skipped(skip.message.clone()),
+                    }
                 }
                 None if is_file_in_use(&error) => StepOutcome::Failed(format!(
                     "Another program has {} open, so it was left as it was.",
@@ -1443,7 +1355,6 @@ pub fn apply_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<Ap
             },
         };
         record_outcome(deps.catalog, step.id, outcome)?;
-        deps.generation.fetch_add(1, Ordering::AcqRel);
         if step.action != PlanStepAction::ConvertAvif {
             deps.progress.item(None);
         }
@@ -1498,7 +1409,7 @@ pub fn apply_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<Ap
 /// a converted file goes to holding and its original returns. A step whose result changed since
 /// is left alone and noted. A step whose file another program has open is left to undo again:
 /// the plan stays undoable, and this fails once the rest are back.
-pub fn undo_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<()> {
+pub(crate) fn undo_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<()> {
     let steps = deps
         .catalog
         .blocking(move |connection| load_steps(connection, plan_id, StepStatus::Done, true))?;
@@ -1606,12 +1517,12 @@ fn undo_step(deps: &ExecutorDeps<'_>, step: &StepRecord, batch: &str) -> anyhow:
             if current.size() as i64 != step.expected_size {
                 bail!("The moved file has changed since.");
             }
-            if path_exists(&step.from_abs()) {
+            if path_exists(&step.source_path()) {
                 bail!("Something now exists at the original path.");
             }
-            move_file(Path::new(target), &step.from_abs())?;
+            move_file(Path::new(target), &step.source_path())?;
             if let Some((root_id, rel_path)) = locate(&deps.roots, Path::new(target)) {
-                relocate_row(deps, root_id, &rel_path, &step.from_abs())?;
+                relocate_row(deps, root_id, &rel_path, &step.source_path())?;
             }
             Ok(())
         }
@@ -1648,7 +1559,7 @@ fn undo_step(deps: &ExecutorDeps<'_>, step: &StepRecord, batch: &str) -> anyhow:
             Ok(())
         }
         PlanStepAction::RemoveFolder => {
-            fs::create_dir_all(step.from_abs())?;
+            fs::create_dir_all(step.source_path())?;
             let (plan_id, root_id) = (step.plan_id, step.root_id);
             let held: Vec<(HoldingId, String)> = deps.catalog.blocking(move |connection| {
                 let mut statement = connection.prepare(
@@ -1671,15 +1582,12 @@ fn undo_step(deps: &ExecutorDeps<'_>, step: &StepRecord, batch: &str) -> anyhow:
                 if dir_of(&original_rel) == step.from_rel {
                     // Finder or Explorer may have written fresh files into the folder already;
                     // those win.
-                    let _ = restore_held(deps.store(), id);
+                    if let Err(error) = restore_held(deps.store(), id) {
+                        log::info!("Tidy left {original_rel} in holding: {error:#}");
+                    }
                 }
             }
             Ok(())
         }
     }
-}
-
-/// The absolute path of a step's source, for callers outside the executor.
-pub fn step_source(step: &StepRecord) -> PathBuf {
-    to_absolute_path(&step.root_path, &step.from_rel)
 }

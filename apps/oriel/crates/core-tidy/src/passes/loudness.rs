@@ -1,18 +1,18 @@
-//! The loudness pass, from glazier-core's `passes/loudness-pass.ts`: measures every video with an
-//! audio track whose loudness is unknown. A track ffmpeg cannot measure is recorded as tried,
+//! The loudness pass: measures every video with an audio track whose loudness is unknown. A track ffmpeg cannot measure is recorded as tried,
 //! without a level, so it stays unmeasured instead of being decoded again after every scan.
 
 use oriel_runtime::Cancelled;
 use rusqlite::{Connection, OptionalExtension as _};
 
-use crate::catalog::files::SqlParams;
-use crate::catalog::rows::{LOUDNESS_VERSION, to_absolute_path};
+use crate::catalog::files::{SelectedFile, SqlParams, record_loudness, still_selected};
+use crate::catalog::rows::to_absolute_path;
 use crate::contract::{FileId, RootId};
-use crate::media::{ToolFailure, measure_peak_volume};
-use crate::passes::{
-    PassContext, SAME_ROW_SQL, SelectedFile, for_each_concurrent, per_core, same_row_params,
-    still_selected,
-};
+use crate::media::measure_peak_volume;
+use crate::passes::{PassContext, for_each_concurrent, per_core};
+use oriel_tools::ToolError;
+
+/// Bumped when loudness is measured differently, so old levels are measured again.
+pub const LOUDNESS_VERSION: i64 = 1;
 
 /// Videos with an audio track the pass has not measured, as a condition on `files f`.
 const UNMEASURED_SQL: &str = "f.kind = 'video' AND f.probe_version > 0 \
@@ -89,23 +89,14 @@ pub fn run_loudness_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
             let path = to_absolute_path(root_path, &file.rel_path);
             let peak = match measure_peak_volume(&ffmpeg, &path, context.progress.cancel_token()) {
                 Ok(peak) => Some(peak),
-                Err(ToolFailure::Cancelled) => return Err(Cancelled.into()),
+                Err(ToolError::Cancelled) => return Err(Cancelled.into()),
                 // Left for a later analysis: it says nothing about the sound.
-                Err(ToolFailure::Interrupted) => return Ok(()),
-                Err(ToolFailure::Failed(_)) => None,
+                Err(ToolError::Killed) => return Ok(()),
+                Err(_) => None,
             };
-            let params = same_row_params(file)
-                .with("version", LOUDNESS_VERSION)
-                .with("peak", peak);
+            let file = file.clone();
             context.catalog.blocking(move |connection| {
-                connection.execute(
-                    &format!(
-                        "UPDATE files SET loudness_version = $version, loudness_max_db = $peak
-          WHERE {SAME_ROW_SQL}"
-                    ),
-                    &*params.named(),
-                )?;
-                Ok(())
+                record_loudness(connection, &file, LOUDNESS_VERSION, peak)
             })
         },
     )

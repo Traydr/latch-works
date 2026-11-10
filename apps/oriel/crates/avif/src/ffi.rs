@@ -3,7 +3,7 @@
 //! libavif has no setters for an encoder's settings or an image's colour, so the fields this
 //! crate sets are laid out here. libavif 1.x only ever adds members after a "Version 1.x.0 ends
 //! here" marker, so the start of each struct, which is all this reads or writes, is the same in
-//! every 1.x release; [`Api::load`] refuses any other major version. `tests/layout.rs` checks the
+//! every 1.x release; [`Api::load`] refuses any other major version. A test below checks the
 //! offsets against the vendored set's own `avif.h`.
 
 use std::ffi::{CStr, c_char, c_int};
@@ -247,18 +247,22 @@ mod tests {
 
     /// The vendored set's headers, which describe the libavif it carries.
     fn vendored_include() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.vendor/libavif/current/include")
+        oriel_core_paths::vendored_set("libavif").join("include")
     }
 
     /// Compiles a program against the vendored `avif.h` that prints each field's offset, and
-    /// compares them with this module's layouts. Skips, saying so, until the set is vendored.
+    /// compares them with this module's layouts. Skips locally until the set is vendored.
     #[test]
     fn layouts_match_the_vendored_header() {
         let include = vendored_include();
-        if !include.join("avif/avif.h").is_file() {
-            eprintln!("skipped: no vendored libavif; run `cargo run -p xtask -- vendor libavif`");
+        let found = if include.join("avif/avif.h").is_file() {
+            Ok(include)
+        } else {
+            Err("run `cargo run -p xtask -- vendor libavif`")
+        };
+        let Some(include) = oriel_test_archive::require("vendored libavif", found) else {
             return;
-        }
+        };
         let fields: Vec<(&str, &str, usize)> = vec![
             ("avifImage", "depth", offset_of!(ImageHead, depth)),
             ("avifImage", "yuvPlanes", offset_of!(ImageHead, yuv_planes)),

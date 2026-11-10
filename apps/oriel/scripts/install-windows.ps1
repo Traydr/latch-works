@@ -196,7 +196,7 @@ function Format-Size([double]$Bytes) {
   return ('{0:N0} MB' -f ($Bytes / 1MB))
 }
 
-# The value of `<name> = "<value>"` in a file, as the Rust sources and TOML files write it.
+# The value of `<name> = "<value>"` in a TOML file.
 function Read-Pin([string]$File, [string]$Pattern) {
   $text = [IO.File]::ReadAllText($File)
   $match = [regex]::Match($text, $Pattern)
@@ -204,7 +204,7 @@ function Read-Pin([string]$File, [string]$Pattern) {
   return $match.Groups[1].Value
 }
 
-# Cargo's target folder, as xtask's bundle::target_folder finds it.
+# Cargo's target folder, as xtask's support::target_folder finds it.
 function Get-TargetFolder {
   if ($env:CARGO_TARGET_DIR) {
     if ([IO.Path]::IsPathRooted($env:CARGO_TARGET_DIR)) { return $env:CARGO_TARGET_DIR }
@@ -544,7 +544,7 @@ function Invoke-Prerequisites([string]$VpkVersion) {
   Install-Vpk $VpkVersion
 }
 
-function Invoke-Build([string]$Version) {
+function Invoke-Build {
   Update-SessionPath
   if (-not (Test-Command 'cargo')) { throw 'cargo is not on PATH; run without -SkipPrerequisites' }
   if (-not $env:GPUI_FXC_PATH) {
@@ -568,26 +568,22 @@ function Invoke-Build([string]$Version) {
 
   Push-Location $Workspace
   try {
-    Start-Step "libavif and its DLLs (xtask vendor libavif-windows)"
-    Invoke-Checked -FilePath 'cargo' -ArgumentList @('run', '-p', 'xtask', '--', 'vendor', 'libavif-windows')
-
-    Start-Step 'ffmpeg and ffprobe (oriel-tools fetch-media-tools)'
-    Invoke-Checked -FilePath 'cargo' -ArgumentList @('run', '-p', 'oriel-tools', '--bin', 'fetch-media-tools')
-
-    Start-Step 'The release build and Setup.exe (xtask package windows)'
+    Start-Step 'The release build, its libraries and programs, and Setup.exe (xtask package windows)'
     Write-Detail 'The first build compiles everything with fat LTO; expect a long wait.'
     Invoke-Checked -FilePath 'cargo' -ArgumentList @('run', '-p', 'xtask', '--', 'package', 'windows')
   } finally {
     Pop-Location
   }
 
-  $folder = Join-Path (Get-TargetFolder) 'release\package\windows'
-  $setup = Join-Path $folder ("velopack\Oriel-{0}-win-x64-Setup.exe" -f $Version)
-  if (-not (Test-Path -LiteralPath $setup)) { throw ("package windows did not leave {0}" -f $setup) }
-  Write-Done $setup
+  # package windows names what it made in outputs.json.
+  $outputsFile = Join-Path (Get-TargetFolder) 'release\package\windows\outputs.json'
+  if (-not (Test-Path -LiteralPath $outputsFile)) { throw ("package windows did not leave {0}" -f $outputsFile) }
+  $outputs = Get-Content -LiteralPath $outputsFile -Raw | ConvertFrom-Json
+  if (-not (Test-Path -LiteralPath $outputs.setup)) { throw ("package windows did not leave {0}" -f $outputs.setup) }
+  Write-Done $outputs.setup
   return [pscustomobject]@{
-    Setup = $setup
-    StagedExe = Join-Path $folder 'Oriel\oriel.exe'
+    Setup = $outputs.setup
+    StagedExe = $outputs.executable
   }
 }
 
@@ -635,7 +631,8 @@ try {
   }
   Invoke-Checks
   $version = Read-Pin (Join-Path $Workspace 'Cargo.toml') '(?ms)^\[workspace\.package\].*?^version\s*=\s*"([^"]+)"'
-  $vpkVersion = Read-Pin (Join-Path $Workspace 'crates\xtask\src\package.rs') 'const VPK_VERSION: &str = "([^"]+)"'
+  # vpk is the release of the velopack crate the app links, as Cargo.lock pins it.
+  $vpkVersion = Read-Pin (Join-Path $Workspace 'Cargo.lock') '(?m)^name = "velopack"\r?\nversion = "([^"]+)"'
   Write-Detail ("Oriel {0}, vpk {1}" -f $version, $vpkVersion)
 
   if ($SkipPrerequisites) {
@@ -644,7 +641,7 @@ try {
     Invoke-Prerequisites $vpkVersion
   }
 
-  $built = Invoke-Build $version
+  $built = Invoke-Build
 
   if ($BuildOnly) {
     Write-Detail 'Built only (-BuildOnly): nothing uninstalled, installed or started.'

@@ -1,61 +1,38 @@
-//! Tidy's shortcut sheet (`components/ShortcutSheet.tsx`): every key Tidy answers to, in three
-//! columns.
+//! Tidy's shortcut sheet: every key Tidy answers to, in three columns, under its commands'.
 
-use gpui_kit::{App, Window};
-use oriel_ui::shortcuts::{SHEET_KEY, SHELL_KEYS, ShortcutGroup, open_sheet};
+use oriel_ui::keys::REVEAL_LABEL;
+use oriel_ui::shortcuts::{Sheet, ShortcutGroup};
 
 use crate::quick_look::QUICK_LOOK_LABEL;
-
-const EVERYWHERE: ShortcutGroup = (
-    "Everywhere",
-    &[
-        ("Overview", "⌥⌘1", None),
-        ("Duplicates", "⌥⌘2", None),
-        ("Convert", "⌥⌘3", None),
-        ("Clean up", "⌥⌘4", None),
-        ("Library", "⌥⌘5", None),
-        ("History", "⌥⌘6", None),
-        ("Holding", "⌥⌘7", None),
-        SHELL_KEYS[1],
-        ("Add folder", "⌘O", None),
-        ("Rescan", "⌘R", None),
-        ("Find", "⌘F", None),
-        ("Undo", "⌘Z", None),
-        ("Run the page's main action", "⌘↩", None),
-        SHELL_KEYS[2],
-        SHEET_KEY,
-        SHELL_KEYS[0],
-    ],
-);
 
 const OVERVIEW: ShortcutGroup = (
     "Overview",
     &[
-        ("Move between rows", "↑ ↓", None),
-        ("Open a row", "↩", None),
+        ("Move between rows", "up down", None),
+        ("Open a row", "enter", None),
     ],
 );
 
 const DUPLICATES: ShortcutGroup = (
     "Duplicates",
     &[
-        ("Keep the suggestion", "↩", None),
+        ("Keep the suggestion", "enter", None),
         ("Keep only this one", "1–9", Some("(or click it)")),
-        ("Keep this one as well", "⇧1–9", None),
-        ("Keep all", "N", None),
-        ("Skip", "S", None),
-        ("Previous", "K", None),
-        ("Move between versions", "← →", None),
-        ("Next line of versions", "PgDn", None),
-        ("Look closer", "Space", None),
-        ("Pause or play a video", "Click", None),
-        ("Flip versions", "← →", None),
-        ("Keep the one shown", "↩", None),
-        ("Actual size", "Z", None),
-        (QUICK_LOOK_LABEL, "⌘Y", None),
-        ("Show in Finder", "⇧⌘R", None),
-        ("Sound on or off", "M", None),
-        ("Prefer this folder", "P", None),
+        ("Keep this one as well", "shift-1–9", None),
+        ("Keep all", "n", None),
+        ("Skip", "s", None),
+        ("Previous", "k", None),
+        ("Move between versions", "left right", None),
+        ("Next line of versions", "pagedown", None),
+        ("Look closer", "space", None),
+        ("Pause or play a video", "click", None),
+        ("Flip versions", "left right", None),
+        ("Keep the one shown", "enter", None),
+        ("Actual size", "z", None),
+        (QUICK_LOOK_LABEL, "cmd-y", None),
+        (REVEAL_LABEL, "cmd-shift-r", None),
+        ("Sound on or off", "m", None),
+        ("Prefer this folder", "p", None),
     ],
 );
 
@@ -63,44 +40,43 @@ const LIBRARY: ShortcutGroup = (
     "Library",
     &[
         ("Search", "/", None),
-        ("Move", "↑ ↓", None),
-        ("Extend", "⇧↑ ⇧↓", None),
-        (QUICK_LOOK_LABEL, "Space", None),
-        ("Rename", "↩", None),
-        ("Select all", "⌘A", None),
-        ("Move to holding", "⌘⌫", None),
-        ("Move to…", "⇧⌘M", None),
-        ("Show in Finder", "⇧⌘R", None),
-        ("Inspector", "I", None),
-        ("Clear selection", "Esc", None),
+        ("Move", "up down", None),
+        ("Extend", "shift-up shift-down", None),
+        (QUICK_LOOK_LABEL, "space", None),
+        ("Rename", "enter", None),
+        ("Select all", "cmd-a", None),
+        ("Move to holding", "cmd-backspace", None),
+        ("Move to…", "cmd-shift-m", None),
+        (REVEAL_LABEL, "cmd-shift-r", None),
+        ("Inspector", "i", None),
+        ("Clear selection", "escape", None),
     ],
 );
 
 const HOLDING: ShortcutGroup = (
     "Holding",
     &[
-        ("Restore", "⌘⌫", None),
-        ("Empty to Trash", "⇧⌘⌫", None),
-        ("Select all", "⌘A", None),
+        ("Restore", "cmd-backspace", None),
+        ("Empty to Trash", "cmd-shift-backspace", None),
+        ("Select all", "cmd-a", None),
     ],
 );
 
 const HISTORY: ShortcutGroup = (
     "History",
     &[
-        ("Move", "↑ ↓", None),
-        ("Expand and collapse", "→ ←", None),
-        ("Undo", "U", None),
+        ("Move", "up down", None),
+        ("Expand and collapse", "right left", None),
+        ("Undo", "u", None),
     ],
 );
 
-const COLUMNS: &[&[ShortcutGroup]] = &[
-    &[EVERYWHERE, OVERVIEW],
-    &[DUPLICATES],
-    &[LIBRARY, HOLDING, HISTORY],
-];
-
-/// Opens the sheet over the window.
-pub fn open(window: &mut Window, cx: &mut App) {
-    open_sheet(COLUMNS, None, window, cx);
-}
+pub(crate) const SHEET: Sheet = Sheet {
+    everywhere: &[(
+        "Run the page's main action",
+        crate::widgets::MAIN_ACTION_KEYS,
+        None,
+    )],
+    columns: &[&[OVERVIEW], &[DUPLICATES], &[LIBRARY, HOLDING, HISTORY]],
+    note: None,
+};

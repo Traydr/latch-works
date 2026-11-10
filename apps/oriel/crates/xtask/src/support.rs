@@ -9,7 +9,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime};
 
 use anyhow::{Context as _, Result, bail};
 use serde::ser::{Serialize, SerializeMap as _, Serializer};
@@ -21,13 +21,49 @@ const SYSTEM_PREFIXES: [&str; 2] = ["/usr/lib/", "/System/Library/"];
 /// How long one download may take before the next try.
 const DOWNLOAD_TIMEOUT_SECONDS: &str = "120";
 
-/// `apps/oriel`, found from this crate's folder at compile time.
-pub fn workspace() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+/// The repository's root, two folders above the workspace (`apps/oriel`).
+pub fn repository() -> PathBuf {
+    oriel_core_paths::workspace()
         .ancestors()
         .nth(2)
-        .expect("crates/xtask sits two folders under the workspace")
+        .expect("apps/oriel sits two folders under the repository")
         .to_path_buf()
+}
+
+/// Cargo's target folder, honouring `CARGO_TARGET_DIR` as Cargo does.
+pub fn target_folder() -> PathBuf {
+    let workspace = oriel_core_paths::workspace();
+    std::env::var_os("CARGO_TARGET_DIR")
+        .filter(|value| !value.is_empty())
+        .map_or_else(|| workspace.join("target"), |folder| workspace.join(folder))
+}
+
+/// The profile the packed app is built with, `[profile.dist]` in the workspace's manifest.
+const DIST_PROFILE: &str = "dist";
+
+/// Builds the app with [`DIST_PROFILE`] and returns the folder its executable is in.
+pub fn build_app() -> Result<PathBuf> {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
+    run_here(
+        &cargo,
+        &["build", "--profile", DIST_PROFILE, "-p", "oriel"].map(OsStr::new),
+        &oriel_core_paths::workspace(),
+    )?;
+    Ok(target_folder().join(DIST_PROFILE))
+}
+
+/// Where `bundle` makes the app, `<target>/release/bundle`: in the target folder of the build it
+/// packs, so two target folders make two bundles.
+pub fn bundle_folder() -> PathBuf {
+    target_folder().join("release").join("bundle")
+}
+
+/// Where pinned downloads are kept between runs, by file name, checked by hash on every use.
+pub fn workspace_downloads() -> PathBuf {
+    oriel_core_paths::workspace()
+        .join("target")
+        .join("vendor")
+        .join("downloads")
 }
 
 /// Whether this is the one platform the sets and the bundle are made for.
@@ -442,23 +478,13 @@ pub fn set_member_problems(macho: &MachO, file: &str, members: &[String]) -> Vec
     problems
 }
 
-/// Points `<root>/current` at `id`, replacing the link in one rename.
-pub fn point_current_at(root: &Path, id: &str) -> Result<()> {
-    let current = root.join("current");
-    let next = root.join("current.next");
-    let _ = fs::remove_file(&next);
-    symlink(Path::new(id), &next)?;
-    fs::rename(&next, &current)?;
-    Ok(())
-}
-
 #[cfg(unix)]
-fn symlink(target: &Path, link: &Path) -> io::Result<()> {
+pub fn symlink(target: &Path, link: &Path) -> io::Result<()> {
     std::os::unix::fs::symlink(target, link)
 }
 
 #[cfg(not(unix))]
-fn symlink(target: &Path, link: &Path) -> io::Result<()> {
+pub fn symlink(target: &Path, link: &Path) -> io::Result<()> {
     std::os::windows::fs::symlink_dir(target, link)
 }
 
@@ -513,38 +539,7 @@ pub fn copy_tree(from: &Path, to: &Path) -> Result<()> {
 
 /// The time as `JSON.stringify(new Date())` writes it: UTC, to the millisecond.
 pub fn iso_now() -> String {
-    let since = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    let seconds = since.as_secs();
-    let (year, month, day) = civil_from_days((seconds / 86_400) as i64);
-    let of_day = seconds % 86_400;
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
-        of_day / 3600,
-        of_day % 3600 / 60,
-        of_day % 60,
-        since.subsec_millis()
-    )
-}
-
-/// The proleptic Gregorian date `days` after 1970-01-01 (Howard Hinnant's `civil_from_days`).
-fn civil_from_days(days: i64) -> (i64, u32, u32) {
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let day_of_era = z.rem_euclid(146_097);
-    let year_of_era =
-        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let shifted_month = (5 * day_of_year + 2) / 153;
-    let day = (day_of_year - (153 * shifted_month + 2) / 5 + 1) as u32;
-    let month = if shifted_month < 10 {
-        shifted_month + 3
-    } else {
-        shifted_month - 9
-    } as u32;
-    let year = year_of_era + era * 400 + i64::from(month <= 2);
-    (year, month, day)
+    oriel_core_domain::format::iso_timestamp(SystemTime::now())
 }
 
 /// String pairs written as a JSON object in their order, as `Object.fromEntries` writes a `Map`.
@@ -664,16 +659,6 @@ fn is_plain_value_line(line: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn dates_are_utc_to_the_millisecond() {
-        assert_eq!(civil_from_days(0), (1970, 1, 1));
-        assert_eq!(civil_from_days(20_389), (2025, 10, 28));
-        assert_eq!(civil_from_days(11_016), (2000, 2, 29));
-        let now = iso_now();
-        assert_eq!(now.len(), 24, "{now}");
-        assert!(now.ends_with('Z'));
-    }
 
     #[test]
     fn json_keeps_short_arrays_of_plain_values_on_one_line() {

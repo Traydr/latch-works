@@ -1,18 +1,18 @@
-//! Stills to the archive's AVIF, from glazier-core's `encodeStillToAvif`: decoded the way sharp
+//! Stills to the archive's AVIF: decoded the way sharp
 //! decodes them for the wasm encoder (EXIF orientation applied, 8-bit sRGB RGBA, through the same
 //! libvips build), then encoded by the vendored libavif at `media-format`'s settings on one
 //! thread, as each of Electron Oriel's encoder processes runs.
 //!
 //! Electron Oriel hands stills over 64 megapixels to sharp's own AVIF encoder, since the wasm
 //! heap cannot hold them. A native libavif has no such heap, so Oriel encodes every still the
-//! same way and never writes glazier-core's "Encoded with sharp" note.
+//! same way and never writes Electron Oriel's "Encoded with sharp" note.
 
 use std::fs;
 use std::path::Path;
 
 use oriel_avif::{Channels, Libavif, Samples, Still};
 
-use crate::similarity::Vips;
+use oriel_vips::Vips;
 
 /// libavif's output depends on its thread count; one thread, as the wasm encoder runs, gives the
 /// same bytes every time and leaves the other cores to the encodes beside it.

@@ -1,8 +1,7 @@
-//! The gallery grid's geometry, as Electron Oriel's `useVirtualGridMetrics.ts` computes it, so
-//! both apps put the same number of tiles of the same size in a row for the same width.
+//! The gallery grid's geometry: how many tiles of what size a row holds for a width.
 //!
 //! These are measured pixels, not the rem scale: the grid is derived from the viewport width
-//! and the thumbnail size setting, exactly as the TypeScript does.
+//! and the thumbnail size setting.
 
 use std::ops::Range;
 
@@ -90,7 +89,7 @@ impl GridMetrics {
     }
 
     /// The rows a viewport `height` tall shows with its top `scroll_top` into the grid, widened
-    /// by `overscan` rows each way: `getVisibleRowWindow`, as a half-open range.
+    /// by `overscan` rows each way, as a half-open range.
     pub fn rows_in_view(
         &self,
         scroll_top: f32,
@@ -127,10 +126,10 @@ impl GridMetrics {
 mod tests {
     use super::*;
 
-    /// The values `useVirtualGridMetrics` gives for the same inputs, worked from its formulas.
+    /// The grid at a known window, worked out by hand.
     #[test]
-    fn matches_the_electron_grid() {
-        // Electron Oriel's first window, 1320 wide, less the 240 px sidebar.
+    fn lays_out_a_known_window() {
+        // A 1320 px window less the 240 px sidebar.
         let grid = GridMetrics::new(1080., 220., TileAspect::Wide);
         assert_eq!(grid.columns(), 4);
         assert_eq!(grid.grid_width(), 1056.);
@@ -162,8 +161,8 @@ mod tests {
         let grid = GridMetrics::new(1080., 220., TileAspect::Wide);
         assert_eq!(grid.row_count(10), 3);
         assert_eq!(grid.items_in(1..3, 10), 4..10);
-        // 154 px rows, a 600 px viewport scrolled 1000 px: rows 6 to 10 show, and Electron's
-        // window counts row 11 too, since its end is the ceiling.
+        // 154 px rows, a 600 px viewport scrolled 1000 px: rows 6 to 10 show, and the window
+        // counts row 11 too, since its end is the ceiling.
         assert_eq!(grid.rows_in_view(1000., 600., 100, 0), 6..12);
         assert_eq!(grid.rows_in_view(1000., 600., 100, 4), 2..16);
         assert_eq!(grid.rows_in_view(0., 600., 3, 4), 0..3);

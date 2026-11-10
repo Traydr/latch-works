@@ -8,6 +8,8 @@ use std::path::Path;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AppContext as _, TestAppContext};
 use oriel_core_paths::DataRoot;
+use oriel_mode_tidy::TidyMode;
+use oriel_mode_view::ViewMode;
 use oriel_ui::ModeId;
 
 use crate::support::*;
@@ -81,7 +83,7 @@ fn the_first_starts_welcome_sets_one_folder_up_for_view_and_tidy_then_shows_no_m
             opened
                 .shell
                 .read(cx)
-                .tidy()
+                .mode::<TidyMode>()
                 .read(cx)
                 .state()
                 .read(cx)
@@ -110,7 +112,7 @@ fn the_first_starts_welcome_sets_one_folder_up_for_view_and_tidy_then_shows_no_m
     wait_until(cx, handle, "Tidy's folder", |cx| {
         label_of(cx, handle, "location-switcher").as_deref() == Some("archive")
     });
-    assert!(data.shell().join("welcomed").exists());
+    assert!(data.welcomed().exists());
 
     // The next start shows no welcome.
     cx.update_window(handle, |_, window, _| window.remove_window())
@@ -135,6 +137,14 @@ fn skipping_the_welcome_sets_nothing_up_and_shows_it_no_more(cx: &mut TestAppCon
     assert!(cx.update(|cx| opened.shell.read(cx).welcome().is_none()));
     assert!(!is_drawn(cx, opened.handle, "welcome"));
     assert_eq!(mode(&opened, cx), ModeId::View);
-    assert!(data.shell().join("welcomed").exists());
-    assert!(cx.update(|cx| opened.shell.read(cx).view().read(cx).folder(cx).is_none()));
+    assert!(data.welcomed().exists());
+    assert!(cx.update(|cx| {
+        opened
+            .shell
+            .read(cx)
+            .mode::<ViewMode>()
+            .read(cx)
+            .folder(cx)
+            .is_none()
+    }));
 }

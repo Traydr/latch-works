@@ -15,9 +15,11 @@ use gpui_kit::{
     prelude::FluentBuilder as _, pulsating_between, px,
 };
 
+use crate::activity::{Activity, ActivityIndicator};
 use crate::app_mark::AppMark;
 use crate::controls::TextRole as _;
 use crate::drag::DragStrip;
+use crate::mode::{Foot, ModeMap};
 use crate::segmented::{Segmented, SegmentedItem};
 use crate::shell::{ModeActivity, ModeId, SettingsSection, ShellState};
 
@@ -31,6 +33,21 @@ pub trait KeepsFocus: InteractiveElement + Sized {
 }
 
 impl<T: InteractiveElement> KeepsFocus for T {}
+
+/// What stands on the window's foot over `base`, which already holds the mode or Settings: the
+/// toasts, docked above `foot` and the jobs' panel, and the activity indicator. The shell draws
+/// through this, and so do the modes' test harnesses, so toasts land where the app puts them.
+pub fn stand_on_foot<E: ParentElement>(
+    base: E,
+    foot: Foot,
+    jobs: &Entity<Activity>,
+    window: &mut Window,
+    cx: &mut App,
+) -> E {
+    let standing = foot.height + jobs.read(cx).footprint();
+    crate::toast::dock_toasts(standing, window.viewport_size(), foot.toast_slot, cx);
+    base.child(ActivityIndicator::new(jobs, foot.height).room(foot.activity_room))
+}
 
 /// The full sidebar's width.
 pub const SIDEBAR_WIDTH: f32 = 248.;
@@ -250,16 +267,19 @@ impl RenderOnce for ModeSwitcher {
         let state = self.shell.read(cx);
         let current = state.mode();
         // The work to show for each mode: none on the mode the owner is looking at.
-        let work = ModeId::ALL.map(|mode| state.activity(mode).filter(|_| mode != current));
+        let work = ModeMap::from_fn(|mode| state.activity(mode).filter(|_| mode != current));
         let go = |mode: ModeId| {
             let shell = self.shell.clone();
             move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
                 shell.update(cx, |shell, cx| shell.go(mode, cx));
             }
         };
-        let tooltip = |mode: ModeId| match work[mode.index()] {
-            Some(activity) => format!("{}  {}", activity.describe(mode), mode.shortcut()),
-            None => format!("{}  {}", mode.label(), mode.shortcut()),
+        let tooltip = |mode: ModeId| {
+            let keys = crate::keys::display(mode.keys());
+            match work[mode] {
+                Some(activity) => format!("{}  {keys}", activity.describe(mode)),
+                None => format!("{}  {keys}", mode.label()),
+            }
         };
 
         if self.rail {
@@ -276,7 +296,7 @@ impl RenderOnce for ModeSwitcher {
                 .gap_1()
                 .children(ModeId::ALL.map(|mode| {
                     let selected = mode == current;
-                    let activity = work[mode.index()];
+                    let activity = work[mode];
                     gpui_kit::base::Button::new(mode_button_id(mode))
                         .keeps_focus_on_press()
                         .accessibility_label(mode.label())
@@ -340,7 +360,7 @@ impl RenderOnce for ModeSwitcher {
                             .selected(mode == current)
                             .tooltip(tooltip(mode))
                             .on_click(go(mode));
-                        match work[mode.index()] {
+                        match work[mode] {
                             Some(activity) => item
                                 .description(activity.describe(mode))
                                 .trailing(ActivityMark::new(mode, activity)),
@@ -598,7 +618,7 @@ impl RenderOnce for SettingsItem {
         let shell = self.shell;
         NavItem::new("settings-item", Icon::new(IconName::Settings), "Settings")
             .rail(self.rail)
-            .tooltip("Settings  ⌘,")
+            .tooltip(crate::keys::labelled("Settings", crate::keys::SETTINGS))
             .on_click(move |_, _, cx| {
                 shell.update(cx, |shell, cx| {
                     shell.open_settings(SettingsSection::Mode(mode), cx);

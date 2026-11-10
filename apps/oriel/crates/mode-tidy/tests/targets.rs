@@ -176,7 +176,7 @@ async fn every_control_on_every_page_meets_the_floor(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "targets-floor");
+    let session = launch(cx, "targets-floor");
     add_archive(cx, &session).await;
     let mut under = Vec::new();
     for (width, height) in [(1320., 860.), (960., 640.)] {
@@ -246,7 +246,7 @@ async fn tab_keeps_focus_in_sight_however_short_the_window(cx: &mut TestAppConte
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "targets-tab");
+    let session = launch(cx, "targets-tab");
     add_archive(cx, &session).await;
     // A real run, so that History and Holding have rows to Tab through.
     click(cx, &session, "overview-tidy-up");
@@ -311,7 +311,7 @@ async fn space_and_enter_press_a_plain_button(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "targets-keys");
+    let session = launch(cx, "targets-keys");
     add_archive(cx, &session).await;
     for key in ["space", "enter"] {
         go(cx, &session, TidyPage::Overview);
@@ -331,7 +331,7 @@ async fn escape_gives_focus_back_to_what_opened_the_overlay(cx: &mut TestAppCont
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "targets-escape");
+    let session = launch(cx, "targets-escape");
     add_archive(cx, &session).await;
     let root = cx.read(|cx| session.state.read(cx).root().unwrap().name.clone());
     go(cx, &session, TidyPage::Overview);
@@ -404,7 +404,7 @@ async fn enter_on_a_button_presses_only_that_button(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "targets-enter");
+    let session = launch(cx, "targets-enter");
     add_archive(cx, &session).await;
     go(cx, &session, TidyPage::Duplicates);
     settle(cx, &session).await;
@@ -444,7 +444,7 @@ async fn a_chip_toggles_once_a_press_and_the_heading_tells_the_truth(cx: &mut Te
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "targets-chip");
+    let session = launch(cx, "targets-chip");
     add_archive(cx, &session).await;
     go(cx, &session, TidyPage::Duplicates);
     settle(cx, &session).await;
@@ -479,7 +479,7 @@ async fn tab_leaves_the_library_table_and_a_digit_works_from_the_sidebar(cx: &mu
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "targets-table");
+    let session = launch(cx, "targets-table");
     add_archive(cx, &session).await;
     go(cx, &session, TidyPage::Library);
     settle(cx, &session).await;

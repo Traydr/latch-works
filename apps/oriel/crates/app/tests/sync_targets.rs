@@ -1,13 +1,14 @@
 //! Every control of Sync's plan and its run meets the 32 point floor, over what they really draw.
-//! They are reached through the check that shows them without a server, which is read from the
-//! environment, so this has a test binary of its own.
-
-mod support;
+//! They are reached through the check that shows them without a server.
 
 use gpui_kit::base::test_support::snapshots;
 use gpui_kit::{AppContext as _, Bounds, Role, TestAppContext, px, size};
+use oriel::Launch;
 use oriel_core_paths::DataRoot;
-use support::*;
+use oriel_launch::Variables;
+use oriel_mode_sync::SYNC_CHECK;
+
+use crate::support::*;
 
 #[gpui_kit::test]
 fn sync_plan_and_run_controls_meet_the_floor(cx: &mut TestAppContext) {
@@ -15,15 +16,18 @@ fn sync_plan_and_run_controls_meet_the_floor(cx: &mut TestAppContext) {
     for check in ["plan", "run", "done", "clean", "log"] {
         let root = scratch(&format!("sync-floor-{check}"));
         let data = DataRoot::at(root.join("data")).unwrap();
-        // SAFETY: this binary has this one test, and nothing else reads the environment meanwhile.
-        unsafe {
-            std::env::set_var("ORIEL_SYNC_CHECK", check);
-            std::env::set_var("ORIEL_DATA_DIR", data.root());
-        }
         start(cx, &data);
-        let opened = open_shell(cx, &data);
+        let launch = Launch {
+            variables: Variables::from_pairs([(SYNC_CHECK, check)]),
+            ..Launch::of(data)
+        };
+        let opened = open_launch(cx, launch);
         let handle = opened.handle;
         press(cx, handle, "secondary-3");
+        assert!(
+            is_drawn(cx, handle, "plan-filter"),
+            "{check} shows the check's plan"
+        );
         for (width, height) in [(1320., 860.), (960., 640.)] {
             cx.simulate_window_resize(handle, size(px(width), px(height)));
             frame(cx, handle);

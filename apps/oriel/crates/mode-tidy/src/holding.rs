@@ -1,4 +1,4 @@
-//! Holding (`views/HoldingView.tsx`): what Tidy's changes moved aside, grouped by the change that
+//! Holding: what Tidy's changes moved aside, grouped by the change that
 //! held them, until the owner restores them (⌘⌫) or empties holding to the Trash (⇧⌘⌫). Click
 //! picks one, ⌘-click adds or removes one, ⇧-click picks a run; the arrows move a cursor from
 //! tile to tile, across the changes' headings, picking the tile or with ⇧ the run from the
@@ -8,7 +8,7 @@
 //! Holding is drawn a screen at a time ([`crate::windowed`]): each change's heading and each
 //! line of its tiles are items of one column, broken into lines as the tiles would wrap.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 use std::path::Path;
@@ -24,23 +24,25 @@ use gpui_kit::{
     Styled as _, Subscription, TestSupportExt as _, Window, canvas, div,
     prelude::FluentBuilder as _, px,
 };
+use oriel_core_domain::format;
 use oriel_core_domain::{MediaType, detect_media_type};
-use oriel_core_tidy::contract::RootId;
 use oriel_ui::TextRole as _;
+use oriel_ui::ToastExt as _;
 use oriel_ui::focus::FocusReveal;
 use oriel_ui::{ControlSize as _, Toast, TopBar};
 
-use crate::changes::{
-    HoldingId, HoldingItem, HoldingList, HoldingRequest, PlanId, PlanListRequest, PlanSummary,
-};
-use crate::format;
-use crate::loaded::Loaded;
+use crate::actions::Ended;
+use crate::labels::{file_name, relative_to};
+use crate::loaded::{Loaded, PageReads};
 use crate::pages::TidyPage;
 use crate::quick_look::quick_look;
 use crate::state::TidyState;
 use crate::thumbs::{Thumb, Thumbs};
 use crate::widgets;
 use crate::windowed::{Piece, Windowed};
+use oriel_core_tidy::contract::{
+    HoldingId, HoldingItem, HoldingList, HoldingRequest, PlanId, PlanListRequest, PlanSummary,
+};
 
 /// Holding can hold tens of thousands of files; they come a page at a time.
 const PAGE: usize = 300;
@@ -50,9 +52,6 @@ const TILE: f32 = 216.;
 
 /// A picture taller than this against its width shows whole on its tile.
 const TALL_PICTURE: f32 = 1.6;
-
-/// How much of the window's foot the selection bar takes while it shows.
-const SELECTION_FOOT: f32 = 84.;
 
 /// The change that put a run of files in holding, or none for files held on their own.
 struct Group {
@@ -125,10 +124,6 @@ fn group_items(items: &[HoldingItem]) -> Vec<Group> {
     groups
 }
 
-fn file_name(path: &str) -> &str {
-    path.rsplit(['/', '\\']).next().unwrap_or(path)
-}
-
 pub struct HoldingPage {
     reveal: FocusReveal,
     state: Entity<TidyState>,
@@ -140,8 +135,6 @@ pub struct HoldingPage {
     plans: Loaded<Vec<PlanSummary>>,
     wanted: usize,
     selected: BTreeSet<HoldingId>,
-    /// `ORIEL_HOLDING_SELECT=<n>` selects the first files, for a check in a real window.
-    check_select: Option<usize>,
     anchor: Option<HoldingId>,
     /// The keyboard cursor: the tile the arrows move from, Space looks at, and the ring marks.
     cursor: Option<HoldingId>,
@@ -153,11 +146,10 @@ pub struct HoldingPage {
     tile_width: f32,
     busy: bool,
     /// Where a press does nothing for a moment: where a restored tile or the selection bar was.
-    guard: widgets::PressGuard,
+    bar: widgets::SelectionBar,
     /// The selection bar and each tile where last drawn.
-    bar_bounds: Rc<Cell<Bounds<Pixels>>>,
     tile_bounds: Rc<RefCell<HashMap<HoldingId, Bounds<Pixels>>>>,
-    seen: (Option<RootId>, u64),
+    reads: PageReads,
     /// How much narrower than the window the column was when last laid out, and the window's
     /// width then, so a line holds as many tiles as fit before the column is laid out again.
     margin: Option<f32>,
@@ -166,7 +158,11 @@ pub struct HoldingPage {
 }
 
 impl HoldingPage {
-    pub fn new(state: &Entity<TidyState>, thumbs: &Entity<Thumbs>, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        state: &Entity<TidyState>,
+        thumbs: &Entity<Thumbs>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let subscriptions = vec![
             cx.observe(state, |this, _, cx| this.sync(cx)),
             cx.observe(thumbs, |_, _, cx| cx.notify()),
@@ -181,19 +177,15 @@ impl HoldingPage {
             plans: Loaded::default(),
             wanted: PAGE,
             selected: BTreeSet::new(),
-            check_select: std::env::var("ORIEL_HOLDING_SELECT")
-                .ok()
-                .and_then(|count| count.parse().ok()),
             anchor: None,
             cursor: None,
             reveal_cursor: false,
             columns: 1,
             tile_width: TILE,
             busy: false,
-            guard: widgets::PressGuard::default(),
-            bar_bounds: Rc::default(),
+            bar: widgets::SelectionBar::default(),
             tile_bounds: Rc::default(),
-            seen: (None, 0),
+            reads: PageReads::default(),
             margin: None,
             window_width: 0.,
             _subscriptions: subscriptions,
@@ -201,17 +193,14 @@ impl HoldingPage {
     }
 
     fn sync(&mut self, cx: &mut Context<Self>) {
-        let state = self.state.read(cx);
-        let key = (state.root_id(), state.catalog_version());
-        if state.page() != TidyPage::Holding || key == self.seen {
-            cx.notify();
+        cx.notify();
+        let Some(read) = self.reads.due(TidyPage::Holding, self.state.read(cx)) else {
             return;
-        }
-        if key.0 != self.seen.0 {
+        };
+        if read.root_changed {
             self.selected.clear();
             self.wanted = PAGE;
         }
-        self.seen = key;
         self.reload(cx);
     }
 
@@ -220,35 +209,24 @@ impl HoldingPage {
         let Some(root_id) = state.root_id() else {
             return;
         };
-        let changes = state.changes.clone();
         let Some(engine) = state.engine().cloned() else {
             return;
         };
-        self.holding.load_then(
-            changes.list_holding(
-                &engine,
-                HoldingRequest {
-                    root_id,
-                    offset: 0,
-                    limit: self.wanted as i64,
-                },
-            ),
-            |this| &mut this.holding,
-            Self::loaded,
-            cx,
-        );
-        self.plans.load(
-            changes.list_plans(
-                &engine,
-                PlanListRequest {
-                    root_id: Some(root_id),
-                    offset: 0,
-                    limit: 500,
-                },
-            ),
-            |this| &mut this.plans,
-            cx,
-        );
+        let request = HoldingRequest {
+            root_id,
+            offset: 0,
+            limit: self.wanted as i64,
+        };
+        let holding = engine.ask(|engine| engine.list_holding(request), cx);
+        self.holding
+            .load_then(holding, |this| &mut this.holding, Self::loaded, cx);
+        let request = PlanListRequest {
+            root_id: Some(root_id),
+            offset: 0,
+            limit: 500,
+        };
+        let plans = engine.ask(|engine| engine.list_plans(request), cx);
+        self.plans.load(plans, |this| &mut this.plans, cx);
         cx.notify();
     }
 
@@ -267,17 +245,13 @@ impl HoldingPage {
     }
 
     /// Whether a press at `position` would do nothing yet.
-    pub fn holds_press_at(&self, position: Point<Pixels>) -> bool {
-        self.guard.holds(position)
+    pub fn holds_press_at(&self, position: Point<Pixels>, cx: &App) -> bool {
+        self.bar.holds(position, cx)
     }
 
     /// How much of the window's foot the page keeps for the selection bar, while it shows.
     pub fn foot_height(&self) -> f32 {
-        if self.selected.is_empty() {
-            0.
-        } else {
-            SELECTION_FOOT
-        }
+        self.bar.foot_height(!self.selected.is_empty())
     }
 
     /// ⌘A: every held file listed.
@@ -293,27 +267,25 @@ impl HoldingPage {
             .as_ref()
             .map_or(&[][..], |held| held.ordered.as_slice());
         let position = |id: HoldingId| ordered.iter().position(|item| item.id == id);
-        if shift && let (Some(from), Some(to)) = (self.anchor.and_then(position), position(id)) {
-            let run = &ordered[from.min(to)..=from.max(to)];
-            if !command {
-                self.selected.clear();
-            }
-            self.selected.extend(run.iter().map(|item| item.id));
-        } else if command {
-            if !self.selected.remove(&id) {
-                self.selected.insert(id);
-            }
-            self.anchor = Some(id);
-        } else {
-            self.selected = BTreeSet::from([id]);
-            self.anchor = Some(id);
-        }
+        let Some(at) = position(id) else {
+            return;
+        };
+        let (selected, anchor) = crate::selection::click(
+            &self.selected,
+            self.anchor.and_then(position),
+            at,
+            command,
+            shift,
+            |at| ordered.get(at).map(|item| item.id),
+        );
+        self.selected = selected;
+        self.anchor = anchor.and_then(|at| ordered.get(at)).map(|item| item.id);
         cx.notify();
     }
 
     /// Where an arrow moves the cursor: the next or previous tile for ← →; for ↑ ↓ the tile in
-    /// the line above or below, the nearest to the cursor's column, across a change's heading
-    /// (`verticalNeighbour`). The first tile when there is no cursor yet.
+    /// the line above or below, the nearest to the cursor's column, across a change's heading.
+    /// The first tile when there is no cursor yet.
     fn neighbour(&self, key: &str) -> Option<HoldingId> {
         let held = self.held.as_ref()?;
         let ordered = &held.ordered;
@@ -378,8 +350,9 @@ impl HoldingPage {
         cx.notify();
     }
 
-    /// Restores `ids`. A press brought it from `place`, where what comes under the pointer next is
-    /// not what that press meant, so a press there waits a moment.
+    /// Restores `ids`, in its turn behind the changes asked for before, and scans where they went
+    /// back. A press brought it from `place`, where what comes under the pointer next is not what
+    /// that press meant, so a press there waits a moment.
     fn restore(
         &mut self,
         ids: Vec<HoldingId>,
@@ -390,94 +363,111 @@ impl HoldingPage {
         if ids.is_empty() || self.busy {
             return;
         }
-        self.busy = true;
-        let state = self.state.read(cx);
-        let Some(engine) = state.engine().cloned() else {
+        let Some(work) = self
+            .state
+            .read(cx)
+            .engine()
+            .map(|engine| engine.queue(|engine| engine.restore_holding(ids)))
+        else {
             return;
         };
-        let restored = state.changes.restore_holding(&engine, ids);
-        cx.spawn_in(window, async move |this, cx| {
-            let restored = restored.await;
-            this.update_in(cx, |this, window, cx| {
-                this.busy = false;
-                if let Some(place) = place {
-                    this.guard.arm(place);
-                }
-                this.selected.clear();
-                let toast = match restored {
-                    Ok(result) if result.failed.is_empty() => Toast::done(format!(
-                        "Restored {}",
-                        format::plural(result.restored, "file")
-                    )),
-                    Ok(result) => Toast::error(format!(
-                        "Restored {}; {} could not go back",
-                        format::plural(result.restored, "file"),
-                        format::count(result.failed.len() as i64)
-                    ))
-                    .detail(result.failed[0].clone()),
-                    Err(error) => {
-                        Toast::error("Couldn't restore the files").detail(format!("{error:#}"))
-                    }
-                };
-                crate::widgets::show_toast(window, toast, cx);
-                this.state.update(cx, |state, cx| state.changed(cx));
-            })
-            .ok();
-        })
-        .detach();
+        self.busy = true;
+        let page = cx.entity().downgrade();
+        self.state.update(cx, |state, cx| {
+            state.run_holding_work(
+                "Restore",
+                work,
+                move |state, ended, window, cx| {
+                    page.update(cx, |this, cx| {
+                        this.busy = false;
+                        if let Some(place) = place {
+                            this.bar.arm(place, cx);
+                        }
+                        this.selected.clear();
+                        cx.notify();
+                    })
+                    .ok();
+                    let toast = match ended {
+                        Ended::Withdrawn | Ended::Stopped => return,
+                        Ended::Done(result) => {
+                            state.follow_up(result.follow_up, window, cx);
+                            if result.failed.is_empty() {
+                                Toast::done(format!(
+                                    "Restored {}",
+                                    format::plural(result.restored, "file")
+                                ))
+                            } else {
+                                Toast::error(format!(
+                                    "Restored {}; {} could not go back",
+                                    format::plural(result.restored, "file"),
+                                    format::count(result.failed.len() as i64)
+                                ))
+                                .detail(result.failed[0].clone())
+                            }
+                        }
+                        Ended::Failed(error) => Toast::error("Couldn't restore the files")
+                            .detail(crate::actions::job_message(&error)),
+                    };
+                    window.show_toast(toast, cx);
+                },
+                window,
+                cx,
+            );
+        });
     }
 
     /// Empties holding into the system Trash, without asking: the Trash is the safety net, as
-    /// Finder's Move to Trash is (`useEmptyHolding`).
+    /// Finder's Move to Trash is. It waits its turn behind the changes asked for before it, so an
+    /// Undo queued first still finds what it needs.
     fn empty(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
-        let (Some(root_id), Some(list)) = (state.root_id(), self.holding.data()) else {
+        let (Some(root_id), Some(list), Some(engine)) =
+            (state.root_id(), self.holding.data(), state.engine())
+        else {
             return;
         };
         if self.busy || list.total == 0 {
             return;
         }
-        if state.holding_may_be_needed() {
-            let toast = Toast::error("Holding stays for now")
-                .detail("A change is running or waiting. Let it finish or stop it first.");
-            crate::widgets::show_toast(window, toast, cx);
-            return;
-        }
         let bytes = list.total_bytes;
+        let work = engine.queue(|engine| engine.empty_holding(root_id));
         self.busy = true;
-        let Some(engine) = state.engine().cloned() else {
-            return;
-        };
-        let emptied = state.changes.empty_holding(&engine, root_id);
-        cx.spawn_in(window, async move |this, cx| {
-            let emptied = emptied.await;
-            this.update_in(cx, |this, window, cx| {
-                this.busy = false;
-                this.selected.clear();
-                let toast = match emptied {
-                    Ok(result) if result.failed.is_empty() => Toast::done(format!(
-                        "Moved {} to the Trash",
-                        format::plural(result.emptied, "file")
-                    ))
-                    .detail(format!(
-                        "{} freed once the Trash is emptied",
-                        format::bytes(bytes)
-                    )),
-                    Ok(result) => Toast::error(format!(
-                        "{} stayed in holding",
-                        format::plural_as(result.failed.len() as i64, "batch", "batches")
-                    ))
-                    .detail(result.failed[0].clone()),
-                    Err(error) => {
-                        Toast::error("Couldn't empty holding").detail(format!("{error:#}"))
-                    }
-                };
-                crate::widgets::show_toast(window, toast, cx);
-                this.state.update(cx, |state, cx| state.changed(cx));
-            })
-            .ok();
-        })
-        .detach();
+        let page = cx.entity().downgrade();
+        self.state.update(cx, |state, cx| {
+            state.run_holding_work(
+                "Empty holding",
+                work,
+                move |_, ended, window, cx| {
+                    page.update(cx, |this, cx| {
+                        this.busy = false;
+                        this.selected.clear();
+                        cx.notify();
+                    })
+                    .ok();
+                    let toast = match ended {
+                        Ended::Withdrawn | Ended::Stopped => return,
+                        Ended::Done(result) if result.failed.is_empty() => Toast::done(format!(
+                            "Moved {} to the Trash",
+                            format::plural(result.emptied, "file")
+                        ))
+                        .detail(format!(
+                            "{} freed once the Trash is emptied",
+                            format::bytes(bytes)
+                        )),
+                        Ended::Done(result) => Toast::error(format!(
+                            "{} stayed in holding",
+                            format::plural_as(result.failed.len() as i64, "batch", "batches")
+                        ))
+                        .detail(result.failed[0].clone()),
+                        Ended::Failed(error) => Toast::error("Couldn't empty holding")
+                            .detail(crate::actions::job_message(&error)),
+                    };
+                    window.show_toast(toast, cx);
+                },
+                window,
+                cx,
+            );
+        });
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -562,11 +552,7 @@ impl HoldingPage {
                 }))
                 .into_any_element(),
         };
-        let relative = item
-            .original_path
-            .strip_prefix(root)
-            .map(|rest| rest.trim_start_matches(['/', '\\']).to_string())
-            .unwrap_or_else(|| item.original_path.clone());
+        let relative = relative_to(root, &item.original_path);
         let id = item.id;
         div()
             .id(("held", id as u64))
@@ -711,7 +697,7 @@ impl HoldingPage {
         }
         self.window_width = window_width;
         let margin = self.margin.unwrap_or_else(|| {
-            if self.state.read(cx).shell.read(cx).rail() {
+            if self.state.read(cx).shell().read(cx).rail() {
                 oriel_ui::layout::RAIL_WIDTH
             } else {
                 oriel_ui::layout::SIDEBAR_WIDTH
@@ -917,17 +903,8 @@ impl Focusable for HoldingPage {
 
 impl Render for HoldingPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.check_select.is_some() && !self.ordered().is_empty() {
-            let count = self.check_select.take().unwrap_or(0);
-            self.selected = self
-                .ordered()
-                .iter()
-                .take(count)
-                .map(|item| item.id)
-                .collect();
-        }
         let state = self.state.read(cx);
-        let shell = state.shell.clone();
+        let shell = state.shell().clone();
         let root = state
             .root()
             .map(|root| root.path.clone())
@@ -937,8 +914,6 @@ impl Render for HoldingPage {
             total_bytes: list.total_bytes,
             listed: list.items.len(),
         });
-        let theme = cx.theme();
-        let (radius_lg, popover, border) = (theme.radius_lg, theme.popover, theme.border);
         let total = list.as_ref().map_or(0, |list| list.total);
         let meta = list.as_ref().filter(|list| list.total > 0).map(|list| {
             format!(
@@ -947,7 +922,7 @@ impl Render for HoldingPage {
                 format::bytes(list.total_bytes)
             )
         });
-        let top_bar = TopBar::new(&shell, "Holding")
+        let top_bar = TopBar::new(&shell, TidyPage::Holding.label())
             .when_some(meta, |bar, meta| {
                 bar.quiet(widgets::caption(meta, cx).min_w_0().truncate())
             })
@@ -958,7 +933,10 @@ impl Render for HoldingPage {
                         .outline()
                         .danger()
                         .label("Empty to Trash")
-                        .tooltip("Empty to Trash  ⇧⌘⌫")
+                        .tooltip(oriel_ui::keys::labelled(
+                            "Empty to Trash",
+                            "cmd-shift-backspace",
+                        ))
                         .disabled(self.busy)
                         .on_click(cx.listener(|this, _, window, cx| this.empty(window, cx))),
                 )
@@ -1002,72 +980,47 @@ impl Render for HoldingPage {
         let bar = (!chosen.is_empty()).then(|| {
             let ids: Vec<HoldingId> = chosen.iter().map(|item| item.id).collect();
             let reveal = chosen.first().map(|item| item.hold_path.clone());
-            div()
-                .absolute()
-                .bottom(px(20.))
-                .left_0()
-                .right_0()
-                .flex()
-                .justify_center()
-                .child(
-                    div()
-                        .id("holding-selection")
-                        // A press here is the bar's alone, and the bar may go with it. The wheel
-                        // still scrolls the tiles.
-                        .block_mouse_except_scroll()
-                        .capture_any_mouse_up(cx.listener(|this, _, _, _| {
-                            this.guard.arm(this.bar_bounds.get());
-                        }))
-                        .relative()
-                        .child(widgets::measure(&self.bar_bounds))
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap(px(6.))
-                        .p(px(6.))
-                        .rounded(radius_lg)
-                        .bg(popover)
-                        .border_1()
-                        .border_color(border)
-                        .shadow_lg()
-                        .child(
-                            Button::new("holding-restore")
-                                .bar_size()
-                                .primary()
-                                .label(format!("Restore {}", format::count(chosen.len() as i64)))
-                                .loading(self.busy)
-                                .tooltip("Restore  ⌘⌫")
-                                .disabled(self.busy)
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    let place = Some(this.bar_bounds.get());
-                                    this.restore(ids.clone(), place, window, cx);
-                                })),
-                        )
-                        .child(
-                            Button::new("holding-reveal")
-                                .bar_size()
-                                .outline()
-                                .quiet_edge(cx)
-                                .label("Show in Finder")
-                                .on_click(move |_, _, cx| {
-                                    if let Some(path) = &reveal {
-                                        cx.reveal_path(Path::new(path));
-                                    }
-                                }),
-                        )
-                        .child(
-                            Button::new("holding-clear")
-                                .bar_size()
-                                .ghost()
-                                .icon(Icon::new(IconName::Close))
-                                .accessibility_label("Clear selection")
-                                .tooltip("Clear selection  Esc")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.selected.clear();
-                                    cx.notify();
-                                })),
-                        ),
-                )
+            let restore = Button::new("holding-restore")
+                .bar_size()
+                .primary()
+                .label(format!("Restore {}", format::count(chosen.len() as i64)))
+                .loading(self.busy)
+                .tooltip(oriel_ui::keys::labelled("Restore", "cmd-backspace"))
+                .disabled(self.busy)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    let place = Some(this.bar.place());
+                    this.restore(ids.clone(), place, window, cx);
+                }));
+            let show = Button::new("holding-reveal")
+                .bar_size()
+                .outline()
+                .quiet_edge(cx)
+                .label(oriel_ui::keys::REVEAL_LABEL)
+                .on_click(move |_, _, cx| {
+                    if let Some(path) = &reveal {
+                        cx.reveal_path(Path::new(path));
+                    }
+                });
+            let clear = Button::new("holding-clear")
+                .bar_size()
+                .ghost()
+                .icon(Icon::new(IconName::Close))
+                .accessibility_label("Clear selection")
+                .tooltip("Clear selection  Esc")
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.selected.clear();
+                    cx.notify();
+                }));
+            self.bar.render(
+                "holding-selection",
+                None,
+                vec![
+                    restore.into_any_element(),
+                    show.into_any_element(),
+                    clear.into_any_element(),
+                ],
+                cx,
+            )
         });
 
         div()
@@ -1076,7 +1029,7 @@ impl Render for HoldingPage {
             .key_context("TidyHolding")
             .on_key_down(cx.listener(Self::on_key_down))
             .capture_any_mouse_down(cx.listener(|this, event: &MouseDownEvent, _, cx| {
-                if this.guard.holds(event.position) {
+                if this.bar.holds(event.position, cx) {
                     cx.stop_propagation();
                 }
             }))

@@ -16,12 +16,12 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use oriel_core_tidy::media::probe_video;
-use oriel_core_tidy::passes::Media;
-use oriel_core_tidy::similarity::{
+use oriel_core_tidy::Media;
+use oriel_core_tidy::internals::{
     SAMPLE_POSITIONS, fingerprint_video_in_runs, fingerprint_video_with, frame_run_pixels,
     plan_frame_runs, video_frame_pixels,
 };
+use oriel_tools::probe_video;
 
 /// CPU seconds of the waited-for children: ffmpeg and ffprobe.
 #[cfg(unix)]

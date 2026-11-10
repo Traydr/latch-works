@@ -64,6 +64,10 @@ mod mac {
         let selector = sel!(applicationShouldTerminate:);
         GATE.with_borrow_mut(|gate| *gate = Some(Gate { holds, requests }));
         if class.instance_method(selector).is_some() {
+            log::warn!(
+                "GPUI's app delegate answers applicationShouldTerminate: itself; the system's quits \
+                 will not wait for work"
+            );
             return;
         }
         let imp =

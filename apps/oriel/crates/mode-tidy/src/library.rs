@@ -1,9 +1,9 @@
-//! The Library (`views/LibraryView.tsx`): every file in the catalog, as a list in GPUI Kit's data
+//! The Library: every file in the catalog, as a list in GPUI Kit's data
 //! table or as a grid of tiles, paged in from the engine as it scrolls, with the search, the
 //! filter menu and its chips, the Inspector (I), the selection bar, and the menu a right-click or
 //! the bar's "⋯" opens.
 //!
-//! Finder's selection model, as `use-file-cursor.ts` has it: a click selects one file, ⌘-click
+//! Finder's selection model: a click selects one file, ⌘-click
 //! adds or removes one, ⇧-click extends from the last one clicked; the arrows move the cursor
 //! (← → too in the grid) and ⇧ extends; Space shows the cursor's file in Quick Look, Return
 //! renames it in place and Esc clears. The table's selected row is the cursor. Bulk actions take
@@ -15,7 +15,6 @@
 mod grid;
 pub mod menu;
 
-use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
@@ -32,39 +31,39 @@ use gpui_kit::component::table::{
 };
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, Entity, FocusHandle, Focusable,
+    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable,
     FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent, Modifiers, MouseDownEvent,
-    ObjectFit, ParentElement as _, Pixels, Render, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _,
-    UniformListScrollHandle, Window, canvas, div, prelude::FluentBuilder as _, px,
+    ObjectFit, ParentElement as _, Render, SharedString, Stateful, StatefulInteractiveElement as _,
+    Styled as _, Subscription, Task, TestSupportExt as _, UniformListScrollHandle, Window, canvas,
+    div, prelude::FluentBuilder as _, px,
 };
 pub use menu::{LibraryMenu, MenuChoice, last_menu};
-use oriel_core_tidy::TidyEngine;
+use oriel_core_domain::format;
 use oriel_core_tidy::contract::{
     AudioState, FileFacets, FileFilter, FileFlag, FileFormat, FileId, FileKind, FileQuery, FileRow,
     FileSortColumn, MAX_BULK_FILES, OptimizeCategory, RootId, SelectionSummary, VideoQuality,
 };
 use oriel_ui::TextRole as _;
+use oriel_ui::ToastExt as _;
 use oriel_ui::{ControlSize as _, LocalStorage, MENU_ROW_HEIGHT, Toast, TopBar, checkbox_target};
 
 use crate::actions::PerformOptions;
-use crate::changes::{PlanRequest, Rename};
-use crate::format;
-use crate::loaded::Loaded;
+use crate::labels;
+use crate::loaded::{Loaded, TidyClient};
 use crate::pages::TidyPage;
 use crate::quick_look::quick_look;
 use crate::state::{LibraryPreset, TidyState};
 use crate::thumbs::{self, Thumbs};
 use crate::widgets;
+use oriel_core_tidy::contract::{PlanRequest, Rename};
+
+/// Whether the Library's inspector is open, under Electron Oriel's key.
+const INSPECTOR_KEY: &str = "glazier.library.inspector";
+/// The Library as a list or a grid, under Electron Oriel's key.
+const MODE_KEY: &str = "glazier.library.mode";
 
 /// Rows read from the engine at once, as the table scrolls.
 const PAGE: usize = 200;
-
-/// Where the Inspector's choice is kept, Electron Oriel's key.
-const INSPECTOR_KEY: &str = "glazier.library.inspector";
-
-/// Where the choice of list or grid is kept, Electron Oriel's key.
-const MODE_KEY: &str = "glazier.library.mode";
 
 /// Room the selection bar covers at the bottom of the files, so the last ones scroll clear of it.
 const BAR_INSET: f32 = 80.;
@@ -78,37 +77,6 @@ gpui_kit::actions!(
         TabBack
     ]
 );
-
-/// What `ORIEL_LIBRARY_SELECT`, `ORIEL_LIBRARY_VIEW` and `ORIEL_LIBRARY_INSPECTOR` ask of the page.
-struct LibraryCheck {
-    select: Option<usize>,
-    view: Option<String>,
-    inspector: Option<bool>,
-}
-
-impl LibraryCheck {
-    fn from_environment() -> Option<Self> {
-        let select = std::env::var("ORIEL_LIBRARY_SELECT")
-            .ok()
-            .and_then(|count| count.parse().ok());
-        let view = std::env::var("ORIEL_LIBRARY_VIEW").ok();
-        let inspector = std::env::var("ORIEL_LIBRARY_INSPECTOR")
-            .ok()
-            .map(|open| open == "1");
-        (select.is_some() || view.is_some() || inspector.is_some()).then_some(Self {
-            select,
-            view,
-            inspector,
-        })
-    }
-}
-
-/// How much of the window's foot the selection bar takes while it shows.
-const BAR_FOOT: f32 = 84.;
-
-fn is_command(modifiers: &Modifiers) -> bool {
-    oriel_ui::keys::command_held(modifiers)
-}
 
 /// The Library shown as a list or as a grid of tiles.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,15 +96,6 @@ impl LibraryMode {
 
 /// Folders the filter lists at once; its field narrows the rest.
 const FOLDER_LIMIT: usize = 200;
-
-const ALL_CATEGORIES: [OptimizeCategory; 6] = [
-    OptimizeCategory::StillToAvif,
-    OptimizeCategory::AnimationToMp4,
-    OptimizeCategory::VideoRemux,
-    OptimizeCategory::VideoConvert,
-    OptimizeCategory::RenameAvif,
-    OptimizeCategory::RenameMp4,
-];
 
 /// The Library's filters: everything in a preset but the search, which has its own field.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -187,7 +146,7 @@ const MIN_NAME_WIDTH: f32 = 200.;
 /// What the table's vertical scrollbar takes from the columns.
 const SCROLLBAR: f32 = 16.;
 
-/// The columns a list `width` wide shows, and the name's width (`columnsFor`): a narrow list
+/// The columns a list `width` wide shows, and the name's width: a narrow list
 /// drops Modified first, then Dimensions, so the name keeps room to read, and the name takes
 /// whatever the others leave.
 fn columns_for(width: f32) -> (Vec<Col>, f32) {
@@ -232,13 +191,13 @@ impl Col {
         column
     }
 
-    /// Whether the first click sorts largest, newest or longest first, as Finder does
-    /// (`DESCENDING_FIRST`); names and formats start from A.
+    /// Whether the first click sorts largest, newest or longest first, as Finder does;
+    /// names and formats start from A.
     fn descending_first(self) -> bool {
         matches!(self, Col::Dimensions | Col::Size | Col::Modified)
     }
 
-    /// The catalog's order for this column, as Electron Oriel's headers sort: the format by
+    /// The catalog's order for this column, as the headers sort: the format by
     /// kind, the dimensions by length.
     fn sort(self) -> Option<FileSortColumn> {
         match self {
@@ -252,7 +211,7 @@ impl Col {
     }
 }
 
-/// Pixels for pictures, the length for videos, and why a file shows nothing (`dimensionsOf`).
+/// Pixels for pictures, the length for videos, and why a file shows nothing.
 fn dimensions_text(row: &FileRow) -> String {
     if row.probe_error.is_some() {
         return "Won't open".into();
@@ -260,7 +219,7 @@ fn dimensions_text(row: &FileRow) -> String {
     if row.kind == FileKind::Video && row.duration_ms.is_some() {
         return format::duration(row.duration_ms);
     }
-    format::dimensions(row).unwrap_or_default()
+    labels::dimensions(row).unwrap_or_default()
 }
 
 /// What the header's checkbox calls to select every matching file: the page's ⌘A, which asks
@@ -269,7 +228,7 @@ type SelectAll = Rc<dyn Fn(&mut Window, &mut App)>;
 
 /// The table's rows: pages of the catalog, read as they come into view.
 pub struct CatalogRows {
-    engine: Option<TidyEngine>,
+    engine: Option<TidyClient>,
     query: Option<FileQuery>,
     total: Option<usize>,
     total_bytes: i64,
@@ -394,7 +353,7 @@ impl CatalogRows {
     }
 
     /// Reads the query's results again from the first page.
-    fn reset(&mut self, engine: TidyEngine, query: FileQuery, cx: &mut Context<TableState<Self>>) {
+    fn reset(&mut self, engine: TidyClient, query: FileQuery, cx: &mut Context<TableState<Self>>) {
         self.engine = Some(engine);
         self.query = Some(query);
         self.generation += 1;
@@ -416,7 +375,7 @@ impl CatalogRows {
             limit: PAGE as u32,
             ..query
         };
-        let answer = engine.list_files(query);
+        let answer = engine.ask(|engine| engine.list_files(query), cx);
         let in_flight = crate::loaded::InFlight::start();
         self.tasks.push(cx.spawn(async move |table, cx| {
             let _in_flight = in_flight;
@@ -471,13 +430,6 @@ impl CatalogRows {
         cx.notify();
     }
 
-    /// The files from `from` to `to`, both included, added to `base`.
-    fn range(&self, from: usize, to: usize, base: &BTreeSet<FileId>) -> BTreeSet<FileId> {
-        let mut next = base.clone();
-        next.extend((from.min(to)..=from.max(to)).filter_map(|index| Some(self.row(index)?.id)));
-        next
-    }
-
     /// Checks or unchecks the file at `index`, which ⇧ then extends from.
     fn toggle(&mut self, index: usize, on: bool, cx: &mut Context<TableState<Self>>) {
         let Some(id) = self.row(index).map(|row| row.id) else {
@@ -493,37 +445,24 @@ impl CatalogRows {
         self.set_selected(next, cx);
     }
 
-    /// What a click on the file at `index` selects, with the keys held: ⇧ extends from the
-    /// anchor (⇧⌘ keeps the rest too), ⌘ toggles, a plain click selects it alone.
+    /// What a click on the file at `index` selects, with the keys held.
     fn clicked(&mut self, index: usize, modifiers: Modifiers) -> BTreeSet<FileId> {
-        if modifiers.shift
-            && let Some(anchor) = self.anchor
-        {
-            let base = if is_command(&modifiers) {
-                self.selected.clone()
-            } else {
-                BTreeSet::new()
-            };
-            return self.range(anchor, index, &base);
-        }
-        self.anchor = Some(index);
-        let Some(id) = self.row(index).map(|row| row.id) else {
-            return BTreeSet::new();
-        };
-        if is_command(&modifiers) {
-            let mut next = self.selected.clone();
-            if !next.remove(&id) {
-                next.insert(id);
-            }
-            return next;
-        }
-        BTreeSet::from([id])
+        let (next, anchor) = crate::selection::click(
+            &self.selected,
+            self.anchor,
+            index,
+            oriel_ui::keys::command_held(&modifiers),
+            modifiers.shift,
+            |index| Some(self.row(index)?.id),
+        );
+        self.anchor = anchor;
+        next
     }
 
     fn render_name(&self, row: &FileRow, cx: &mut Context<TableState<Self>>) -> AnyElement {
         let theme = cx.theme();
         let (muted, radius) = (theme.muted_foreground, theme.radius);
-        let mute = format::is_mute_video(row);
+        let mute = labels::is_mute_video(row);
         let folder = if row.dir.is_empty() {
             self.root_name.to_string()
         } else {
@@ -553,7 +492,7 @@ impl CatalogRows {
                     .flex_1()
                     .min_w_0()
                     .child(match self.rename_field(row.id) {
-                        // Return renames, Esc or clicking away keeps the name (`RenameField`).
+                        // Return renames, Esc or clicking away keeps the name.
                         Some(input) => Input::new(&input)
                             .row_size()
                             .w_full()
@@ -611,7 +550,7 @@ impl TableDelegate for CatalogRows {
         div().id(("library-row", row_ix)).on_click(cx.listener(
             move |table, event: &ClickEvent, _, cx| {
                 let modifiers = event.modifiers();
-                if !(is_command(&modifiers) || modifiers.shift) {
+                if !(oriel_ui::keys::command_held(&modifiers) || modifiers.shift) {
                     return;
                 }
                 let rows = table.delegate_mut();
@@ -655,7 +594,10 @@ impl TableDelegate for CatalogRows {
         checkbox_target(Checkbox::new("library-select-all"))
             .checked(all)
             .accessibility_label("Select every matching file")
-            .tooltip("Select every matching file  ⌘A")
+            .tooltip(oriel_ui::keys::labelled(
+                "Select every matching file",
+                "cmd-a",
+            ))
             .on_click(move |checked, window, cx| {
                 if *checked {
                     if let Some(select_all) = &select_all {
@@ -680,7 +622,7 @@ impl TableDelegate for CatalogRows {
         self.columns[col_ix].clone()
     }
 
-    /// A click on a header, as Electron Oriel's headers sort: the column sorted by turns around,
+    /// A click on a header, as the headers sort: the column sorted by turns around,
     /// another starts largest, newest or longest first for the size, the date and the length,
     /// and from A for the rest. The table's own cycle, which comes back to no order, is set
     /// aside: its arrows are drawn again from the delegate's.
@@ -732,7 +674,7 @@ impl TableDelegate for CatalogRows {
         cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         let col = self.cols[col_ix];
-        // Each cell sits in the middle of its 56 px row, as the Electron list's grid centres
+        // Each cell sits in the middle of its 56 px row, as a list's grid centres
         // them, the size and the date against the right edge.
         let cell = div()
             .size_full()
@@ -744,7 +686,7 @@ impl TableDelegate for CatalogRows {
                 this.justify_end()
             });
         let Some(row) = self.row(row_ix).cloned() else {
-            // Not read yet: a quiet placeholder, as the Electron list draws one.
+            // Not read yet: a quiet placeholder.
             return cell.child(
                 div()
                     .h(px(10.))
@@ -780,11 +722,11 @@ impl TableDelegate for CatalogRows {
                 .flex_row()
                 .gap(px(6.))
                 .min_w_0()
-                .child(div().truncate().child(format::format_label(row.format)))
+                .child(div().truncate().child(labels::format_label(row.format)))
                 .when(row.extension_mismatch, |this| {
                     let why = SharedString::from(format!(
                         "The file is {} but its extension is .{}",
-                        format::format_label(row.format),
+                        labels::format_label(row.format),
                         row.ext
                     ));
                     this.child(
@@ -823,7 +765,7 @@ impl TableDelegate for CatalogRows {
         Some(match self.cols[col_ix] {
             Col::Select => return None,
             Col::Name => row.name.clone().into(),
-            Col::Format => format::format_label(row.format).into(),
+            Col::Format => labels::format_label(row.format).into(),
             Col::Dimensions => dimensions_text(row).into(),
             Col::Size => format::bytes(row.size as f64).into(),
             Col::Modified => format::date(row.mtime_ms).into(),
@@ -854,16 +796,13 @@ pub struct LibraryPage {
     menu: Option<(Vec<FileId>, Option<FileRow>)>,
     /// The list's width when last drawn, which its columns fit.
     list_width: f32,
-    /// What check variables still have to do.
-    check: Option<LibraryCheck>,
     /// The grid's width when last drawn, and the columns it had.
     grid_width: f32,
     grid_columns: usize,
     grid_scroll: UniformListScrollHandle,
     /// The selection bar where it was last drawn, and where a press on the files under it does
     /// nothing for a moment after one on the bar.
-    bar_bounds: Rc<Cell<Bounds<Pixels>>>,
-    guard: widgets::PressGuard,
+    bar: widgets::SelectionBar,
     /// What the page last read for: the root, the catalog's version and the last preset.
     seen: (Option<RootId>, u64, u64),
     targets_seen: (Vec<FileId>, u64),
@@ -874,51 +813,13 @@ pub struct LibraryPage {
 
 impl LibraryPage {
     /// How much of the window's foot the page keeps for the selection bar, while it shows.
-    /// `ORIEL_LIBRARY_SELECT=<n>`, `ORIEL_LIBRARY_VIEW=list|grid` and `ORIEL_LIBRARY_INSPECTOR=0|1`
-    /// set the page up for a check in a real window.
-    fn apply_check_variables(&mut self, cx: &mut Context<Self>) {
-        let Some(check) = self.check.as_mut() else {
-            return;
-        };
-        if let Some(view) = check.view.take() {
-            let mode = if view == "grid" {
-                LibraryMode::Grid
-            } else {
-                LibraryMode::List
-            };
-            self.set_mode(mode, cx);
-        }
-        let check = self.check.as_mut().expect("just read");
-        if let Some(open) = check.inspector.take() {
-            self.inspector = open;
-        }
-        let check = self.check.as_mut().expect("just read");
-        if let Some(count) = check.select {
-            let ids: BTreeSet<FileId> = {
-                let rows = self.table.read(cx).delegate();
-                (0..count)
-                    .filter_map(|index| rows.row(index).map(|row| row.id))
-                    .collect()
-            };
-            if ids.len() == count {
-                self.table.update(cx, |table, cx| {
-                    table.delegate_mut().set_selected(ids, cx);
-                });
-                self.check = None;
-            }
-        }
-    }
-
     pub fn foot_height(&self, cx: &App) -> f32 {
         let selected = self.selected(cx).len();
-        if selected > 0 && (!self.inspector || selected >= 2) {
-            BAR_FOOT
-        } else {
-            0.
-        }
+        self.bar
+            .foot_height(selected > 0 && (!self.inspector || selected >= 2))
     }
 
-    pub fn new(
+    pub(crate) fn new(
         state: &Entity<TidyState>,
         thumbs: &Entity<Thumbs>,
         window: &mut Window,
@@ -995,12 +896,10 @@ impl LibraryPage {
             renaming: None,
             menu: None,
             list_width: 0.,
-            check: LibraryCheck::from_environment(),
             grid_width: 0.,
             grid_columns: 1,
             grid_scroll: UniformListScrollHandle::new(),
-            bar_bounds: Rc::default(),
-            guard: widgets::PressGuard::default(),
+            bar: widgets::SelectionBar::default(),
             seen: (None, 0, 0),
             targets_seen: (Vec::new(), 0),
             search_timer: None,
@@ -1136,7 +1035,10 @@ impl LibraryPage {
             let rows = table.delegate_mut();
             let selection = if extend {
                 let anchor = *rows.anchor.get_or_insert(cursor.unwrap_or(next));
-                rows.range(anchor, next, &BTreeSet::new())
+                crate::selection::click(&BTreeSet::new(), Some(anchor), next, false, true, |at| {
+                    Some(rows.row(at)?.id)
+                })
+                .0
             } else {
                 rows.anchor = Some(next);
                 rows.row(next).map(|row| row.id).into_iter().collect()
@@ -1150,7 +1052,7 @@ impl LibraryPage {
     }
 
     /// A right-click on a file: the cursor moves there, and a file outside the selection is
-    /// selected alone, before the menu asks what the files hold (`contextMenu`).
+    /// selected alone, before the menu asks what the files hold.
     fn context_menu(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(row) = self.table.read(cx).delegate().row(index).cloned() else {
             return;
@@ -1170,7 +1072,7 @@ impl LibraryPage {
 
     /// The menu for a right-clicked file, or for the targets from the bar's "⋯": a file outside
     /// the selection acts alone, so its summary is asked for here rather than read from state
-    /// that has not caught up yet (`runMenu`).
+    /// that has not caught up yet.
     fn run_menu(&mut self, row: Option<FileRow>, window: &mut Window, cx: &mut Context<Self>) {
         let selected = self.selected(cx);
         let files = match &row {
@@ -1185,12 +1087,10 @@ impl LibraryPage {
             return;
         }
         let position = window.mouse_position();
-        let summary = crate::loaded::engine_call(
-            engine.selection_summary(files.iter().copied().take(MAX_BULK_FILES).collect()),
-            cx,
-        );
+        let bulk: Vec<FileId> = files.iter().copied().take(MAX_BULK_FILES).collect();
+        let summary = engine.ask(|engine| engine.selection_summary(bulk), cx);
         // Which codecs the menu offers; the engine asks ffmpeg the first time only.
-        let capabilities = crate::loaded::engine_call(engine.capabilities(), cx);
+        let capabilities = engine.ask(|engine| engine.capabilities(), cx);
         cx.spawn_in(window, async move |this, cx| {
             let held = summary.await.ok();
             let capabilities = capabilities.await.ok();
@@ -1271,7 +1171,8 @@ impl LibraryPage {
             }
             MenuChoice::Prefer => {
                 if let Some(row) = target {
-                    crate::settings::prefer_folder(&self.state, row.dir, window, cx);
+                    self.state
+                        .update(cx, |state, cx| state.prefer_folder(row.dir, window, cx));
                 }
             }
             MenuChoice::ShowFolder => {
@@ -1288,8 +1189,7 @@ impl LibraryPage {
         }
     }
 
-    /// Return, or the menu's Rename: the name becomes a field, its stem selected
-    /// (`RenameField`).
+    /// Return, or the menu's Rename: the name becomes a field, its stem selected.
     fn start_rename(&mut self, row: FileRow, window: &mut Window, cx: &mut Context<Self>) {
         let input = cx.new(|cx| {
             let mut input = InputState::new(window, cx);
@@ -1433,10 +1333,11 @@ impl LibraryPage {
                 table.clear_selection(cx);
             }
         });
-        self.facets
-            .load(engine.file_facets(filter), |this| &mut this.facets, cx);
-        self.folders
-            .load(engine.list_folders(root.id), |this| &mut this.folders, cx);
+        let facets = engine.ask(|engine| engine.file_facets(filter), cx);
+        self.facets.load(facets, |this| &mut this.facets, cx);
+        let root_id = root.id;
+        let folders = engine.ask(move |engine| engine.list_folders(root_id), cx);
+        self.folders.load(folders, |this| &mut this.folders, cx);
         self.targets_seen.1 = u64::MAX;
         self.targets_changed(cx);
     }
@@ -1511,11 +1412,11 @@ impl LibraryPage {
                 .await;
             this.update(cx, |this, cx| {
                 let bulk: Vec<FileId> = targets.iter().copied().take(MAX_BULK_FILES).collect();
-                this.summary
-                    .load(engine.selection_summary(bulk), |this| &mut this.summary, cx);
+                let summary = engine.ask(|engine| engine.selection_summary(bulk), cx);
+                this.summary.load(summary, |this| &mut this.summary, cx);
                 let sample: Vec<FileId> = targets.iter().copied().take(3).collect();
-                this.sample
-                    .load(engine.get_files(sample), |this| &mut this.sample, cx);
+                let sample = engine.ask(|engine| engine.get_files(sample), cx);
+                this.sample.load(sample, |this| &mut this.sample, cx);
             })
             .ok();
         }));
@@ -1544,7 +1445,8 @@ impl LibraryPage {
         let (Some(engine), Some(root_id)) = (state.engine().cloned(), state.root_id()) else {
             return;
         };
-        let ids = engine.list_file_ids(self.filter(root_id));
+        let filter = self.filter(root_id);
+        let ids = engine.ask(|engine| engine.list_file_ids(filter), cx);
         cx.spawn_in(window, async move |this, cx| {
             let ids = ids.await;
             this.update_in(cx, |this, window, cx| match ids {
@@ -1555,8 +1457,7 @@ impl LibraryPage {
                             .set_selected(list.ids.into_iter().collect(), cx);
                     });
                     if list.truncated {
-                        crate::widgets::show_toast(
-                            window,
+                        window.show_toast(
                             Toast::info(format!(
                                 "Selected the first {} files",
                                 format::count(MAX_BULK_FILES as i64)
@@ -1566,8 +1467,7 @@ impl LibraryPage {
                         );
                     }
                 }
-                Err(error) => crate::widgets::show_toast(
-                    window,
+                Err(error) => window.show_toast(
                     Toast::error("Couldn't select every file").detail(format!("{error:#}")),
                     cx,
                 ),
@@ -1628,7 +1528,7 @@ impl LibraryPage {
             self.perform(
                 PlanRequest::Optimize {
                     root_id,
-                    categories: ALL_CATEGORIES.to_vec(),
+                    categories: OptimizeCategory::ALL.to_vec(),
                     file_ids: Some(ids),
                 },
                 window,
@@ -1680,7 +1580,7 @@ impl LibraryPage {
         cx.notify();
     }
 
-    /// Open in View, for a file of the Library's (`useOpenInView`).
+    /// Open in View, for a file of the Library's.
     fn open_in_view(&mut self, file: String, cx: &mut Context<Self>) {
         self.state
             .update(cx, |state, cx| state.open_in_view(file, cx));
@@ -1780,7 +1680,7 @@ impl LibraryPage {
             return;
         }
         let selected = self.selected(cx);
-        let command = is_command(&modifiers);
+        let command = oriel_ui::keys::command_held(&modifiers);
         // Ctrl is not the command key on macOS, but it still is not the plain key.
         let command_or_ctrl = modifiers.platform || modifiers.control;
         let grid = self.mode == LibraryMode::Grid;
@@ -2074,7 +1974,7 @@ impl LibraryPage {
                 };
                 kinds.push(check(
                     format!("filter-kind-{kind}"),
-                    format::kind_label(kind).into(),
+                    labels::kind_label(kind).into(),
                     Some(count),
                     checked,
                     next,
@@ -2107,7 +2007,7 @@ impl LibraryPage {
             };
             formats.push(check(
                 format!("filter-format-{format}"),
-                format::format_label(Some(format)).into(),
+                labels::format_label(Some(format)).into(),
                 Some(count),
                 checked,
                 next,
@@ -2132,7 +2032,7 @@ impl LibraryPage {
                 };
                 sounds.push(check(
                     format!("filter-sound-{audio}"),
-                    format::audio_label(audio).into(),
+                    labels::audio_label(audio).into(),
                     Some(count),
                     checked,
                     next,
@@ -2142,7 +2042,7 @@ impl LibraryPage {
             }
         }
         let mut issues = Vec::new();
-        for flag in format::issue_flags() {
+        for flag in labels::issue_flags() {
             let count = files(facets.as_ref().and_then(|facets| {
                 facets
                     .flags
@@ -2158,7 +2058,7 @@ impl LibraryPage {
                 };
                 issues.push(check(
                     format!("filter-flag-{flag}"),
-                    format::flag_label(flag).into(),
+                    labels::flag_label(flag).into(),
                     Some(count),
                     checked,
                     next,
@@ -2275,7 +2175,7 @@ impl LibraryPage {
         for kind in &filters.kinds {
             chips.push((
                 format!("chip-kind-{kind}"),
-                format::kind_label(*kind).into(),
+                labels::kind_label(*kind).into(),
                 Filters {
                     kinds: toggled(&filters.kinds, *kind, false),
                     ..filters.clone()
@@ -2299,7 +2199,7 @@ impl LibraryPage {
         {
             chips.push((
                 format!("chip-format-{format_value}"),
-                format::format_label(Some(*format_value)).into(),
+                labels::format_label(Some(*format_value)).into(),
                 Filters {
                     formats: toggled(&filters.formats, *format_value, false),
                     ..filters.clone()
@@ -2309,7 +2209,7 @@ impl LibraryPage {
         for audio in &filters.audio_states {
             chips.push((
                 format!("chip-sound-{audio}"),
-                format::audio_label(*audio).into(),
+                labels::audio_label(*audio).into(),
                 Filters {
                     audio_states: toggled(&filters.audio_states, *audio, false),
                     ..filters.clone()
@@ -2319,7 +2219,7 @@ impl LibraryPage {
         for flag in &filters.flags {
             chips.push((
                 format!("chip-flag-{flag}"),
-                format::flag_label(*flag).into(),
+                labels::flag_label(*flag).into(),
                 Filters {
                     flags: toggled(&filters.flags, *flag, false),
                     ..filters.clone()
@@ -2400,90 +2300,68 @@ impl LibraryPage {
                 .unwrap_or_default()
         );
         let (convert_ids, hold_ids, move_ids) = (selected.clone(), selected.clone(), selected);
-        div()
-            .absolute()
-            .bottom(px(20.))
-            .left_0()
-            .right_0()
+        let bar = div()
             .flex()
-            .justify_center()
-            .child(
-                div()
-                    .id("library-selection")
-                    .test_support()
-                    // A press here is the bar's alone, and the bar may go with it: the second press
-                    // of a double-click must not reach the file under where it was. The wheel
-                    // still scrolls the files.
-                    .block_mouse_except_scroll()
-                    .capture_any_mouse_up(cx.listener(|this, _, _, _| {
-                        this.guard.arm(this.bar_bounds.get());
-                    }))
-                    .relative()
-                    .child(widgets::measure(&self.bar_bounds))
-                    .aria_label(SharedString::from(label.clone()))
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(px(6.))
-                    .p(px(6.))
-                    .rounded(theme.radius_lg)
-                    .bg(theme.popover)
-                    .border_1()
-                    .border_color(theme.border)
-                    .shadow_lg()
-                    .child(widgets::caption(label, cx).px_2())
-                    .child(div().h(px(20.)).w(px(1.)).bg(theme.border))
-                    .when_some(
-                        summary.filter(|summary| summary.convertible.files > 0),
-                        |this, summary| {
-                            this.child(
-                                Button::new("selection-convert")
-                                    .bar_size()
-                                    .primary()
-                                    .label(format::convert_label(
-                                        summary.convertible.files,
-                                        summary.files,
-                                    ))
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.convert(convert_ids.clone(), window, cx);
-                                    })),
-                            )
-                        },
-                    )
-                    .child(
-                        Button::new("selection-hold")
+            .flex_row()
+            .items_center()
+            .gap(px(6.))
+            .child(widgets::caption(label.clone(), cx).px_2())
+            .child(div().h(px(20.)).w(px(1.)).bg(theme.border))
+            .when_some(
+                summary.filter(|summary| summary.convertible.files > 0),
+                |this, summary| {
+                    this.child(
+                        Button::new("selection-convert")
                             .bar_size()
-                            .outline()
-                            .quiet_edge(cx)
-                            .label("Move to holding")
-                            .tooltip("Move to holding  ⌘⌫")
+                            .primary()
+                            .label(labels::convert_label(
+                                summary.convertible.files,
+                                summary.files,
+                            ))
                             .on_click(cx.listener(move |this, _, window, cx| {
-                                this.hold(hold_ids.clone(), window, cx);
+                                this.convert(convert_ids.clone(), window, cx);
                             })),
                     )
-                    .child(
-                        Button::new("selection-move")
-                            .bar_size()
-                            .outline()
-                            .quiet_edge(cx)
-                            .label("Move to…")
-                            .tooltip("⇧⌘M")
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.move_to(move_ids.clone(), window, cx);
-                            })),
-                    )
-                    .child(more)
-                    .child(
-                        Button::new("selection-clear")
-                            .bar_size()
-                            .ghost()
-                            .icon(Icon::new(IconName::Close))
-                            .accessibility_label("Clear selection")
-                            .tooltip("Esc")
-                            .on_click(cx.listener(|this, _, _, cx| this.clear_selection(cx))),
-                    ),
+                },
             )
-            .into_any_element()
+            .child(
+                Button::new("selection-hold")
+                    .bar_size()
+                    .outline()
+                    .quiet_edge(cx)
+                    .label("Move to holding")
+                    .tooltip(oriel_ui::keys::labelled("Move to holding", "cmd-backspace"))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.hold(hold_ids.clone(), window, cx);
+                    })),
+            )
+            .child(
+                Button::new("selection-move")
+                    .bar_size()
+                    .outline()
+                    .quiet_edge(cx)
+                    .label("Move to…")
+                    .tooltip(oriel_ui::keys::display("cmd-shift-m"))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.move_to(move_ids.clone(), window, cx);
+                    })),
+            )
+            .child(more)
+            .child(
+                Button::new("selection-clear")
+                    .bar_size()
+                    .ghost()
+                    .icon(Icon::new(IconName::Close))
+                    .accessibility_label("Clear selection")
+                    .tooltip("Esc")
+                    .on_click(cx.listener(|this, _, _, cx| this.clear_selection(cx))),
+            );
+        self.bar.render(
+            "library-selection",
+            Some(label.into()),
+            vec![bar.into_any_element()],
+            cx,
+        )
     }
 
     fn render_inspector(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -2522,12 +2400,13 @@ impl LibraryPage {
                 )
                 .into_any_element();
         }
-        let convert_label = match (&single, &summary) {
-            (Some(row), _) if targets.len() == 1 => {
-                format!("Convert to {}", format::convert_target(row))
-            }
-            (_, Some(summary)) => format::convert_label(summary.convertible.files, summary.files),
-            _ => "Convert".into(),
+        let convert_label = match (&summary, targets.len()) {
+            (Some(summary), 1) => summary
+                .convert_as
+                .map_or("Convert", labels::convert_as)
+                .into(),
+            (Some(summary), _) => labels::convert_label(summary.convertible.files, summary.files),
+            (None, _) => "Convert".into(),
         };
         if targets.len() == 1 {
             let Some(row) = single.clone() else {
@@ -2615,7 +2494,10 @@ impl LibraryPage {
                                 .quiet_edge(cx)
                                 .flex_1()
                                 .label("Move to holding")
-                                .tooltip("Move to holding  ⌘⌫")
+                                .tooltip(oriel_ui::keys::labelled(
+                                    "Move to holding",
+                                    "cmd-backspace",
+                                ))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.hold(hold_ids.clone(), window, cx);
                                 })),
@@ -2627,7 +2509,7 @@ impl LibraryPage {
                                 .quiet_edge(cx)
                                 .flex_1()
                                 .label("Move to…")
-                                .tooltip("Move to…  ⇧⌘M")
+                                .tooltip(oriel_ui::keys::labelled("Move to…", "cmd-shift-m"))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.move_to(move_ids.clone(), window, cx);
                                 })),
@@ -2644,12 +2526,15 @@ impl LibraryPage {
                                 .outline()
                                 .quiet_edge(cx)
                                 .flex_1()
-                                .label("Show in Finder")
-                                .tooltip(if several {
-                                    "Show the first file in Finder  ⇧⌘R"
-                                } else {
-                                    "Show in Finder  ⇧⌘R"
-                                })
+                                .label(oriel_ui::keys::REVEAL_LABEL)
+                                .tooltip(oriel_ui::keys::labelled(
+                                    if several {
+                                        "Show the first file in Finder"
+                                    } else {
+                                        oriel_ui::keys::REVEAL_LABEL
+                                    },
+                                    "cmd-shift-r",
+                                ))
                                 .on_click(move |_, _, cx| {
                                     if let Some(row) = &reveal {
                                         cx.reveal_path(Path::new(&row.abs_path));
@@ -2746,11 +2631,11 @@ fn details(row: &FileRow, cx: &App) -> AnyElement {
             "Format",
             format!(
                 "{} · {}",
-                format::format_label(row.format),
-                format::kind_label(row.kind)
+                labels::format_label(row.format),
+                labels::kind_label(row.kind)
             ),
         ))
-        .when_some(format::dimensions(row), |this, dimensions| {
+        .when_some(labels::dimensions(row), |this, dimensions| {
             let frames = row.frames.unwrap_or(1);
             this.child(fact(
                 "Dimensions",
@@ -2765,7 +2650,7 @@ fn details(row: &FileRow, cx: &App) -> AnyElement {
             this.child(fact("Duration", format::duration(row.duration_ms)))
         })
         .when_some(row.audio_state.filter(|_| video), |this, audio| {
-            this.child(fact("Sound", format::audio_label(audio).into()))
+            this.child(fact("Sound", labels::audio_label(audio).into()))
         })
         .child(fact("Size", format::bytes(row.size as f64)))
         .child(fact("Modified", format::date_time(row.mtime_ms)))
@@ -2795,7 +2680,6 @@ impl Focusable for LibraryPage {
 
 impl Render for LibraryPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.apply_check_variables(cx);
         // ⌘F from another page: the search, focused.
         if self.state.read(cx).page() == TidyPage::Library
             && self
@@ -2815,7 +2699,7 @@ impl Render for LibraryPage {
         }
         let (root, shell) = {
             let state = self.state.read(cx);
-            (state.root().cloned(), state.shell.clone())
+            (state.root().cloned(), state.shell().clone())
         };
         let root_name = root
             .as_ref()
@@ -2844,7 +2728,7 @@ impl Render for LibraryPage {
         // The inspector has the bar's commands, and the bar would not fit beside it in a narrow window.
         let bar_visible = selected > 0 && !self.inspector;
 
-        let top_bar = TopBar::new(&shell, "Library")
+        let top_bar = TopBar::new(&shell, TidyPage::Library.label())
             .when_some(caption, |bar, caption| {
                 bar.quiet(
                     div()
@@ -2975,7 +2859,7 @@ impl Render for LibraryPage {
                             .min_w_0()
                             .capture_any_mouse_down(cx.listener(
                                 |this, event: &MouseDownEvent, _, cx| {
-                                    if this.guard.holds(event.position) {
+                                    if this.bar.holds(event.position, cx) {
                                         cx.stop_propagation();
                                     }
                                 },

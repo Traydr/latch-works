@@ -10,8 +10,6 @@ use std::collections::{HashMap, HashSet};
 
 use icu_normalizer::ComposingNormalizerBorrowed;
 
-use crate::number::{to_fixed, v8_log};
-
 /// The archive form of a path: backslashes become slashes, leading slashes go, and runs of
 /// slashes become one. A trailing slash stays; `.` and `..` segments are kept as written.
 pub fn to_archive_path(path: &str) -> String {
@@ -175,48 +173,4 @@ fn canonicalize_path_extension(path: String) -> String {
 /// The last segment, with underscores and hyphens shown as spaces.
 pub fn display_name_from_path(path: &str) -> String {
     get_base_name(path).replace(['_', '-'], " ")
-}
-
-const BYTE_UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-
-/// A byte count as people read it: `"0 B"`, `"512 B"`, `"1.5 KB"`, in steps of 1024.
-///
-/// This keeps the TypeScript's arithmetic exactly: the unit is the floor of a ratio of V8's
-/// logarithms, and the value is printed by JavaScript's `toFixed`, so a tie rounds up. So it keeps
-/// its quirks too, which the vectors pin: 1,048,575 bytes is `"1024.0 KB"`, counts from just
-/// under 1024 TB up have the unit `"undefined"` (the table stops at TB), as do counts under one
-/// byte, and a negative count is `"NaN undefined"`.
-pub fn format_bytes(bytes: f64) -> String {
-    if bytes == 0.0 {
-        return "0 B".to_owned();
-    }
-    let unit = (v8_log(bytes) / v8_log(1024.0)).floor();
-    let value = bytes / power_of_1024(unit);
-    let decimals = if unit == 0.0 { 0 } else { 1 };
-    let unit_name = if (0.0..5.0).contains(&unit) {
-        // A whole number from 0 to 4, so the cast is exact.
-        BYTE_UNITS[unit as usize]
-    } else {
-        "undefined"
-    };
-    format!("{} {unit_name}", to_fixed(value, decimals))
-}
-
-/// `1024 ** exponent` for a whole exponent, or NaN: a power of two, built exactly as V8's `**`
-/// returns it, including the subnormal powers that `powi` would flush to zero.
-fn power_of_1024(exponent: f64) -> f64 {
-    if exponent.is_nan() {
-        return f64::NAN;
-    }
-    let power_of_two = exponent * 10.0;
-    if power_of_two > 1023.0 {
-        f64::INFINITY
-    } else if power_of_two >= -1022.0 {
-        // A whole number in range, so the casts are exact.
-        f64::from_bits(((power_of_two as i64 + 1023) as u64) << 52)
-    } else if power_of_two >= -1074.0 {
-        f64::from_bits(1 << (power_of_two as i64 + 1074))
-    } else {
-        0.0
-    }
 }

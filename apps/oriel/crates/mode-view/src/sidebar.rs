@@ -1,8 +1,7 @@
-//! View's part of the sidebar (`ViewSidebar.tsx`), as Tidy and Sync have theirs: the folder the
-//! owner opened in the location switcher every mode has, whose menu opens another, then where
-//! View is inside it as a short tree. The parent is a muted step up, the folder on screen is the
-//! current row, and its subfolders sit indented beneath it. In the rail, the switcher's tile and
-//! Parent as an icon.
+//! View's part of the sidebar, as Tidy and Sync have theirs: the folder the owner opened in the
+//! location switcher every mode has, whose menu opens another, then where View is inside it as a
+//! short tree. The parent is a muted step up, the folder on screen is the current row, and its
+//! subfolders sit indented beneath it. In the rail, the switcher's tile and Parent as an icon.
 
 use std::path::Path;
 
@@ -216,8 +215,10 @@ fn folder_menu(view: &Entity<ViewMode>, mut menu: PopupMenu, cx: &App) -> PopupM
     );
     let chooser = view.clone();
     menu.separator().item(
-        oriel_ui::menu_row("Open folder…  ⌘O").on_click(move |_, _, cx| {
-            chooser.update(cx, |view, cx| view.choose_folder(cx));
-        }),
+        oriel_ui::menu_row(oriel_ui::keys::labelled("Open folder…", "cmd-o")).on_click(
+            move |_, _, cx| {
+                chooser.update(cx, |view, cx| view.choose_folder(cx));
+            },
+        ),
     )
 }

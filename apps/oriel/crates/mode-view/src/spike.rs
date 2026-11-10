@@ -1,8 +1,9 @@
-//! Phase 0's measurements of View (plan 063, "Scorecard"), run by environment variables so a run
-//! repeats exactly without scripted input, which this Mac does not allow.
+//! Phase 0's measurements of View (plan 063, "Scorecard"), set up by the launch's variables
+//! (those xtask's `measure` sets are `oriel_launch::variables`) so a run repeats exactly.
 //!
-//! With [`LOG_VARIABLE`] set and a folder opened through `ORIEL_OPEN`, View lists the folder
-//! recursively, as Phase 0's listing did, and writes one JSON line per event to that file:
+//! With `ORIEL_SPIKE_LOG` set and a folder opened through `ORIEL_OPEN`, View writes one JSON line
+//! per event to that file (`xtask measure view` turns recursive listing on in the settings it
+//! starts with, as Phase 0's listing was recursive):
 //!
 //! 1. `listed`: the folder's media are listed.
 //! 2. `first-thumbnails`: the first frame drawing every visible tile with its thumbnail, timed
@@ -18,32 +19,18 @@
 //!    Refresh, and comic mode on and off, 0.7 s apart, with the time each took on the main thread.
 //! 8. `done`; the app quits if `ORIEL_SPIKE_QUIT=1`.
 //!
-//! `ORIEL_SPIKE_WINDOW=1280x900` sizes the window first, as Electron Oriel's
-//! performance script sized its window.
+//! `ORIEL_SPIKE_WINDOW=1280x900` sizes the window first.
 
-use std::fs::{File, OpenOptions};
-use std::io::Write as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gpui_kit::{AsyncWindowContext, Context, Entity, WeakEntity, Window, px, size};
 use oriel_core_domain::GallerySortMode;
+use oriel_launch::{Variables, variables};
+use oriel_ui::measure::{self, SpikeLog, frame_stats, percentile, since_launch_ms};
 
 use crate::listing::{MediaEntry, MediaKind};
 use crate::{Gallery, Listing, ViewMode, Viewer};
-
-pub const LOG_VARIABLE: &str = "ORIEL_SPIKE_LOG";
-const FILL_VARIABLE: &str = "ORIEL_SPIKE_FILL";
-const REST_VARIABLE: &str = "ORIEL_SPIKE_REST_MS";
-const SCROLL_VARIABLE: &str = "ORIEL_SPIKE_SCROLL";
-const STEPS_VARIABLE: &str = "ORIEL_SPIKE_STEPS";
-const WORKFLOWS_VARIABLE: &str = "ORIEL_SPIKE_WORKFLOWS";
-const QUIT_VARIABLE: &str = "ORIEL_SPIKE_QUIT";
-const WINDOW_VARIABLE: &str = "ORIEL_SPIKE_WINDOW";
-
-fn variable(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|value| !value.is_empty())
-}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Phase {
@@ -56,8 +43,10 @@ enum Phase {
     Done,
 }
 
+const SPIKE_WORKFLOWS: &str = "ORIEL_SPIKE_WORKFLOWS";
+
 pub(crate) struct Spike {
-    log: File,
+    log: SpikeLog,
     fill: bool,
     rest: Duration,
     scroll: Option<f32>,
@@ -69,15 +58,13 @@ pub(crate) struct Spike {
 }
 
 impl Spike {
-    pub(crate) fn from_environment(window: &mut Window, _: &mut Context<ViewMode>) -> Option<Self> {
-        let path = variable(LOG_VARIABLE)?;
-        let log = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .map_err(|error| log::error!("cannot open the spike log {path}: {error}"))
-            .ok()?;
-        if let Some((width, height)) = variable(WINDOW_VARIABLE).and_then(|value| {
+    pub(crate) fn start(
+        spikes: &Variables,
+        window: &mut Window,
+        _: &mut Context<ViewMode>,
+    ) -> Option<Self> {
+        let log = SpikeLog::open(spikes.get(variables::SPIKE_LOG)?)?;
+        if let Some((width, height)) = spikes.get(variables::SPIKE_WINDOW).and_then(|value| {
             let (width, height) = value.split_once('x')?;
             Some((width.parse::<f32>().ok()?, height.parse::<f32>().ok()?))
         }) {
@@ -85,18 +72,12 @@ impl Spike {
         }
         let mut spike = Self {
             log,
-            fill: variable(FILL_VARIABLE).is_some_and(|value| value == "1"),
-            rest: Duration::from_millis(
-                variable(REST_VARIABLE)
-                    .and_then(|value| value.parse().ok())
-                    .unwrap_or(5_000),
-            ),
-            scroll: variable(SCROLL_VARIABLE).and_then(|value| value.parse().ok()),
-            steps: variable(STEPS_VARIABLE)
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(0),
-            workflows: variable(WORKFLOWS_VARIABLE).is_some_and(|value| value == "1"),
-            quit: variable(QUIT_VARIABLE).is_some_and(|value| value == "1"),
+            fill: spikes.is_on(variables::SPIKE_FILL),
+            rest: Duration::from_millis(spikes.parse(variables::SPIKE_REST_MS).unwrap_or(5_000)),
+            scroll: spikes.parse(variables::SPIKE_SCROLL),
+            steps: spikes.parse(variables::SPIKE_STEPS).unwrap_or(0),
+            workflows: spikes.is_on(SPIKE_WORKFLOWS),
+            quit: spikes.is_on(variables::SPIKE_QUIT),
             phase: Phase::Listing,
             created: Instant::now(),
         };
@@ -113,13 +94,10 @@ impl Spike {
         let at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_millis());
-        let line = format!(
-            "{{\"at_ms\":{at},\"since_view_ms\":{:.1},{fields}}}\n",
-            self.created.elapsed().as_secs_f64() * 1e3
-        );
-        if let Err(error) = self.log.write_all(line.as_bytes()) {
-            log::error!("cannot write the spike log: {error}");
-        }
+        let since_view_ms = self.created.elapsed().as_secs_f64() * 1e3;
+        self.log.write(&format!(
+            r#""at_ms":{at},"since_view_ms":{since_view_ms:.1},{fields}"#
+        ));
     }
 
     /// Called at the start of every View frame: moves the run on when its condition holds.
@@ -226,11 +204,9 @@ impl Spike {
     }
 
     fn write_memory(&mut self, event: &str) {
-        let (resident, footprint) = memory();
         self.write(&format!(
-            r#""event":"{event}","resident_mb":{:.1},"footprint_mb":{:.1}"#,
-            resident as f64 / 1e6,
-            footprint as f64 / 1e6,
+            r#""event":"{event}",{}"#,
+            measure::memory_fields()
         ));
     }
 
@@ -422,40 +398,6 @@ fn with_spike(
     .ok();
 }
 
-fn percentile(sorted: &[f64], fraction: f64) -> f64 {
-    if sorted.is_empty() {
-        return 0.;
-    }
-    let rank = ((sorted.len() - 1) as f64 * fraction).round() as usize;
-    sorted[rank]
-}
-
-/// The intervals between consecutive frames of a scroll, in milliseconds.
-fn frame_stats(frames: &[Instant], speed: f32) -> String {
-    let mut intervals: Vec<f64> = frames
-        .windows(2)
-        .map(|pair| pair[1].duration_since(pair[0]).as_secs_f64() * 1e3)
-        .collect();
-    let duration = match (frames.first(), frames.last()) {
-        (Some(first), Some(last)) => last.duration_since(*first).as_secs_f64(),
-        _ => 0.,
-    };
-    intervals.sort_by(f64::total_cmp);
-    let p50 = percentile(&intervals, 0.5);
-    // A frame that took more than one and a half times the typical interval missed its vsync.
-    let long = intervals
-        .iter()
-        .filter(|interval| **interval > p50 * 1.5)
-        .count();
-    format!(
-        r#""event":"scroll","px_per_s":{speed},"frames":{},"duration_s":{duration:.2},"p50_ms":{p50:.2},"p95_ms":{:.2},"p99_ms":{:.2},"max_ms":{:.2},"long_frames":{long}"#,
-        frames.len(),
-        percentile(&intervals, 0.95),
-        percentile(&intervals, 0.99),
-        intervals.last().copied().unwrap_or_default(),
-    )
-}
-
 fn step_stats(format: &str, pace: &str, times: &[Duration], steps: usize, size: u32) -> String {
     let mut millis: Vec<f64> = times.iter().map(|time| time.as_secs_f64() * 1e3).collect();
     millis.sort_by(f64::total_cmp);
@@ -466,61 +408,4 @@ fn step_stats(format: &str, pace: &str, times: &[Duration], steps: usize, size: 
         percentile(&millis, 0.95),
         millis.last().copied().unwrap_or_default(),
     )
-}
-
-/// This process's resident size and its physical footprint (what Activity Monitor shows), in
-/// bytes.
-#[cfg(target_os = "macos")]
-fn memory() -> (u64, u64) {
-    match rusage() {
-        Some(usage) => (usage.ri_resident_size, usage.ri_phys_footprint),
-        None => (0, 0),
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn memory() -> (u64, u64) {
-    (0, 0)
-}
-
-#[cfg(target_os = "macos")]
-fn rusage() -> Option<libc::rusage_info_v2> {
-    let mut usage = std::mem::MaybeUninit::<libc::rusage_info_v2>::zeroed();
-    // SAFETY: `usage` is a `rusage_info_v2`, the flavour asked for.
-    let status = unsafe {
-        libc::proc_pid_rusage(
-            libc::getpid(),
-            libc::RUSAGE_INFO_V2,
-            usage.as_mut_ptr().cast(),
-        )
-    };
-    // SAFETY: zeroed is a valid `rusage_info_v2`, and the call filled it on success.
-    (status == 0).then(|| unsafe { usage.assume_init() })
-}
-
-/// Milliseconds since the kernel started this process. The start is in Mach ticks, and `libc`
-/// marks its Mach clock bindings deprecated in favour of the `mach2` crate, which is not worth a
-/// dependency for one reading.
-#[cfg(target_os = "macos")]
-#[expect(deprecated, reason = "libc's Mach clock is enough for one reading")]
-fn since_launch_ms() -> f64 {
-    let Some(usage) = rusage() else {
-        return 0.;
-    };
-    let mut timebase = libc::mach_timebase_info { numer: 0, denom: 0 };
-    // SAFETY: plain out-parameter and clock reads.
-    let now = unsafe {
-        libc::mach_timebase_info(&mut timebase);
-        libc::mach_absolute_time()
-    };
-    if timebase.denom == 0 {
-        return 0.;
-    }
-    let ticks = now.saturating_sub(usage.ri_proc_start_abstime) as f64;
-    ticks * f64::from(timebase.numer) / f64::from(timebase.denom) / 1e6
-}
-
-#[cfg(not(target_os = "macos"))]
-fn since_launch_ms() -> f64 {
-    0.
 }

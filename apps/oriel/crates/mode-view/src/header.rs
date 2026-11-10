@@ -1,7 +1,7 @@
-//! View's top bar, the one Tidy and Sync have (`GalleryHeader.tsx`): the folder's name, once (the
-//! owner asked for it alone, rather than beside a "parent / folder" line that named it again);
-//! then the scan's status once it is done, what the folder holds, the selection's place, and the
-//! folder steps (Parent, Prev Folder, Next Folder) at the bar's size in the house scale.
+//! View's top bar, the one Tidy and Sync have: the folder's name, once (the owner asked for it
+//! alone, rather than beside a "parent / folder" line that named it again); then the scan's status
+//! once it is done, what the folder holds, the selection's place, and the folder steps (Parent,
+//! Prev Folder, Next Folder) at the bar's size in the house scale.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
@@ -13,6 +13,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
     prelude::FluentBuilder as _, px,
 };
+use oriel_core_domain::format::plural;
 use oriel_ui::TextRole as _;
 use oriel_ui::{ControlSize as _, TopBar};
 
@@ -105,14 +106,14 @@ impl ViewMode {
             if folders > 0 {
                 bar = bar.trailing(pill(
                     "gallery-folders",
-                    format!("{folders} folders").into(),
+                    plural(folders, "folder").into(),
                     cx,
                 ));
             }
             let count: SharedString = if comics > 0 {
-                format!("{comics} comics").into()
+                plural(comics, "comic").into()
             } else {
-                format!("{items} items").into()
+                plural(items, "item").into()
             };
             bar = bar.trailing(pill("gallery-count", count, cx));
             if let Some(selected) = gallery.selected_index() {

@@ -4,22 +4,22 @@
 //! for good, so scrolling 20,000 tiles would end holding 20,000 decoded thumbnails. This keeps
 //! the ones drawn last and releases the rest from memory and from the GPU's sprite atlas.
 //!
-//! It also keeps less of each. A tile's pixels are needed once, to upload them to the atlas the
-//! first time the tile is painted; after that GPUI paints it from the atlas by the image's id
-//! alone. So once a tile has been painted its pixels are let go, and the cache holds a one-pixel
-//! stand-in under the same id, which the atlas answers for as long as the tile stays cached (the
-//! cache is the only one that drops it from the atlas). The WebP files are decoded through
-//! libwebp into the same pixels GPUI's own decoder makes (`oriel_media::still::decode_webp`).
+//! It also keeps less of each: once a tile has been painted its pixels are let go, and the cache
+//! holds a one-pixel stand-in (`ImageCache::mark_uploaded`), which the atlas answers for as long
+//! as the tile stays cached (the cache is the only one that drops it from the atlas). The WebP
+//! files are decoded through libwebp into the same pixels GPUI's own decoder makes
+//! (`oriel_media::still::decode_webp`).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
 use gpui_kit::{
     App, AppContext as _, Bounds, Context, Corners, DevicePixels, Entity, IntoElement, ObjectFit,
-    Pixels, RenderImage, Size, Styled as _, Task, Window, canvas,
+    Pixels, RenderImage, Size, Styled as _, Window, canvas,
 };
 use oriel_media::still;
+use oriel_ui::image_cache::{self, ImageCache, Slot};
 
 /// A cache that never holds fewer than this, whatever the gallery asks.
 const MIN_CAPACITY: usize = 64;
@@ -34,21 +34,10 @@ pub struct TilePicture {
     uploaded: bool,
 }
 
-enum State {
-    Loading(Task<()>),
-    Ready(TilePicture),
-    Failed,
-}
-
-struct Held {
-    state: State,
-    used: u64,
-}
-
 pub struct TileImages {
     capacity: usize,
-    clock: u64,
-    items: HashMap<Arc<Path>, Held>,
+    /// Each thumbnail with its own size, which the stand-in does not have.
+    cache: ImageCache<Arc<Path>, Size<DevicePixels>>,
     /// The thumbnails decoded ahead of the scroll and not drawn yet. They keep their pixels
     /// until painted, so the ones the scroll no longer heads for are let go at once.
     ahead: HashSet<Arc<Path>>,
@@ -58,17 +47,12 @@ impl TileImages {
     pub fn new(capacity: usize, cx: &mut App) -> Entity<Self> {
         let images = cx.new(|_| Self {
             capacity: capacity.max(MIN_CAPACITY),
-            clock: 0,
-            items: HashMap::new(),
+            cache: ImageCache::default(),
             ahead: HashSet::new(),
         });
         // Release the GPU textures when the cache itself goes.
         cx.observe_release(&images, |images, cx| {
-            for (_, held) in images.items.drain() {
-                if let State::Ready(picture) = held.state {
-                    cx.drop_image(picture.image, None);
-                }
-            }
+            image_cache::release(images.cache.clear(), None, cx);
         })
         .detach();
         images
@@ -89,17 +73,22 @@ impl TileImages {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<TilePicture> {
-        self.clock += 1;
         self.ahead.remove(path);
-        if let Some(held) = self.items.get_mut(path) {
-            held.used = self.clock;
-            return match &held.state {
-                State::Ready(picture) => Some(picture.clone()),
-                State::Loading(_) | State::Failed => None,
-            };
+        match self.cache.touch(path) {
+            Some(Slot::Ready(image)) => {
+                let image = image.clone();
+                Some(TilePicture {
+                    image,
+                    size: *self.cache.meta(path)?,
+                    uploaded: self.cache.is_uploaded(path),
+                })
+            }
+            Some(Slot::Waiting(_) | Slot::Failed) => None,
+            None => {
+                self.decode(path, window, cx);
+                None
+            }
         }
-        self.decode(path, window, cx);
-        None
     }
 
     /// Decodes the thumbnails at `paths` ahead of their tiles being drawn, and drops those decoded
@@ -116,11 +105,10 @@ impl TileImages {
         for path in gone {
             self.ahead.remove(&path);
             // Never painted, so the atlas has nothing of it; a decode under way is cancelled.
-            self.items.remove(&path);
+            drop(self.cache.remove(&path));
         }
         for path in paths {
-            if !self.items.contains_key(path) {
-                self.clock += 1;
+            if !self.cache.contains(path) {
                 self.decode(path, window, cx);
                 self.ahead.insert(path.clone());
             }
@@ -129,7 +117,11 @@ impl TileImages {
 
     /// Starts decoding the thumbnail at `path`, making room for it first.
     fn decode(&mut self, path: &Arc<Path>, window: &mut Window, cx: &mut Context<Self>) {
-        self.make_room(window, cx);
+        // Drops the least recently drawn until there is room for one more.
+        let capacity = self.capacity;
+        let evicted = self.cache.evict(|held, _| held >= capacity, |_, _| false);
+        self.ahead.retain(|path| self.cache.contains(path));
+        image_cache::release(evicted, Some(window), cx);
         let task = cx.spawn({
             let path = path.clone();
             async move |this, cx| {
@@ -141,79 +133,30 @@ impl TileImages {
                             width: DevicePixels(i32::try_from(still.width())?),
                             height: DevicePixels(i32::try_from(still.height())?),
                         };
-                        anyhow::Ok((still, size))
+                        anyhow::Ok((still.into_render_image(), size))
                     })
                     .await;
                 this.update(cx, |this, cx| {
-                    let Some(held) = this.items.get_mut(&path) else {
-                        return;
-                    };
-                    let state = match decoded {
-                        Ok((still, size)) => State::Ready(TilePicture {
-                            image: still.into_render_image(),
-                            size,
-                            uploaded: false,
-                        }),
+                    let image = match decoded {
+                        Ok((image, size)) => {
+                            if let Some(kept) = this.cache.meta_mut(&path) {
+                                *kept = size;
+                            }
+                            Some(image)
+                        }
                         Err(error) => {
                             log::debug!("no tile for {}: {error:#}", path.display());
-                            State::Failed
+                            None
                         }
                     };
-                    // This task is the one finishing; it is let go, not cancelled.
-                    if let State::Loading(task) = std::mem::replace(&mut held.state, state) {
-                        task.detach();
-                    }
+                    // A thumbnail let go of meanwhile was never painted.
+                    drop(this.cache.finish(&path, image));
                     cx.notify();
                 })
                 .ok();
             }
         });
-        self.items.insert(
-            path.clone(),
-            Held {
-                state: State::Loading(task),
-                used: self.clock,
-            },
-        );
-    }
-
-    /// The tile was painted from `image`, so the atlas has its pixels: from now on the cache
-    /// keeps the stand-in.
-    fn uploaded(&mut self, path: &Path, image: &Arc<RenderImage>) {
-        let Some(Held {
-            state: State::Ready(picture),
-            ..
-        }) = self.items.get_mut(path)
-        else {
-            return;
-        };
-        if picture.uploaded || picture.image.id != image.id {
-            return;
-        }
-        picture.image = still::stand_in(image);
-        picture.uploaded = true;
-    }
-
-    /// Drops the least recently drawn until there is room for one more.
-    fn make_room(&mut self, window: &mut Window, cx: &mut App) {
-        while self.items.len() >= self.capacity {
-            let Some(oldest) = self
-                .items
-                .iter()
-                .min_by_key(|(_, held)| held.used)
-                .map(|(path, _)| path.clone())
-            else {
-                break;
-            };
-            if let Some(Held {
-                state: State::Ready(picture),
-                ..
-            }) = self.items.remove(&oldest)
-            {
-                cx.drop_image(picture.image, Some(window));
-            }
-            self.ahead.remove(&oldest);
-        }
+        drop(self.cache.wait(path.clone(), Some(task), Size::default()));
     }
 }
 
@@ -249,7 +192,9 @@ pub fn tile_picture(
                 false,
             );
             if painted.is_ok() && uploads && !picture.uploaded {
-                images.update(cx, |images, _| images.uploaded(&path, &picture.image));
+                images.update(cx, |images, _| {
+                    images.cache.mark_uploaded(&path, &picture.image);
+                });
             }
         },
     )

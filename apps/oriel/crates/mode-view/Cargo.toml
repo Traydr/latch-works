@@ -11,8 +11,8 @@ gpui-kit.workspace = true
 anyhow.workspace = true
 log.workspace = true
 oriel-core-domain.workspace = true
-oriel-core-index.workspace = true
 oriel-core-paths.workspace = true
+oriel-launch.workspace = true
 oriel-runtime.workspace = true
 oriel-tools.workspace = true
 futures.workspace = true
@@ -23,12 +23,17 @@ oriel-media.workspace = true
 # Electron Oriel keys its thumbnails by SHA-1; this is the crate already in the lockfile.
 sha1_smol = "1"
 
-[target.'cfg(target_os = "macos")'.dependencies]
-# The spike's memory and launch-time readings (`proc_pid_rusage`).
-libc = "0.2"
-
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
+oriel-ui = { workspace = true, features = ["test-support"] }
+# The libmpv spike (`examples/mpv_spike.rs`) reads what the app does not.
+oriel-media = { workspace = true, features = ["measure"] }
+# The pinned ffmpeg's clips, and the rule for a tool this machine lacks.
+oriel-test-archive.workspace = true
+
+# The libmpv spike's CPU time and memory on Windows, which has no `ps`.
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
 
 [lints]
 workspace = true

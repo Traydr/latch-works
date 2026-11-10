@@ -1,10 +1,15 @@
 [package]
 name = "oriel-core-paths"
-description = "Every folder Oriel keeps, under ~/.latch-works/oriel, and nothing else."
+description = "What Oriel and its xtask agree on: the data root's folders and files, the package and workspace layout, the native-library search, the licence index."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+
+[dependencies]
+oriel-core-domain.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

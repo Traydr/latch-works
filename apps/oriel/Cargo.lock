@@ -2555,24 +2555,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpui-fps"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e6d53d04266a5236c99a740859af8b326a9b8632f4ef95ed3acd184e22c76cb"
-dependencies = [
- "core-graphics 0.24.0",
- "gpui-pre",
- "libc",
- "objc2-core-foundation",
- "objc2-io-kit",
- "sysinfo 0.37.2",
- "uuid",
- "wayland-client",
- "web-time",
- "windows 0.58.0",
-]
-
-[[package]]
 name = "gpui-kit"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2582,7 +2564,6 @@ dependencies = [
  "gpui-component",
  "gpui-fast",
  "gpui-fast-platform",
- "gpui-fast-web",
  "gpui-kit-assets",
  "gpui-pre",
  "gpui-pre-macros",
@@ -2597,7 +2578,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c214017b45e5654665f18faa551f58a2c2c8d25efe6632b1a443ba8edf365e96"
 dependencies = [
  "anyhow",
- "gpui-fast",
  "gpui-pre",
  "gpui-pre-reqwest",
  "log",
@@ -2634,7 +2614,6 @@ dependencies = [
  "gpui-pre-shared-string",
  "gpui-pre-sum-tree",
  "gpui-pre-util",
- "hdrhistogram",
  "heapless",
  "image",
  "inventory",
@@ -3205,16 +3184,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a596f1b20ed2cc5ecac41a164aaebc7258057060f06c0cf7a2ba3991ee7990fb"
 dependencies = [
  "hashbrown 0.17.1",
-]
-
-[[package]]
-name = "hdrhistogram"
-version = "7.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f49d1053f4708f0af3cf9fc5bffc7e68a914a3c45becb231c80068c9c3f78bea"
-dependencies = [
- "byteorder",
- "num-traits",
 ]
 
 [[package]]
@@ -4672,21 +4641,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "objc2-av-foundation"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "478ae33fcac9df0a18db8302387c666b8ef08a3e2d62b510ca4fc278a384b6c0"
-dependencies = [
- "bitflags 2.13.2",
- "block2 0.6.2",
- "objc2 0.6.5",
- "objc2-core-foundation",
- "objc2-core-media",
- "objc2-core-video",
- "objc2-foundation 0.3.2",
-]
-
-[[package]]
 name = "objc2-cloud-kit"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4695,28 +4649,6 @@ dependencies = [
  "bitflags 2.13.2",
  "objc2 0.6.5",
  "objc2-foundation 0.3.2",
-]
-
-[[package]]
-name = "objc2-core-audio"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1eebcea8b0dbff5f7c8504f3107c68fc061a3eb44932051c8cf8a68d969c3b2"
-dependencies = [
- "dispatch2",
- "objc2 0.6.5",
- "objc2-core-audio-types",
- "objc2-core-foundation",
-]
-
-[[package]]
-name = "objc2-core-audio-types"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a89f2ec274a0cf4a32642b2991e8b351a404d290da87bb6a9a9d8632490bd1c"
-dependencies = [
- "bitflags 2.13.2",
- "objc2 0.6.5",
 ]
 
 [[package]]
@@ -4788,21 +4720,6 @@ checksum = "e5d563b38d2b97209f8e861173de434bd0214cf020e3423a52624cd1d989f006"
 dependencies = [
  "objc2 0.6.5",
  "objc2-foundation 0.3.2",
-]
-
-[[package]]
-name = "objc2-core-media"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05ec576860167a15dd9fce7fbee7512beb4e31f532159d3482d1f9c6caedf31d"
-dependencies = [
- "bitflags 2.13.2",
- "dispatch2",
- "objc2 0.6.5",
- "objc2-core-audio",
- "objc2-core-audio-types",
- "objc2-core-foundation",
- "objc2-core-video",
 ]
 
 [[package]]
@@ -4880,16 +4797,6 @@ checksum = "32b0446e98cf4a784cc7a0177715ff317eeaa8463841c616cfc78aa4f953c4ea"
 dependencies = [
  "objc2-core-foundation",
  "objc2-core-graphics",
-]
-
-[[package]]
-name = "objc2-io-kit"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33fafba39597d6dc1fb709123dfa8289d39406734be322956a69f0931c73bb15"
-dependencies = [
- "libc",
- "objc2-core-foundation",
 ]
 
 [[package]]
@@ -5145,18 +5052,17 @@ dependencies = [
 name = "oriel"
 version = "1.0.0"
 dependencies = [
- "anyhow",
  "embed-resource",
  "futures",
- "gpui-fps",
  "gpui-kit",
  "libc",
  "log",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
+ "oriel-core-domain",
  "oriel-core-paths",
- "oriel-core-sync",
+ "oriel-launch",
  "oriel-media",
  "oriel-mode-sync",
  "oriel-mode-tidy",
@@ -5177,18 +5083,8 @@ version = "1.0.0"
 dependencies = [
  "libloading",
  "oriel-core-format",
-]
-
-[[package]]
-name = "oriel-bench"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "libc",
- "oriel-avif",
- "serde",
- "serde_json",
- "sha2 0.11.1",
+ "oriel-core-paths",
+ "oriel-test-archive",
 ]
 
 [[package]]
@@ -5197,8 +5093,11 @@ version = "1.0.0"
 dependencies = [
  "icu_collator",
  "icu_normalizer",
+ "libc",
+ "log",
  "serde",
  "serde_json",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5210,25 +5109,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "oriel-core-index"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "futures",
- "icu_collator",
- "libc",
- "log",
- "oriel-core-domain",
- "oriel-runtime",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.11.1",
-]
-
-[[package]]
 name = "oriel-core-paths"
 version = "1.0.0"
+dependencies = [
+ "oriel-core-domain",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "oriel-core-sync"
@@ -5236,8 +5123,8 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "futures",
+ "libc",
  "oriel-core-domain",
- "oriel-core-index",
  "oriel-core-sync",
  "oriel-runtime",
  "reqwest",
@@ -5255,11 +5142,8 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "futures",
- "gpui-kit",
- "icu_collator",
  "indexmap",
  "libc",
- "libloading",
  "log",
  "objc2-foundation 0.3.2",
  "oriel-avif",
@@ -5269,13 +5153,20 @@ dependencies = [
  "oriel-runtime",
  "oriel-test-archive",
  "oriel-tools",
+ "oriel-vips",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "windows 0.62.2",
  "windows-core 0.62.2",
- "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "oriel-launch"
+version = "1.0.0"
+dependencies = [
+ "oriel-core-paths",
 ]
 
 [[package]]
@@ -5283,27 +5174,21 @@ name = "oriel-media"
 version = "1.0.0"
 dependencies = [
  "anyhow",
- "block2 0.6.2",
  "gpui-kit",
  "image",
- "libc",
  "libloading",
  "libwebp-sys",
  "log",
  "objc2 0.6.5",
- "objc2-av-foundation",
  "objc2-core-foundation",
  "objc2-core-graphics",
- "objc2-core-media",
  "objc2-core-video",
  "objc2-foundation 0.3.2",
  "objc2-image-io",
- "objc2-quartz-core 0.3.2",
  "oriel-core-paths",
- "oriel-core-tidy",
- "oriel-tools",
+ "oriel-test-archive",
+ "oriel-vips",
  "smallvec",
- "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5318,9 +5203,9 @@ dependencies = [
  "gpui-kit",
  "log",
  "oriel-core-domain",
- "oriel-core-index",
  "oriel-core-paths",
  "oriel-core-sync",
+ "oriel-launch",
  "oriel-runtime",
  "oriel-ui",
  "serde",
@@ -5336,13 +5221,13 @@ dependencies = [
  "anyhow",
  "futures",
  "gpui-kit",
- "libc",
  "log",
  "objc2 0.6.5",
  "objc2-foundation 0.3.2",
  "oriel-core-domain",
  "oriel-core-paths",
  "oriel-core-tidy",
+ "oriel-launch",
  "oriel-media",
  "oriel-runtime",
  "oriel-test-archive",
@@ -5360,18 +5245,19 @@ dependencies = [
  "anyhow",
  "futures",
  "gpui-kit",
- "libc",
  "log",
  "oriel-core-domain",
- "oriel-core-index",
  "oriel-core-paths",
+ "oriel-launch",
  "oriel-media",
  "oriel-runtime",
+ "oriel-test-archive",
  "oriel-tools",
  "oriel-ui",
  "serde",
  "serde_json",
  "sha1_smol",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5380,7 +5266,6 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "futures",
- "gpui-kit",
  "libc",
  "log",
  "reqwest",
@@ -5395,6 +5280,7 @@ version = "1.0.0"
 dependencies = [
  "image",
  "oriel-avif",
+ "oriel-core-paths",
  "oriel-tools",
 ]
 
@@ -5402,23 +5288,38 @@ dependencies = [
 name = "oriel-tools"
 version = "1.0.0"
 dependencies = [
- "anyhow",
  "libc",
+ "oriel-core-domain",
+ "oriel-core-paths",
  "oriel-runtime",
+ "oriel-test-archive",
  "serde",
  "serde_json",
- "sha2 0.11.1",
 ]
 
 [[package]]
 name = "oriel-ui"
 version = "1.0.0"
 dependencies = [
+ "anyhow",
+ "futures",
  "gpui-kit",
+ "image",
  "log",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
+ "oriel-core-domain",
+ "oriel-runtime",
  "serde_json",
+]
+
+[[package]]
+name = "oriel-vips"
+version = "1.0.0"
+dependencies = [
+ "libloading",
+ "log",
+ "oriel-core-paths",
 ]
 
 [[package]]
@@ -7370,20 +7271,6 @@ dependencies = [
  "ntapi",
  "rayon",
  "windows 0.57.0",
-]
-
-[[package]]
-name = "sysinfo"
-version = "0.37.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16607d5caffd1c07ce073528f9ed972d88db15dd44023fa57142963be3feb11f"
-dependencies = [
- "libc",
- "memchr",
- "ntapi",
- "objc2-core-foundation",
- "objc2-io-kit",
- "windows 0.61.3",
 ]
 
 [[package]]
@@ -9502,7 +9389,11 @@ dependencies = [
  "libc",
  "libloading",
  "object",
- "oriel-tools",
+ "oriel-core-domain",
+ "oriel-core-paths",
+ "oriel-core-tidy",
+ "oriel-launch",
+ "oriel-runtime",
  "ruzstd",
  "serde",
  "serde_json",
@@ -9700,7 +9591,7 @@ dependencies = [
  "rand 0.8.8",
  "screencapturekit",
  "screencapturekit-sys",
- "sysinfo 0.31.4",
+ "sysinfo",
  "tao-core-video-sys",
  "windows 0.61.3",
  "windows-capture",

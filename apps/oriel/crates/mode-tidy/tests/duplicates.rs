@@ -8,7 +8,8 @@ use std::time::Duration;
 use crate::support::*;
 use gpui_kit::TestAppContext;
 use oriel_core_tidy::contract::DuplicateDismissal;
-use oriel_mode_tidy::{TidyPage, last_toast};
+use oriel_mode_tidy::TidyPage;
+use oriel_ui::toast::last_toast;
 
 fn playing_tiles(cx: &mut TestAppContext, session: &Session) -> Vec<u64> {
     cx.read(|cx| {
@@ -33,11 +34,13 @@ fn active_key(cx: &mut TestAppContext, session: &Session) -> Option<String> {
 }
 
 async fn dismissals(cx: &mut TestAppContext, session: &Session) -> Vec<DuplicateDismissal> {
-    let (engine, root_id) = cx.read(|cx| {
+    cx.read(|cx| {
         let state = session.state.read(cx);
-        (state.engine().cloned().unwrap(), state.root_id().unwrap())
-    });
-    engine.list_dismissals(root_id, 50).await.unwrap()
+        let (engine, root_id) = (state.engine().unwrap(), state.root_id().unwrap());
+        engine.ask(move |engine| engine.list_dismissals(root_id, 50), cx)
+    })
+    .await
+    .unwrap()
 }
 
 #[gpui_kit::test]
@@ -125,7 +128,7 @@ async fn video_versions_play_in_their_tiles_and_a_click_on_one_pauses_it(cx: &mu
 
 #[gpui_kit::test]
 async fn keep_all_is_listed_in_history_and_its_undo_brings_the_set_back(cx: &mut TestAppContext) {
-    let session = launch_changing(cx, "dismissal-history");
+    let session = launch(cx, "dismissal-history");
     add_archive(cx, &session).await;
     go(cx, &session, TidyPage::Duplicates);
     settle(cx, &session).await;

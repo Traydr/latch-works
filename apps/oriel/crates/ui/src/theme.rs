@@ -19,6 +19,9 @@ use gpui_kit::{App, Window};
 
 use crate::storage::LocalStorage;
 
+/// The stored theme: `light`, `dark` or `system`.
+const THEME_KEY: &str = "oriel.theme";
+
 const THEMES: &str = include_str!("../themes/oriel.json");
 const LIGHT: &str = "Oriel Light";
 const DARK: &str = "Oriel Dark";
@@ -26,9 +29,6 @@ const DARK: &str = "Oriel Dark";
 /// The family the theme names while GPUI Kit starts (see [`prepare`]); never drawn.
 #[cfg(target_os = "macos")]
 const PLACEHOLDER_FAMILY: &str = "Oriel placeholder";
-
-/// Where the choice is kept, Electron Oriel's `localStorage` key.
-pub const THEME_KEY: &str = "oriel.theme";
 
 /// The owner's theme: the system's appearance, or one of the two.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -251,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn choices_are_stored_as_electron_oriel_stores_them() {
+    fn choices_are_stored_by_name() {
         let keys: Vec<_> = ThemeChoice::ALL.iter().map(|choice| choice.key()).collect();
         assert_eq!(keys, ["system", "light", "dark"]);
         assert_eq!(ThemeChoice::from_key("sepia"), None);

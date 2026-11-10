@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use super::vips::{Vips, VipsError};
+use oriel_vips::{Vips, VipsError};
 
 /// The print's side.
 pub const DETAIL_SIZE: usize = 64;
@@ -318,9 +318,9 @@ pub fn frames_show_variant(distances: &[u32]) -> bool {
 /// A print scaled for comparing; make it once per print, not once per pair.
 ///
 /// A set's rebuild scales every print of the catalog, so this counts them once by value. The sums
-/// stay whole numbers, so the mean and spread are the very floats glazier-core's running sums give:
-/// a print is 4096 bytes, so scaled by its length each offset fits 20 bits, its square 40 and their
-/// sum 52, which a double holds exactly at every step in either order.
+/// stay whole numbers, so the mean and spread are the very floats Electron Oriel's running sums
+/// gave: a print is 4096 bytes, so scaled by its length each offset fits 20 bits, its square 40
+/// and their sum 52, which a double holds exactly at every step in either order.
 pub fn normalize_detail(print: &[u8]) -> Vec<f32> {
     let length = print.len() as i64;
     let mut counts = [0i64; 256];
@@ -340,7 +340,7 @@ pub fn normalize_detail(print: &[u8]) -> Vec<f32> {
     let variance = squares as f64 / (length * length) as f64;
 
     let deviation = (variance / length as f64).sqrt();
-    // `|| 1` in glazier-core: a flat print (or an empty one, NaN) is not scaled.
+    // A flat print (or an empty one, NaN) is not scaled.
     let deviation = if deviation == 0.0 || deviation.is_nan() {
         1.0
     } else {
@@ -531,7 +531,7 @@ mod tests {
         assert!(variant(&ramp, &patched));
     }
 
-    /// The sums over a print's bytes, one at a time in floats, as glazier-core runs them. The
+    /// The sums over a print's bytes, one at a time in floats, as Electron Oriel ran them. The
     /// thresholds were measured on these values, so every print must keep them to the last bit.
     fn normalized_by_running_sums(print: &[u8]) -> Vec<f32> {
         let length = print.len() as f64;

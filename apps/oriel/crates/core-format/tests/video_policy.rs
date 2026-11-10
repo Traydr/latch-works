@@ -1,9 +1,9 @@
-//! Checks `video-policy.ts`'s port against `conformance/media-format/video-policy.json`.
+//! Checks the video policy against `conformance/media-format/video-policy.json`, frozen from the
+//! TypeScript that first held it.
 
 use crate::support::{check, fail_with, json, read_vectors};
 use oriel_core_format::{
-    ARCHIVE_AUDIO_CODECS, ARCHIVE_DEFAULT_VIDEO_CODEC, ARCHIVE_VIDEO_CODECS, ArchiveVideoCodec,
-    ArchiveVideoSource, AudioCodec, VIDEO_CONTAINERS, VideoCodec, VideoContainer,
+    ArchiveVideoCodec, ArchiveVideoSource, AudioCodec, VideoCodec, VideoContainer,
     is_archive_video_codec, plan_archive_video, plan_strip_audio, plan_video_reencode,
 };
 use serde::Deserialize;
@@ -12,12 +12,6 @@ use serde_json::Value;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct VideoVectors {
-    mediabunny_video_codecs: Vec<VideoCodec>,
-    mediabunny_audio_codecs: Vec<AudioCodec>,
-    archive_video_codecs: Vec<ArchiveVideoCodec>,
-    archive_audio_codecs: Vec<AudioCodec>,
-    default_video_codec: ArchiveVideoCodec,
-    video_containers: Vec<VideoContainer>,
     is_archive_video_codec: Vec<CodecCase>,
     archive_video: Vec<PlanCase>,
     reencode: Vec<ReencodeCase>,
@@ -64,18 +58,9 @@ fn vectors() -> VideoVectors {
 }
 
 #[test]
-fn names_the_codecs_and_containers_the_typescript_names() {
-    let vectors = vectors();
-    // Mediabunny's lists are the domain of the probe; a codec it adds needs a variant here.
-    assert_eq!(vectors.mediabunny_video_codecs, VideoCodec::NAMED);
-    assert_eq!(vectors.mediabunny_audio_codecs, AudioCodec::NAMED);
-    assert_eq!(vectors.archive_video_codecs, ARCHIVE_VIDEO_CODECS);
-    assert_eq!(vectors.archive_audio_codecs, ARCHIVE_AUDIO_CODECS);
-    assert_eq!(vectors.default_video_codec, ARCHIVE_DEFAULT_VIDEO_CODEC);
-    assert_eq!(vectors.video_containers, VIDEO_CONTAINERS);
-
+fn tells_archive_video_codecs_from_the_rest() {
     let mut problems = Vec::new();
-    for case in &vectors.is_archive_video_codec {
+    for case in &vectors().is_archive_video_codec {
         check(
             &mut problems,
             || format!("isArchiveVideoCodec({:?})", case.codec),

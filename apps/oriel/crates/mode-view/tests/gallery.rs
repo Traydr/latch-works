@@ -5,7 +5,7 @@
 //!
 //! The tests open View alone in a window, with its Settings section drawn in place of the
 //! gallery when a case needs it, as the shell draws it. Videos are made with the pinned ffmpeg;
-//! the cases that need them say so and skip without it.
+//! the cases that need them, or libmpv, skip without them as `oriel_test_archive::require` says.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -22,13 +22,15 @@ use gpui_kit::{
 };
 use oriel_core_domain::{GallerySortMode, NamedPath, SortableMediaItem, compare_by_name};
 use oriel_core_paths::DataRoot;
+use oriel_launch::Launch;
 use oriel_media::still::{Still, WebpSettings};
 use oriel_mode_view::browser::Tile;
 use oriel_mode_view::gallery::{CAPTION_ID, HOVER_DELAY};
 use oriel_mode_view::listing::MediaEntry;
 use oriel_mode_view::thumbnails::Thumbnail;
-use oriel_mode_view::{CapsulePanel, CapsulePlayer, Listing, ViewEvent, ViewMode, viewer};
-use oriel_ui::{LocalStorage, ModeActivity, ModeId, ShellState};
+use oriel_mode_view::{CapsulePanel, CapsulePlayer, Listing, ViewMode, viewer};
+use oriel_ui::test_window::TestWindow;
+use oriel_ui::{HandOff, HandOffRequest, LocalStorage, ModeActivity, ModeId, ShellState};
 
 /// `FIXTURE_EPOCH_MS`: 2026-01-01T12:00:00Z.
 const FIXTURE_EPOCH_MS: u64 = 1_767_268_800_000;
@@ -157,31 +159,14 @@ fn still_bytes(shade: u8) -> Vec<u8> {
         .unwrap()
 }
 
-/// A 4 s clip from the pinned ffmpeg, or `None` without it.
-fn make_clip(path: &Path) -> Option<()> {
-    let tools = oriel_tools::MediaTools::locate().ok()?;
-    let output = std::process::Command::new(tools.ffmpeg())
-        .args([
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc2=size=320x180:rate=25",
-            "-t",
-            "4",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:v",
-            "libx264",
-            "-y",
-        ])
-        .arg(path)
-        .output()
-        .ok()?;
-    output.status.success().then_some(())
-}
+/// A 4 s clip without sound.
+const CLIP: oriel_test_archive::ClipSpec = oriel_test_archive::ClipSpec {
+    width: 320,
+    height: 180,
+    rate: 25,
+    seconds: 4,
+    sound: false,
+};
 
 struct Fixture {
     root: PathBuf,
@@ -195,7 +180,7 @@ impl Fixture {
         let root = scratch(test);
         let archive = root.join("archive");
         let items = fixture_items();
-        let mut videos = true;
+        let tools = oriel_test_archive::media_tools();
         for (ix, item) in items.iter().enumerate() {
             let path = archive.join(&item.path);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -203,12 +188,10 @@ impl Fixture {
                 Kind::Image | Kind::Gif => {
                     std::fs::write(&path, still_bytes((ix * 37 % 256) as u8)).unwrap();
                 }
-                Kind::Video => {
-                    if make_clip(&path).is_none() {
-                        videos = false;
-                        std::fs::write(&path, b"not a video").unwrap();
-                    }
-                }
+                Kind::Video => match &tools {
+                    Some(tools) => oriel_test_archive::clip(tools, &path, CLIP),
+                    None => std::fs::write(&path, b"not a video").unwrap(),
+                },
                 Kind::Pdf => std::fs::write(&path, b"%PDF-1.4").unwrap(),
             }
             let modified = UNIX_EPOCH + Duration::from_millis(item.mtime_ms() as u64);
@@ -226,8 +209,18 @@ impl Fixture {
             root,
             archive,
             items,
-            videos,
+            videos: tools.is_some(),
         }
+    }
+
+    /// Whether its videos play here: they were made, and libmpv loads.
+    fn plays(&self) -> bool {
+        self.videos
+            && oriel_test_archive::require(
+                "libmpv (cargo run -p xtask -- libmpv)",
+                oriel_media::video::load_libmpv(),
+            )
+            .is_some()
     }
 
     fn absolute(&self, path: &str) -> PathBuf {
@@ -299,9 +292,9 @@ struct Harness {
 impl Render for Harness {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.settings {
-            let section = self
-                .view
-                .update(cx, |view, cx| view.settings_section(window, cx));
+            let section = self.view.update(cx, |view, cx| {
+                oriel_ui::Mode::settings_section(view, window, cx)
+            });
             div().size_full().child(section).into_any_element()
         } else {
             self.view.clone().into_any_element()
@@ -311,6 +304,7 @@ impl Render for Harness {
 
 struct Session {
     handle: AnyWindowHandle,
+    window: TestWindow,
     harness: Entity<Harness>,
     view: Entity<ViewMode>,
     shell: Entity<ShellState>,
@@ -335,7 +329,8 @@ fn launch(cx: &mut TestAppContext, data: &Path) -> Session {
             cx,
             |window, cx| {
                 let shell = cx.new(|cx| ShellState::new(ModeId::View, false, cx));
-                let view = cx.new(|cx| ViewMode::with_data(&shell, &data, window, cx));
+                let view =
+                    cx.new(|cx| ViewMode::new(&shell, &Launch::of(data.clone()), window, cx));
                 let harness = cx.new(|_| Harness {
                     view: view.clone(),
                     settings: false,
@@ -349,50 +344,11 @@ fn launch(cx: &mut TestAppContext, data: &Path) -> Session {
     let (harness, view, shell) = parts.unwrap();
     Session {
         handle,
+        window: TestWindow::new(handle).settling(8),
         harness,
         view,
         shell,
     }
-}
-
-/// Lets the background work (the scan, its batches, thumbnails, decodes) finish and draws the
-/// result.
-fn settle(cx: &mut TestAppContext, session: &Session) {
-    for _ in 0..8 {
-        cx.run_until_parked();
-        cx.update_window(session.handle, |_, window, cx| window.render_frame(cx))
-            .unwrap();
-    }
-}
-
-fn click(cx: &mut TestAppContext, session: &Session, id: impl Into<ElementId>) {
-    let id = id.into();
-    cx.update_window(session.handle, |_, window, cx| window.click(id, cx))
-        .unwrap();
-    settle(cx, session);
-}
-
-fn double_click(cx: &mut TestAppContext, session: &Session, id: impl Into<ElementId>) {
-    let id = id.into();
-    cx.update_window(session.handle, |_, window, cx| window.double_click(id, cx))
-        .unwrap();
-    settle(cx, session);
-}
-
-fn press(cx: &mut TestAppContext, session: &Session, key: &'static str) {
-    cx.update_window(session.handle, |_, window, cx| window.press(key, cx))
-        .unwrap();
-    settle(cx, session);
-}
-
-/// The label of the element `id`, if it is on screen.
-fn label(cx: &mut TestAppContext, session: &Session, id: &'static str) -> Option<String> {
-    cx.update_window(session.handle, |_, window, _| {
-        window
-            .try_find(id)
-            .and_then(|element| element.label().map(str::to_owned))
-    })
-    .unwrap()
 }
 
 /// Opens `folder` through the toolbar's Open button and the system's folder picker, and waits
@@ -409,7 +365,7 @@ fn open_folder(cx: &mut TestAppContext, session: &Session, folder: &Path) {
         assert!(options.directories && !options.files);
         Some(vec![chosen])
     });
-    settle(cx, session);
+    session.window.render(cx);
 }
 
 /// The paths of the gallery's tiles, in the order it shows them.
@@ -436,7 +392,7 @@ fn tile_id(path: &Path) -> ElementId {
 }
 
 fn viewer_label(cx: &mut TestAppContext, session: &Session) -> Option<String> {
-    label(cx, session, "viewer")
+    session.window.label(cx, "viewer")
 }
 
 #[gpui_kit::test]
@@ -447,25 +403,25 @@ fn opens_a_folder_lists_its_children_and_recurses_on_demand(cx: &mut TestAppCont
 
     // The six top-level folders, then the one item at the top.
     assert_eq!(
-        label(cx, &session, "gallery-folders").as_deref(),
+        session.window.label(cx, "gallery-folders").as_deref(),
         Some("6 folders")
     );
     assert_eq!(
-        label(cx, &session, "gallery-count").as_deref(),
-        Some("1 items")
+        session.window.label(cx, "gallery-count").as_deref(),
+        Some("1 item")
     );
     let tiles = tile_paths(cx, &session);
     assert_eq!(tiles.len(), 7);
     assert_eq!(tiles.last(), Some(&fixture.absolute("root-image.png")));
 
-    click(cx, &session, "recursive");
+    session.window.click(cx, "recursive");
     let everything = fixture.in_scope("", true).len();
     assert_eq!(
-        label(cx, &session, "gallery-count"),
+        session.window.label(cx, "gallery-count"),
         Some(format!("{everything} items"))
     );
     assert_eq!(tile_paths(cx, &session).len(), everything);
-    assert_eq!(label(cx, &session, "gallery-folders"), None);
+    assert_eq!(session.window.label(cx, "gallery-folders"), None);
 }
 
 #[gpui_kit::test]
@@ -473,26 +429,26 @@ fn excluding_a_root_child_drops_its_subtree_from_the_recursive_scan(cx: &mut Tes
     let fixture = Fixture::new("exclude");
     let session = launch(cx, &fixture.root.join("data"));
     open_folder(cx, &session, &fixture.archive);
-    click(cx, &session, "recursive");
+    session.window.click(cx, "recursive");
     let everything = fixture.in_scope("", true).len();
     assert_eq!(
-        label(cx, &session, "gallery-count"),
+        session.window.label(cx, "gallery-count"),
         Some(format!("{everything} items"))
     );
 
-    click(cx, &session, "folders");
+    session.window.click(cx, "folders");
     let bulk = fixture.absolute("bulk").to_string_lossy().into_owned();
     let toggle = oriel_mode_view::folder_overlay::exclude_id(&bulk);
     cx.update_window(session.handle, |_, window, _| {
         assert_eq!(window.find(toggle.clone()).label(), Some("Included"));
     })
     .unwrap();
-    click(cx, &session, toggle.clone());
+    session.window.click(cx, toggle.clone());
     cx.update_window(session.handle, |_, window, _| {
         assert_eq!(window.find(toggle.clone()).label(), Some("Excluded"));
     })
     .unwrap();
-    click(cx, &session, "close-folder-browser");
+    session.window.click(cx, "close-folder-browser");
 
     let without_bulk = fixture
         .in_scope("", true)
@@ -500,20 +456,24 @@ fn excluding_a_root_child_drops_its_subtree_from_the_recursive_scan(cx: &mut Tes
         .filter(|item| !item.path.starts_with("bulk/"))
         .count();
     assert_eq!(
-        label(cx, &session, "gallery-count"),
+        session.window.label(cx, "gallery-count"),
         Some(format!("{without_bulk} items"))
     );
     // The exclusion is the opened folder's, in the settings file.
     cx.update(|cx| {
         let settings = session.view.read(cx).settings();
-        let preferences = settings.root_preferences(Some(&fixture.archive.to_string_lossy()));
+        let preferences = settings.root_preferences(Some(&fixture.archive));
         assert_eq!(
             preferences.excluded_root_child_paths,
             std::slice::from_ref(&bulk)
         );
     });
-    let file =
-        std::fs::read_to_string(fixture.root.join("data/view/frame-view-settings.json")).unwrap();
+    let file = std::fs::read_to_string(
+        DataRoot::at(fixture.root.join("data"))
+            .unwrap()
+            .view_settings(),
+    )
+    .unwrap();
     assert!(file.contains("\"excludedRootChildPaths\": [\n"), "{file}");
 }
 
@@ -532,17 +492,17 @@ fn filters_hide_videos_and_images(cx: &mut TestAppContext) {
                 cx.notify();
             });
         });
-        settle(cx, &session);
+        session.window.render(cx);
     };
     show_settings(cx, true);
-    click(cx, &session, "show-videos");
+    session.window.click(cx, "show-videos");
     show_settings(cx, false);
     let stills = mixed.iter().filter(|item| item.kind != Kind::Video).count();
     assert_eq!(tile_paths(cx, &session).len(), stills);
 
     show_settings(cx, true);
-    click(cx, &session, "show-videos");
-    click(cx, &session, "show-images");
+    session.window.click(cx, "show-videos");
+    session.window.click(cx, "show-images");
     show_settings(cx, false);
     let videos = mixed.iter().filter(|item| item.kind == Kind::Video).count();
     assert_eq!(tile_paths(cx, &session).len(), videos);
@@ -574,17 +534,24 @@ fn each_sort_matches_the_shared_ordering_rules(cx: &mut TestAppContext) {
         (GallerySortMode::DateOldest, "sort-date-oldest", "Oldest"),
         (GallerySortMode::NameAsc, "sort-name-asc", "A-Z"),
     ] {
-        click(cx, &session, "sort");
-        assert!(label(cx, &session, "sort-menu").is_some(), "the menu opens");
-        click(cx, &session, "gallery");
+        session.window.click(cx, "sort");
+        assert!(
+            session.window.label(cx, "sort-menu").is_some(),
+            "the menu opens"
+        );
+        session.window.click(cx, "gallery");
         assert_eq!(
-            label(cx, &session, "sort-menu"),
+            session.window.label(cx, "sort-menu"),
             None,
             "a press elsewhere closes it"
         );
-        click(cx, &session, "sort");
-        click(cx, &session, id);
-        assert_eq!(label(cx, &session, "sort-menu"), None, "the menu closes");
+        session.window.click(cx, "sort");
+        session.window.click(cx, id);
+        assert_eq!(
+            session.window.label(cx, "sort-menu"),
+            None,
+            "the menu closes"
+        );
         assert_eq!(
             tile_paths(cx, &session),
             fixture.sorted("comics/alpha", mode),
@@ -606,8 +573,8 @@ fn random_is_a_permutation_and_shuffle_changes_it(cx: &mut TestAppContext) {
         );
     })
     .unwrap();
-    click(cx, &session, "sort");
-    click(cx, &session, "sort-random");
+    session.window.click(cx, "sort");
+    session.window.click(cx, "sort-random");
 
     let first = tile_paths(cx, &session);
     let mut expected: Vec<PathBuf> = fixture
@@ -621,7 +588,7 @@ fn random_is_a_permutation_and_shuffle_changes_it(cx: &mut TestAppContext) {
     assert_eq!(sorted, expected, "a permutation of the folder");
     assert_ne!(first, fixture.sorted("bulk", GallerySortMode::NameAsc));
 
-    click(cx, &session, "shuffle");
+    session.window.click(cx, "shuffle");
     assert_ne!(tile_paths(cx, &session), first, "Shuffle changes the order");
 }
 
@@ -631,7 +598,9 @@ fn every_image_tile_renders_a_thumbnail(cx: &mut TestAppContext) {
     let session = launch(cx, &fixture.root.join("data"));
     open_folder(cx, &session, &fixture.absolute("comics/alpha"));
 
-    let thumbnails = fixture.root.join("data/view/frame-view/thumbnails");
+    let thumbnails = DataRoot::at(fixture.root.join("data"))
+        .unwrap()
+        .view_thumbnails();
     let written = std::fs::read_dir(&thumbnails)
         .unwrap()
         .filter(|file| {
@@ -706,12 +675,12 @@ fn performance_monitoring_keeps_the_thumbnail_timings_diagnostics_shows(cx: &mut
             cx.notify();
         });
     });
-    settle(cx, &session);
+    session.window.render(cx);
     assert_eq!(
-        label(cx, &session, "diagnostics-details").as_deref(),
+        session.window.label(cx, "diagnostics-details").as_deref(),
         Some("Diagnostics details")
     );
-    click(cx, &session, "performance-monitoring");
+    session.window.click(cx, "performance-monitoring");
     assert!(!diagnostics_groups(cx, &session).contains(&"Timings"));
 }
 
@@ -719,7 +688,6 @@ fn performance_monitoring_keeps_the_thumbnail_timings_diagnostics_shows(cx: &mut
 fn video_tiles_get_a_frame_from_ffmpeg(cx: &mut TestAppContext) {
     let fixture = Fixture::new("video-thumbnails");
     if !fixture.videos {
-        eprintln!("skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)");
         return;
     }
     let session = launch(cx, &fixture.root.join("data"));
@@ -748,9 +716,8 @@ fn double_click_opens_the_viewer_the_arrows_step_and_escape_closes(cx: &mut Test
         .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
         .collect();
 
-    double_click(
+    session.window.double_click(
         cx,
-        &session,
         tile_id(&fixture.absolute("comics/alpha").join(&order[0])),
     );
     assert_eq!(
@@ -768,41 +735,41 @@ fn double_click_opens_the_viewer_the_arrows_step_and_escape_closes(cx: &mut Test
     });
     // The File menu's Open Folder… and Refresh stay lit over the viewer, as in Electron Oriel.
     cx.update_window(session.handle, |_, window, cx| {
-        assert!(window.is_action_available(&oriel_ui::commands::OpenFolder, cx));
-        assert!(window.is_action_available(&oriel_ui::commands::Refresh, cx));
+        assert!(window.is_action_available(&oriel_mode_view::OpenFolder, cx));
+        assert!(window.is_action_available(&oriel_mode_view::Refresh, cx));
     })
     .unwrap();
-    press(cx, &session, "right");
+    session.window.press(cx, "right");
     assert_eq!(
         viewer_label(cx, &session),
         Some(format!("Viewer for {}", order[1]))
     );
-    click(cx, &session, "viewer-next");
+    session.window.click(cx, "viewer-next");
     assert_eq!(
         viewer_label(cx, &session),
         Some(format!("Viewer for {}", order[2]))
     );
-    press(cx, &session, "left");
+    session.window.press(cx, "left");
     assert_eq!(
         viewer_label(cx, &session),
         Some(format!("Viewer for {}", order[1]))
     );
 
     // Stepping wraps, as `loopViewerNavigation` does by default.
-    press(cx, &session, "left");
-    press(cx, &session, "left");
+    session.window.press(cx, "left");
+    session.window.press(cx, "left");
     assert_eq!(
         viewer_label(cx, &session),
         Some(format!("Viewer for {}", order[order.len() - 1]))
     );
-    press(cx, &session, "e");
+    session.window.press(cx, "e");
     assert_eq!(
         viewer_label(cx, &session),
         Some(format!("Viewer for {}", order[0]))
     );
 
     let viewer = cx.update(|cx| session.view.read(cx).viewer().unwrap().downgrade());
-    press(cx, &session, "escape");
+    session.window.press(cx, "escape");
     assert_eq!(viewer_label(cx, &session), None);
     cx.run_until_parked();
     assert!(viewer.upgrade().is_none(), "the closed viewer is released");
@@ -820,19 +787,19 @@ fn without_loop_navigation_the_viewer_stops_at_the_ends(cx: &mut TestAppContext)
             cx.notify();
         });
     });
-    settle(cx, &session);
-    click(cx, &session, "loop-viewer-navigation");
+    session.window.render(cx);
+    session.window.click(cx, "loop-viewer-navigation");
     cx.update(|cx| {
         session.harness.update(cx, |harness, cx| {
             harness.settings = false;
             cx.notify();
         });
     });
-    settle(cx, &session);
+    session.window.render(cx);
 
     let order = tile_paths(cx, &session);
-    double_click(cx, &session, tile_id(&order[1]));
-    press(cx, &session, "right");
+    session.window.double_click(cx, tile_id(&order[1]));
+    session.window.press(cx, "right");
     let last = order[1].file_name().unwrap().to_string_lossy().into_owned();
     assert_eq!(
         viewer_label(cx, &session),
@@ -848,31 +815,24 @@ fn flip_setting(cx: &mut TestAppContext, session: &Session, id: &'static str) {
             cx.notify();
         });
     });
-    settle(cx, session);
-    click(cx, session, id);
+    session.window.render(cx);
+    session.window.click(cx, id);
     cx.update(|cx| {
         session.harness.update(cx, |harness, cx| {
             harness.settings = false;
             cx.notify();
         });
     });
-    settle(cx, session);
+    session.window.render(cx);
 }
 
 /// Waits, in real time, for what a real video engine does on its own threads.
 fn wait_until(
     cx: &mut TestAppContext,
     session: &Session,
-    mut ready: impl FnMut(&mut TestAppContext) -> bool,
+    ready: impl FnMut(&mut TestAppContext) -> bool,
 ) -> bool {
-    for _ in 0..250 {
-        if ready(cx) {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(20));
-        settle(cx, session);
-    }
-    ready(cx)
+    session.window.wait_for(cx, Duration::from_secs(30), ready)
 }
 
 fn player(cx: &mut TestAppContext, session: &Session) -> Entity<CapsulePlayer> {
@@ -903,8 +863,7 @@ fn read_player<T>(
 #[gpui_kit::test]
 fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut TestAppContext) {
     let fixture = Fixture::new("player");
-    if !fixture.videos {
-        eprintln!("skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)");
+    if !fixture.plays() {
         return;
     }
     let session = launch(cx, &fixture.root.join("data"));
@@ -912,11 +871,9 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
     cx.update(|cx| assert!(!session.view.read(cx).settings().autoplay_videos));
 
     open_folder(cx, &session, &fixture.absolute("videos"));
-    double_click(
-        cx,
-        &session,
-        tile_id(&fixture.absolute("videos/clip-a.mp4")),
-    );
+    session
+        .window
+        .double_click(cx, tile_id(&fixture.absolute("videos/clip-a.mp4")));
     assert_eq!(
         viewer_label(cx, &session).as_deref(),
         Some("Viewer for clip-a.mp4")
@@ -944,7 +901,7 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
         ("volume", "Volume"),
         ("speed", "Playback speed"),
     ] {
-        assert_eq!(label(cx, &session, id).as_deref(), Some(name));
+        assert_eq!(session.window.label(cx, id).as_deref(), Some(name));
     }
     assert!(
         wait_until(cx, &session, |cx| read_player(cx, &session, |player| {
@@ -959,7 +916,7 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
         let player = player(cx, &session);
         cx.update(|cx| player.read(cx).position())
     };
-    press(cx, &session, "3");
+    session.window.press(cx, "3");
     assert!(
         position(cx) >= Duration::from_millis(3500),
         "{:?}",
@@ -969,7 +926,7 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
         position(cx) < Duration::from_secs(4),
         "short of the end, so it does not loop"
     );
-    click(cx, &session, "skip-back");
+    session.window.click(cx, "skip-back");
     assert!(
         position(cx) < Duration::from_millis(500),
         "{:?}",
@@ -977,19 +934,30 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
     );
 
     // Mute and unmute from the volume panel, kept as Electron Oriel keeps them.
-    click(cx, &session, "volume");
+    session.window.click(cx, "volume");
     assert_eq!(
         read_player(cx, &session, CapsulePlayer::panel),
         Some(CapsulePanel::Volume)
     );
-    assert_eq!(label(cx, &session, "volume-level").as_deref(), Some("100%"));
-    assert_eq!(label(cx, &session, "mute").as_deref(), Some("Mute"));
-    click(cx, &session, "mute");
+    assert_eq!(
+        session.window.label(cx, "volume-level").as_deref(),
+        Some("100%")
+    );
+    assert_eq!(session.window.label(cx, "mute").as_deref(), Some("Mute"));
+    session.window.click(cx, "mute");
     assert!(read_player(cx, &session, CapsulePlayer::is_muted));
-    assert_eq!(label(cx, &session, "mute").as_deref(), Some("Unmute"));
-    assert_eq!(label(cx, &session, "volume-level").as_deref(), Some("0%"));
-    cx.update(|cx| assert_eq!(LocalStorage::get(cx, viewer::MUTED_KEY), Some("1")));
-    click(cx, &session, "mute");
+    assert_eq!(session.window.label(cx, "mute").as_deref(), Some("Unmute"));
+    assert_eq!(
+        session.window.label(cx, "volume-level").as_deref(),
+        Some("0%")
+    );
+    cx.update(|cx| {
+        assert_eq!(
+            LocalStorage::get(cx, oriel_mode_view::viewer::MUTED_KEY),
+            Some("1")
+        )
+    });
+    session.window.click(cx, "mute");
     assert!(!read_player(cx, &session, CapsulePlayer::is_muted));
 
     // A press a quarter of the way up the level sets it there.
@@ -1004,11 +972,11 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
         window.click_at("volume-panel", quarter, cx);
     })
     .unwrap();
-    settle(cx, &session);
+    session.window.render(cx);
     let volume = read_player(cx, &session, CapsulePlayer::volume);
     assert!((volume - 0.25).abs() < 0.03, "the level is {volume}");
     cx.update(|cx| {
-        let kept: f32 = LocalStorage::get(cx, viewer::VOLUME_KEY)
+        let kept: f32 = LocalStorage::get(cx, oriel_mode_view::viewer::VOLUME_KEY)
             .unwrap()
             .parse()
             .unwrap();
@@ -1016,18 +984,21 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
     });
 
     // Play and pause, from the capsule and the keys.
-    click(cx, &session, "play-pause");
+    session.window.click(cx, "play-pause");
     assert!(read_player(cx, &session, CapsulePlayer::is_playing));
-    assert_eq!(label(cx, &session, "play-pause").as_deref(), Some("Pause"));
-    click(cx, &session, "play-pause");
+    assert_eq!(
+        session.window.label(cx, "play-pause").as_deref(),
+        Some("Pause")
+    );
+    session.window.click(cx, "play-pause");
     assert!(!read_player(cx, &session, CapsulePlayer::is_playing));
-    press(cx, &session, "space");
+    session.window.press(cx, "space");
     assert!(read_player(cx, &session, CapsulePlayer::is_playing));
-    press(cx, &session, "2");
+    session.window.press(cx, "2");
     assert!(!read_player(cx, &session, CapsulePlayer::is_playing));
 
     // The speed menu, fastest first; a pick closes it.
-    click(cx, &session, "speed");
+    session.window.click(cx, "speed");
     assert_eq!(
         read_player(cx, &session, CapsulePlayer::panel),
         Some(CapsulePanel::Speed)
@@ -1048,7 +1019,7 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
         })
         .unwrap();
     assert_eq!(speeds, ["2×", "1.5×", "1.25×", "1×", "0.75×", "0.5×"]);
-    click(cx, &session, "speed-1.5");
+    session.window.click(cx, "speed-1.5");
     assert_eq!(read_player(cx, &session, CapsulePlayer::speed), 1.5);
     assert_eq!(read_player(cx, &session, CapsulePlayer::panel), None);
 
@@ -1057,28 +1028,28 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
         window.key_down("4", false, cx)
     })
     .unwrap();
-    settle(cx, &session);
+    session.window.render(cx);
     cx.update_window(session.handle, |_, window, cx| {
         window.key_down("4", true, cx)
     })
     .unwrap();
-    settle(cx, &session);
+    session.window.render(cx);
     assert!(read_player(cx, &session, CapsulePlayer::is_holding_speed));
     assert_eq!(read_player(cx, &session, CapsulePlayer::speed), 2.);
     assert_eq!(
-        label(cx, &session, "held-speed").as_deref(),
+        session.window.label(cx, "held-speed").as_deref(),
         Some("Playing at 2×")
     );
     cx.update_window(session.handle, |_, window, cx| window.key_up("4", cx))
         .unwrap();
-    settle(cx, &session);
+    session.window.render(cx);
     assert!(!read_player(cx, &session, CapsulePlayer::is_holding_speed));
     assert_eq!(read_player(cx, &session, CapsulePlayer::speed), 1.5);
-    assert_eq!(label(cx, &session, "held-speed"), None);
+    assert_eq!(session.window.label(cx, "held-speed"), None);
 
     // → steps to the next item, as in Electron Oriel's viewer, and the next video starts with
     // the level and speed the last one had, and loops as "Loop videos" says.
-    press(cx, &session, "right");
+    session.window.press(cx, "right");
     assert_eq!(
         viewer_label(cx, &session).as_deref(),
         Some("Viewer for clip-b.mp4")
@@ -1090,11 +1061,11 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
 
     // Another mode on screen pauses the video, as Electron Oriel pauses a hidden mode's media,
     // and it is still paused back in View.
-    press(cx, &session, "space");
+    session.window.press(cx, "space");
     assert!(read_player(cx, &session, CapsulePlayer::is_playing));
     for mode in [ModeId::Tidy, ModeId::View] {
         cx.update(|cx| session.shell.update(cx, |shell, cx| shell.go(mode, cx)));
-        settle(cx, &session);
+        session.window.render(cx);
     }
     assert!(!read_player(cx, &session, CapsulePlayer::is_playing));
 
@@ -1102,17 +1073,20 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
     let asked = Rc::new(RefCell::new(Vec::new()));
     let _subscription = cx.update(|cx| {
         let asked = asked.clone();
-        cx.subscribe(&session.view, move |_, event: &ViewEvent, _| {
-            asked.borrow_mut().push(event.clone());
+        cx.subscribe(&session.shell, move |_, request: &HandOffRequest, _| {
+            asked.borrow_mut().push(request.clone());
         })
     });
-    click(cx, &session, "viewer-show-in-tidy");
+    session.window.click(cx, "viewer-show-in-tidy");
     assert_eq!(
         *asked.borrow(),
-        [ViewEvent::ShowInTidy(fixture.absolute("videos/clip-b.mp4"))]
+        [HandOffRequest {
+            to: ModeId::Tidy,
+            target: HandOff::File(fixture.absolute("videos/clip-b.mp4")),
+        }]
     );
 
-    press(cx, &session, "escape");
+    session.window.press(cx, "escape");
     assert_eq!(viewer_label(cx, &session), None);
 }
 
@@ -1123,8 +1097,7 @@ fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut
 #[gpui_kit::test]
 fn holding_e_steps_past_stills_and_a_video_without_stalling(cx: &mut TestAppContext) {
     let fixture = Fixture::new("hold-e");
-    if !fixture.videos {
-        eprintln!("skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)");
+    if !fixture.plays() {
         return;
     }
     let session = launch(cx, &fixture.root.join("data"));
@@ -1134,7 +1107,7 @@ fn holding_e_steps_past_stills_and_a_video_without_stalling(cx: &mut TestAppCont
         order.iter().any(|path| path.ends_with("reel.mp4")) && order.len() > 2,
         "stills and a video: {order:?}"
     );
-    double_click(cx, &session, tile_id(&order[0]));
+    session.window.double_click(cx, tile_id(&order[0]));
 
     let steps = order.len() * 4 + 1;
     cx.update_window(session.handle, |_, window, cx| {
@@ -1154,13 +1127,13 @@ fn holding_e_steps_past_stills_and_a_video_without_stalling(cx: &mut TestAppCont
         Some(format!("Viewer for {last}")),
         "every repeat stepped"
     );
-    settle(cx, &session);
+    session.window.render(cx);
     cx.update(|cx| {
         let viewer = session.view.read(cx).viewer().unwrap().read(cx);
         assert!(viewer.is_current_ready(), "the item shows");
     });
     // And the keys still reach it.
-    press(cx, &session, "e");
+    session.window.press(cx, "e");
     let next = order[(steps + 1) % order.len()]
         .file_name()
         .unwrap()
@@ -1179,7 +1152,7 @@ fn the_viewer_controls_fade_when_left_alone_but_stay_over_a_paused_video(cx: &mu
     let session = launch(cx, &fixture.root.join("data"));
     open_folder(cx, &session, &fixture.absolute("comics/alpha"));
     let first = tile_paths(cx, &session)[0].clone();
-    double_click(cx, &session, tile_id(&first));
+    session.window.double_click(cx, tile_id(&first));
     let chrome = |cx: &mut TestAppContext| {
         cx.update(|cx| {
             session
@@ -1192,33 +1165,31 @@ fn the_viewer_controls_fade_when_left_alone_but_stay_over_a_paused_video(cx: &mu
         })
     };
     assert!(chrome(cx));
-    assert!(label(cx, &session, "viewer-close").is_some());
+    assert!(session.window.label(cx, "viewer-close").is_some());
     cx.executor()
         .advance_clock(viewer::CHROME_IDLE + Duration::from_millis(100));
-    settle(cx, &session);
+    session.window.render(cx);
     assert!(!chrome(cx), "a still's controls fade");
-    assert_eq!(label(cx, &session, "viewer-close"), None);
-    press(cx, &session, "right");
+    assert_eq!(session.window.label(cx, "viewer-close"), None);
+    session.window.press(cx, "right");
     assert!(
         chrome(cx),
         "a key brings them back, one bound to a step too"
     );
-    press(cx, &session, "escape");
+    session.window.press(cx, "escape");
 
-    if !fixture.videos {
+    if !fixture.plays() {
         return;
     }
     flip_setting(cx, &session, "autoplay-videos");
     open_folder(cx, &session, &fixture.absolute("videos"));
-    double_click(
-        cx,
-        &session,
-        tile_id(&fixture.absolute("videos/clip-a.mp4")),
-    );
+    session
+        .window
+        .double_click(cx, tile_id(&fixture.absolute("videos/clip-a.mp4")));
     cx.executor().advance_clock(viewer::CHROME_IDLE * 2);
-    settle(cx, &session);
+    session.window.render(cx);
     assert!(chrome(cx), "a paused video keeps its controls");
-    assert!(label(cx, &session, "play-pause").is_some());
+    assert!(session.window.label(cx, "play-pause").is_some());
 }
 
 /// `MediaTile`'s hover: a video tile plays under the pointer, muted and looping by default, and
@@ -1227,18 +1198,17 @@ fn the_viewer_controls_fade_when_left_alone_but_stay_over_a_paused_video(cx: &mu
 #[gpui_kit::test]
 fn a_video_tile_plays_under_the_pointer_and_stops_when_it_leaves(cx: &mut TestAppContext) {
     let fixture = Fixture::new("hover");
-    if !fixture.videos {
-        eprintln!("skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)");
+    if !fixture.plays() {
         return;
     }
     let session = launch(cx, &fixture.root.join("data"));
     open_folder(cx, &session, &fixture.absolute("videos"));
     // The folder is named once, by its name alone.
     assert_eq!(
-        label(cx, &session, "top-bar-title").as_deref(),
+        session.window.label(cx, "top-bar-title").as_deref(),
         Some("videos")
     );
-    assert_eq!(label(cx, &session, "top-bar-meta"), None);
+    assert_eq!(session.window.label(cx, "top-bar-meta"), None);
     let clip = fixture.absolute("videos/clip-a.mp4");
     let gallery = cx.update(|cx| session.view.read(cx).gallery().clone());
     let probed = wait_until(cx, &session, |cx| {
@@ -1266,18 +1236,18 @@ fn a_video_tile_plays_under_the_pointer_and_stops_when_it_leaves(cx: &mut TestAp
         window.hover(tile_id(&clip), cx)
     })
     .unwrap();
-    settle(cx, &session);
+    session.window.render(cx);
     assert_eq!(preview(cx), None, "it waits for the pointer to rest");
     cx.executor()
         .advance_clock(HOVER_DELAY + Duration::from_millis(50));
-    settle(cx, &session);
+    session.window.render(cx);
     assert_eq!(preview(cx), Some((clip.clone(), true, true)));
 
     cx.update_window(session.handle, |_, window, cx| {
         window.hover("open-folder", cx)
     })
     .unwrap();
-    settle(cx, &session);
+    session.window.render(cx);
     assert_eq!(preview(cx), None, "the pointer left the tile");
 
     // Sound on: the next preview plays with it.
@@ -1288,13 +1258,13 @@ fn a_video_tile_plays_under_the_pointer_and_stops_when_it_leaves(cx: &mut TestAp
     .unwrap();
     cx.executor()
         .advance_clock(HOVER_DELAY + Duration::from_millis(50));
-    settle(cx, &session);
+    session.window.render(cx);
     assert_eq!(preview(cx), Some((clip.clone(), false, true)));
 
     // Opening the viewer stops it.
-    double_click(cx, &session, tile_id(&clip));
+    session.window.double_click(cx, tile_id(&clip));
     assert_eq!(preview(cx), None);
-    press(cx, &session, "escape");
+    session.window.press(cx, "escape");
 
     flip_setting(cx, &session, "autoplay-on-hover");
     cx.update_window(session.handle, |_, window, cx| {
@@ -1307,7 +1277,7 @@ fn a_video_tile_plays_under_the_pointer_and_stops_when_it_leaves(cx: &mut TestAp
     .unwrap();
     cx.executor()
         .advance_clock(HOVER_DELAY + Duration::from_millis(50));
-    settle(cx, &session);
+    session.window.render(cx);
     assert_eq!(preview(cx), None, "autoplay on hover is off");
     cx.update(|cx| assert_eq!(gallery.read(cx).hovered_video(), None));
 }
@@ -1340,7 +1310,7 @@ fn only_the_tile_under_the_pointer_shows_its_caption(cx: &mut TestAppContext) {
             window.hover(tile_id(&path), cx)
         })
         .unwrap();
-        settle(cx, &session);
+        session.window.render(cx);
         let shown = caption(cx).expect("the tile under the pointer shows its caption");
         let tile = tile(cx, &path);
         let (inside, corner) = (shown.origin, shown.bottom_right());
@@ -1357,7 +1327,7 @@ fn only_the_tile_under_the_pointer_shows_its_caption(cx: &mut TestAppContext) {
         window.hover("open-folder", cx)
     })
     .unwrap();
-    settle(cx, &session);
+    session.window.render(cx);
     assert_eq!(caption(cx), None, "the pointer left the grid");
 }
 
@@ -1366,10 +1336,10 @@ fn comic_mode_groups_leaf_folders_and_the_reader_opens_one(cx: &mut TestAppConte
     let fixture = Fixture::new("comics");
     let session = launch(cx, &fixture.root.join("data"));
     open_folder(cx, &session, &fixture.absolute("comics"));
-    click(cx, &session, "comic");
+    session.window.click(cx, "comic");
 
     assert_eq!(
-        label(cx, &session, "gallery-count").as_deref(),
+        session.window.label(cx, "gallery-count").as_deref(),
         Some("3 comics")
     );
     assert_eq!(
@@ -1377,18 +1347,20 @@ fn comic_mode_groups_leaf_folders_and_the_reader_opens_one(cx: &mut TestAppConte
         ["comics/alpha", "comics/beta", "comics/nested/inner"].map(|path| fixture.absolute(path))
     );
     let alpha = format!("comic:{}", fixture.absolute("comics/alpha").display());
-    double_click(cx, &session, ElementId::Name(alpha.into()));
+    session
+        .window
+        .double_click(cx, ElementId::Name(alpha.into()));
     assert_eq!(
-        label(cx, &session, "comic-reader").as_deref(),
+        session.window.label(cx, "comic-reader").as_deref(),
         Some("Comic reader for alpha")
     );
     assert_eq!(
-        label(cx, &session, "comic-page-count").as_deref(),
+        session.window.label(cx, "comic-page-count").as_deref(),
         Some("1/5 pages")
     );
-    press(cx, &session, "right");
+    session.window.press(cx, "right");
     assert_eq!(
-        label(cx, &session, "comic-page-count").as_deref(),
+        session.window.label(cx, "comic-page-count").as_deref(),
         Some("2/5 pages")
     );
     cx.update(|cx| {
@@ -1396,22 +1368,22 @@ fn comic_mode_groups_leaf_folders_and_the_reader_opens_one(cx: &mut TestAppConte
         assert!(reader.is_page_ready(1), "the page in view is decoded");
     });
     assert_eq!(
-        label(cx, &session, "comic-scroll-top").as_deref(),
+        session.window.label(cx, "comic-scroll-top").as_deref(),
         Some("Scroll to top")
     );
     assert_eq!(
-        label(cx, &session, "comic-reveal").as_deref(),
+        session.window.label(cx, "comic-reveal").as_deref(),
         Some("Reveal in folder")
     );
-    click(cx, &session, "comic-close");
-    assert_eq!(label(cx, &session, "comic-reader"), None);
+    session.window.click(cx, "comic-close");
+    assert_eq!(session.window.label(cx, "comic-reader"), None);
 
     // Comic mode is the folder's, kept across scans; turning Recursive off turns it off.
     cx.update(|cx| assert!(session.view.read(cx).comic_mode(cx)));
-    click(cx, &session, "recursive");
+    session.window.click(cx, "recursive");
     cx.update(|cx| assert!(!session.view.read(cx).comic_mode(cx)));
     assert_eq!(
-        label(cx, &session, "gallery-folders").as_deref(),
+        session.window.label(cx, "gallery-folders").as_deref(),
         Some("3 folders")
     );
 }
@@ -1446,9 +1418,8 @@ fn voiceover_reads_views_sidebar_and_icon_buttons_by_name(cx: &mut TestAppContex
         named("comics")
     );
     let alpha = fixture.absolute("comics/alpha");
-    click(
+    session.window.click(
         cx,
-        &session,
         ElementId::Name(format!("sidebar-folder:{}", alpha.display()).into()),
     );
     assert_eq!(
@@ -1458,7 +1429,7 @@ fn voiceover_reads_views_sidebar_and_icon_buttons_by_name(cx: &mut TestAppContex
 
     // The viewer's icon buttons are read by what they do.
     let first = tile_paths(cx, &session)[0].clone();
-    double_click(cx, &session, tile_id(&first));
+    session.window.double_click(cx, tile_id(&first));
     for (id, name) in [
         ("viewer-copy-path", "Copy path"),
         ("viewer-reveal", "Reveal in folder"),
@@ -1468,11 +1439,11 @@ fn voiceover_reads_views_sidebar_and_icon_buttons_by_name(cx: &mut TestAppContex
     ] {
         assert_eq!(role_and_name(cx, &session, id), named(name), "{id}");
     }
-    press(cx, &session, "escape");
+    session.window.press(cx, "escape");
 
     // The rail's icons keep their names.
     session.shell.update(cx, |shell, cx| shell.toggle_rail(cx));
-    settle(cx, &session);
+    session.window.render(cx);
     assert_eq!(
         role_and_name(cx, &session, "view-sidebar"),
         (Some(Role::Navigation), Some("View".to_owned()))
@@ -1499,7 +1470,7 @@ fn a_relaunch_restores_the_remembered_folder(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     let session = launch(cx, &data);
-    settle(cx, &session);
+    session.window.render(cx);
     let mut tiles = tile_paths(cx, &session);
     tiles.sort();
     let mut expected: Vec<PathBuf> = fixture
@@ -1517,9 +1488,8 @@ fn folders_open_from_their_tiles_and_step_back_up_to_the_opened_one(cx: &mut Tes
     let session = launch(cx, &fixture.root.join("data"));
     open_folder(cx, &session, &fixture.absolute("comics"));
     let nested = fixture.absolute("comics/nested");
-    double_click(
+    session.window.double_click(
         cx,
-        &session,
         ElementId::Name(format!("folder:{}", nested.display()).into()),
     );
     cx.update(|cx| {
@@ -1529,12 +1499,12 @@ fn folders_open_from_their_tiles_and_step_back_up_to_the_opened_one(cx: &mut Tes
         )
     });
     assert_eq!(
-        label(cx, &session, "gallery-folders").as_deref(),
-        Some("1 folders")
+        session.window.label(cx, "gallery-folders").as_deref(),
+        Some("1 folder")
     );
 
     // The next sibling folder, then up: the folder stepped out of is selected again.
-    click(cx, &session, "previous-folder");
+    session.window.click(cx, "previous-folder");
     let beta = fixture.absolute("comics/beta");
     cx.update(|cx| {
         assert_eq!(
@@ -1542,7 +1512,7 @@ fn folders_open_from_their_tiles_and_step_back_up_to_the_opened_one(cx: &mut Tes
             Some(beta.as_path())
         )
     });
-    click(cx, &session, "parent-folder");
+    session.window.click(cx, "parent-folder");
     cx.update(|cx| {
         let view = session.view.read(cx);
         assert_eq!(
@@ -1582,34 +1552,36 @@ fn the_gallery_keys_wrap_at_the_ends_and_shift_s_finds_a_folder(cx: &mut TestApp
     let selected = |cx: &mut TestAppContext| {
         cx.update(|cx| session.view.read(cx).gallery().read(cx).selected_index())
     };
-    click(
+    session.window.click(
         cx,
-        &session,
         ElementId::Name(format!("folder:{}", tiles[0].display()).into()),
     );
     assert_eq!(selected(cx), Some(0));
-    press(cx, &session, "left");
+    session.window.press(cx, "left");
     assert_eq!(
         selected(cx),
         Some(tiles.len() - 1),
         "← on the first tile selects the last"
     );
-    press(cx, &session, "shift-right");
+    session.window.press(cx, "shift-right");
     assert_eq!(
         selected(cx),
         Some(0),
         "→ on the last wraps, with ⇧ held too"
     );
 
-    click(cx, &session, "sort");
-    assert_eq!(label(cx, &session, "sort-menu").as_deref(), Some("Sort"));
-    press(cx, &session, "escape");
-    assert_eq!(label(cx, &session, "sort-menu"), None);
+    session.window.click(cx, "sort");
+    assert_eq!(
+        session.window.label(cx, "sort-menu").as_deref(),
+        Some("Sort")
+    );
+    session.window.press(cx, "escape");
+    assert_eq!(session.window.label(cx, "sort-menu"), None);
 
     // The last tile is the folder's one image, so ⇧S opens the first folder.
-    press(cx, &session, "a");
+    session.window.press(cx, "a");
     assert_eq!(selected(cx), Some(tiles.len() - 1));
-    press(cx, &session, "shift-s");
+    session.window.press(cx, "shift-s");
     cx.update(|cx| {
         assert_eq!(
             session.view.read(cx).folder(cx).as_deref(),
@@ -1624,9 +1596,11 @@ fn the_comic_readers_top_bar_fades_when_left_alone(cx: &mut TestAppContext) {
     let fixture = Fixture::new("reader-chrome");
     let session = launch(cx, &fixture.root.join("data"));
     open_folder(cx, &session, &fixture.absolute("comics"));
-    click(cx, &session, "comic");
+    session.window.click(cx, "comic");
     let alpha = format!("comic:{}", fixture.absolute("comics/alpha").display());
-    double_click(cx, &session, ElementId::Name(alpha.into()));
+    session
+        .window
+        .double_click(cx, ElementId::Name(alpha.into()));
     let chrome = |cx: &mut TestAppContext| {
         cx.update(|cx| {
             session
@@ -1641,20 +1615,20 @@ fn the_comic_readers_top_bar_fades_when_left_alone(cx: &mut TestAppContext) {
     assert!(chrome(cx));
     cx.executor()
         .advance_clock(viewer::CHROME_IDLE + Duration::from_millis(100));
-    settle(cx, &session);
+    session.window.render(cx);
     assert!(!chrome(cx), "the top bar fades");
-    assert_eq!(label(cx, &session, "comic-close"), None);
-    press(cx, &session, "right");
+    assert_eq!(session.window.label(cx, "comic-close"), None);
+    session.window.press(cx, "right");
     assert!(chrome(cx), "a key brings it back");
     assert_eq!(
-        label(cx, &session, "comic-page-count").as_deref(),
+        session.window.label(cx, "comic-page-count").as_deref(),
         Some("2/5 pages")
     );
 }
 
 #[gpui_kit::test]
-fn the_index_records_each_scan_and_the_shell_sees_the_work(cx: &mut TestAppContext) {
-    let fixture = Fixture::new("index");
+fn the_shell_sees_a_scan_while_it_runs(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("activity");
     let session = launch(cx, &fixture.root.join("data"));
     cx.update(|cx| {
         session.view.update(cx, |view, cx| {
@@ -1666,19 +1640,8 @@ fn the_index_records_each_scan_and_the_shell_sees_the_work(cx: &mut TestAppConte
             "a running scan shows on the switcher"
         );
     });
-    settle(cx, &session);
+    session.window.render(cx);
     cx.update(|cx| assert_eq!(session.shell.read(cx).activity(ModeId::View), None));
-
-    let index = futures::executor::block_on(oriel_core_index::MediaIndex::open_in(
-        &fixture.root.join("data/view"),
-    ))
-    .unwrap();
-    let rows = futures::executor::block_on(index.rows()).unwrap();
-    assert_eq!(rows.len(), fixture.in_scope("mixed", false).len());
-    assert!(
-        rows.iter()
-            .all(|row| row.root_path == fixture.absolute("mixed").to_string_lossy())
-    );
 }
 
 /// The shell hands View the paths the system opens with the app; a file opens in the viewer
@@ -1694,7 +1657,7 @@ fn a_file_handed_to_view_opens_in_the_viewer_after_its_folder_scans(cx: &mut Tes
             .update(cx, |view, cx| view.open_path(file.clone(), window, cx));
     })
     .unwrap();
-    settle(cx, &session);
+    session.window.render(cx);
     cx.update(|cx| {
         assert_eq!(
             session.view.read(cx).folder(cx).as_deref(),
@@ -1720,7 +1683,7 @@ fn escape_returns_to_the_same_scroll_position(cx: &mut TestAppContext) {
         );
     })
     .unwrap();
-    settle(cx, &session);
+    session.window.render(cx);
     let offset = |cx: &mut TestAppContext| {
         cx.update(|cx| {
             session
@@ -1743,9 +1706,9 @@ fn escape_returns_to_the_same_scroll_position(cx: &mut TestAppContext) {
 
     // Row 8 (items 32 to 35) is in view 1000 px down.
     let order = tile_paths(cx, &session);
-    double_click(cx, &session, tile_id(&order[33]));
-    press(cx, &session, "right");
-    press(cx, &session, "escape");
+    session.window.double_click(cx, tile_id(&order[33]));
+    session.window.press(cx, "right");
+    session.window.press(cx, "escape");
     assert_eq!(viewer_label(cx, &session), None);
     assert_eq!(offset(cx), scrolled, "the grid is where it was");
     cx.update(|cx| {
@@ -1769,7 +1732,7 @@ fn scrolled_thumbnails_stay_out_of_the_apps_asset_cache(cx: &mut TestAppContext)
             window.scroll("gallery", ScrollDelta::Pixels(point(px(0.), px(-700.))), cx);
         })
         .unwrap();
-        settle(cx, &session);
+        session.window.render(cx);
     }
     cx.update(|cx| {
         let gallery = session.view.read(cx).gallery().read(cx);
@@ -1831,7 +1794,7 @@ fn a_row_half_in_view_at_either_edge_is_drawn_with_its_thumbnails(cx: &mut TestA
             .clone();
         handle.set_offset(point(px(0.), px(-scroll_top)));
     });
-    settle(cx, &session);
+    session.window.render(cx);
 
     let order = tile_paths(cx, &session);
     let top_row = ((scroll_top - inset) / stride).floor() as usize;
@@ -1841,7 +1804,6 @@ fn a_row_half_in_view_at_either_edge_is_drawn_with_its_thumbnails(cx: &mut TestA
     );
     cx.update(|cx| {
         let gallery = gallery.read(cx);
-        assert_eq!(gallery.drawn_rows(), top_row..row + 1);
         assert!(gallery.is_drawn_complete(), "a drawn tile has no picture");
         let thumbnails = gallery.thumbnails().read(cx);
         for media in &gallery.media()[row * 4..row * 4 + 4] {

@@ -1,4 +1,4 @@
-//! The perceptual hash, as `glazier-core/src/similarity/phash.ts` makes it.
+//! The perceptual hash, made bit for bit as Electron Oriel made the prints its catalogs hold.
 //!
 //! The arithmetic is the same f64 operations in the same order, and the cosine table is V8's own
 //! `Math.cos` values, bit for bit: the platform's `cos` differs from V8's in the last bit of 11 of
@@ -81,8 +81,8 @@ const COSINE_BITS: [u64; HASH_SIZE * PHASH_INPUT_SIZE] = [
     0x3fe7b5df226aafb8, 0x3fc2c8106e8e6145, 0xbfe073879922fff5, 0xbfee212104f686e0,
 ];
 
-/// A 64-bit perceptual hash. glazier-core keeps it as two unsigned 32-bit halves; this is the
-/// high half followed by the low one, so the bits and the hex form are the same.
+/// A 64-bit perceptual hash: Electron Oriel's high 32-bit half followed by its low one, so the bits
+/// and the hex form are the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Hash64(pub u64);
 

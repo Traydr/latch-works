@@ -1,4 +1,4 @@
-//! Duplicate sets, from glazier-core's `duplicates/sets.ts`: byte-identical copies and similar
+//! Duplicate sets: byte-identical copies and similar
 //! versions, each set with the copy to keep, and with Spot variants the pictures among them.
 
 use std::collections::{HashMap, HashSet};
@@ -9,6 +9,9 @@ use rusqlite::Connection;
 use super::dismissals::Dismissals;
 use super::keeper::{KeeperCandidate, keep_reason, rank_keepers};
 use super::queries::{exact_group_sql, to_keeper_candidate};
+use crate::catalog::details::{
+    Comparisons, Readings, load_comparisons, load_details, load_readings,
+};
 use crate::catalog::files::{SqlParams, get_file_records};
 use crate::catalog::rows::FileRecord;
 use crate::collation::js_string_order;
@@ -17,7 +20,6 @@ use crate::contract::{
     DuplicateTotals, DuplicateVersion, FileFormat, FileId, KeepReason, RootId, Settings,
     deciding_versions,
 };
-use crate::passes::detail::{Comparisons, Readings, load_comparisons, load_details, load_readings};
 use crate::similarity::{
     DisjointSets, Fingerprint, SimilarCluster, frames_show_variant, is_variant, normalize_detail,
 };
@@ -212,7 +214,7 @@ fn is_still(record: &FileRecord) -> bool {
     record
         .fingerprint
         .as_deref()
-        .is_some_and(|print| print.starts_with("s:"))
+        .is_some_and(crate::similarity::is_still_print)
 }
 
 fn content_of(record: &FileRecord) -> String {
@@ -438,9 +440,10 @@ fn pictures_of(
 
 /// Whether a still's fingerprint may rest on the Mac's hardware route, which reads damaged AVIFs
 /// that libvips refuses. It goes by the bytes' brands, which HEIF files can also carry, and a file
-/// not yet told apart could be either.
+/// not yet told apart could be either. Elsewhere there is no such route.
 fn may_be_read_by_hardware(record: &FileRecord) -> bool {
-    is_still(record)
+    cfg!(target_os = "macos")
+        && is_still(record)
         && matches!(
             record.format,
             None | Some(FileFormat::Avif) | Some(FileFormat::Heic)
@@ -994,11 +997,12 @@ mod tests {
 
     use super::*;
     use crate::catalog::Catalog;
-    use crate::catalog::rows::FINGERPRINT_VERSION;
     use crate::contract::{SimilarityLevel, is_close_call};
     use crate::duplicates::queries::compute_similar_clusters;
     use crate::similarity::ClusterKind;
-    use crate::similarity::{DETAIL_SIZE, DETAIL_VERSION};
+    use crate::similarity::DETAIL_VERSION;
+    use crate::similarity::FINGERPRINT_VERSION;
+    use crate::similarity::detail::DETAIL_SIZE;
 
     /// A still as a catalog row: a 1000×750 PNG of a kilobyte, alone on its inode.
     #[derive(Clone)]
@@ -2043,13 +2047,21 @@ mod tests {
             })
             .unwrap();
         assert_eq!(details_kept(&converted), (1, 0));
-        // An undo points the row back at the original, clearing only the change time.
+        // An undo points the row back at the original.
         let undone = answered();
         undone
             .catalog
             .blocking(|connection| {
-                connection.execute("UPDATE files SET ctime_ms = 0 WHERE id = 1", [])?;
-                Ok(())
+                let root_id: i64 =
+                    connection.query_row("SELECT root_id FROM files WHERE id = 1", [], |row| {
+                        row.get(0)
+                    })?;
+                crate::catalog::files::point_back_at_original(
+                    connection,
+                    root_id,
+                    "alt/a.png",
+                    "alt/a.jpg",
+                )
             })
             .unwrap();
         assert_eq!(details_kept(&undone), (1, 0));

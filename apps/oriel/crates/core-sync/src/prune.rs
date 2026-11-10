@@ -1,17 +1,13 @@
 //! Pruning, from `prune-deleted.ts` and `directory-alias-index.ts`: the deletes of the plan the
-//! user reviewed, applied once, each skipped when its file is back in the source folder.
+//! user reviewed, applied once inside one sync run ([`SyncRun`]), each skipped when its file is
+//! back in the source folder.
 //!
 //! Prune never plans again. A delete is safe only while nothing is at its path and no new file
 //! sits under a spelling planning treats as the same (case, Unicode, jpeg and jpg), and only
 //! while the source folder is the one prune started with: an unplugged drive would make every
 //! file look gone, so a missing or replaced folder stops the whole prune.
 //!
-//! The deletes go [`PRUNE_CONCURRENCY`] at once, where lockstep-core sends one at a time (owner's
-//! decision 22). None depends on another: Pane View marks each file's library entry deleted on
-//! its own row, keyed by path, and soft-deletes the folders left empty only when the run is
-//! finalized, after every delete. The plan lists files alone, never folders, so there is no order
-//! of children and parents to keep. Each delete still checks its file and the source folder just
-//! before it is sent.
+//! The deletes go [`PRUNE_CONCURRENCY`] at once, where lockstep-core sends one at a time.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -26,22 +22,20 @@ use futures::stream::FuturesUnordered;
 use oriel_core_domain::{
     normalize_path_for_compare, normalize_path_for_compare_keeping_extensions,
 };
-use oriel_core_index::SyncPlanAction;
+use oriel_runtime::CancelToken;
 use oriel_runtime::fs_meta::{self, MetadataExt as _};
-use oriel_runtime::{CancelToken, Cancelled};
 
-use crate::api::{ApiTarget, PaneViewClient, types};
-use crate::events::{Observer, RunAction, RunEvent, RunStatus, RunSummary, emit, status};
+use crate::api::{ApiTarget, PaneViewClient};
+use crate::events::{Observer, RunAction, RunEvent, RunSummary, emit, status};
 use crate::format::format_push_error;
-use crate::plan::{LockstepPlan, is_cancelled, select_changed_items, select_delete_items};
-use crate::push::{Interruption, api_counts, fail_unfinalized_run};
+use crate::plan::{LockstepPlan, is_cancelled, planned_deletes};
 use crate::rules::resolve_local_file_path;
+use crate::rust_only::PRUNE_CONCURRENCY;
+use crate::sync_plan::{SyncPlanAction, SyncPlanItem};
+use crate::sync_run::{Interruption, RunOutcome, SyncRun};
 
 /// Why a planned delete was left alone; shown beside the path.
-const BACK_IN_SOURCE_REASON: &str = "the file is back in the source folder";
-
-/// How many deletes a prune sends at once.
-pub const PRUNE_CONCURRENCY: usize = 6;
+pub(crate) const BACK_IN_SOURCE_REASON: &str = "the file is back in the source folder";
 
 /// `PruneDeletedOptions`.
 #[derive(Clone, Debug)]
@@ -51,14 +45,6 @@ pub struct PruneOptions {
     pub max_changes: Option<usize>,
     /// The plan the user reviewed; prune applies its deletes and nothing else.
     pub plan: LockstepPlan,
-}
-
-#[derive(Clone, Debug)]
-pub struct PruneResult {
-    pub failed: usize,
-    pub plan: LockstepPlan,
-    pub pruned: usize,
-    pub skipped: usize,
 }
 
 /// Which folder the source is, so a moved or remounted one is noticed.
@@ -116,32 +102,17 @@ pub async fn prune_deleted(
     client: &PaneViewClient,
     observer: Option<&Observer>,
     cancel: &CancelToken,
-) -> anyhow::Result<PruneResult> {
+) -> anyhow::Result<RunSummary> {
     cancel.check()?;
     let plan = options.plan;
-    let changed = select_changed_items(&plan.items);
-    let planned = changed.len();
-    let planned_local_paths: Arc<HashSet<String>> = Arc::new(
-        plan.items
-            .iter()
-            .filter(|item| item.action != SyncPlanAction::Delete)
-            .map(|item| item.path.clone())
-            .collect(),
-    );
-    let (to_prune, omitted) = select_delete_items(&changed, options.max_changes);
+    let planned_local_paths = Arc::new(planned_local_paths(&plan.items));
+    let (to_prune, omitted) = planned_deletes(&plan.items, options.max_changes);
     let to_prune: Vec<String> = to_prune.iter().map(|item| item.path.clone()).collect();
 
     if to_prune.is_empty() {
-        let mut summary = RunSummary::now(RunAction::Prune, RunStatus::Completed);
-        summary.message = Some("Nothing to prune.".to_owned());
-        summary.plan_counts = Some(plan.counts);
-        emit(observer, RunEvent::Complete(summary));
-        return Ok(PruneResult {
-            failed: 0,
-            plan,
-            pruned: 0,
-            skipped: 0,
-        });
+        let summary = RunSummary::nothing_to_do(RunAction::Prune, plan.counts);
+        emit(observer, RunEvent::Complete(summary.clone()));
+        return Ok(summary);
     }
 
     let source_root = plan.source_root.clone();
@@ -168,21 +139,12 @@ pub async fn prune_deleted(
     emit(
         observer,
         RunEvent::ItemsQueued {
-            action: "delete".to_owned(),
+            action: RunAction::Prune,
             total,
             total_bytes: 0,
         },
     );
-    status(observer, "Creating sync run...");
-    let sync_run_id = client
-        .create_sync_run(
-            &types::CreateSyncRunRequest {
-                counts: api_counts(plan.counts),
-                source_root: plan.source_root.to_string_lossy().into_owned(),
-            },
-            Some(cancel),
-        )
-        .await?;
+    let run = SyncRun::open(RunAction::Prune, &plan, client, observer, cancel).await?;
 
     let context = PruneContext {
         alias_index: Arc::new(Mutex::new(DirectoryAliasIndex::new(source_root.clone()))),
@@ -192,139 +154,47 @@ pub async fn prune_deleted(
         observer,
         planned_local_paths,
         source_root,
-        sync_run_id: &sync_run_id,
+        sync_run_id: run.id(),
         total,
     };
-    let (mut pruned, mut skipped, mut failed) = (0usize, 0usize, 0usize);
-    let mut run_error: Option<anyhow::Error> = None;
+    let mut outcome = RunOutcome {
+        applied: 0,
+        capped: total,
+        failed: 0,
+        skipped: 0,
+        interruption: None,
+    };
+    let mut stop_error: Option<anyhow::Error> = None;
     let mut queued = to_prune.iter().enumerate();
     let mut running = FuturesUnordered::new();
     loop {
         // A cancel or a lost source folder starts nothing more; what runs finishes or aborts.
-        while running.len() < PRUNE_CONCURRENCY && !cancel.is_cancelled() && run_error.is_none() {
+        while running.len() < PRUNE_CONCURRENCY && !cancel.is_cancelled() && stop_error.is_none() {
             let Some((index, path)) = queued.next() else {
                 break;
             };
             running.push(prune_item(&context, index + 1, path));
         }
-        let Some(outcome) = running.next().await else {
+        let Some(item) = running.next().await else {
             break;
         };
-        match outcome {
-            PruneOutcome::Deleted => pruned += 1,
-            PruneOutcome::Skipped => skipped += 1,
-            PruneOutcome::Failed => failed += 1,
+        match item {
+            PruneOutcome::Deleted => outcome.applied += 1,
+            PruneOutcome::Skipped => outcome.skipped += 1,
+            PruneOutcome::Failed => outcome.failed += 1,
             PruneOutcome::Stopped => {}
             PruneOutcome::RootUnavailable(error) => {
-                run_error.get_or_insert(error);
+                stop_error.get_or_insert(error);
             }
         }
     }
-
-    let cancelled = cancel.is_cancelled();
-    let body = types::CompleteSyncRunRequest {
-        counts: types::SyncRunOutcomeCounts {
-            delete: plan.counts.delete as f64,
-            keep: plan.counts.keep as f64,
-            update: plan.counts.update as f64,
-            upload: plan.counts.upload as f64,
-            capped: total as f64,
-            failed: failed as f64,
-            planned: planned as f64,
-            pushed: pruned as f64,
-        },
-        error: if cancelled {
-            Some("Run cancelled by user".to_owned())
-        } else if let Some(error) = &run_error {
-            Some(error.to_string())
-        } else if failed > 0 {
-            Some(format!("{failed} delete(s) failed during prune"))
-        } else {
-            None
-        },
-        status: if cancelled {
-            types::CompleteSyncRunRequestStatus::Cancelled
-        } else if run_error.is_some() || failed > 0 {
-            types::CompleteSyncRunRequestStatus::Failed
-        } else {
-            types::CompleteSyncRunRequestStatus::Completed
-        },
+    drop(running);
+    outcome.interruption = if cancel.is_cancelled() {
+        Some(Interruption::Cancelled)
+    } else {
+        stop_error.map(Interruption::Failed)
     };
-    let finalize_error = client
-        .finalize_sync_run(&sync_run_id, &body, |error| {
-            status(
-                observer,
-                format!(
-                    "Warning: failed to finalize sync run, retrying: {}",
-                    format_push_error(error)
-                ),
-            );
-        })
-        .await;
-
-    if let Some(finalize_error) = finalize_error {
-        status(
-            observer,
-            format!(
-                "Warning: failed to finalize sync run: {}",
-                format_push_error(&finalize_error)
-            ),
-        );
-        let interruption = if cancelled {
-            Some(Interruption::Cancelled)
-        } else {
-            run_error
-                .as_ref()
-                .map(|error| Interruption::Failed(error.to_string()))
-        };
-        return Err(fail_unfinalized_run(
-            RunAction::Prune,
-            &format!("{pruned} delete(s) applied"),
-            failed,
-            &finalize_error,
-            interruption.as_ref(),
-            observer,
-            plan.counts,
-            pruned,
-            Some(skipped),
-            &sync_run_id,
-        ));
-    }
-
-    if cancelled {
-        let mut summary = RunSummary::now(RunAction::Prune, RunStatus::Cancelled);
-        summary.failed = failed;
-        summary.plan_counts = Some(plan.counts);
-        summary.pushed = pruned;
-        summary.skipped = Some(skipped);
-        emit(observer, RunEvent::Complete(summary));
-        return Err(Cancelled.into());
-    }
-    if let Some(error) = run_error {
-        return Err(error);
-    }
-
-    let mut summary = RunSummary::now(
-        RunAction::Prune,
-        if failed > 0 {
-            RunStatus::Failed
-        } else {
-            RunStatus::Completed
-        },
-    );
-    summary.failed = failed;
-    summary.message = (skipped > 0)
-        .then(|| format!("{skipped} delete(s) skipped because {BACK_IN_SOURCE_REASON}."));
-    summary.plan_counts = Some(plan.counts);
-    summary.pushed = pruned;
-    summary.skipped = Some(skipped);
-    emit(observer, RunEvent::Complete(summary));
-    Ok(PruneResult {
-        failed,
-        plan,
-        pruned,
-        skipped,
-    })
+    run.finish(outcome).await
 }
 
 /// What a prune shares among the deletes it runs at once.
@@ -346,7 +216,6 @@ enum PruneOutcome {
     /// Its file is back in the source folder.
     Skipped,
     Failed,
-    /// A cancel came first.
     Stopped,
     /// The source folder is gone or replaced, which ends the whole prune with this error.
     RootUnavailable(anyhow::Error),
@@ -366,7 +235,7 @@ async fn prune_item(context: &PruneContext<'_>, current: usize, path: &str) -> P
     emit(
         observer,
         RunEvent::ItemStart {
-            action: "delete".to_owned(),
+            action: SyncPlanAction::Delete,
             bytes: None,
             current,
             path: path.to_owned(),
@@ -414,7 +283,7 @@ async fn prune_item(context: &PruneContext<'_>, current: usize, path: &str) -> P
             emit(
                 observer,
                 RunEvent::ItemSuccess {
-                    action: "delete".to_owned(),
+                    action: SyncPlanAction::Delete,
                     bytes: None,
                     current,
                     path: path.to_owned(),
@@ -427,7 +296,7 @@ async fn prune_item(context: &PruneContext<'_>, current: usize, path: &str) -> P
             emit(
                 observer,
                 RunEvent::ItemSkipped {
-                    action: "delete".to_owned(),
+                    action: SyncPlanAction::Delete,
                     current,
                     path: path.to_owned(),
                     reason: BACK_IN_SOURCE_REASON.to_owned(),
@@ -445,7 +314,7 @@ async fn prune_item(context: &PruneContext<'_>, current: usize, path: &str) -> P
             emit(
                 observer,
                 RunEvent::ItemFailure {
-                    action: "delete".to_owned(),
+                    action: SyncPlanAction::Delete,
                     bytes: None,
                     current,
                     error: format_push_error(&error),
@@ -458,9 +327,19 @@ async fn prune_item(context: &PruneContext<'_>, current: usize, path: &str) -> P
     }
 }
 
+/// The paths of the plan's items that are not deletes: a file at one of them is already accounted
+/// for, as the `.jpg` twin of a deleted `.jpeg` is.
+pub(crate) fn planned_local_paths(items: &[SyncPlanItem]) -> HashSet<String> {
+    items
+        .iter()
+        .filter(|item| item.action != SyncPlanAction::Delete)
+        .map(|item| item.path.clone())
+        .collect()
+}
+
 /// `isAbsentLocally`: nothing at the path, and no file under a spelling planning treats as the
 /// same that the plan does not already account for. Errors other than "missing" fail the item.
-fn is_absent_locally(
+pub(crate) fn is_absent_locally(
     source_root: &Path,
     archive_path: &str,
     planned_local_paths: &HashSet<String>,
@@ -512,15 +391,21 @@ struct FolderState {
     changed_ns: i128,
 }
 
+/// `isListingReusable`: whether a listing taken at `listed_at_ns` may be reused while its folder
+/// keeps these times.
+pub(crate) fn listing_is_reusable(listed_at_ns: i128, modified_ns: i128, changed_ns: i128) -> bool {
+    listed_at_ns - modified_ns.max(changed_ns) > RACY_LISTING_WINDOW_NS
+}
+
 /// `DirectoryAliasIndex`: finds the entries under the source folder that planning treats as one
 /// path, reusing each folder's listing while the folder is unchanged.
-struct DirectoryAliasIndex {
+pub(crate) struct DirectoryAliasIndex {
     source_root: PathBuf,
     listings: HashMap<String, DirectoryListing>,
 }
 
 impl DirectoryAliasIndex {
-    fn new(source_root: PathBuf) -> Self {
+    pub(crate) fn new(source_root: PathBuf) -> Self {
         Self {
             source_root,
             listings: HashMap::new(),
@@ -618,10 +503,9 @@ impl DirectoryAliasIndex {
             Err(error) if is_missing(&error) => return Ok(None),
             Err(error) => return Err(error.into()),
         };
-        let last_change = state.modified_ns.max(state.changed_ns);
         let listing = DirectoryListing {
             state,
-            reusable: listed_at_ns - last_change > RACY_LISTING_WINDOW_NS,
+            reusable: listing_is_reusable(listed_at_ns, state.modified_ns, state.changed_ns),
             names,
             by_kind: HashMap::new(),
         };

@@ -1,10 +1,9 @@
-//! The small parts Tidy's pages share, after the `lw-*` classes Electron Oriel's pages use: the
-//! empty state, the card, the caption, a row's icon tile, the key hint inside a button, and a
-//! page's main button while its change runs or waits.
+//! The small parts Tidy's pages share: the empty state, the card, the caption, a row's icon tile,
+//! the key hint inside a button, a page's main button while its change runs or waits, and the
+//! floating selection bar.
 
 use std::cell::Cell;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -14,30 +13,121 @@ use gpui_kit::{
     ParentElement as _, Pixels, Point, Role, SharedString, StatefulInteractiveElement as _,
     Styled as _, TestSupportExt as _, canvas, div, prelude::FluentBuilder as _, px, rems,
 };
+use oriel_core_domain::format;
+use oriel_ui::Arming;
 use oriel_ui::ControlSize as _;
 use oriel_ui::TextRole as _;
-
-use crate::format;
-
-/// How long a press on what has just come under the pointer does nothing: it was meant for what
-/// went. The default double-click time on macOS and Windows, so a double-click's second press is
-/// never the first press on something new.
-pub(crate) const ARM_DELAY: Duration = Duration::from_millis(500);
 
 /// Where a press does nothing for a moment: the place something pressed has just gone from, where
 /// what has come under the pointer is not what the owner meant. A press anywhere else works.
 #[derive(Clone, Copy, Default)]
-pub(crate) struct PressGuard(Option<(Instant, Bounds<Pixels>)>);
+pub(crate) struct PressGuard(Arming, Option<Bounds<Pixels>>);
 
 impl PressGuard {
-    /// Holds back presses in `place` for [`ARM_DELAY`] from now.
-    pub(crate) fn arm(&mut self, place: Bounds<Pixels>) {
-        self.0 = Some((Instant::now() + ARM_DELAY, place));
+    /// Holds back presses in `place` for [`oriel_ui::ARM_DELAY`] from now.
+    pub(crate) fn arm(&mut self, place: Bounds<Pixels>, cx: &App) {
+        self.0.arm(cx);
+        self.1 = Some(place);
     }
 
-    pub(crate) fn holds(&self, position: Point<Pixels>) -> bool {
-        self.0
-            .is_some_and(|(until, place)| Instant::now() < until && place.contains(&position))
+    pub(crate) fn holds(&self, position: Point<Pixels>, cx: &App) -> bool {
+        self.1
+            .is_some_and(|place| place.contains(&position) && self.0.holds(cx))
+    }
+}
+
+/// Where a floating selection bar stands above the page's foot.
+const SELECTION_BAR_BOTTOM: f32 = 20.;
+/// The room a page keeps above its selection bar, so what it shows last is not under it.
+const SELECTION_BAR_CLEARANCE: f32 = 14.;
+/// The foot a selection bar takes before it has been drawn once.
+const SELECTION_BAR_FOOT: f32 = 84.;
+
+/// A page's floating selection bar at the foot of its files: where it was last drawn, which
+/// gives how much of the window's foot it takes, and the presses held back where it has just
+/// gone, so the second press of a double-click on it reaches no file under it.
+#[derive(Default)]
+pub(crate) struct SelectionBar {
+    bounds: Rc<Cell<Bounds<Pixels>>>,
+    guard: Rc<Cell<PressGuard>>,
+}
+
+impl SelectionBar {
+    /// How much of the window's foot the bar takes while `showing`.
+    pub(crate) fn foot_height(&self, showing: bool) -> f32 {
+        if !showing {
+            return 0.;
+        }
+        let height = f32::from(self.bounds.get().size.height);
+        if height > 0. {
+            height + SELECTION_BAR_BOTTOM + SELECTION_BAR_CLEARANCE
+        } else {
+            SELECTION_BAR_FOOT
+        }
+    }
+
+    /// Where the bar was last drawn.
+    pub(crate) fn place(&self) -> Bounds<Pixels> {
+        self.bounds.get()
+    }
+
+    /// Holds back presses in `place`, where something pressed has just gone from.
+    pub(crate) fn arm(&self, place: Bounds<Pixels>, cx: &App) {
+        let mut guard = self.guard.get();
+        guard.arm(place, cx);
+        self.guard.set(guard);
+    }
+
+    pub(crate) fn holds(&self, position: Point<Pixels>, cx: &App) -> bool {
+        self.guard.get().holds(position, cx)
+    }
+
+    /// The bar, centred at the page's foot, with `children` in a row; `label` names it for
+    /// assistive technology.
+    pub(crate) fn render(
+        &self,
+        id: &'static str,
+        label: Option<SharedString>,
+        children: Vec<AnyElement>,
+        cx: &App,
+    ) -> AnyElement {
+        let theme = cx.theme();
+        let (bounds, guard) = (self.bounds.clone(), self.guard.clone());
+        div()
+            .absolute()
+            .bottom(px(SELECTION_BAR_BOTTOM))
+            .left_0()
+            .right_0()
+            .flex()
+            .justify_center()
+            .child(
+                div()
+                    .id(id)
+                    .test_support()
+                    // A press here is the bar's alone, and the bar may go with it. The wheel still
+                    // scrolls the files.
+                    .block_mouse_except_scroll()
+                    .capture_any_mouse_up(move |_, _, cx| {
+                        let mut held = guard.get();
+                        held.arm(bounds.get(), cx);
+                        guard.set(held);
+                    })
+                    .relative()
+                    .child(measure(&self.bounds))
+                    .when_some(label, |this, label| this.aria_label(label))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(6.))
+                    .p(px(6.))
+                    .rounded(theme.radius_lg)
+                    .bg(theme.popover)
+                    .border_1()
+                    .border_color(theme.border)
+                    .shadow_lg()
+                    .children(children),
+            )
+            .into_any_element()
     }
 }
 
@@ -49,7 +139,7 @@ pub(crate) fn measure(bounds: &Rc<Cell<Bounds<Pixels>>>) -> impl IntoElement + u
         .size_full()
 }
 
-/// A centred message for a page with nothing to show (`EmptyState`): an icon, a title, a line
+/// A centred message for a page with nothing to show: an icon, a title, a line
 /// under it, and the actions that lead on.
 pub fn empty_state(
     id: impl Into<ElementId>,
@@ -167,12 +257,19 @@ pub fn row_icon(icon: IconName, cx: &App) -> Div {
         .child(Icon::new(icon).size(px(20.)))
 }
 
-/// A key inside a button, as `Kbd` sits in Electron Oriel's buttons: "Tidy up ⌘↩".
-pub fn key_hint(keys: &'static str) -> Div {
-    div().ml_1().text_caption().opacity(0.85).child(keys)
+/// A key inside a button: "Tidy up ⌘↩", from its GPUI keystroke.
+pub fn key_hint(keys: &str) -> Div {
+    div()
+        .ml_1()
+        .text_caption()
+        .opacity(0.85)
+        .child(oriel_ui::keys::display(keys))
 }
 
 /// A primary action with its key, at the top bar's right, at the bar's size in the house scale.
+/// The keys that run the page's main action, whose button shows them: Tidy's root runs it.
+pub const MAIN_ACTION_KEYS: &str = "cmd-enter";
+
 pub fn primary_action(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -198,9 +295,6 @@ pub fn while_changing(button: Button, status: Option<crate::actions::ChangeStatu
     }
 }
 
-/// A file as a tile (`MediaTile`): its picture in its own shape on a letterbox, then its name,
-/// its folder when `folder` (another tile shows the same name), and its size, with what
-/// converting is estimated to leave when `ratio` is known. Tiles grow to fill their row.
 /// "clip-3.mp4 · 47%", or just the name where the tool cannot say how far it has got.
 pub fn file_and_share(file: &crate::actions::RunningFile) -> String {
     match file.share {
@@ -266,6 +360,9 @@ pub fn running_badge(doing: &str, file: &crate::actions::RunningFile, cx: &App) 
         .into_any_element()
 }
 
+/// A file as a tile: its picture in its own shape on a letterbox, then its name, its folder when
+/// `folder` (another tile shows the same name), and its size, with what converting is estimated
+/// to leave when `ratio` is known. Tiles grow to fill their row.
 pub fn media_tile(
     thumbs: &gpui_kit::Entity<crate::thumbs::Thumbs>,
     row: &oriel_core_tidy::contract::FileRow,
@@ -321,15 +418,8 @@ pub fn media_tile(
                 .child(div().truncate().text_body().child(row.name.clone()))
                 .when(folder, |this| {
                     this.child(
-                        caption(
-                            if row.dir.is_empty() {
-                                "The top folder".to_string()
-                            } else {
-                                row.dir.clone()
-                            },
-                            cx,
-                        )
-                        .truncate(),
+                        caption(crate::labels::folder_capitalized(&row.dir).to_owned(), cx)
+                            .truncate(),
                     )
                 })
                 .child(caption(size, cx).truncate()),
@@ -376,7 +466,7 @@ pub fn repeated_names(
         .collect()
 }
 
-/// The reasons files stay as they are, collapsed under their count (`LeftList`).
+/// The reasons files stay as they are, collapsed under their count.
 pub fn left_list(reasons: &[String], cx: &App) -> Div {
     let theme = cx.theme();
     card(cx).children(reasons.iter().enumerate().map(|(index, reason)| {
@@ -391,22 +481,4 @@ pub fn left_list(reasons: &[String], cx: &App) -> Div {
             })
             .child(reason.clone())
     }))
-}
-
-/// The last toast Tidy showed, kept for checks: GPUI Kit's notifications do not say what they
-/// read.
-struct LastToast(SharedString);
-
-impl gpui_kit::Global for LastToast {}
-
-/// Shows a toast, and keeps what it said.
-pub fn show_toast(window: &mut gpui_kit::Window, toast: oriel_ui::Toast, cx: &mut App) {
-    use oriel_ui::ToastExt as _;
-    cx.set_global(LastToast(toast.message().clone()));
-    window.show_toast(toast, cx);
-}
-
-/// What the last toast said.
-pub fn last_toast(cx: &App) -> Option<SharedString> {
-    cx.try_global::<LastToast>().map(|last| last.0.clone())
 }

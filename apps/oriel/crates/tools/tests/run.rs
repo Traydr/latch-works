@@ -2,31 +2,19 @@
 //! raw frames as bytes, failures as exit statuses, and kills at the timeout and on cancel. The
 //! output bounds run on the system's `cat` and `sh`, which can write more than any probe.
 //!
-//! The ffmpeg tests skip, saying so, when the pinned tools have not been fetched; run
-//! `cargo run -p oriel-tools --bin fetch-media-tools` first.
+//! The ffmpeg tests skip locally until the pinned tools are fetched (`cargo run -p xtask --
+//! fetch-media-tools`), as `oriel_test_archive::require` says.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use oriel_runtime::CancelToken;
-use oriel_tools::{FETCH_COMMAND, LocateError, MediaTools, ToolError, ToolRun};
+use oriel_test_archive::media_tools;
 #[cfg(unix)]
 use oriel_tools::{MAX_STDERR_BYTES, MAX_STDOUT_BYTES};
+use oriel_tools::{MediaTools, ToolError, ToolRun};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
-
-/// The pinned tools, or `None` with a message when they have not been fetched. Any other
-/// failure to find them fails the test.
-fn tools(test: &str) -> Option<MediaTools> {
-    match MediaTools::locate() {
-        Ok(tools) => Some(tools),
-        Err(error @ LocateError::NotFetched { .. }) => {
-            eprintln!("skipping {test}: {error}");
-            None
-        }
-        Err(error) => panic!("{error}"),
-    }
-}
 
 fn scratch(test: &str) -> PathBuf {
     let folder = std::env::temp_dir()
@@ -67,7 +55,7 @@ fn endless(tools: &MediaTools, timeout: Duration) -> ToolRun {
 
 #[test]
 fn ffprobe_reads_a_clip_ffmpeg_made() {
-    let Some(tools) = tools("ffprobe_reads_a_clip_ffmpeg_made") else {
+    let Some(tools) = media_tools() else {
         return;
     };
     let clip = make_clip(&tools, &scratch("probe"));
@@ -104,7 +92,7 @@ fn ffprobe_reads_a_clip_ffmpeg_made() {
 
 #[test]
 fn ffmpeg_writes_a_raw_frame_to_stdout_as_bytes() {
-    let Some(tools) = tools("ffmpeg_writes_a_raw_frame_to_stdout_as_bytes") else {
+    let Some(tools) = media_tools() else {
         return;
     };
     let clip = make_clip(&tools, &scratch("frame"));
@@ -124,7 +112,7 @@ fn ffmpeg_writes_a_raw_frame_to_stdout_as_bytes() {
 
 #[test]
 fn a_failing_run_returns_its_exit_status_and_stderr() {
-    let Some(tools) = tools("a_failing_run_returns_its_exit_status_and_stderr") else {
+    let Some(tools) = media_tools() else {
         return;
     };
     let missing = scratch("failing").join("missing.mp4");
@@ -144,7 +132,7 @@ fn a_failing_run_returns_its_exit_status_and_stderr() {
 
 #[test]
 fn a_run_past_its_timeout_is_killed() {
-    let Some(tools) = tools("a_run_past_its_timeout_is_killed") else {
+    let Some(tools) = media_tools() else {
         return;
     };
     let started = Instant::now();
@@ -162,7 +150,7 @@ fn a_run_past_its_timeout_is_killed() {
 
 #[test]
 fn cancelling_kills_the_run() {
-    let Some(tools) = tools("cancelling_kills_the_run") else {
+    let Some(tools) = media_tools() else {
         return;
     };
     let token = CancelToken::new();
@@ -243,12 +231,4 @@ fn stderr_keeps_its_last_64_kib() {
     assert!(output.stderr.len() > MAX_STDERR_BYTES - 64);
     assert!(output.stderr.ends_with("line 2499 of the tool's chatter\n"));
     assert!(!output.stderr.contains("line 0 of"));
-}
-
-#[test]
-fn the_skip_message_names_the_fetch_command() {
-    let error = LocateError::NotFetched {
-        folder: PathBuf::from(".media-tools/darwin-arm64"),
-    };
-    assert!(error.to_string().contains(FETCH_COMMAND));
 }

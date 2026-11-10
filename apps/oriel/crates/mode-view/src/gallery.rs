@@ -1,10 +1,9 @@
 //! The gallery: a folder's tiles (its subfolders, comics or media) as a virtual grid,
-//! `uniform_list` rows of tiles sized as Electron Oriel sizes them, each tile its thumbnail once
-//! made and a placeholder until then.
+//! `uniform_list` rows of tiles sized by [`metrics`], each tile its thumbnail once made and a
+//! placeholder until then.
 //!
-//! The gallery owns the grid's scroll position, the selection and the keys that move it
-//! (`useGalleryKeyboardNavigation`). It says which rows it drew, and the thumbnail service makes
-//! those first. What a tile opens is the owner's: a double-click, Enter or F emits
+//! The gallery owns the grid's scroll position, the selection and the keys that move it. It says
+//! which rows it drew, and the thumbnail service makes those first. What a tile opens is the owner's: a double-click, Enter or F emits
 //! [`GalleryEvent::Activated`], and the folder keys emit [`GalleryEvent::FolderStep`].
 //!
 //! A tile under the pointer shows its name and size over the picture (`MediaTile`'s hover
@@ -16,7 +15,7 @@ mod images;
 pub mod metrics;
 pub mod preview;
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -29,26 +28,28 @@ use gpui_kit::component::{ActiveTheme as _, Icon, tooltip::Tooltip};
 use gpui_kit::{
     App, AppContext as _, Bounds, ClickEvent, Context, DispatchPhase, ElementId, Entity,
     EventEmitter, FocusHandle, Focusable, Hitbox, HitboxBehavior, Hsla, InteractiveElement as _,
-    IntoElement, KeyBinding, MouseMoveEvent, ParentElement as _, PathBuilder, Pixels, Point,
-    Render, Role, ScrollStrategy, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Subscription, Task, TestSupportExt as _, UniformListDecoration, UniformListScrollHandle,
-    WeakEntity, Window, actions, canvas, div, linear_color_stop, linear_gradient, point,
-    prelude::FluentBuilder as _, px, size, uniform_list,
+    IntoElement, MouseMoveEvent, ParentElement as _, PathBuilder, Pixels, Point, Render, Role,
+    ScrollStrategy, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
+    TestSupportExt as _, UniformListDecoration, UniformListScrollHandle, WeakEntity, Window,
+    actions, canvas, div, linear_color_stop, linear_gradient, point, prelude::FluentBuilder as _,
+    px, size, uniform_list,
 };
-use oriel_core_domain::format_bytes;
+use oriel_core_domain::format;
 use oriel_ui::TextRole as _;
 use oriel_ui::layout::{RAIL_WIDTH, SIDEBAR_WIDTH};
+use oriel_ui::shortcuts::KeyTable;
 use oriel_ui::{ControlSize as _, ModeId, OfferedFolders, ShellState};
 
 use crate::browser::{Comic, Tile};
 use crate::listing::MediaEntry;
-use crate::media_tools::{VideoProbe, ViewMediaTools};
+use crate::media_tools::ViewMediaTools;
 use crate::thumbnails::{THUMBNAIL_SIZE, Thumbnail, ThumbnailService};
 use images::{TileImages, TilePicture, tile_picture};
 use metrics::{BOTTOM_ROOM, GridMetrics, OVERSCAN_ROWS, PREFETCH_ROWS, TileAspect};
+use oriel_tools::VideoProbe;
 pub use preview::{HOVER_DELAY, PreviewSettings, TilePreview};
 
-/// How many videos ffprobe reads at once for their captions (`MAX_PROBE_CONCURRENCY`).
+/// How many videos ffprobe reads at once for their captions.
 const PROBES_AT_ONCE: usize = 2;
 
 /// How long the gallery stays still, drawing nothing and making no thumbnails, before the memory
@@ -58,13 +59,11 @@ const SETTLE: Duration = Duration::from_secs(2);
 /// The id of the grid's scroll region.
 pub const GALLERY_ID: &str = "gallery";
 
+/// What the gallery says before View has a folder.
+pub(crate) const EMPTY_MESSAGE: &str = "Drop a folder or click Open below";
+
 /// The id of the hover caption, which one tile at most shows.
 pub const CAPTION_ID: &str = "tile-caption";
-
-/// A check variable: `ORIEL_VIEW_SCROLL=<px>` scrolls the grid that many pixels down (or to
-/// its end) once its folder lists, to see a scrolled grid in a real window without scripted
-/// input.
-pub const SCROLL_VARIABLE: &str = "ORIEL_VIEW_SCROLL";
 
 const KEY_CONTEXT: &str = "Gallery";
 
@@ -92,32 +91,22 @@ actions!(
     ]
 );
 
-/// The gallery's keys, as `hotkeys.ts` binds them. They reach the gallery only while it has
-/// focus, so never while the viewer, the reader or another mode shows. The arrows move with ⇧
-/// held too, as Electron Oriel's handler ignores it for them; ⇧ with A, D, W and S steps between
-/// folders instead.
+/// The gallery's keys. They reach the gallery only while it has focus, so never while the
+/// viewer, the reader or another mode shows. The arrows move with ⇧ held too; ⇧ with A, D, W and
+/// S steps between folders instead.
+pub(crate) const GALLERY_KEYS: KeyTable = oriel_ui::key_table!("Gallery" {
+    "Previous or next item" => ["left" => SelectLeft, "right" => SelectRight, "a" => SelectLeft,
+        "d" => SelectRight] + ["shift-left" => SelectLeft, "shift-right" => SelectRight],
+    "Row up or down" => ["up" => SelectUp, "down" => SelectDown, "w" => SelectUp,
+        "s" => SelectDown] + ["shift-up" => SelectUp, "shift-down" => SelectDown],
+    "Open the selected item" => ["enter" => ActivateSelected, "f" => ActivateSelected],
+    "Open the selected folder" => ["shift-s" => OpenSelectedFolder],
+    "Parent folder" => ["shift-w" => OpenParentFolder],
+    "Previous or next folder" => ["shift-a" => OpenPreviousFolder, "shift-d" => OpenNextFolder],
+});
+
 pub(crate) fn bind_keys(cx: &mut App) {
-    let context = Some(KEY_CONTEXT);
-    cx.bind_keys([
-        KeyBinding::new("left", SelectLeft, context),
-        KeyBinding::new("shift-left", SelectLeft, context),
-        KeyBinding::new("a", SelectLeft, context),
-        KeyBinding::new("right", SelectRight, context),
-        KeyBinding::new("shift-right", SelectRight, context),
-        KeyBinding::new("d", SelectRight, context),
-        KeyBinding::new("up", SelectUp, context),
-        KeyBinding::new("shift-up", SelectUp, context),
-        KeyBinding::new("w", SelectUp, context),
-        KeyBinding::new("down", SelectDown, context),
-        KeyBinding::new("shift-down", SelectDown, context),
-        KeyBinding::new("s", SelectDown, context),
-        KeyBinding::new("enter", ActivateSelected, context),
-        KeyBinding::new("f", ActivateSelected, context),
-        KeyBinding::new("shift-s", OpenSelectedFolder, context),
-        KeyBinding::new("shift-w", OpenParentFolder, context),
-        KeyBinding::new("shift-a", OpenPreviousFolder, context),
-        KeyBinding::new("shift-d", OpenNextFolder, context),
-    ]);
+    cx.bind_keys(GALLERY_KEYS.bindings(KEY_CONTEXT, cx));
 }
 
 /// What the gallery shows.
@@ -172,6 +161,8 @@ pub struct Gallery {
     media: Arc<[MediaEntry]>,
     aspect: TileAspect,
     thumbnail_size: f32,
+    /// Where View keeps the clip that primes the video engine.
+    view_cache: Arc<Path>,
     thumbnails: Entity<ThumbnailService>,
     images: Entity<TileImages>,
     scroll: UniformListScrollHandle,
@@ -199,8 +190,6 @@ pub struct Gallery {
     settling: bool,
     /// The media tile under the pointer, by position, whose hover caption shows.
     captioned: Option<usize>,
-    /// The scroll [`SCROLL_VARIABLE`] asks for, until the grid has scrolled there.
-    check_scroll: Option<f32>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -215,10 +204,9 @@ struct Hover {
     _start: Option<Task<()>>,
 }
 
-/// ffprobe's facts about the videos the grid draws, for their captions.
+/// The videos the grid draws that ffprobe is to read, for their captions.
 #[derive(Default)]
 struct VideoProbes {
-    facts: HashMap<SharedString, VideoProbe>,
     /// Asked for, queued or under way, by item key.
     asked: HashSet<SharedString>,
     queue: VecDeque<MediaEntry>,
@@ -239,6 +227,7 @@ impl Gallery {
     pub fn new(
         shell: &Entity<ShellState>,
         thumbnails_folder: PathBuf,
+        view_cache: PathBuf,
         cx: &mut Context<Self>,
     ) -> Self {
         let size = crate::thumbnails::request_size(THUMBNAIL_SIZE);
@@ -255,11 +244,12 @@ impl Gallery {
         Self {
             shell: shell.clone(),
             listing: Listing::Empty,
-            empty_message: "Drop a folder or click Open below".into(),
+            empty_message: EMPTY_MESSAGE.into(),
             tiles: Arc::from([]),
             media: Arc::from([]),
             aspect: TileAspect::Wide,
             thumbnail_size: THUMBNAIL_SIZE,
+            view_cache: view_cache.into(),
             thumbnails,
             images,
             scroll: UniformListScrollHandle::new(),
@@ -278,9 +268,6 @@ impl Gallery {
             activity: 0,
             settling: false,
             captioned: None,
-            check_scroll: std::env::var(SCROLL_VARIABLE)
-                .ok()
-                .and_then(|value| value.parse().ok()),
             _subscriptions: subscriptions,
         }
     }
@@ -368,8 +355,8 @@ impl Gallery {
     }
 
     /// ffprobe's facts about a video tile drawn, once read.
-    pub fn video_probe(&self, entry: &MediaEntry) -> Option<&VideoProbe> {
-        self.probes.facts.get(entry.key())
+    pub fn video_probe(&self, entry: &MediaEntry) -> Option<VideoProbe> {
+        ViewMediaTools::shared().cached_probe(entry)
     }
 
     /// A new folder: back to the top, and its thumbnails, probes and preview start over.
@@ -404,7 +391,7 @@ impl Gallery {
         }
         // A video under the pointer may play next, in the tile or the viewer: libmpv's engine
         // starts now, off this thread, rather than when it does.
-        oriel_media::mpv::prewarm();
+        oriel_media::video::prewarm();
         if current || !self.preview_settings.autoplay {
             return;
         }
@@ -452,6 +439,7 @@ impl Gallery {
             .filter(|entry| entry.is_video())
             .map(MediaEntry::key)
             .collect();
+        let tools = ViewMediaTools::shared();
         let probes = &mut self.probes;
         probes.queue.retain(|entry| {
             let keep = wanted.contains(entry.key());
@@ -461,7 +449,10 @@ impl Gallery {
             keep
         });
         for entry in entries.iter().filter(|entry| entry.is_video()) {
-            if !probes.facts.contains_key(entry.key()) && probes.asked.insert(entry.key().clone()) {
+            if !probes.asked.contains(entry.key())
+                && tools.cached_probe(entry).is_none()
+                && probes.asked.insert(entry.key().clone())
+            {
                 probes.queue.push_back(entry.clone());
             }
         }
@@ -476,23 +467,16 @@ impl Gallery {
             self.probes.in_flight += 1;
             let generation = self.probes.generation;
             cx.spawn(async move |this, cx| {
-                let key = entry.key().clone();
-                let probe = cx
-                    .background_spawn(async move {
-                        ViewMediaTools::shared().probe_video(
-                            entry.path(),
-                            entry.modified_ms(),
-                            entry.size(),
-                        )
-                    })
-                    .await;
+                let read = cx
+                    .background_spawn(async move { ViewMediaTools::shared().probe(&entry) })
+                    .await
+                    .is_some();
                 this.update(cx, |this, cx| {
                     if this.probes.generation != generation {
                         return;
                     }
                     this.probes.in_flight -= 1;
-                    if let Some(probe) = probe {
-                        this.probes.facts.insert(key, probe);
+                    if read {
                         cx.notify();
                     }
                     this.pump_probes(cx);
@@ -516,7 +500,6 @@ impl Gallery {
         &self.media
     }
 
-    /// The selected tile's key.
     pub fn selected_key(&self) -> Option<&SharedString> {
         self.selected.as_ref()
     }
@@ -547,7 +530,6 @@ impl Gallery {
         self.thumbnail_size
     }
 
-    /// The rows the list drew last frame.
     pub fn drawn_rows(&self) -> Range<usize> {
         self.drawn_rows.clone()
     }
@@ -560,7 +542,7 @@ impl Gallery {
 
     /// Shows `tiles`. The selection stays on the same tile when it is still listed, moves to
     /// `prefer` when that is listed (a folder stepped up out of), and otherwise to the first
-    /// tile, as `useBrowserSelection` keeps it.
+    /// tile.
     pub fn set_tiles(
         &mut self,
         tiles: Arc<[Tile]>,
@@ -655,24 +637,6 @@ impl Gallery {
             .map(|run| run.frames.as_slice())
     }
 
-    /// Scrolls to where [`SCROLL_VARIABLE`] asks, once the list has a layout to scroll in.
-    fn apply_check_scroll(&mut self, window: &mut Window) {
-        let Some(offset) = self.check_scroll else {
-            return;
-        };
-        let handle = self.scroll.0.borrow().base_handle.clone();
-        let max = f32::from(handle.max_offset().y);
-        if max > 0. {
-            handle.set_offset(point(px(0.), px(-offset.clamp(0., max))));
-            self.check_scroll = None;
-        } else if self.listing == Listing::Listed && !self.drawn_rows.is_empty() {
-            // The whole folder fits in the window: there is nowhere to scroll.
-            self.check_scroll = None;
-        } else {
-            window.request_animation_frame();
-        }
-    }
-
     fn advance_autoscroll(&mut self, window: &mut Window) {
         let Some(run) = self.autoscroll.as_mut().filter(|run| !run.finished) else {
             return;
@@ -703,17 +667,6 @@ impl Gallery {
         self.select_position(position, cx);
     }
 
-    /// Selects the tile with `key`, if it is listed.
-    pub fn select_key(&mut self, key: &str, cx: &mut Context<Self>) {
-        if let Some(position) = self
-            .tiles
-            .iter()
-            .position(|tile| tile.key().as_ref() == key)
-        {
-            self.select_position(position, cx);
-        }
-    }
-
     fn select_position(&mut self, position: usize, cx: &mut Context<Self>) {
         let Some(tile) = self.tiles.get(position) else {
             return;
@@ -727,9 +680,9 @@ impl Gallery {
         cx.notify();
     }
 
-    /// Moves the selection by `delta` tiles, wrapping past either end as
-    /// `useGalleryKeyboardNavigation`'s `wrapIndex` does: → on the last tile selects the first,
-    /// and ↓ on the last row lands as far into the list as it went past the end.
+    /// Moves the selection by `delta` tiles, wrapping past either end: → on the last tile
+    /// selects the first, and ↓ on the last row lands as far into the list as it went past the
+    /// end.
     fn move_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
         if self.tiles.is_empty() {
             return;
@@ -847,7 +800,8 @@ impl Gallery {
             .iter()
             .any(|tile| matches!(tile, Tile::Media { media, .. } if media.is_video()))
         {
-            oriel_media::mpv::prime();
+            let cache = self.view_cache.clone();
+            oriel_media::video::prime(move || ViewMediaTools::shared().prime_clip(&cache));
         }
         // Room for the drawn tiles, the overscan, and a screen's worth more for scrolling back.
         let capacity = nearby.len() + visible.len() * 2;
@@ -1091,11 +1045,7 @@ impl Gallery {
                         card.child(preview).child(corner_mask(radius, backdrop))
                     })
                     .when(captioned, |card| {
-                        card.child(hover_caption(
-                            media,
-                            self.probes.facts.get(media.key()),
-                            radius,
-                        ))
+                        card.child(hover_caption(media, self.video_probe(media), radius))
                     })
                     .when(media.is_video(), |card| card.child(video_badge()))
                     .when(hover_plays, |card| {
@@ -1239,7 +1189,7 @@ fn corner_mask(radius: Pixels, backdrop: Hsla) -> impl IntoElement {
 }
 
 /// The badge on a video's tile. It sits on the picture rather than on a themed surface, so it is
-/// white on translucent black in either theme, as Electron Oriel's is.
+/// white on translucent black in either theme.
 fn video_badge() -> impl IntoElement {
     div()
         .absolute()
@@ -1323,13 +1273,13 @@ impl CaptionProbe {
 }
 
 /// A media tile's name and size, and a video's picture size once known, over the bottom of the
-/// picture while the pointer is on the tile (`MediaTile`'s caption).
+/// picture while the pointer is on the tile.
 fn hover_caption(
     media: &MediaEntry,
-    probe: Option<&VideoProbe>,
+    probe: Option<VideoProbe>,
     radius: Pixels,
 ) -> impl IntoElement {
-    let mut detail = format_bytes(media.size() as f64);
+    let mut detail = format::bytes(media.size());
     if let Some((width, height)) = probe.and_then(|probe| probe.width.zip(probe.height)) {
         detail.push_str(&format!(" · {width}×{height}"));
     }
@@ -1532,7 +1482,6 @@ impl Render for Gallery {
                 .into_any_element();
         }
 
-        self.apply_check_scroll(window);
         self.advance_autoscroll(window);
         let metrics = self.metrics(window, cx);
         self.columns = metrics.columns();

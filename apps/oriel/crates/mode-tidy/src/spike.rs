@@ -1,6 +1,5 @@
-//! Phase 0's measurement of the Library table (plan 063: "GPUI Kit's data table with 100,000
-//! rows: sort, scroll and select"), run by environment variables, as View's spike is, because
-//! this Mac does not allow scripted input.
+//! The measurement of the Library table (plan 063: "GPUI Kit's data table with 100,000 rows: sort,
+//! scroll and select"), set up by the launch's variables, as View's spike is.
 //!
 //! `ORIEL_SPIKE_LIBRARY=<rows>` opens Tidy on Library with that many synthetic rows. With
 //! `ORIEL_SPIKE_LOG=<file>` the run then writes one JSON line per event and quits:
@@ -12,32 +11,23 @@
 //!    interval, then memory.
 //! 4. `select`: `ORIEL_SPIKE_SELECT` (200 by default) rows selected one after another, each
 //!    until the frame that shows it.
-//!
-//! The memory reading and the frame statistics repeat View's spike (`mode-view/src/spike.rs`) on
-//! purpose: both are spikes, and Phase 1 decides where measurement code lives.
 
-use std::fs::{File, OpenOptions};
-use std::io::Write as _;
 use std::time::{Duration, Instant};
 
 use gpui_kit::component::table::ColumnSort;
 use gpui_kit::{Context, Window, point, px};
+use oriel_launch::{Variables, variables};
+use oriel_ui::measure::{SpikeLog, frame_stats, memory_fields, percentile};
 
 use crate::synthetic::{LibraryColumn, SyntheticLibrary as LibraryPage};
 
-pub const ROWS_VARIABLE: &str = "ORIEL_SPIKE_LIBRARY";
-const LOG_VARIABLE: &str = "ORIEL_SPIKE_LOG";
-const SCROLL_VARIABLE: &str = "ORIEL_SPIKE_SCROLL";
-const SELECT_VARIABLE: &str = "ORIEL_SPIKE_SELECT";
+const SPIKE_SELECT: &str = "ORIEL_SPIKE_SELECT";
+
 const SETTLE: Duration = Duration::from_millis(1_500);
 
 /// The rows the spike asks for, if it runs.
-pub fn requested_rows() -> Option<usize> {
-    std::env::var(ROWS_VARIABLE).ok()?.parse().ok()
-}
-
-fn variable(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|value| !value.is_empty())
+pub fn requested_rows(spikes: &Variables) -> Option<usize> {
+    spikes.parse(variables::SPIKE_LIBRARY)
 }
 
 enum Step {
@@ -63,32 +53,26 @@ enum Step {
 }
 
 pub struct LibrarySpike {
-    log: Option<File>,
+    log: Option<SpikeLog>,
     speed: f32,
     selections: usize,
     step: Step,
 }
 
 impl LibrarySpike {
-    pub fn from_environment(rows_made_in: Duration) -> Option<Self> {
-        let path = variable(LOG_VARIABLE)?;
-        let log = OpenOptions::new().create(true).append(true).open(path).ok();
+    pub fn start(spikes: &Variables, rows_made_in: Duration) -> Option<Self> {
+        let path = spikes.get(variables::SPIKE_LOG)?;
+        let log = SpikeLog::open(path);
         let mut spike = Self {
             log,
-            speed: variable(SCROLL_VARIABLE)
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(5_000.),
-            selections: variable(SELECT_VARIABLE)
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(200),
+            speed: spikes.parse(variables::SPIKE_SCROLL).unwrap_or(5_000.),
+            selections: spikes.parse(SPIKE_SELECT).unwrap_or(200),
             step: Step::Settling(Instant::now()),
         };
-        let (resident, footprint) = memory();
         spike.write(&format!(
-            r#""event":"rows","made_ms":{:.1},"resident_mb":{:.1},"footprint_mb":{:.1}"#,
+            r#""event":"rows","made_ms":{:.1},{}"#,
             rows_made_in.as_secs_f64() * 1e3,
-            resident as f64 / 1e6,
-            footprint as f64 / 1e6,
+            memory_fields(),
         ));
         Some(spike)
     }
@@ -239,116 +223,12 @@ impl LibrarySpike {
     }
 
     fn write_memory(&mut self, event: &str) {
-        let (resident, footprint) = memory();
-        self.write(&format!(
-            r#""event":"{event}","resident_mb":{:.1},"footprint_mb":{:.1}"#,
-            resident as f64 / 1e6,
-            footprint as f64 / 1e6,
-        ));
+        self.write(&format!(r#""event":"{event}",{}"#, memory_fields()));
     }
 
     fn write(&mut self, fields: &str) {
         if let Some(log) = self.log.as_mut() {
-            let _ = writeln!(log, "{{{fields}}}");
+            log.write(fields);
         }
     }
-}
-
-pub(crate) fn frame_stats(frames: &[Instant], speed: f32) -> String {
-    let mut intervals: Vec<f64> = frames
-        .windows(2)
-        .map(|pair| pair[1].duration_since(pair[0]).as_secs_f64() * 1e3)
-        .collect();
-    let duration = match (frames.first(), frames.last()) {
-        (Some(first), Some(last)) => last.duration_since(*first).as_secs_f64(),
-        _ => 0.,
-    };
-    intervals.sort_by(f64::total_cmp);
-    let p50 = percentile(&intervals, 0.5);
-    // A frame that took more than one and a half times the typical interval missed its vsync.
-    let long = intervals
-        .iter()
-        .filter(|interval| **interval > p50 * 1.5)
-        .count();
-    format!(
-        r#""event":"scroll","px_per_s":{speed},"frames":{},"duration_s":{duration:.2},"p50_ms":{p50:.2},"p95_ms":{:.2},"p99_ms":{:.2},"max_ms":{:.2},"long_frames":{long}"#,
-        frames.len(),
-        percentile(&intervals, 0.95),
-        percentile(&intervals, 0.99),
-        intervals.last().copied().unwrap_or_default(),
-    )
-}
-
-pub(crate) fn percentile(sorted: &[f64], share: f64) -> f64 {
-    if sorted.is_empty() {
-        return 0.;
-    }
-    let index = ((sorted.len() - 1) as f64 * share).round() as usize;
-    sorted[index]
-}
-
-/// This process's resident size and its physical footprint (what Activity Monitor shows), in
-/// bytes.
-#[cfg(target_os = "macos")]
-pub(crate) fn memory() -> (u64, u64) {
-    let mut usage = std::mem::MaybeUninit::<libc::rusage_info_v2>::zeroed();
-    // SAFETY: `usage` is a `rusage_info_v2`, the flavour asked for.
-    let status = unsafe {
-        libc::proc_pid_rusage(
-            libc::getpid(),
-            libc::RUSAGE_INFO_V2,
-            usage.as_mut_ptr().cast(),
-        )
-    };
-    if status != 0 {
-        return (0, 0);
-    }
-    // SAFETY: zeroed is a valid `rusage_info_v2`, and the call filled it.
-    let usage = unsafe { usage.assume_init() };
-    (usage.ri_resident_size, usage.ri_phys_footprint)
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn memory() -> (u64, u64) {
-    (0, 0)
-}
-
-/// The CPU time, user and system, of the thread that asks, in milliseconds. Asked on the main
-/// thread, it is what a page's drawing cost there, which frame intervals cannot show once a
-/// frame takes less than the display's own interval.
-#[cfg(target_os = "macos")]
-pub(crate) fn thread_cpu_ms() -> f64 {
-    let mut time = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    // SAFETY: a plain out-parameter.
-    if unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) } != 0 {
-        return 0.;
-    }
-    time.tv_sec as f64 * 1e3 + time.tv_nsec as f64 / 1e6
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn thread_cpu_ms() -> f64 {
-    0.
-}
-
-/// This process's CPU time on every thread, user and system, in milliseconds.
-#[cfg(target_os = "macos")]
-pub(crate) fn process_cpu_ms() -> f64 {
-    let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
-    // SAFETY: a plain out-parameter.
-    if unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) } != 0 {
-        return 0.;
-    }
-    // SAFETY: zeroed is a valid `rusage`, and the call filled it.
-    let usage = unsafe { usage.assume_init() };
-    let millis = |time: libc::timeval| time.tv_sec as f64 * 1e3 + f64::from(time.tv_usec) / 1e3;
-    millis(usage.ru_utime) + millis(usage.ru_stime)
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn process_cpu_ms() -> f64 {
-    0.
 }

@@ -1,5 +1,5 @@
 //! Oriel: View, Tidy and Sync in one native window, on GPUI Kit, with no Node process. It keeps
-//! its data in `~/.latch-works/oriel`.
+//! its data in `~/.latch-works/oriel`, or the folder `ORIEL_DATA_DIR` names.
 
 pub mod about;
 pub mod actions;
@@ -19,9 +19,10 @@ pub mod window_state;
 #[cfg(windows)]
 mod windows_frame;
 
-pub use general::theme_button_id;
+pub use oriel_launch::Launch;
 
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use futures::StreamExt as _;
 use gpui_kit::component::TitleBar;
@@ -29,13 +30,12 @@ use gpui_kit::{
     App, AppContext as _, Bounds, Entity, Global, TitlebarOptions, WeakEntity, WindowBounds,
     WindowHandle, WindowOptions, point, px, size,
 };
-use oriel_core_paths::DataRoot;
+use oriel_runtime::TokioRuntime;
 use oriel_ui::LocalStorage;
 
+use crate::quit::SystemQuit;
 use crate::shell::Shell;
 use crate::window_state::{Placement, Screen, WindowState};
-
-const APP_NAME: &str = "Oriel";
 
 /// The one window, for the system's requests that come without one: reopening the app, and
 /// paths it hands over.
@@ -46,15 +46,32 @@ struct MainWindow {
 
 impl Global for MainWindow {}
 
-/// Starts the app: its data folder, GPUI Kit, the stored preferences, the theme, the keys, the
-/// window and its menus, and the paths the system hands it.
+/// What the app starts before its window, in this order, for `launch`: GPUI Kit with the theme it
+/// starts from, the HTTP clients' thread, whether tools suspend, the stored preferences and the
+/// theme they choose, the app's keys and actions, and what the menu bar needs. The tests start
+/// the same way.
+pub fn init(launch: &Launch, cx: &mut App) {
+    oriel_ui::theme::prepare(cx);
+    gpui_kit::init(cx);
+    // Started at launch, so a failure to start shows now rather than at the first push.
+    TokioRuntime::shared().expect("Oriel could not start its HTTP thread");
+    oriel_runtime::set_keep_running(launch.variables.is_set(check::TOOLS_KEEP_RUNNING));
+    LocalStorage::init(LocalStorage::open(&launch.data.local_storage()), cx);
+    oriel_ui::theme::init(cx);
+    actions::init(cx);
+    menus::prepare();
+}
+
+/// Starts the app: its data folder, the single instance, the window and its menus, and the paths
+/// the system hands it.
 pub fn run() {
-    let data = DataRoot::from_environment().expect("Oriel needs a data folder");
-    data.create_folders()
-        .expect("Oriel could not create its data folder");
-    // A second start on this data folder exits here; on Windows it hands its paths over first.
+    // A second start on this data folder hands its paths over and exits here.
     let executable = std::env::current_exe().unwrap_or_default();
     let launch_path = open_paths::from_args(std::env::args_os().skip(1), &executable);
+    let launch = Launch::from_environment(launch_path.clone()).expect("Oriel needs a data folder");
+    let data = launch.data.clone();
+    data.create_folders()
+        .expect("Oriel could not create its data folder");
     let instance = match single_instance::claim(&data, launch_path.as_slice()) {
         single_instance::Claim::First(instance) => instance,
         single_instance::Claim::Handed => return,
@@ -77,22 +94,12 @@ pub fn run() {
     });
 
     app.run(move |cx| {
-        oriel_ui::theme::prepare(cx);
-        gpui_kit::init(cx);
-        // Sync's HTTP runs on a tokio thread of its own, started once here rather than at the
-        // first push.
-        oriel_mode_sync::start_http(cx).expect("Oriel could not start its HTTP thread");
-        LocalStorage::init(LocalStorage::open(&data.shell()), cx);
-        oriel_ui::theme::init(cx);
-        actions::init(cx);
-        menus::prepare();
-        #[cfg(target_os = "macos")]
-        let moving = data.clone();
-        let shell = open_main_window(data, cx);
+        init(&launch, cx);
+        let shell = open_main_window(&launch, cx);
         // Started from the disk image or Downloads, the app offers to move to Applications.
         #[cfg(target_os = "macos")]
         if let Some(main) = cx.try_global::<MainWindow>() {
-            move_to_applications::offer(&moving, main.handle.into(), cx);
+            move_to_applications::offer(&launch.data, &launch.variables, main.handle.into(), cx);
         }
 
         // The system's own quits (the Dock icon's Quit, logging out) wait for work as ⌘Q does.
@@ -105,11 +112,6 @@ pub fn run() {
         })
         .detach();
 
-        if let Some(path) = launch_path {
-            with_main_window(cx, move |shell, window, cx| {
-                shell.open_in_view(&path, window, cx)
-            });
-        }
         cx.spawn(async move |cx| {
             while let Some(paths) = to_open.next().await {
                 cx.update(|cx| {
@@ -145,11 +147,10 @@ fn with_main_window(
         .ok();
 }
 
-/// The window's options, as Electron Oriel's window: where it was last, on the display it was on,
-/// else 1320 × 860 centred, at least 960 × 640, the window buttons inset in a transparent title
-/// bar.
-pub fn main_window_options(data: &DataRoot, cx: &mut App) -> WindowOptions {
-    let saved = WindowState::read(&data.shell());
+/// The window's options: where it was last, on the display it was on, else 1320 × 860 centred, at
+/// least 960 × 640, the window buttons inset in a transparent title bar.
+pub fn main_window_options(launch: &Launch, cx: &mut App) -> WindowOptions {
+    let saved = WindowState::read(&launch.data.window_state());
     let (display_id, bounds) = match WindowState::placement(saved.as_ref(), &Screen::all(cx)) {
         Placement::On { display, bounds } => (display, bounds),
         Placement::Centered(width, height) => (
@@ -167,11 +168,11 @@ pub fn main_window_options(data: &DataRoot, cx: &mut App) -> WindowOptions {
         window_min_size: Some(size(px(960.), px(640.))),
         display_id,
         titlebar: Some(TitlebarOptions {
-            title: Some(Shell::title(stored_mode(cx)).into()),
+            title: Some(Shell::title(Shell::starting_mode(launch, cx)).into()),
             appears_transparent: true,
             traffic_light_position: Some(point(px(16.), px(22.))),
         }),
-        app_id: Some("dev.traydr.latchworks.oriel".into()),
+        app_id: Some(oriel_core_paths::BUNDLE_ID.into()),
         // GPUI caps an inactive window at 30 frames a second by default, so a video playing
         // behind another app's window would drop to about 24 fps. Nothing requests frames while
         // idle, so lifting the cap costs nothing at rest.
@@ -180,16 +181,10 @@ pub fn main_window_options(data: &DataRoot, cx: &mut App) -> WindowOptions {
     }
 }
 
-fn stored_mode(cx: &App) -> oriel_ui::ModeId {
-    LocalStorage::get(cx, shell::MODE_KEY)
-        .and_then(oriel_ui::ModeId::from_key)
-        .unwrap_or(oriel_ui::ModeId::View)
-}
-
-fn open_main_window(data: DataRoot, cx: &mut App) -> Entity<Shell> {
-    let options = main_window_options(&data, cx);
+fn open_main_window(launch: &Launch, cx: &mut App) -> Entity<Shell> {
+    let options = main_window_options(launch, cx);
     let build = |window: &mut gpui_kit::Window, cx: &mut App| {
-        let shell = cx.new(|cx| Shell::new(data, window, cx));
+        let shell = cx.new(|cx| Shell::new(launch, Rc::new(SystemQuit), window, cx));
         let opened = shell.clone();
         window.defer(cx, move |window, cx| {
             if window.focused(cx).is_none() {

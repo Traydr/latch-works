@@ -1,6 +1,5 @@
-//! The pages spike: Tidy's pages on a real catalog, timed in a real window, run by environment
-//! variables as the Library's spike is ([`crate::spike`]), because this Mac allows no scripted
-//! input.
+//! The pages spike: Tidy's pages on a real catalog, timed in a real window, set up by the
+//! launch's variables as the Library's spike is ([`crate::spike`]).
 //!
 //! `ORIEL_SPIKE_TIDY=<file>` waits until Tidy shows a root with its Overview read, then does
 //! what the owner's clicks and keys would, one step at a time, and writes one JSON line per step
@@ -23,36 +22,32 @@
 //! way (a frame can still ask for more as it draws). Every step also says how long its longest
 //! frame took, which is how long the main thread was busy with it, and the CPU time it took on
 //! the main thread and in all; a scroll or a watch says the main thread's CPU time per frame,
-//! which is what one frame costs even when the display's own interval hides it. The frames are drawn all the
-//! time the spike runs, as the Library's spike does. `ORIEL_SPIKE_TIDY_ONLY` picks groups of
+//! which is what one frame costs even when the display's own interval hides it. The frames are
+//! drawn all the time the spike runs, as the Library's spike does. `ORIEL_SPIKE_TIDY_ONLY` picks groups of
 //! steps, `ORIEL_SPIKE_TIDY_HOLD` keeps the app open at the end, to be looked at, and
 //! `ORIEL_SPIKE_TIDY_SETS` says how many of Duplicates' sets to step through (10), reading memory
 //! every 50, as a long session does.
 
 use std::collections::VecDeque;
-use std::fs::{File, OpenOptions};
-use std::io::Write as _;
 use std::time::{Duration, Instant};
 
 use gpui_kit::{App, Context, Window, point, px};
 use oriel_core_tidy::contract::{FileFormat, FileKind};
+use oriel_launch::Variables;
+use oriel_runtime::thread_cpu_ms;
+use oriel_ui::measure::{SpikeLog, frame_stats, memory_fields, process_cpu_ms};
 
 use crate::TidyMode;
 use crate::library::{Filters, LibraryMode};
 use crate::loaded::reads_in_flight;
 use crate::pages::TidyPage;
-use crate::spike::{frame_stats, memory, process_cpu_ms, thread_cpu_ms};
 
-/// The file the spike writes its lines to; the spike runs when it is set.
-pub const LOG_VARIABLE: &str = "ORIEL_SPIKE_TIDY";
-/// The groups of steps to run, comma-separated: `pages`, `rescan`, `redraw`, `library`,
-/// `grid`, `duplicates`.
-pub const ONLY_VARIABLE: &str = "ORIEL_SPIKE_TIDY_ONLY";
-/// Set, the app stays open once the spike is done, to be looked at from outside.
-pub const HOLD_VARIABLE: &str = "ORIEL_SPIKE_TIDY_HOLD";
-/// How many of Duplicates' sets the spike steps through.
-pub const SETS_VARIABLE: &str = "ORIEL_SPIKE_TIDY_SETS";
 /// How long the spike lets Tidy rest once it shows a root, before the first step.
+const SPIKE_TIDY: &str = "ORIEL_SPIKE_TIDY";
+const SPIKE_TIDY_ONLY: &str = "ORIEL_SPIKE_TIDY_ONLY";
+const SPIKE_TIDY_HOLD: &str = "ORIEL_SPIKE_TIDY_HOLD";
+const SPIKE_TIDY_SETS: &str = "ORIEL_SPIKE_TIDY_SETS";
+
 const SETTLE: Duration = Duration::from_millis(2_000);
 /// How long a step may take before the spike writes it down as timed out.
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -167,23 +162,25 @@ struct Running {
 
 /// The pages spike's run: what is left to do, and the step on its way.
 pub struct PageSpike {
-    log: Option<File>,
+    log: Option<SpikeLog>,
     steps: VecDeque<(String, Action)>,
     running: Option<Running>,
     ready_since: Option<Instant>,
     started: bool,
     done: bool,
+    /// The app stays open once the spike is done, to be looked at from outside.
+    hold: bool,
 }
 
 impl PageSpike {
-    pub fn from_environment() -> Option<Self> {
-        let path = std::env::var(LOG_VARIABLE)
-            .ok()
-            .filter(|path| !path.is_empty())?;
-        let log = OpenOptions::new().create(true).append(true).open(path).ok();
+    pub fn start(spikes: &Variables) -> Option<Self> {
+        let path = spikes.get(SPIKE_TIDY)?;
+        let log = SpikeLog::open(path);
+        let sets = spikes.parse(SPIKE_TIDY_SETS).unwrap_or(10);
         Some(Self {
             log,
-            steps: schedule(std::env::var(ONLY_VARIABLE).ok().as_deref()),
+            steps: schedule(spikes.get(SPIKE_TIDY_ONLY), sets),
+            hold: spikes.is_set(SPIKE_TIDY_HOLD),
             running: None,
             ready_since: None,
             started: false,
@@ -264,7 +261,7 @@ impl PageSpike {
         } else {
             self.write(r#""event":"done""#);
             self.done = true;
-            if std::env::var_os(HOLD_VARIABLE).is_none() {
+            if !self.hold {
                 cx.quit();
             }
             return;
@@ -280,14 +277,14 @@ impl PageSpike {
 
     fn write(&mut self, fields: &str) {
         if let Some(log) = self.log.as_mut() {
-            let _ = writeln!(log, "{{{fields}}}");
+            log.write(fields);
         }
     }
 }
 
 /// What the spike does, in order: the groups `ORIEL_SPIKE_TIDY_ONLY` names (a comma-separated
 /// list), or all of them.
-fn schedule(only: Option<&str>) -> VecDeque<(String, Action)> {
+fn schedule(only: Option<&str>, sets: usize) -> VecDeque<(String, Action)> {
     let wanted = |group: &str| only.is_none_or(|only| only.split(',').any(|name| name == group));
     let mut steps = VecDeque::new();
     let mut push = |label: &str, action: Action| steps.push_back((label.to_owned(), action));
@@ -367,10 +364,6 @@ fn schedule(only: Option<&str>) -> VecDeque<(String, Action)> {
         push("duplicates", Action::Go(TidyPage::Duplicates));
         push("versions", Action::GridScroll(3_000.));
         push("versions", Action::Settle);
-        let sets = std::env::var(SETS_VARIABLE)
-            .ok()
-            .and_then(|sets| sets.parse().ok())
-            .unwrap_or(10);
         for index in 1..=sets {
             push(&format!("next-{index}"), Action::NextSet);
             if index % 50 == 0 {
@@ -393,10 +386,6 @@ fn schedule(only: Option<&str>) -> VecDeque<(String, Action)> {
     if only.is_some_and(|only| only.split(',').any(|name| name == "keep")) {
         push("duplicates", Action::Go(TidyPage::Duplicates));
         push("versions", Action::Settle);
-        let sets = std::env::var(SETS_VARIABLE)
-            .ok()
-            .and_then(|sets| sets.parse().ok())
-            .unwrap_or(10);
         for index in 1..=sets {
             push(&format!("keep-{index}"), Action::Keep);
         }
@@ -409,7 +398,7 @@ fn perform(action: &Action, mode: &mut TidyMode, window: &mut Window, cx: &mut C
     let library = mode.library.clone();
     let duplicates = mode.duplicates.clone();
     match action {
-        Action::Go(page) => mode.go(*page, cx),
+        Action::Go(page) => mode.show(*page, cx),
         Action::Sort(key) => {
             library.update(cx, |library, cx| library.spike_sort(key, window, cx));
         }
@@ -456,13 +445,11 @@ fn settled(mode: &TidyMode, cx: &App) -> bool {
 
 /// This process's memory and the pictures Tidy holds, as a JSON line's fields.
 fn memory_line(label: &str, mode: &TidyMode, cx: &App) -> String {
-    let (resident, footprint) = memory();
     let thumbs = mode.thumbs.read(cx);
     let (held, bytes) = thumbs.held();
     format!(
-        r#""event":"memory","label":"{label}","resident_mb":{:.1},"footprint_mb":{:.1},"pictures":{held},"picture_mb":{:.1},"decoded":{}"#,
-        resident as f64 / 1e6,
-        footprint as f64 / 1e6,
+        r#""event":"memory","label":"{label}",{},"pictures":{held},"picture_mb":{:.1},"decoded":{}"#,
+        memory_fields(),
         bytes as f64 / 1e6,
         thumbs.decoded().0,
     )

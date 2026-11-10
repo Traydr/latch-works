@@ -12,6 +12,8 @@ publish.workspace = true
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 # The AVIF misnamed `.jpg`, through the libavif the app converts with.
 oriel-avif.workspace = true
+# Tells a libavif never vendored, which skips, from one that fails to load.
+oriel-core-paths.workspace = true
 # The pinned ffmpeg makes the clips, never one on PATH.
 oriel-tools.workspace = true
 

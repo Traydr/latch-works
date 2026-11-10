@@ -1,50 +1,45 @@
-//! What every Tidy page shares, as Electron Oriel's `EngineProvider` and `NavigationProvider` hold
-//! it: the engine, its roots and settings, the folder on screen, the page, the scans and analyses
-//! running, and a version that moves whenever the catalog changes, so the pages read again.
+//! What every Tidy page shares: the engine, its roots and settings, the folder on screen, the
+//! page, Tidy's work, and a version that moves whenever the catalog changes, so the pages read
+//! again.
 //!
-//! Pages observe this entity. They never touch the engine's jobs themselves: a scan, an analysis
-//! or a change starts here, and its progress reaches the shell from here: the switcher's ring and
+//! Pages observe this entity. They never touch the engine's work themselves: a scan, an analysis
+//! or a change starts here as a job running one of the engine's operations, and the engine's
+//! queue decides when it runs. Its progress reaches the shell from here: the switcher's ring and
 //! the activity panel at the window's bottom right, whose Pause, Resume and Stop come back here.
 
 use std::cell::Cell;
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashSet};
 use std::path::PathBuf;
 
-use gpui_kit::{
-    App, AppContext as _, Context, Entity, EventEmitter, SharedString, Subscription, Task, Window,
-};
+use gpui_kit::{App, AppContext as _, Context, Entity, SharedString, Subscription, Task, Window};
 use oriel_core_paths::DataRoot;
 use oriel_core_tidy::contract::{
     AudioState, CategoryCount, DuplicateScope, EncoderCapabilities, FileFlag, FileFormat, FileKind,
-    OptimizeCategory, Root, RootId, Settings, Tidy,
+    OptimizeCategory, PreferredFolder, Root, RootId, Settings, Tidy,
 };
-use oriel_core_tidy::{AnalysisReport, ScanReport, TidyEngine};
-use oriel_runtime::{Job, JobEvent, JobProgress};
-use oriel_tools::tools_suspend;
+use oriel_core_tidy::contract::{HoldingList, HoldingRequest};
+use oriel_core_tidy::{AnalysisKind, FollowUp, Progress, TidyEngine};
+use oriel_launch::storage_keys::TIDY_VIEW;
+use oriel_runtime::{CancelToken, PauseToken};
+use oriel_ui::ToastExt as _;
 use oriel_ui::{
-    ActivityJob, JobCommand, JobControl, JobState, LocalStorage, ModeActivity, ModeId, ShellState,
-    Toast,
+    ActivityJob, AnyJob, HandOff, Job, JobCommand, JobControl, JobEvent, JobReporter, LocalStorage,
+    ModeActivity, ModeId, ModeReporter, ShellState, Toast, Work,
 };
 
-use crate::actions::{QueuedChange, RunningChange, Tidied, UndoEntry};
-use crate::changes::{Changes, HoldingList, PlanSummary};
-use crate::links::TidyEvent;
-use crate::loaded::Loaded;
+use crate::actions::{Ended, RunningChange, Tidied, UndoEntry};
+use crate::loaded::{Loaded, TidyClient};
 use crate::pages::TidyPage;
 
-/// Electron Oriel's `localStorage` key for the page Tidy showed last.
-pub const VIEW_KEY: &str = "oriel.tidy.view";
-/// The folder Tidy showed last.
-pub const ROOT_KEY: &str = "oriel.tidy.root";
-/// Convert's switches, shared by Convert's Options and Overview's Tidy up.
-pub const CONVERT_GROUPS_KEY: &str = "glazier.convert-groups";
+/// Tidy's root shown last, by its id.
+const ROOT_KEY: &str = "oriel.tidy.root";
+/// Convert's groups the owner closed, as a JSON array, under Electron Oriel's key.
+const CONVERT_GROUPS_KEY: &str = "glazier.convert-groups";
 
-/// The keys Tidy's jobs have in the activity panel; a queued change's is this prefix and its
-/// number.
-const CHANGE_JOB: &str = "change";
-const SCAN_JOB: &str = "scan";
-const ANALYSIS_JOB: &str = "analysis";
-const QUEUED_JOB: &str = "queued-";
+/// The keys Tidy's jobs have in the activity panel, each followed by the job's number.
+const CHANGE_JOB: &str = "change-";
+const SCAN_JOB: &str = "scan-";
+const ANALYSIS_JOB: &str = "analysis-";
 
 /// A starting filter for the Library, set when another page links to a set of files.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -57,7 +52,7 @@ pub struct LibraryPreset {
     pub dir: Option<String>,
 }
 
-/// Convert's three switches (`CONVERT_GROUPS`); videos cover both lossless and re-encoded moves
+/// Convert's three switches; videos cover both lossless and re-encoded moves
 /// to MP4.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ConvertGroup {
@@ -105,6 +100,14 @@ impl ConvertGroup {
         }
     }
 
+    /// The kind of file the group converts, which its "and N more" opens in the Library.
+    pub fn kind(self) -> FileKind {
+        match self {
+            ConvertGroup::Videos => FileKind::Video,
+            _ => FileKind::Image,
+        }
+    }
+
     pub fn target(self) -> &'static str {
         match self {
             ConvertGroup::Pictures => "AVIF",
@@ -112,7 +115,7 @@ impl ConvertGroup {
         }
     }
 
-    /// The files and bytes a group would convert (`groupTotals`).
+    /// The files and bytes a group would convert.
     pub fn totals(self, tidy: &Tidy) -> (i64, i64) {
         tidy.convert
             .categories
@@ -124,17 +127,61 @@ impl ConvertGroup {
     }
 }
 
-/// Whether the engine is open.
+/// Whether the engine is open; while it opens, the task opening it.
 enum Engine {
-    Opening(#[allow(dead_code)] Task<()>),
-    Ready(TidyEngine),
+    Opening { _opening: Task<()> },
+    Ready(TidyClient),
     Failed(SharedString),
 }
 
+/// A job's reporter as the engine's progress.
+pub(crate) struct Reporting(pub JobReporter);
+
+impl Progress for Reporting {
+    fn phase(&self, label: &str, total: u64) {
+        self.0.begin_phase(label.to_owned(), total);
+    }
+
+    fn done(&self, done: u64) {
+        self.0.set_done(done);
+    }
+
+    fn item(&self, item: Option<(&str, Option<f32>)>) {
+        self.0.set_item(item);
+    }
+
+    fn cancel_token(&self) -> Option<&CancelToken> {
+        Some(self.0.cancel_token())
+    }
+
+    fn pause_token(&self) -> Option<&PauseToken> {
+        Some(self.0.pause_token())
+    }
+
+    fn waiting(&self, waiting: bool) {
+        self.0.set_waiting(waiting);
+    }
+
+    fn background(&self, background: bool) {
+        self.0.set_background(background);
+    }
+}
+
+/// What a scan or analysis job does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TaskKind {
+    /// A scan, or a change's follow-up that rescans.
+    Scan,
+    /// An analysis, or a change's follow-up that only analyses.
+    Analysis,
+}
+
 /// A scan or an analysis of one root, and what watches it.
-pub struct Running<T> {
+pub struct Running {
     pub root_id: RootId,
-    pub job: Entity<Job<T>>,
+    pub job: AnyJob,
+    id: u64,
+    kind: TaskKind,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -148,10 +195,9 @@ pub struct Requests {
 }
 
 pub struct TidyState {
-    pub(crate) shell: Entity<ShellState>,
+    shell: Entity<ShellState>,
     data: DataRoot,
     engine: Engine,
-    pub(crate) changes: Changes,
     roots: Vec<Root>,
     settings: Option<Settings>,
     /// What this machine can encode with, once ffmpeg has said.
@@ -163,56 +209,38 @@ pub struct TidyState {
     page: TidyPage,
     catalog_version: u64,
     /// Overview's numbers for the folder on screen; the sidebar's counts read them too.
-    pub(crate) overview: Loaded<Tidy>,
+    overview: Loaded<Tidy>,
     /// The first of holding, for its size in the sidebar and on Overview.
-    pub(crate) holding: Loaded<HoldingList>,
-    scan: Option<Running<ScanReport>>,
-    analysis: Option<Running<AnalysisReport>>,
+    holding: Loaded<HoldingList>,
+    /// Scans and analyses, running or waiting for their turn, in the order asked for.
+    tasks: Vec<Running>,
     /// The sidebar's count of duplicate sets while an analysis runs (`duplicate_sets_shown`).
     held_sets: Cell<Option<i64>>,
-    pub(crate) change: Option<RunningChange>,
-    /// Whether a change holds Tidy's turn for changes: from when it starts until it is reported,
-    /// across each step of Tidy up or of an Undo of several plans.
-    pub(crate) change_turn: bool,
-    /// Whether what holds the turn is an Undo, which adds no new change to `undo`.
-    pub(crate) turn_undoes: bool,
-    /// The changes asked for while another held the turn, in the order they were asked for.
-    pub(crate) queue: VecDeque<QueuedChange>,
-    pub(crate) next_queued: u64,
+    /// Changes, running or waiting for their turn, in the order asked for: the first is the
+    /// change, the rest its queue.
+    pub(crate) changes: Vec<RunningChange>,
+    /// Numbers Tidy's work: its jobs and their keys.
+    pub(crate) next_work: u64,
     /// ⌘Z's history, oldest first.
     pub(crate) undo: Vec<UndoEntry>,
     /// How many changes have landed on `undo`, so a waiting ⌘Z can tell if one has.
     pub(crate) undo_pushed: u64,
     /// How many Undos have stopped or not finished, their entries back on `undo`.
     pub(crate) undo_returned: u64,
-    /// Decisions on their way to the catalog that will add to `undo` when they get there.
+    /// Decisions on their way to the catalog that will add to `undo` when they get there, and
+    /// whether a ⌘Z waits for them.
     pub(crate) undo_entries_coming: usize,
-    /// The newest finished plan started from each place in the UI (`resultFor`).
-    pub(crate) results: HashMap<SharedString, PlanSummary>,
+    pub(crate) undo_waiting: bool,
+    pub(crate) next_undo_key: u64,
     pub(crate) tidied: Option<Tidied>,
     requests: Requests,
     request_number: u64,
     convert_groups: BTreeSet<ConvertGroup>,
-    /// Convert's estimates, by root, category and the files they cover: the size after as a
-    /// share of before, or `None` when the estimate failed or sampled nothing.
-    ratios: HashMap<String, Option<f64>>,
-    pending_ratios: HashSet<String>,
-    /// A root with analysis to catch up on since Tidy started, waiting for a window to follow it.
-    catching_up: Option<RootId>,
-    /// Quiet analyses waiting for the one running to end.
-    queued_analyses: Vec<(RootId, QuietAnalysis)>,
-    /// Rescans waiting for the scan running to end.
-    queued_scans: Vec<RootId>,
+    /// Convert's categories whose estimate for the folder on screen has been asked for and not
+    /// yet landed, and those whose estimate failed since the catalog last changed.
+    estimating: HashSet<OptimizeCategory>,
+    estimates_failed: HashSet<OptimizeCategory>,
 }
-
-/// Why an analysis nobody asked for is starting. The later kind does what the earlier does and more.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum QuietAnalysis {
-    AfterChange,
-    CatchingUp,
-}
-
-impl EventEmitter<TidyEvent> for TidyState {}
 
 /// An estimate of a set of files' size after converting, or why there is none yet.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -222,22 +250,8 @@ pub enum Estimate {
     Known { before: f64, after: f64 },
 }
 
-/// "Pausing after clip-3.mp4 · 47%", while a job the owner paused has a tool that cannot be stopped
-/// where it is still working through a file.
-pub(crate) fn pausing_after(progress: &JobProgress, tools_suspend: bool) -> Option<String> {
-    if tools_suspend || !progress.is_paused() {
-        return None;
-    }
-    let item = progress.item()?;
-    let name = item.rsplit('/').next().unwrap_or(item);
-    Some(match progress.item_share() {
-        Some(share) => format!("Pausing after {name} · {}%", (share * 100.).floor()),
-        None => format!("Pausing after {name}"),
-    })
-}
-
 impl Estimate {
-    /// Size after converting as a share of before (`estimateRatio`).
+    /// Size after converting as a share of before.
     pub fn ratio(self) -> Option<f64> {
         match self {
             Estimate::Known { before, after } if before > 0. => Some(after / before),
@@ -245,15 +259,19 @@ impl Estimate {
         }
     }
 
-    /// "1.7 MB → about 700 KB", or what stands in for it (`describeEstimate`).
+    /// "1.7 MB → about 700 KB", or what stands in for it.
     pub fn describe(self, bytes: f64) -> String {
         match self {
-            Estimate::Pending => format!("{} → estimating…", crate::format::bytes(bytes)),
-            Estimate::Unknown => format!("{} → size unknown", crate::format::bytes(bytes)),
+            Estimate::Pending => {
+                format!("{} → estimating…", oriel_core_domain::format::bytes(bytes))
+            }
+            Estimate::Unknown => {
+                format!("{} → size unknown", oriel_core_domain::format::bytes(bytes))
+            }
             Estimate::Known { after, .. } => format!(
                 "{} → about {}",
-                crate::format::bytes(bytes),
-                crate::format::bytes(after)
+                oriel_core_domain::format::bytes(bytes),
+                oriel_core_domain::format::bytes(after)
             ),
         }
     }
@@ -265,39 +283,35 @@ impl TidyState {
         self.tidied.as_ref()
     }
 
-    /// Whether a change is running or about to.
-    pub fn has_change(&self) -> bool {
-        self.change.is_some()
-    }
-
     /// Opens the engine over `data` in the background; the pages show "Starting…" until it is.
     pub fn new(
         shell: &Entity<ShellState>,
         data: DataRoot,
-        changes: Changes,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let page = LocalStorage::get(cx, VIEW_KEY)
+        let page = LocalStorage::get(cx, TIDY_VIEW)
             .and_then(TidyPage::from_key)
             .unwrap_or(TidyPage::Overview);
         let convert_groups = read_convert_groups(cx);
         let opening = {
             let data = data.clone();
-            cx.spawn(async move |this, cx| {
+            cx.spawn_in(window, async move |this, cx| {
                 let opened = cx
                     .background_spawn(
                         async move { futures::executor::block_on(TidyEngine::open(data)) },
                     )
                     .await;
-                this.update(cx, |this, cx| this.engine_opened(opened, cx))
-                    .ok();
+                this.update_in(cx, |this, window, cx| {
+                    this.engine_opened(opened, window, cx);
+                })
+                .ok();
             })
         };
         Self {
             shell: shell.clone(),
             data,
-            engine: Engine::Opening(opening),
-            changes,
+            engine: Engine::Opening { _opening: opening },
             roots: Vec::new(),
             settings: None,
             capabilities: None,
@@ -307,48 +321,48 @@ impl TidyState {
             catalog_version: 0,
             overview: Loaded::default(),
             holding: Loaded::default(),
-            scan: None,
-            analysis: None,
+            tasks: Vec::new(),
             held_sets: Cell::new(None),
-            change: None,
-            change_turn: false,
-            turn_undoes: false,
-            queue: VecDeque::new(),
-            next_queued: 0,
+            changes: Vec::new(),
+            next_work: 0,
             undo: Vec::new(),
             undo_pushed: 0,
             undo_returned: 0,
             undo_entries_coming: 0,
-            results: HashMap::new(),
+            undo_waiting: false,
+            next_undo_key: 0,
             tidied: None,
             requests: Requests::default(),
             request_number: 0,
             convert_groups,
-            ratios: HashMap::new(),
-            pending_ratios: HashSet::new(),
-            catching_up: None,
-            queued_analyses: Vec::new(),
-            queued_scans: Vec::new(),
+            estimating: HashSet::new(),
+            estimates_failed: HashSet::new(),
         }
     }
 
-    fn engine_opened(&mut self, opened: anyhow::Result<TidyEngine>, cx: &mut Context<Self>) {
+    fn engine_opened(
+        &mut self,
+        opened: anyhow::Result<TidyEngine>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match opened {
             Ok(engine) => {
+                let engine = TidyClient::new(engine);
                 self.engine = Engine::Ready(engine.clone());
-                cx.spawn(async move |this, cx| {
+                cx.spawn_in(window, async move |this, cx| {
                     let (roots, settings) = (
-                        crate::loaded::engine_call(engine.roots(), cx).await,
-                        crate::loaded::engine_call(engine.settings(), cx).await,
+                        engine.ask(|engine| engine.roots(), cx).await,
+                        engine.ask(|engine| engine.settings(), cx).await,
                     );
-                    this.update(cx, |this, cx| {
+                    this.update_in(cx, |this, window, cx| {
                         match (roots, settings) {
                             (Ok(roots), Ok(settings)) => {
                                 this.settings = Some(settings);
                                 let stored = LocalStorage::get(cx, ROOT_KEY)
                                     .and_then(|id| id.parse::<RootId>().ok());
                                 this.set_roots(roots, stored, cx);
-                                this.check_analysis_due(cx);
+                                this.check_analysis_due(window, cx);
                             }
                             (Err(error), _) | (_, Err(error)) => {
                                 this.engine = Engine::Failed(format!("{error:#}").into());
@@ -368,11 +382,15 @@ impl TidyState {
         cx.notify();
     }
 
+    pub fn shell(&self) -> &Entity<ShellState> {
+        &self.shell
+    }
+
     pub fn data(&self) -> &DataRoot {
         &self.data
     }
 
-    pub fn engine(&self) -> Option<&TidyEngine> {
+    pub fn engine(&self) -> Option<&TidyClient> {
         match &self.engine {
             Engine::Ready(engine) => Some(engine),
             _ => None,
@@ -411,6 +429,16 @@ impl TidyState {
         self.overview.data()
     }
 
+    /// Why Overview's numbers could not be read, when they could not.
+    pub fn overview_error(&self) -> Option<&SharedString> {
+        self.overview.error()
+    }
+
+    /// The first of holding for the folder on screen, for its size.
+    pub fn holding_preview(&self) -> Option<&HoldingList> {
+        self.holding.data()
+    }
+
     pub fn settings(&self) -> Option<&Settings> {
         self.settings.as_ref()
     }
@@ -426,12 +454,15 @@ impl TidyState {
         if self.capabilities_asked {
             return;
         }
-        let Some(capabilities) = self.engine().map(TidyEngine::capabilities) else {
+        let Some(capabilities) = self
+            .engine()
+            .map(|engine| engine.ask(|engine| engine.capabilities(), cx))
+        else {
             return;
         };
         self.capabilities_asked = true;
         cx.spawn(async move |this, cx| {
-            let capabilities = crate::loaded::engine_call(capabilities, cx).await;
+            let capabilities = capabilities.await;
             this.update(cx, |this, cx| match capabilities {
                 Ok(capabilities) => {
                     this.capabilities = Some(capabilities);
@@ -453,8 +484,9 @@ impl TidyState {
         self.catalog_version
     }
 
-    pub fn scan(&self) -> Option<&Running<ScanReport>> {
-        self.scan.as_ref()
+    /// The first scan asked for, which runs or is next to.
+    pub fn scan(&self) -> Option<&Running> {
+        self.tasks.iter().find(|task| task.kind == TaskKind::Scan)
     }
 
     /// The count of duplicate sets for the sidebar. An analysis takes similar sets apart and finds
@@ -462,7 +494,7 @@ impl TidyState {
     /// sets are no different. Until it ends the count only rises, and a change the owner made
     /// starts it afresh.
     pub fn duplicate_sets_shown(&self, sets: i64) -> i64 {
-        if self.analysis.is_none() {
+        if self.analysis().is_none() {
             self.held_sets.set(None);
             return sets;
         }
@@ -476,24 +508,30 @@ impl TidyState {
         self.held_sets.set(None);
     }
 
-    pub fn analysis(&self) -> Option<&Running<AnalysisReport>> {
-        self.analysis.as_ref()
+    /// The first analysis asked for, which runs or is next to.
+    pub fn analysis(&self) -> Option<&Running> {
+        self.tasks
+            .iter()
+            .find(|task| task.kind == TaskKind::Analysis)
     }
 
-    /// Whether a scan of `root_id` runs.
+    /// Every analysis, running or waiting for its turn, in the order asked for.
+    pub fn analyses(&self) -> impl Iterator<Item = &Running> {
+        self.tasks
+            .iter()
+            .filter(|task| task.kind == TaskKind::Analysis)
+    }
+
+    /// Whether a scan of `root_id` runs or waits.
     pub fn is_scanning(&self, root_id: RootId) -> bool {
-        self.scan
-            .as_ref()
-            .is_some_and(|scan| scan.root_id == root_id)
+        self.tasks
+            .iter()
+            .any(|task| task.kind == TaskKind::Scan && task.root_id == root_id)
     }
 
-    /// Whether any scan, analysis or change runs, or a change waits for its turn.
+    /// Whether any scan, analysis or change runs or waits for its turn.
     pub fn is_busy(&self) -> bool {
-        self.scan.is_some()
-            || self.analysis.is_some()
-            || self.change.is_some()
-            || self.change_turn
-            || !self.queue.is_empty()
+        !self.tasks.is_empty() || !self.changes.is_empty()
     }
 
     pub fn convert_groups(&self) -> &BTreeSet<ConvertGroup> {
@@ -531,7 +569,7 @@ impl TidyState {
     pub fn go(&mut self, page: TidyPage, cx: &mut Context<Self>) {
         if self.page != page {
             self.page = page;
-            LocalStorage::set(cx, VIEW_KEY, page.key());
+            LocalStorage::set(cx, TIDY_VIEW, page.key());
             cx.notify();
         }
     }
@@ -551,15 +589,19 @@ impl TidyState {
         cx.notify();
     }
 
-    /// Open in View: a file in View's viewer, or a folder (`useOpenInView`). The shell takes it
+    /// Open in View: a file in View's viewer, or a folder. The shell takes it
     /// from here.
     pub fn open_in_view(&mut self, path: impl Into<PathBuf>, cx: &mut Context<Self>) {
-        cx.emit(TidyEvent::OpenInView(path.into()));
+        let target = HandOff::File(path.into());
+        self.shell
+            .update(cx, |shell, cx| shell.hand_off(ModeId::View, target, cx));
     }
 
     /// Sync this folder: Sync shows its profile for it, or starts one.
     pub fn sync_folder(&mut self, folder: impl Into<PathBuf>, cx: &mut Context<Self>) {
-        cx.emit(TidyEvent::SyncFolder(folder.into()));
+        let target = HandOff::Folder(folder.into());
+        self.shell
+            .update(cx, |shell, cx| shell.hand_off(ModeId::Sync, target, cx));
     }
 
     /// ⌘F: the Library, with its search focused.
@@ -590,45 +632,37 @@ impl TidyState {
         }
         self.root_id = Some(root_id);
         LocalStorage::set(cx, ROOT_KEY, &root_id.to_string());
-        self.overview.clear();
-        self.holding.clear();
+        self.forget_root_reads();
         self.changed(cx);
     }
 
     /// Asks whether the root on screen has analysis to catch up on when Tidy starts, such as prints
     /// an older version made: Duplicates suggests one copy of a whole set until they are made again.
-    fn check_analysis_due(&mut self, cx: &mut Context<Self>) {
+    fn check_analysis_due(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (Some(engine), Some(root_id)) = (self.engine().cloned(), self.root_id) else {
             return;
         };
-        cx.spawn(async move |this, cx| {
-            let due = crate::loaded::engine_call(engine.analysis_due(root_id), cx).await;
-            if matches!(due, Ok(true)) {
-                this.update(cx, |this, cx| {
-                    this.catching_up = Some(root_id);
-                    cx.notify();
-                })
-                .ok();
+        cx.spawn_in(window, async move |this, cx| {
+            match engine
+                .ask(move |engine| engine.analysis_due(root_id), cx)
+                .await
+            {
+                Ok(true) => {
+                    this.update_in(cx, |this, window, cx| {
+                        this.start_quiet_analysis(root_id, AnalysisKind::CatchingUp, window, cx);
+                    })
+                    .ok();
+                }
+                Ok(false) => {}
+                Err(error) => log::warn!("Tidy could not tell whether analysis is due: {error:#}"),
             }
         })
         .detach();
     }
 
-    /// Starts the analysis [`Self::check_analysis_due`] found due, now there is a window to follow
-    /// it in.
-    pub fn catch_up_analysis(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(root_id) = self.catching_up.take() {
-            self.start_quiet_analysis(root_id, QuietAnalysis::CatchingUp, window, cx);
-        }
-    }
-
     /// Takes a new list of roots, keeping the one on screen while it is still there.
     fn set_roots(&mut self, roots: Vec<Root>, prefer: Option<RootId>, cx: &mut Context<Self>) {
         self.roots = roots;
-        let roots = &self.roots;
-        let known = |id: &RootId| roots.iter().any(|root| root.id == *id);
-        self.queued_scans.retain(known);
-        self.queued_analyses.retain(|(id, _)| known(id));
         let keep = prefer
             .or(self.root_id)
             .filter(|id| self.roots.iter().any(|root| root.id == *id));
@@ -638,10 +672,17 @@ impl TidyState {
             if let Some(id) = next {
                 LocalStorage::set(cx, ROOT_KEY, &id.to_string());
             }
-            self.overview.clear();
-            self.holding.clear();
+            self.forget_root_reads();
         }
         self.changed(cx);
+    }
+
+    /// The folder on screen is another: what was read for the last one goes.
+    fn forget_root_reads(&mut self) {
+        self.overview.clear();
+        self.holding.clear();
+        self.estimating.clear();
+        self.estimates_failed.clear();
     }
 
     /// Reads the roots again (their counts change with every scan).
@@ -650,7 +691,7 @@ impl TidyState {
             return;
         };
         cx.spawn(async move |this, cx| {
-            let roots = crate::loaded::engine_call(engine.roots(), cx).await;
+            let roots = engine.ask(|engine| engine.roots(), cx).await;
             this.update(cx, |this, cx| match roots {
                 Ok(roots) => this.set_roots(roots, None, cx),
                 Err(error) => log::warn!("Tidy could not list its folders: {error:#}"),
@@ -667,11 +708,7 @@ impl TidyState {
         cx.spawn_in(window, async move |_, cx| {
             if let Err(error) = added.await {
                 cx.update(|window, cx| {
-                    crate::widgets::show_toast(
-                        window,
-                        Toast::error("Tidy can't add that folder").detail(error),
-                        cx,
-                    );
+                    window.show_toast(Toast::error("Tidy can't add that folder").detail(error), cx);
                 })
                 .ok();
             }
@@ -688,11 +725,15 @@ impl TidyState {
         cx: &mut Context<Self>,
     ) -> Task<Result<RootId, SharedString>> {
         let Some(engine) = self.engine().cloned() else {
-            return Task::ready(Err("Tidy is still starting.".into()));
+            let why = self
+                .engine_error()
+                .cloned()
+                .unwrap_or_else(|| "Tidy is still starting.".into());
+            return Task::ready(Err(why));
         };
         cx.spawn_in(window, async move |this, cx| {
-            let added = engine.add_root(&folder).await;
-            let roots = crate::loaded::engine_call(engine.roots(), cx).await;
+            let added = engine.ask(move |engine| engine.add_root(&folder), cx).await;
+            let roots = engine.ask(|engine| engine.roots(), cx).await;
             let root = added.map_err(|error| SharedString::from(format!("{error:#}")))?;
             this.update_in(cx, |this, window, cx| {
                 if let Ok(roots) = roots {
@@ -707,7 +748,8 @@ impl TidyState {
     }
 
     /// Forgets a root and its catalog rows; the folder itself is untouched. What holding keeps for
-    /// it goes to the Trash first, and the root stays if any of it cannot.
+    /// it goes to the Trash first, in its turn behind the changes asked for before, and the root
+    /// stays if any of it cannot.
     pub fn forget_root(&mut self, root_id: RootId, window: &mut Window, cx: &mut Context<Self>) {
         let Some(engine) = self.engine().cloned() else {
             return;
@@ -718,324 +760,289 @@ impl TidyState {
             .find(|root| root.id == root_id)
             .map(|root| root.name.clone())
             .unwrap_or_default();
-        if self.holding_may_be_needed() {
-            let toast = Toast::error("Couldn't forget the folder")
-                .detail("A change is running or waiting. Let it finish or stop it first.");
-            crate::widgets::show_toast(window, toast, cx);
-            return;
-        }
         // Asked before holding goes to the Trash, which cannot be taken back if the root then stays.
         if let Err(error) = engine.check_root_removable(root_id) {
             let toast = Toast::error("Couldn't forget the folder").detail(format!("{error:#}"));
-            crate::widgets::show_toast(window, toast, cx);
+            window.show_toast(toast, cx);
             return;
         }
-        let emptied = self.changes.empty_holding(&engine, root_id);
-        cx.spawn_in(window, async move |this, cx| {
-            let emptied = emptied.await;
-            // Without the executor nothing can be held, so there is nothing to keep the root for.
-            let kept = match &emptied {
-                Ok(result) => !result.failed.is_empty(),
-                Err(error) => !crate::changes::is_not_yet(error),
-            };
-            if kept {
-                this.update_in(cx, |_, window, cx| {
-                    crate::widgets::show_toast(
-                        window,
+        let emptied = engine.queue(|engine| engine.empty_holding(root_id));
+        let label = format!("Forget “{name}”");
+        self.run_holding_work(
+            label,
+            emptied,
+            move |_, ended, window, cx| {
+                let kept = match ended {
+                    Ended::Withdrawn | Ended::Stopped => return,
+                    Ended::Done(result) => !result.failed.is_empty(),
+                    Ended::Failed(error) => {
+                        log::warn!(
+                            "Tidy could not empty holding of “{name}”: {}",
+                            error.message()
+                        );
+                        true
+                    }
+                };
+                if kept {
+                    window.show_toast(
                         Toast::error(format!(
                             "Kept “{name}”: some held files could not go to the Trash."
                         )),
                         cx,
                     );
+                    return;
+                }
+                let roots = engine.ask(move |engine| engine.remove_root(root_id), cx);
+                cx.spawn_in(window, async move |this, cx| {
+                    let roots = roots.await;
+                    this.update_in(cx, |this, window, cx| match roots {
+                        Ok(roots) => this.set_roots(roots, None, cx),
+                        Err(error) => window.show_toast(
+                            Toast::error("Couldn't forget the folder").detail(format!("{error:#}")),
+                            cx,
+                        ),
+                    })
+                    .ok();
                 })
-                .ok();
-                return;
-            }
-            let roots = engine.remove_root(root_id).await;
-            this.update_in(cx, |this, window, cx| match roots {
-                Ok(roots) => this.set_roots(roots, None, cx),
-                Err(error) => crate::widgets::show_toast(
-                    window,
-                    Toast::error("Couldn't forget the folder").detail(format!("{error:#}")),
-                    cx,
-                ),
-            })
-            .ok();
-        })
-        .detach();
+                .detach();
+            },
+            window,
+            cx,
+        );
     }
 
     // Scans and analyses.
 
-    /// Scans a root on the engine's job, unless one already runs. The background analysis it
-    /// calls for follows as a job of its own, as glazier-core queues it.
+    /// Scans a root, unless a scan of it runs or waits already. The background analysis it calls
+    /// for follows as a job of its own.
     pub fn start_scan(&mut self, root_id: RootId, window: &mut Window, cx: &mut Context<Self>) {
         if self.is_scanning(root_id) {
             return;
         }
-        self.say_if_waiting_on_paused_work(window, cx);
-        self.rescan_after_change(root_id, window, cx);
-    }
-
-    /// A scan a change asks for. One of the root running may have read it before the change, so
-    /// this waits for that to end, as it does for a scan of another root.
-    pub fn rescan_after_change(
-        &mut self,
-        root_id: RootId,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.scan.is_some() {
-            if !self.queued_scans.contains(&root_id) {
-                self.queued_scans.push(root_id);
-            }
-            return;
-        }
         let Some(engine) = self.engine().cloned() else {
             return;
         };
-        let job = engine.start_scan_only(root_id, cx);
-        // Registered before `watch`'s, whose handler drops these subscriptions with the slot. What
-        // waited for this scan is deferred past that handler, which empties the slot.
-        let mut subscriptions =
-            vec![
-                cx.subscribe_in(&job, window, |this, job, event: &JobEvent, window, cx| {
-                    let analyze = match (event, job.read(cx).value()) {
-                        (JobEvent::Succeeded, Some(report)) => report.follow_up.analyze.clone(),
-                        _ => Vec::new(),
-                    };
-                    for root_id in analyze {
-                        this.start_quiet_analysis(root_id, QuietAnalysis::CatchingUp, window, cx);
-                    }
-                    cx.defer_in(window, Self::start_queued_scans);
-                }),
-            ];
-        subscriptions.extend(self.watch(&job, window, cx, |this| &mut this.scan));
-        self.scan = Some(Running {
-            root_id,
-            job,
-            _subscriptions: subscriptions,
+        self.say_if_waiting_on_paused_work(window, cx);
+        let scan = engine.queue(|engine| engine.scan(root_id));
+        let job = Job::run_blocking("Scanning", "tidy scan", cx, move |reporter| {
+            scan.run(&Reporting(reporter))
         });
-        self.report_activity(cx);
-        cx.notify();
+        let analyze = cx.subscribe_in(
+            &job,
+            window,
+            move |this, job, event: &JobEvent, window, cx| {
+                if let (JobEvent::Succeeded, Some(report)) = (event, job.read(cx).value())
+                    && report.analysis_due
+                {
+                    this.start_quiet_analysis(root_id, AnalysisKind::CatchingUp, window, cx);
+                }
+            },
+        );
+        self.add_task(TaskKind::Scan, root_id, job, vec![analyze], window, cx);
     }
 
-    /// Fingerprints, detail prints and loudness for a root ("Check now"). With an analysis of it
-    /// in the background already, that one runs as asked for from now on instead.
+    /// Fingerprints, detail prints and loudness for a root ("Check now"). With an analysis in the
+    /// background already, that one runs as asked for from now on instead.
     pub fn start_analysis(&mut self, root_id: RootId, window: &mut Window, cx: &mut Context<Self>) {
         let Some(engine) = self.engine().cloned() else {
             return;
         };
-        if self.analysis.is_some() {
+        if self.analysis().is_some() {
             engine.promote_analysis(root_id);
             return;
         }
         self.say_if_waiting_on_paused_work(window, cx);
-        let job = engine.start_analysis(root_id, cx);
-        self.run_analysis(root_id, job, window, cx);
+        self.start_quiet_analysis(root_id, AnalysisKind::AskedFor, window, cx);
     }
 
-    /// The analysis glazier-core queues after a change or a settings change: it runs only while no
-    /// asked-for work waits, and steps aside when some arrives. While an analysis runs it waits for
-    /// that one to end, which may have read the catalog before the change.
+    /// The analysis due after a change or a settings change: it runs only while no asked-for work
+    /// waits, and steps aside when some arrives. One already waiting for the root takes it in.
     pub fn start_background_analysis(
         &mut self,
         root_id: RootId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.start_quiet_analysis(root_id, QuietAnalysis::AfterChange, window, cx);
+        self.start_quiet_analysis(root_id, AnalysisKind::AfterChange, window, cx);
     }
 
     fn start_quiet_analysis(
         &mut self,
         root_id: RootId,
-        kind: QuietAnalysis,
+        kind: AnalysisKind,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.analysis.is_some() {
-            match self
-                .queued_analyses
-                .iter_mut()
-                .find(|(queued, _)| *queued == root_id)
-            {
-                Some((_, queued)) => *queued = (*queued).max(kind),
-                None => self.queued_analyses.push((root_id, kind)),
-            }
-            return;
-        }
         let Some(engine) = self.engine().cloned() else {
             return;
         };
-        let job = match kind {
-            QuietAnalysis::AfterChange => engine.start_background_analysis(root_id, cx),
-            QuietAnalysis::CatchingUp => engine.start_catch_up_analysis(root_id, cx),
-        };
-        self.run_analysis(root_id, job, window, cx);
+        let analysis = engine.queue(|engine| engine.analyze(root_id, kind));
+        let job = Job::run_blocking(
+            "Finding similar versions",
+            "tidy analysis",
+            cx,
+            move |reporter| analysis.run(&Reporting(reporter)),
+        );
+        self.add_task(TaskKind::Analysis, root_id, job, Vec::new(), window, cx);
     }
 
-    /// Starts what waited for the scan that has just ended.
-    fn start_queued_scans(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        for root_id in std::mem::take(&mut self.queued_scans) {
-            self.rescan_after_change(root_id, window, cx);
-        }
-    }
-
-    /// Starts what waited for the analysis that has just ended.
-    fn start_queued_analyses(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        for (root_id, kind) in std::mem::take(&mut self.queued_analyses) {
-            self.start_quiet_analysis(root_id, kind, window, cx);
-        }
-    }
-
-    /// The owner pressed Stop on a scan or an analysis, and asks for quiet: what waited goes too.
-    /// Forgetting a folder also stops its work, and leaves what waits for other folders.
-    fn forget_queued_work(&mut self) {
-        self.queued_scans.clear();
-        self.queued_analyses.clear();
-    }
-
-    fn run_analysis(
+    /// Runs what a change left to do: its scans, in the change's place in the engine's queue,
+    /// then the analysis due. One job, listed as a scan when it rescans.
+    pub(crate) fn follow_up(
         &mut self,
-        root_id: RootId,
-        job: Entity<Job<AnalysisReport>>,
+        follow_up: FollowUp,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Deferred past `watch`'s handler, which empties the slot and drops these subscriptions.
-        let mut subscriptions =
-            vec![
-                cx.subscribe_in(&job, window, |_, _, _: &JobEvent, window, cx| {
-                    cx.defer_in(window, Self::start_queued_analyses);
-                }),
-            ];
-        subscriptions.extend(self.watch(&job, window, cx, |this| &mut this.analysis));
-        self.analysis = Some(Running {
+        let (kind, root_id, name) = match (follow_up.rescan.first(), follow_up.analyze.first()) {
+            (Some(root_id), _) => (TaskKind::Scan, *root_id, "Scanning"),
+            (None, Some(root_id)) => (TaskKind::Analysis, *root_id, "Finding similar versions"),
+            (None, None) => return,
+        };
+        let Some(engine) = self.engine().cloned() else {
+            return;
+        };
+        let work = engine.queue(|engine| engine.follow_up(follow_up));
+        let job = Job::run_blocking(name, "tidy follow-up", cx, move |reporter| {
+            work.run(&Reporting(reporter))
+        });
+        self.add_task(kind, root_id, job, Vec::new(), window, cx);
+    }
+
+    /// Follows a scan or analysis job: its phases move the catalog's version, so the pages show
+    /// what it has found so far, and its end takes it off the list and reads the roots again.
+    fn add_task<T: Send + 'static>(
+        &mut self,
+        kind: TaskKind,
+        root_id: RootId,
+        job: Entity<Job<T>>,
+        mut subscriptions: Vec<Subscription>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let id = self.next_work;
+        self.next_work += 1;
+        let mut phase = SharedString::default();
+        subscriptions.push(cx.observe(&job, move |this, job, cx| {
+            let now = job.read(cx).progress().phase().clone();
+            if now != phase {
+                phase = now;
+                this.changed(cx);
+            }
+            this.report_activity(cx);
+            cx.notify();
+        }));
+        subscriptions.push(cx.subscribe_in(
+            &job,
+            window,
+            move |this, job, event: &JobEvent, window, cx| {
+                let job = job.read(cx);
+                let (name, worked) = (job.name().clone(), !job.progress().phase().is_empty());
+                this.tasks.retain(|task| task.id != id);
+                if let JobEvent::Failed(error) = event
+                    && !error.is_cancelled()
+                {
+                    let toast = Toast::error(format!("{name} failed")).detail(error.message());
+                    window.show_toast(toast, cx);
+                }
+                this.report_activity(cx);
+                // What the job wrote after its last phase began shows now. Work that joined
+                // another waiting for its turn wrote nothing.
+                if worked {
+                    this.changed(cx);
+                    this.reload_roots(cx);
+                }
+                cx.notify();
+            },
+        ));
+        self.tasks.push(Running {
             root_id,
-            job,
+            job: job.into(),
+            id,
+            kind,
             _subscriptions: subscriptions,
         });
         self.report_activity(cx);
         cx.notify();
     }
 
-    /// Follows a scan or analysis: its phases move the catalog's version, so the pages show what
-    /// it has found so far, and its end clears its slot and reads the roots again.
-    fn watch<T: Send + 'static>(
-        &mut self,
-        job: &Entity<Job<T>>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-        slot: fn(&mut Self) -> &mut Option<Running<T>>,
-    ) -> Vec<Subscription> {
-        let mut phase = SharedString::default();
-        vec![
-            cx.observe(job, move |this, job, cx| {
-                let now = job.read(cx).progress().phase().clone();
-                if now != phase {
-                    phase = now;
-                    this.changed(cx);
-                }
-                // How far it has got, for the activity panel.
-                this.report_activity(cx);
-                cx.notify();
-            }),
-            cx.subscribe_in(
-                job,
-                window,
-                move |this, job, event: &JobEvent, window, cx| {
-                    let name = job.read(cx).name().clone();
-                    *slot(this) = None;
-                    if let JobEvent::Failed(error) = event
-                        && !error.is_cancelled()
-                    {
-                        let toast = Toast::error(format!("{name} failed")).detail(error.message());
-                        crate::widgets::show_toast(window, toast, cx);
-                    }
-                    this.report_activity(cx);
-                    // What the job wrote after its last phase began shows now; an analysis no longer
-                    // ends with its scan, whose new scan time used to re-read every page.
-                    this.changed(cx);
-                    this.reload_roots(cx);
-                },
-            ),
-        ]
-    }
-
-    /// Stops the scan or analysis running; what it finished stays.
+    /// Stops the scan or analysis running; what it finished stays. The owner asks for quiet, so
+    /// what waits goes too.
     pub fn stop_work(&mut self, cx: &mut Context<Self>) {
-        self.forget_queued_work();
-        if let Some(scan) = &self.scan {
-            scan.job.update(cx, |job, cx| job.cancel(cx));
-        } else if let Some(analysis) = &self.analysis {
-            analysis.job.update(cx, |job, cx| job.cancel(cx));
+        if let Some(task) = self.scan().or(self.analysis()) {
+            let (id, job) = (task.id, task.job.clone());
+            self.stop_waiting_tasks(id, cx);
+            job.cancel(cx);
         }
     }
 
-    /// Pause, Resume or Stop pressed in the activity panel on one of Tidy's jobs: the change
-    /// running, a change waiting in the queue, the scan or the analysis. A paused job finishes the
-    /// step in flight first (`pauseJob`); a stopped one keeps what it finished (`cancelJob`).
-    pub fn on_job_command(
-        &mut self,
-        command: &JobCommand,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        fn control<T: 'static>(job: &Entity<Job<T>>, control: JobControl, cx: &mut App) {
-            job.update(cx, |job, cx| match control {
-                JobControl::Pause => job.set_paused(true, cx),
-                JobControl::Resume => job.set_paused(false, cx),
-                JobControl::Stop => job.cancel(cx),
-            });
-        }
-        if command.mode() != ModeId::Tidy {
-            return;
-        }
-        if command.control() == JobControl::Stop && matches!(command.key(), SCAN_JOB | ANALYSIS_JOB)
+    /// Stops and lets go of every scan and analysis but `kept` that has not begun (waiting for
+    /// its turn, or not yet said): it goes from the list at once, as it never ran.
+    fn stop_waiting_tasks(&mut self, kept: u64, cx: &mut Context<Self>) {
+        self.tasks.retain(|task| {
+            let waiting = task.id != kept && task.job.progress(cx).phase().is_empty();
+            if waiting {
+                task.job.cancel(cx);
+            }
+            !waiting
+        });
+        self.report_activity(cx);
+        cx.notify();
+    }
+
+    /// Pause, Resume or Stop pressed in the activity panel on one of Tidy's jobs. A paused job
+    /// finishes the step in flight first; a stopped one keeps what it finished.
+    pub fn on_job_command(&mut self, command: &JobCommand, cx: &mut Context<Self>) {
+        let key = command.key();
+        if let Some(index) = self
+            .changes
+            .iter()
+            .position(|change| Self::change_key(change) == key)
         {
-            self.forget_queued_work();
-        }
-        match (command.key(), command.control()) {
-            (CHANGE_JOB, JobControl::Stop) => self.stop_change(cx),
-            (CHANGE_JOB, pause) => {
-                if let Some(change) = &self.change {
-                    change.set_paused(pause == JobControl::Pause, cx);
-                }
+            match command.control() {
+                // Behind the first, Stop takes it off the queue.
+                JobControl::Stop => self.stop_change_at(index, index > 0, cx),
+                pause => self.changes[index]
+                    .job
+                    .set_paused(pause == JobControl::Pause, cx),
             }
-            (SCAN_JOB, how) => {
-                if let Some(scan) = &self.scan {
-                    control(&scan.job, how, cx);
+        } else if let Some((id, task)) = self
+            .tasks
+            .iter()
+            .find(|task| Self::task_key(task) == key)
+            .map(|task| (task.id, task.job.clone()))
+        {
+            match command.control() {
+                JobControl::Stop => {
+                    self.stop_waiting_tasks(id, cx);
+                    task.cancel(cx);
                 }
+                pause => task.set_paused(pause == JobControl::Pause, cx),
             }
-            (ANALYSIS_JOB, how) => {
-                if let Some(analysis) = &self.analysis {
-                    control(&analysis.job, how, cx);
-                }
-            }
-            (key, JobControl::Stop) => {
-                if let Some(id) = key
-                    .strip_prefix(QUEUED_JOB)
-                    .and_then(|id| id.parse::<u64>().ok())
-                {
-                    self.drop_queued(id, window, cx);
-                }
-            }
-            _ => {}
         }
         self.report_activity(cx);
+    }
+
+    /// A scan's or an analysis's key in the activity panel, which stays its own while it runs.
+    fn task_key(task: &Running) -> String {
+        match task.kind {
+            TaskKind::Scan => format!("{SCAN_JOB}{}", task.id),
+            TaskKind::Analysis => format!("{ANALYSIS_JOB}{}", task.id),
+        }
+    }
+
+    /// A change's key in the activity panel, which stays its own while it waits and runs.
+    fn change_key(change: &RunningChange) -> String {
+        format!("{CHANGE_JOB}{}", change.id)
     }
 
     /// Whether a scan or an analysis holds the turn, paused. Paused background analysis steps
     /// aside for what the owner asks for, so it holds nothing.
     fn paused_quiet_work(&self, cx: &App) -> bool {
-        self.scan
-            .as_ref()
-            .is_some_and(|scan| scan.job.read(cx).progress().is_paused())
-            || self.analysis.as_ref().is_some_and(|analysis| {
-                let progress = analysis.job.read(cx).progress();
-                progress.is_paused() && !progress.is_background()
-            })
+        self.tasks.iter().any(|task| {
+            let progress = task.job.progress(cx);
+            progress.is_paused() && (task.kind == TaskKind::Scan || !progress.is_background())
+        })
     }
 
     /// What the owner just asked for waits behind paused work until they resume or stop it, which
@@ -1046,110 +1053,70 @@ impl TidyState {
         cx: &mut Context<Self>,
     ) {
         let paused_change = self
-            .change
-            .as_ref()
-            .is_some_and(|change| change.progress(cx).is_paused());
+            .changes
+            .first()
+            .is_some_and(|change| change.job.progress(cx).is_paused());
         if paused_change || self.paused_quiet_work(cx) {
             let toast = Toast::info("Waiting for paused work")
                 .detail("This goes on once that work is resumed or stopped.");
-            crate::widgets::show_toast(window, toast, cx);
+            window.show_toast(toast, cx);
         }
     }
 
     /// Tells the shell what Tidy is doing: on the switcher, a ring while a change runs and a dot
-    /// while a scan or an analysis does (`jobActivity`); in the activity panel, every job, with
-    /// what waits for its turn as queued.
+    /// while a scan or an analysis does; in the activity panel, every job, the changes first.
+    /// Quitting waits for a change, unless it is paused, which cannot finish (one piece of work
+    /// runs at a time), or waits for its turn behind a paused scan or analysis, and so has touched
+    /// nothing yet.
     pub(crate) fn report_activity(&mut self, cx: &mut Context<Self>) {
-        let activity = if let Some(change) = &self.change {
-            // A paused change cannot finish (one job runs at a time), so it does not hold
-            // quitting, as Electron Oriel's `busy` has it: a dot, not the ring quitting waits on.
-            // Nor can one waiting for its turn behind a paused scan or analysis, and that has
-            // touched nothing yet.
-            let progress = change.progress(cx);
-            Some(
-                if progress.is_paused() || (progress.is_waiting() && self.paused_quiet_work(cx)) {
-                    ModeActivity::Working
-                } else {
-                    ModeActivity::Progress(change.fraction(cx))
-                },
-            )
-        } else if self.change_turn || self.scan.is_some() || self.analysis.is_some() {
-            Some(ModeActivity::Working)
-        } else {
-            None
+        let (shown, holds_quit) = match self.changes.first() {
+            Some(change) => {
+                let progress = change.job.progress(cx);
+                let stuck =
+                    progress.is_paused() || (progress.is_waiting() && self.paused_quiet_work(cx));
+                let ratio = progress.fraction_with_item().unwrap_or(0.);
+                (Some(ModeActivity::Progress(ratio)), !stuck)
+            }
+            None if self.tasks.is_empty() => (None, false),
+            None => (Some(ModeActivity::Working), false),
         };
         let jobs = self.activity_jobs(cx);
-        let board = self.shell.read(cx).jobs().clone();
-        self.shell.update(cx, |shell, cx| {
-            shell.set_activity(ModeId::Tidy, activity, cx);
-        });
-        board.update(cx, |board, cx| board.set_jobs(ModeId::Tidy, jobs, cx));
+        ModeReporter::new(&self.shell, ModeId::Tidy).report(
+            Work {
+                shown,
+                holds_quit,
+                jobs,
+            },
+            cx,
+        );
     }
 
-    /// Tidy's jobs as the activity panel lists them: the change, then the scan and the analysis,
-    /// then the changes queued behind them.
+    /// Tidy's jobs as the activity panel lists them: the change, the scans and analyses, then the
+    /// changes queued behind the first, each as the engine says it stands.
     fn activity_jobs(&self, cx: &App) -> Vec<ActivityJob> {
-        fn job_of(key: &'static str, name: SharedString, progress: &JobProgress) -> ActivityJob {
-            let label = if progress.phase().is_empty() {
-                name
-            } else {
-                progress.phase().clone()
-            };
-            // A tool that cannot be stopped where it is runs on until its file is done, and
-            // until then the job is not paused and does not say it is.
-            let still_going = pausing_after(progress, tools_suspend());
-            let state = if still_going.is_some() {
-                JobState::Running
-            } else if progress.is_paused() {
-                JobState::Paused
-            } else if progress.is_waiting() {
-                JobState::Queued
-            } else if progress.is_background() {
-                JobState::Background
-            } else {
-                JobState::Running
-            };
-            let share = progress.item_share().filter(|_| progress.total() > 0);
-            let mut job = ActivityJob::new(key, label);
-            // A step that says how far it has got moves the whole bar along with it.
-            if let Some(share) = share {
-                job = job.progress((progress.done() as f32 + share) / progress.total() as f32);
+        let changes = (0..self.changes.len()).filter_map(|index| {
+            let change = &self.changes[index];
+            if change.withdrawn(cx) {
+                return None;
             }
-            if let Some(item) = progress.item() {
-                let name = item.rsplit('/').next().unwrap_or(item);
-                job = job.detail(match (still_going, share) {
-                    (Some(words), _) => words,
-                    (None, Some(share)) => format!("{name} · {}%", (share * 100.).floor()),
-                    (None, None) => name.to_owned(),
-                });
-            }
-            job.state(state)
-                .counts(progress.done(), progress.total())
-                // Work waiting for its turn has nothing to pause yet; a paused job resumes.
-                .pausable(state != JobState::Queued)
-                .stoppable(true)
-        }
-        let mut jobs = Vec::new();
-        if let Some(change) = &self.change {
-            let progress = change.progress(cx);
-            let job = job_of(CHANGE_JOB, change.name(cx), &progress);
-            // Until its plan is drafted it has no job to pause.
-            let pausable = job.is_pausable() && change.has_job();
-            jobs.push(job.pausable(pausable));
-        }
-        if let Some(scan) = &self.scan {
-            let job = scan.job.read(cx);
-            jobs.push(job_of(SCAN_JOB, job.name().clone(), job.progress()));
-        }
-        if let Some(analysis) = &self.analysis {
-            let job = analysis.job.read(cx);
-            jobs.push(job_of(ANALYSIS_JOB, job.name().clone(), job.progress()));
-        }
-        jobs.extend(self.queue.iter().map(|queued| {
-            ActivityJob::new(format!("{QUEUED_JOB}{}", queued.id), queued.label.clone())
-                .state(JobState::Queued)
-                .stoppable(true)
-        }));
+            let key = Self::change_key(change);
+            Some(if index == 0 {
+                change.job.activity(key, cx)
+            } else {
+                // Behind another change, it is the change asked for, not yet a plan.
+                ActivityJob::new(key, change.label.clone())
+                    .state(oriel_ui::JobState::Queued)
+                    .stoppable(true)
+            })
+        });
+        let mut jobs: Vec<ActivityJob> = changes.collect();
+        let queued = jobs.split_off(jobs.len().min(1));
+        jobs.extend(
+            self.tasks
+                .iter()
+                .map(|task| task.job.activity(Self::task_key(task), cx)),
+        );
+        jobs.extend(queued);
         jobs
     }
 
@@ -1168,8 +1135,9 @@ impl TidyState {
         // Shown at once, so a switch does not spring back while the engine stores it.
         self.settings = Some(settings.clone());
         cx.notify();
+        let update = engine.ask(|engine| engine.update_settings(settings), cx);
         cx.spawn_in(window, async move |this, cx| {
-            let update = engine.update_settings(settings).await;
+            let update = update.await;
             this.update_in(cx, |this, window, cx| match update {
                 Ok(update) => {
                     this.settings = Some(update.settings);
@@ -1180,8 +1148,7 @@ impl TidyState {
                         this.start_background_analysis(root_id, window, cx);
                     }
                 }
-                Err(error) => crate::widgets::show_toast(
-                    window,
+                Err(error) => window.show_toast(
                     Toast::error("Couldn't change the setting").detail(format!("{error:#}")),
                     cx,
                 ),
@@ -1191,71 +1158,118 @@ impl TidyState {
         .detach();
     }
 
+    /// Makes a folder inside the root on screen preferred for duplicate review, with a toast and
+    /// ⌘Z to take it back.
+    pub fn prefer_folder(&mut self, dir: String, window: &mut Window, cx: &mut Context<Self>) {
+        let (Some(settings), Some(root_id)) = (self.settings.clone(), self.root_id) else {
+            return;
+        };
+        let label = crate::labels::folder(&dir).to_owned();
+        if settings
+            .preferred_folders
+            .iter()
+            .any(|entry| entry.root_id == root_id && entry.dir == dir)
+        {
+            let toast = Toast::info(format!("{label} is already preferred"));
+            window.show_toast(toast, cx);
+            return;
+        }
+        let before = settings.clone();
+        let mut next = settings;
+        next.preferred_folders
+            .push(PreferredFolder { root_id, dir });
+        self.update_settings(next, window, cx);
+        let restore = before.clone();
+        let undo = self.push_undo(move |state, window, cx| {
+            state.update_settings(restore.clone(), window, cx);
+            window.show_toast(Toast::info("Undid the preferred folder"), cx);
+        });
+        let this = cx.entity().downgrade();
+        let toast = Toast::done(format!("Preferring {label}"))
+            .detail("Duplicate sets keep their copy there first.")
+            .action("Undo", move |window, cx| {
+                let before = before.clone();
+                this.update(cx, |state, cx| {
+                    state.drop_undo(undo);
+                    state.update_settings(before, window, cx);
+                })
+                .ok();
+            });
+        window.show_toast(toast, cx);
+    }
+
     /// The catalog may have changed: every page reads again, and so do Overview's numbers and
     /// holding's size.
     pub fn changed(&mut self, cx: &mut Context<Self>) {
         self.catalog_version += 1;
-        self.refresh_shared(cx);
+        self.estimates_failed.clear();
+        self.read_overview(cx);
+        if let (Some(engine), Some(root_id)) = (self.engine(), self.root_id) {
+            let request = HoldingRequest {
+                root_id,
+                offset: 0,
+                limit: 1,
+            };
+            let holding = engine.ask(|engine| engine.list_holding(request), cx);
+            self.holding.load(holding, |this| &mut this.holding, cx);
+        }
         cx.notify();
     }
 
-    fn refresh_shared(&mut self, cx: &mut Context<Self>) {
-        let (Some(engine), Some(root_id)) = (self.engine().cloned(), self.root_id) else {
+    /// Reads Overview's numbers again, then asks for the estimates they lack.
+    fn read_overview(&mut self, cx: &mut Context<Self>) {
+        let (Some(engine), Some(root_id)) = (self.engine(), self.root_id) else {
             return;
         };
+        let overview = engine.ask(move |engine| engine.overview(root_id), cx);
         self.overview.load_then(
-            engine.overview(root_id),
+            overview,
             |this| &mut this.overview,
             Self::want_estimates,
             cx,
         );
-        let request = crate::changes::HoldingRequest {
-            root_id,
-            offset: 0,
-            limit: 1,
-        };
-        let holding = self.changes.list_holding(&engine, request);
-        self.holding.load(holding, |this| &mut this.holding, cx);
     }
 }
 
 impl TidyState {
-    fn ratio_key(root_id: RootId, category: OptimizeCategory, files: i64, bytes: i64) -> String {
-        format!("{root_id}:{category}:{files}:{bytes}")
-    }
-
     /// Asks for an estimate of each category Overview counts that has none yet. Each converts a
-    /// small sample once; the engine caches them as well.
+    /// small sample once and the engine keeps it, so Overview read again carries it.
     fn want_estimates(&mut self, cx: &mut Context<Self>) {
-        let (Some(root_id), Some(tidy)) = (self.root_id, self.overview.data()) else {
+        let (Some(engine), Some(root_id), Some(tidy)) =
+            (self.engine().cloned(), self.root_id, self.overview.data())
+        else {
             return;
         };
-        let wanted: Vec<(OptimizeCategory, String)> = tidy
+        let wanted: Vec<OptimizeCategory> = tidy
             .convert
             .categories
             .iter()
-            .filter(|entry| entry.files > 0)
-            .map(|entry| {
-                let key = Self::ratio_key(root_id, entry.category, entry.files, entry.bytes);
-                (entry.category, key)
+            .filter(|entry| entry.files > 0 && entry.estimate.is_none())
+            .map(|entry| entry.category)
+            .filter(|category| {
+                !self.estimating.contains(category) && !self.estimates_failed.contains(category)
             })
-            .filter(|(_, key)| !self.ratios.contains_key(key) && !self.pending_ratios.contains(key))
             .collect();
-        for (category, key) in wanted {
-            self.pending_ratios.insert(key.clone());
-            let Some(engine) = self.engine().cloned() else {
-                return;
-            };
-            let estimate = self.changes.estimate_optimize(&engine, root_id, category);
+        for category in wanted {
+            self.estimating.insert(category);
+            let estimate = engine.ask(
+                move |engine| engine.estimate_optimize(root_id, category),
+                cx,
+            );
             cx.spawn(async move |this, cx| {
-                let ratio = match estimate.await {
-                    Ok(estimate) if estimate.sampled > 0 => Some(estimate.ratio),
-                    _ => None,
-                };
+                let estimate = estimate.await;
                 this.update(cx, |this, cx| {
-                    this.pending_ratios.remove(&key);
-                    this.ratios.insert(key, ratio);
-                    cx.notify();
+                    if this.root_id != Some(root_id) || !this.estimating.remove(&category) {
+                        return;
+                    }
+                    match estimate {
+                        Ok(_) => this.read_overview(cx),
+                        Err(error) => {
+                            log::warn!("Tidy could not estimate {category}: {error:#}");
+                            this.estimates_failed.insert(category);
+                            cx.notify();
+                        }
+                    }
                 })
                 .ok();
             })
@@ -1264,7 +1278,7 @@ impl TidyState {
     }
 
     /// What converting `categories` would leave, summed; a category that failed makes the sum
-    /// unknown (`useConvertEstimates`).
+    /// unknown.
     pub fn estimate(&self, categories: &[OptimizeCategory]) -> Estimate {
         self.estimate_of(categories, |entry| entry.bytes)
     }
@@ -1280,7 +1294,7 @@ impl TidyState {
         categories: &[OptimizeCategory],
         counted: impl Fn(&CategoryCount) -> i64,
     ) -> Estimate {
-        let (Some(root_id), Some(tidy)) = (self.root_id, self.overview.data()) else {
+        let Some(tidy) = self.overview.data() else {
             return Estimate::Pending;
         };
         let (mut before, mut after, mut pending, mut unknown) = (0., 0., false, false);
@@ -1289,11 +1303,13 @@ impl TidyState {
                 continue;
             }
             before += counted(entry) as f64;
-            let key = Self::ratio_key(root_id, entry.category, entry.files, entry.bytes);
-            match self.ratios.get(&key) {
+            match &entry.estimate {
+                Some(estimate) if estimate.sampled > 0 => {
+                    after += counted(entry) as f64 * estimate.ratio;
+                }
+                Some(_) => unknown = true,
+                None if self.estimates_failed.contains(&entry.category) => unknown = true,
                 None => pending = true,
-                Some(None) => unknown = true,
-                Some(Some(ratio)) => after += counted(entry) as f64 * ratio,
             }
         }
         if unknown {
@@ -1306,7 +1322,7 @@ impl TidyState {
     }
 }
 
-/// The switches Convert last had on, all three at first (`readGroups`).
+/// The switches Convert last had on, all three at first.
 fn read_convert_groups(cx: &App) -> BTreeSet<ConvertGroup> {
     let stored = LocalStorage::get(cx, CONVERT_GROUPS_KEY)
         .and_then(|text| serde_json::from_str::<Vec<String>>(text).ok());

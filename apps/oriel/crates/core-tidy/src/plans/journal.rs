@@ -1,4 +1,4 @@
-//! The journal, from the history half of glazier-core's `plans/executor.ts`: every plan with its
+//! The journal: every plan with its
 //! steps as History lists them, what each plan is about, and plans a crash left mid-change.
 
 use std::path::Path;
@@ -37,7 +37,8 @@ pub struct StepRecord {
 }
 
 impl StepRecord {
-    pub fn from_abs(&self) -> std::path::PathBuf {
+    /// Where the step's file is, on this machine.
+    pub fn source_path(&self) -> std::path::PathBuf {
         to_absolute_path(&self.root_path, &self.from_rel)
     }
 }
@@ -113,6 +114,24 @@ struct PlanRow {
     first_from: Option<String>,
 }
 
+/// Why a step was skipped, where the plan's summary counts it, stored as `plan_steps.reason`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SkipReason {
+    /// A duplicate decision's file stayed because the copy kept instead changed since the scan.
+    KeptFileChanged,
+    /// ... or is no longer there.
+    KeptFileGone,
+}
+
+impl SkipReason {
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::KeptFileChanged => "kept-file-changed",
+            Self::KeptFileGone => "kept-file-gone",
+        }
+    }
+}
+
 const PLAN_SUMMARY_SQL: &str = "SELECT p.id, p.kind, p.created_at, p.status, p.count,
     COUNT(s.id) AS steps, SUM(s.status = 'done') AS done, SUM(s.status = 'skipped') AS skipped,
     SUM(s.status = 'failed') AS failed, SUM(s.status = 'undone') AS undone,
@@ -122,7 +141,8 @@ const PLAN_SUMMARY_SQL: &str = "SELECT p.id, p.kind, p.created_at, p.status, p.c
     SUM(CASE WHEN s.status = 'done' AND s.holding_id IS NOT NULL THEN s.bytes_before ELSE 0 END)
       AS held_bytes,
     MIN(s.from_rel) AS first_from,
-    SUM(s.status = 'skipped' AND s.message LIKE 'The file kept instead%') AS skipped_for_kept_file
+    SUM(s.status = 'skipped' AND s.reason IN ('kept-file-changed', 'kept-file-gone'))
+      AS skipped_for_kept_file
   FROM plans p LEFT JOIN plan_steps s ON s.plan_id = p.id";
 
 fn plan_row(row: &Row<'_>) -> rusqlite::Result<PlanRow> {
@@ -333,7 +353,7 @@ pub fn list_plan_steps(
             row.map(|step| PlanStep {
                 id: step.id,
                 action: step.action,
-                from_path: step.from_abs().to_string_lossy().into_owned(),
+                from_path: step.source_path().to_string_lossy().into_owned(),
                 to_path: step.to_abs.clone(),
                 status: step.status,
                 message: step.message.clone(),
@@ -343,15 +363,6 @@ pub fn list_plan_steps(
         })
         .collect::<rusqlite::Result<_>>()?;
     Ok(PlanStepPage { total, steps })
-}
-
-/// Forgets a draft the owner chose not to apply; a plan past its draft is history and stays.
-pub fn discard_draft(connection: &Connection, plan_id: PlanId) -> anyhow::Result<()> {
-    connection.execute(
-        "DELETE FROM plans WHERE id = ?1 AND status = 'draft'",
-        [plan_id],
-    )?;
-    Ok(())
 }
 
 /// The roots a plan has steps in.
@@ -403,7 +414,12 @@ pub fn recover_interrupted_plans(connection: &Connection) -> anyhow::Result<usiz
                 .collect::<rusqlite::Result<_>>()?
         };
         for target in targets {
-            let _ = std::fs::remove_file(Path::new(&temp_path_of(&target)));
+            let temp = temp_path_of(&target);
+            if let Err(error) = std::fs::remove_file(Path::new(&temp))
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                log::warn!("Tidy could not remove {temp} after an interrupted change: {error}");
+            }
         }
         connection.execute(
             "UPDATE plans SET status = 'cancelled' WHERE id = ?1",

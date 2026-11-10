@@ -1,7 +1,7 @@
-//! `sync.spec.ts`'s five cases against a small Pane View on a local port
-//! (`oriel_core_sync::testing::FakePaneView`), which serves the sync routes the generated schema
-//! names and checks each signed upload as S3 does. `stack.rs` runs the same cases against the
-//! local compose stack.
+//! The Sync spec's five cases against a small Pane View on a local port
+//! (`oriel_core_sync::testing::FakePaneView`), which checks each request against the bodies
+//! `wire.json` lists and each signed upload as S3 does. `stack.rs` runs the same cases against
+//! the local compose stack.
 
 use std::fs;
 

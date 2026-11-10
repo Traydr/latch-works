@@ -10,10 +10,11 @@ use std::path::Path;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AppContext as _, TestAppContext};
 use oriel_core_paths::DataRoot;
-use oriel_mode_sync::Screen;
-use oriel_mode_tidy::{TidyPage, last_toast};
+use oriel_mode_sync::{Screen, SyncMode};
+use oriel_mode_tidy::{TidyMode, TidyPage};
 use oriel_ui::folders::offered_folder_id;
 use oriel_ui::locations::{SWITCHER_ID, location_id};
+use oriel_ui::toast::last_toast;
 use oriel_ui::{HandOff, ModeId};
 
 use crate::support::*;
@@ -21,7 +22,13 @@ use crate::support::*;
 /// Tidy's folder, once the engine has it and its scan is done.
 fn tidies(opened: &Opened, folder: &Path, cx: &mut TestAppContext) -> bool {
     cx.update(|cx| {
-        let state = opened.shell.read(cx).tidy().read(cx).state().read(cx);
+        let state = opened
+            .shell
+            .read(cx)
+            .mode::<TidyMode>()
+            .read(cx)
+            .state()
+            .read(cx);
         state
             .root()
             .is_some_and(|root| Path::new(&root.path) == folder && root.last_scan_at.is_some())
@@ -34,7 +41,7 @@ fn tidy_ready(opened: &Opened, cx: &mut TestAppContext) -> bool {
         opened
             .shell
             .read(cx)
-            .tidy()
+            .mode::<TidyMode>()
             .read(cx)
             .state()
             .read(cx)
@@ -57,7 +64,7 @@ fn a_folder_tidy_tidies_is_offered_to_view_and_the_modes_hand_files_and_folders_
     // Tidy takes the archive and scans it.
     press(cx, handle, "secondary-2");
     wait_until(cx, handle, "Tidy's engine", |cx| tidy_ready(&opened, cx));
-    let tidy = cx.update(|cx| opened.shell.read(cx).tidy().clone());
+    let tidy = cx.update(|cx| opened.shell.read(cx).mode::<TidyMode>().clone());
     cx.update_window(handle, |_, window, cx| {
         tidy.update(cx, |tidy, cx| tidy.add_folder(archive.clone(), window, cx));
     })
@@ -95,12 +102,20 @@ fn a_folder_tidy_tidies_is_offered_to_view_and_the_modes_hand_files_and_folders_
     click(cx, handle, "viewer-show-in-tidy");
     assert_eq!(mode(&opened, cx), ModeId::Tidy);
     assert_eq!(title(cx, handle).as_deref(), Some("Tidy – Oriel"));
-    let library = cx.update(|cx| opened.shell.read(cx).tidy().read(cx).library().clone());
+    let library = cx.update(|cx| {
+        opened
+            .shell
+            .read(cx)
+            .mode::<TidyMode>()
+            .read(cx)
+            .library()
+            .clone()
+    });
     wait_until(cx, handle, "the Library filtered to the file", |cx| {
         cx.update(|cx| library.read(cx).total(cx) == Some(1))
     });
     cx.update(|cx| {
-        let tidy = opened.shell.read(cx).tidy().read(cx);
+        let tidy = opened.shell.read(cx).mode::<TidyMode>().read(cx);
         assert_eq!(tidy.page(), TidyPage::Library);
         let library = library.read(cx);
         assert_eq!(library.search(), "bulk-001.webp");
@@ -152,7 +167,7 @@ fn a_folder_tidy_tidies_is_offered_to_view_and_the_modes_hand_files_and_folders_
     click(cx, handle, "overview-sync-folder");
     assert_eq!(title(cx, handle).as_deref(), Some("Sync – Oriel"));
     cx.update(|cx| {
-        let sync = opened.shell.read(cx).sync().read(cx);
+        let sync = opened.shell.read(cx).mode::<SyncMode>().read(cx);
         assert_eq!(*sync.screen(), Screen::Form { editing: None });
         assert_eq!(
             sync.form_source_root(cx).as_ref(),
@@ -185,7 +200,7 @@ fn a_folder_tidy_tidies_is_offered_to_view_and_the_modes_hand_files_and_folders_
     assert_eq!(mode(&opened, cx), ModeId::Tidy);
     cx.update(|cx| {
         assert_eq!(
-            opened.shell.read(cx).tidy().read(cx).page(),
+            opened.shell.read(cx).mode::<TidyMode>().read(cx).page(),
             TidyPage::Library
         );
         let library = library.read(cx);
@@ -246,12 +261,11 @@ fn tidy_takes_only_folders_inside_its_sandbox(cx: &mut TestAppContext) {
     assert!(!is_drawn(cx, handle, offered_folder_id(&outside)));
 
     // Tidy this folder, for a folder outside: Tidy says why it cannot, and adds nothing.
-    cx.update_window(handle, |_, window, cx| {
-        opened.shell.update(cx, |shell, cx| {
-            shell.hand_off(ModeId::Tidy, HandOff::Folder(outside.clone()), window, cx);
-        });
-    })
-    .unwrap();
+    cx.update(|cx| {
+        let state = opened.shell.read(cx).state().clone();
+        let target = HandOff::Folder(outside.clone());
+        state.update(cx, |state, cx| state.hand_off(ModeId::Tidy, target, cx));
+    });
     frame(cx, handle);
     assert_eq!(
         cx.update(|cx| last_toast(cx)).as_deref(),
@@ -261,7 +275,7 @@ fn tidy_takes_only_folders_inside_its_sandbox(cx: &mut TestAppContext) {
         opened
             .shell
             .read(cx)
-            .tidy()
+            .mode::<TidyMode>()
             .read(cx)
             .state()
             .read(cx)
@@ -338,7 +352,7 @@ fn every_mode_switches_location_from_one_shared_list(cx: &mut TestAppContext) {
     // A folder added in Tidy is Tidy's location, in its switcher and its menu.
     press(cx, handle, "secondary-2");
     wait_until(cx, handle, "Tidy's engine", |cx| tidy_ready(&opened, cx));
-    let tidy = cx.update(|cx| opened.shell.read(cx).tidy().clone());
+    let tidy = cx.update(|cx| opened.shell.read(cx).mode::<TidyMode>().clone());
     cx.update_window(handle, |_, window, cx| {
         tidy.update(cx, |tidy, cx| tidy.add_folder(archive.clone(), window, cx));
     })
@@ -395,7 +409,7 @@ fn every_mode_switches_location_from_one_shared_list(cx: &mut TestAppContext) {
     );
     click(cx, handle, location_id(&archive));
     cx.update(|cx| {
-        let sync = opened.shell.read(cx).sync().read(cx);
+        let sync = opened.shell.read(cx).mode::<SyncMode>().read(cx);
         assert_eq!(*sync.screen(), Screen::Form { editing: None });
         assert_eq!(
             sync.form_source_root(cx).as_ref(),

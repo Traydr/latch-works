@@ -5,13 +5,12 @@
 
 use std::fs;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use oriel_core_sync::testing::FakePaneView;
 use oriel_core_sync::{
     ApiTarget, DoctorOptions, HashMode, LockstepPlan, Observer, PaneViewClient, PlanOptions,
-    PruneOptions, PushOptions, RunEvent, cache_root, doctor, hash_cache_path, load_hash_cache,
-    plan_sync, prune_deleted, push_changes,
+    PruneOptions, PushOptions, RunEvent, doctor, hash_cache_path, plan_sync, prune_deleted,
+    push_changes,
 };
 use oriel_runtime::{CancelToken, Cancelled, TokioRuntime};
 
@@ -35,7 +34,7 @@ fn setup(files: &[(&str, &[u8])]) -> Setup {
     }
     fs::create_dir_all(&source).unwrap();
     Setup {
-        cache: cache_root(&scratch.path().join("hash-cache")),
+        cache: scratch.path().join("hash-cache"),
         source,
         _scratch: scratch,
         server: FakePaneView::start(TOKEN),
@@ -60,26 +59,23 @@ impl Setup {
         let client = self.client();
         let options = PlanOptions {
             source_root: self.source.clone(),
-            hash_cache_root: self.cache.clone(),
+            hash_cache: self.cache.clone(),
             hash_mode,
-            directory_concurrency: None,
-            file_concurrency: None,
         };
         self.block_on(
             async move { plan_sync(options, Some(&client), None, &CancelToken::new()).await },
         )
         .unwrap()
+        .plan
     }
 
-    fn push_options(&self, plan: Option<LockstepPlan>) -> PushOptions {
+    fn push_options(&self, plan: LockstepPlan) -> PushOptions {
         PushOptions {
             api: ApiTarget {
                 url: self.server.url(),
                 token: TOKEN.to_owned(),
             },
-            source_root: self.source.clone(),
-            hash_cache_root: self.cache.clone(),
-            hash_mode: None,
+            hash_cache: self.cache.clone(),
             max_changes: None,
             plan,
             upload_concurrency: None,
@@ -109,7 +105,7 @@ fn a_push_uploads_with_the_signed_headers_and_a_second_plan_keeps_everything() {
     assert_eq!(plan.total_files, 3);
 
     let client = setup.client();
-    let options = setup.push_options(Some(plan));
+    let options = setup.push_options(plan);
     let (observer, events) = recorder();
     let result = setup
         .block_on(async move {
@@ -125,7 +121,11 @@ fn a_push_uploads_with_the_signed_headers_and_a_second_plan_keeps_everything() {
             _ => None,
         })
         .collect();
-    assert_eq!((result.pushed, result.failed), (3, 0), "{failures:?}");
+    assert_eq!(
+        (result.summary.applied, result.summary.failed),
+        (3, 0),
+        "{failures:?}"
+    );
 
     let library = setup.server.library();
     assert_eq!(
@@ -163,9 +163,11 @@ fn a_push_uploads_with_the_signed_headers_and_a_second_plan_keeps_everything() {
     );
 
     // The push hashed every file, so the cache knows them and a second plan keeps them all.
-    let cached = load_hash_cache(&setup.source, &setup.cache);
-    assert_eq!(cached.cache.entries().len(), 3);
-    assert!(hash_cache_path(&setup.source, &setup.cache).exists());
+    let cached: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(hash_cache_path(&setup.source, &setup.cache)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(cached["entries"].as_array().unwrap().len(), 3);
     let again = setup.plan(HashMode::RemoteAware);
     assert_eq!((again.counts.keep, again.counts.upload), (3, 0));
 }
@@ -182,22 +184,22 @@ fn the_upload_queue_starts_three_wide_and_is_bounded_as_asked() {
 
     for (width, expected) in [(None, 3), (Some(1), 1), (Some(8), 8)] {
         let setup = setup(&borrowed);
-        setup.server.delay_uploads(Duration::from_millis(150));
+        setup.server.hold_uploads(expected);
         let client = setup.client();
-        let mut options = setup.push_options(None);
+        let mut options = setup.push_options(setup.plan(HashMode::RemoteAware));
         options.upload_concurrency = width;
         let result = setup
             .block_on(
                 async move { push_changes(options, &client, None, &CancelToken::new()).await },
             )
             .unwrap();
-        assert_eq!(result.pushed, 8);
+        assert_eq!(result.summary.applied, 8);
         assert_eq!(setup.server.peak_uploads(), expected, "width {width:?}");
     }
 
     let setup = setup(&borrowed);
     let client = setup.client();
-    let mut options = setup.push_options(None);
+    let mut options = setup.push_options(setup.plan(HashMode::RemoteAware));
     options.upload_concurrency = Some(9);
     let refused = setup
         .block_on(async move { push_changes(options, &client, None, &CancelToken::new()).await });
@@ -211,7 +213,7 @@ fn an_update_registers_under_the_remote_spelling() {
     let plan = setup.plan(HashMode::None);
     assert_eq!(plan.counts.update, 1);
     let client = setup.client();
-    let options = setup.push_options(Some(plan));
+    let options = setup.push_options(plan);
     setup
         .block_on(async move { push_changes(options, &client, None, &CancelToken::new()).await })
         .unwrap();
@@ -226,14 +228,14 @@ fn a_file_changed_since_the_plan_fails_its_item_and_the_run() {
     let plan = setup.plan(HashMode::None);
     fs::write(setup.source.join("b.jpg"), b"two, and then some").unwrap();
     let client = setup.client();
-    let options = setup.push_options(Some(plan));
+    let options = setup.push_options(plan);
     let (observer, events) = recorder();
     let result = setup
         .block_on(async move {
             push_changes(options, &client, Some(&observer), &CancelToken::new()).await
         })
         .unwrap();
-    assert_eq!((result.pushed, result.failed), (1, 1));
+    assert_eq!((result.summary.applied, result.summary.failed), (1, 1));
     let failure = events
         .lock()
         .unwrap()
@@ -265,24 +267,16 @@ fn a_cancelled_push_is_finalized_as_cancelled() {
         .map(|(path, bytes)| (path.as_str(), bytes.as_slice()))
         .collect();
     let setup = setup(&borrowed);
-    setup.server.delay_uploads(Duration::from_millis(300));
+    // No upload is answered: the run is cancelled with all of them in flight.
+    setup.server.hold_uploads(files.len());
     let client = setup.client();
-    let options = setup.push_options(None);
+    let options = setup.push_options(setup.plan(HashMode::RemoteAware));
     let cancel = CancelToken::new();
-    let cancel_later = cancel.clone();
-    let (observer, events) = recorder();
-    let watcher = events.clone();
-    std::thread::spawn(move || {
-        // Cancel once the first upload has started.
-        while !watcher
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|event| matches!(event, RunEvent::ItemStart { .. }))
-        {
-            std::thread::sleep(Duration::from_millis(5));
+    let cancel_on_start = cancel.clone();
+    let observer: Observer = Arc::new(move |event| {
+        if matches!(event, RunEvent::ItemStart { .. }) {
+            cancel_on_start.cancel();
         }
-        cancel_later.cancel();
     });
     let error = setup
         .block_on(async move { push_changes(options, &client, Some(&observer), &cancel).await })
@@ -292,7 +286,7 @@ fn a_cancelled_push_is_finalized_as_cancelled() {
     let outcome = runs[0].outcome.as_ref().unwrap();
     assert_eq!(outcome["status"], "cancelled");
     assert_eq!(outcome["error"], "Run cancelled by user");
-    assert!(setup.server.library().len() < 6);
+    assert!(setup.server.library().is_empty());
 }
 
 #[test]
@@ -320,7 +314,10 @@ fn prune_applies_the_reviewed_deletes_once_and_skips_a_file_that_came_back() {
             prune_deleted(options, &client, Some(&observer), &CancelToken::new()).await
         })
         .unwrap();
-    assert_eq!((result.pruned, result.skipped, result.failed), (2, 1, 0));
+    assert_eq!(
+        (result.applied, result.skipped, result.failed),
+        (2, Some(1), 0)
+    );
     assert_eq!(
         setup.server.library().keys().collect::<Vec<_>>(),
         ["Returns.JPEG", "keep.jpg"]
@@ -351,14 +348,14 @@ fn an_overloaded_store_takes_upload_slots_away() {
         .map(|(path, bytes)| (path.as_str(), bytes.as_slice()))
         .collect();
     let setup = setup(&borrowed);
-    setup.server.delay_uploads(Duration::from_millis(50));
+    setup.server.hold_uploads(3);
     setup.server.fail_uploads(503);
     let client = setup.client();
-    let options = setup.push_options(None);
+    let options = setup.push_options(setup.plan(HashMode::RemoteAware));
     let result = setup
         .block_on(async move { push_changes(options, &client, None, &CancelToken::new()).await })
         .unwrap();
-    assert_eq!((result.pushed, result.failed), (0, 6));
+    assert_eq!((result.summary.applied, result.summary.failed), (0, 6));
     // The 503s within one hold are one overload: they give one slot back, not one each.
     let widths: Vec<usize> = result.upload_widths.iter().map(|&(_, w)| w).collect();
     assert_eq!(widths, [3, 2]);
@@ -373,7 +370,7 @@ fn prune_sends_six_deletes_at_once() {
             .server
             .seed(&format!("gone/{index}.jpg"), format!("{index}").as_bytes());
     }
-    setup.server.delay_deletes(Duration::from_millis(100));
+    setup.server.hold_deletes(6);
     let plan = setup.plan(HashMode::None);
     let client = setup.client();
     let options = PruneOptions {
@@ -387,7 +384,10 @@ fn prune_sends_six_deletes_at_once() {
             prune_deleted(options, &client, Some(&observer), &CancelToken::new()).await
         })
         .unwrap();
-    assert_eq!((result.pruned, result.skipped, result.failed), (14, 0, 0));
+    assert_eq!(
+        (result.applied, result.skipped, result.failed),
+        (14, Some(0), 0)
+    );
     assert_eq!(setup.server.peak_deletes(), 6);
     assert!(setup.server.library().is_empty());
     // Every delete still reports its start and its end, numbered in plan order.
@@ -469,10 +469,8 @@ fn a_plan_fails_when_pane_view_cannot_be_reached() {
     .unwrap();
     let options = PlanOptions {
         source_root: setup.source.clone(),
-        hash_cache_root: setup.cache.clone(),
+        hash_cache: setup.cache.clone(),
         hash_mode: HashMode::None,
-        directory_concurrency: None,
-        file_concurrency: None,
     };
     let error = setup
         .block_on(async move { plan_sync(options, Some(&client), None, &CancelToken::new()).await })

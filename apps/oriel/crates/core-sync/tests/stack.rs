@@ -7,35 +7,31 @@
 //!
 //! ```sh
 //! (cd docs/localhost && docker compose up -d)
-//! pnpm --filter @latch-works/e2e exec tsx scripts/start-pane-view.ts &   # serves :3100
+//! pnpm --filter @latch-works/e2e exec tsx scripts/start-pane-view.ts &   # serves :3101
 //! HOME=$(mktemp -d) LOCKSTEP_API_TOKEN=e2e-sync-token-0123456789abcdef \
 //!   pnpm --filter @latch-works/lockstep start push --source "$PWD/e2e/.fixtures/archive" \
-//!   --api-url http://127.0.0.1:3100 --yes
+//!   --api-url http://127.0.0.1:3101 --yes
 //! cd apps/oriel && cargo test -p oriel-core-sync --test main stack:: -- --ignored
 //! ```
 //!
 //! `ORIEL_SYNC_STACK_URL` and `ORIEL_SYNC_STACK_TOKEN` point them elsewhere; the defaults are
-//! the e2e suite's own (`e2e/src/env.ts`). They only ever read from Pane View.
+//! the e2e stack's (`e2e/stack.json`). They only ever read from Pane View.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use oriel_core_domain::format_bytes;
-use oriel_core_index::SyncPlanAction;
+use oriel_core_sync::testing::E2eStack;
 use oriel_core_sync::{
-    ApiTarget, HashMode, LockstepPlan, PaneViewClient, PlanOptions, cache_root, plan_sync,
+    ApiTarget, HashMode, LockstepPlan, PaneViewClient, PlanOptions, SyncPlanAction, plan_sync,
 };
 use oriel_runtime::{CancelToken, TokioRuntime};
 
-/// The e2e suite's Pane View and sync token (`e2e/src/env.ts`), not a secret.
-const E2E_URL: &str = "http://127.0.0.1:3100";
-const E2E_TOKEN: &str = "e2e-sync-token-0123456789abcdef";
-
 fn target() -> ApiTarget {
+    let stack = E2eStack::get();
     ApiTarget {
-        url: std::env::var("ORIEL_SYNC_STACK_URL").unwrap_or_else(|_| E2E_URL.to_owned()),
-        token: std::env::var("ORIEL_SYNC_STACK_TOKEN").unwrap_or_else(|_| E2E_TOKEN.to_owned()),
+        url: std::env::var("ORIEL_SYNC_STACK_URL").unwrap_or(stack.url),
+        token: std::env::var("ORIEL_SYNC_STACK_TOKEN").unwrap_or(stack.sync_token),
     }
 }
 
@@ -44,12 +40,12 @@ fn repository_root() -> PathBuf {
         .expect("the repository root")
 }
 
-/// A plan as the CLI prints it: the summary, the counts, and its first changes.
+/// A plan as the CLI prints it: the summary, the counts, and its first changes. The total size is
+/// left out, since the CLI writes it in binary units and Oriel in decimal ones.
 #[derive(Debug, PartialEq)]
 struct PrintedPlan {
     media_files: usize,
     skipped_files: usize,
-    total_size: String,
     counts: [usize; 4],
     changes: Vec<(String, String)>,
     more: usize,
@@ -128,7 +124,6 @@ fn parse_printed_plan(text: &str) -> PrintedPlan {
     PrintedPlan {
         media_files: value("Media files:").parse().unwrap(),
         skipped_files: value("Skipped files:").parse().unwrap(),
-        total_size: value("Total size:"),
         counts: [
             count("upload"),
             count("update"),
@@ -140,27 +135,17 @@ fn parse_printed_plan(text: &str) -> PrintedPlan {
     }
 }
 
-fn action_name(action: SyncPlanAction) -> &'static str {
-    match action {
-        SyncPlanAction::Upload => "upload",
-        SyncPlanAction::Update => "update",
-        SyncPlanAction::Keep => "keep",
-        SyncPlanAction::Delete => "delete",
-    }
-}
-
 /// The Rust plan, printed as the CLI prints one.
 fn printed(plan: &LockstepPlan) -> PrintedPlan {
     let changes: Vec<(String, String)> = plan
         .items
         .iter()
         .filter(|item| item.action != SyncPlanAction::Keep)
-        .map(|item| (action_name(item.action).to_owned(), item.path.clone()))
+        .map(|item| (item.action.as_str().to_owned(), item.path.clone()))
         .collect();
     PrintedPlan {
         media_files: plan.total_files,
-        skipped_files: plan.skipped,
-        total_size: format_bytes(plan.total_bytes as f64),
+        skipped_files: plan.skipped_entries.len(),
         counts: [
             plan.counts.upload,
             plan.counts.update,
@@ -178,10 +163,8 @@ fn rust_plan(source: &Path, hash: bool) -> LockstepPlan {
     let client = PaneViewClient::new(target()).unwrap();
     let options = PlanOptions {
         source_root: source.to_path_buf(),
-        hash_cache_root: cache_root(cache.path()),
+        hash_cache: cache.path().to_path_buf(),
         hash_mode: if hash { HashMode::All } else { HashMode::None },
-        directory_concurrency: None,
-        file_concurrency: None,
     };
     futures::executor::block_on(
         runtime.spawn(
@@ -190,6 +173,7 @@ fn rust_plan(source: &Path, hash: bool) -> LockstepPlan {
     )
     .unwrap()
     .unwrap()
+    .plan
 }
 
 /// A copy of part of the seeded archive with every kind of change: a file with new bytes at the
@@ -243,12 +227,12 @@ fn walk(folder: &Path) -> Vec<PathBuf> {
 #[test]
 #[ignore = "needs the local stack and the e2e Pane View; see the module's comment"]
 fn a_rust_plan_equals_the_lockstep_clis_plan() {
-    let fixtures = repository_root().join("e2e/.fixtures");
+    let stack = E2eStack::get();
     let scratch = tempfile::tempdir().unwrap();
-    let changed = changed_copy(&fixtures.join("archive"), scratch.path());
+    let changed = changed_copy(&stack.archive, scratch.path());
     let sources = [
-        (fixtures.join("archive"), false),
-        (fixtures.join("lockstep-source"), false),
+        (stack.archive.clone(), false),
+        (stack.lockstep_source.clone(), false),
         (changed.clone(), false),
         (changed, true),
     ];

@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "Oriel's developer commands: build the LGPL libmpv, vendor prebuilt libraries, make the app, measure it."
+description = "Oriel's developer commands: build the LGPL libmpv, vendor prebuilt libraries and fetch ffmpeg, make the app, measure it."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,10 +9,18 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+# The manifests list their keys in the order written. The app's GPUI turns this feature on in a
+# workspace build; xtask names it so `cargo run -p xtask` writes them the same.
+serde_json = { workspace = true, features = ["preserve_order"] }
 sha2.workspace = true
-# The bundle fetches the pinned ffmpeg and ffprobe through the same code as fetch-media-tools.
-oriel-tools.workspace = true
+# Timestamps in the manifests, as the app writes them.
+oriel-core-domain.workspace = true
+# Where the app keeps and finds what xtask packs and fetches, and the licence index it reads.
+oriel-core-paths.workspace = true
+oriel-launch.workspace = true
+oriel-runtime.workspace = true
+# `measure tidy` reads the catalog's counts through Tidy's engine, which owns its schema.
+oriel-core-tidy.workspace = true
 # The bundle checks that each library it packed loads from Contents/Frameworks.
 libloading = "0.8"
 # `measure` reads the app's memory and CPU time with proc_pid_rusage, as the View spike does.

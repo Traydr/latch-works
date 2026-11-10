@@ -1,10 +1,12 @@
-//! What plans are called in History, toasts and job labels, from glazier-core's
-//! `plans/wording.ts`.
+//! What plans are called in History, toasts, job labels and the activity panel: one table.
+
+use oriel_core_domain::format;
 
 use crate::contract::PlanKind;
-use crate::number::{count_of, format_count};
 
 struct Wording {
+    /// The change's name before its plan names it, such as a queued change's: "Convert".
+    name: &'static str,
     /// The verb once the plan ran: "Converted".
     done: &'static str,
     /// The verb while it runs: "Converting".
@@ -18,6 +20,7 @@ struct Wording {
 }
 
 const fn wording(
+    name: &'static str,
     done: &'static str,
     doing: &'static str,
     one: &'static str,
@@ -26,6 +29,7 @@ const fn wording(
     none: &'static str,
 ) -> Wording {
     Wording {
+        name,
         done,
         doing,
         one,
@@ -37,14 +41,47 @@ const fn wording(
 
 fn wording_of(kind: PlanKind) -> Wording {
     match kind {
-        PlanKind::Hold => wording("Moved", "Moving", "file", "files", " to holding", "moved"),
-        PlanKind::Move => wording("Moved", "Moving", "file", "files", "", "moved"),
-        PlanKind::Rename => wording("Renamed", "Renaming", "file", "files", "", "renamed"),
-        PlanKind::FixExtension => {
-            wording("Fixed", "Fixing", "extension", "extensions", "", "fixed")
-        }
-        PlanKind::Optimize => wording("Converted", "Converting", "file", "files", "", "converted"),
+        PlanKind::Hold => wording(
+            "Move to holding",
+            "Moved",
+            "Moving",
+            "file",
+            "files",
+            " to holding",
+            "moved",
+        ),
+        PlanKind::Move => wording(
+            "Move files",
+            "Moved",
+            "Moving",
+            "file",
+            "files",
+            "",
+            "moved",
+        ),
+        PlanKind::Rename => wording(
+            "Rename", "Renamed", "Renaming", "file", "files", "", "renamed",
+        ),
+        PlanKind::FixExtension => wording(
+            "Fix extensions",
+            "Fixed",
+            "Fixing",
+            "extension",
+            "extensions",
+            "",
+            "fixed",
+        ),
+        PlanKind::Optimize => wording(
+            "Convert",
+            "Converted",
+            "Converting",
+            "file",
+            "files",
+            "",
+            "converted",
+        ),
         PlanKind::Reencode => wording(
+            "Re-encode videos",
             "Re-encoded",
             "Re-encoding",
             "video",
@@ -53,6 +90,7 @@ fn wording_of(kind: PlanKind) -> Wording {
             "re-encoded",
         ),
         PlanKind::StripAudio => wording(
+            "Remove silent soundtracks",
             "Removed",
             "Removing",
             "audio track",
@@ -61,6 +99,7 @@ fn wording_of(kind: PlanKind) -> Wording {
             "removed",
         ),
         PlanKind::ResolveDuplicates => wording(
+            "Resolve duplicates",
             "Resolved",
             "Resolving",
             "duplicate set",
@@ -69,6 +108,7 @@ fn wording_of(kind: PlanKind) -> Wording {
             "resolved",
         ),
         PlanKind::CleanJunk => wording(
+            "Clean junk",
             "Moved",
             "Moving",
             "junk file",
@@ -77,6 +117,7 @@ fn wording_of(kind: PlanKind) -> Wording {
             "moved",
         ),
         PlanKind::RemoveEmptyFolders => wording(
+            "Remove empty folders",
             "Removed",
             "Removing",
             "empty folder",
@@ -85,6 +126,7 @@ fn wording_of(kind: PlanKind) -> Wording {
             "removed",
         ),
         PlanKind::Cleanup => wording(
+            "Clean up",
             "Cleaned up",
             "Cleaning up",
             "item",
@@ -92,7 +134,15 @@ fn wording_of(kind: PlanKind) -> Wording {
             "",
             "cleaned up",
         ),
-        PlanKind::ShrinkVideos => wording("Shrank", "Shrinking", "video", "videos", "", "shrunk"),
+        PlanKind::ShrinkVideos => wording(
+            "Shrink videos",
+            "Shrank",
+            "Shrinking",
+            "video",
+            "videos",
+            "",
+            "shrunk",
+        ),
     }
 }
 
@@ -120,12 +170,12 @@ fn phrase(subject: &PlanSubject, doing: bool) -> String {
     {
         return format!("{verb} {name}");
     }
-    let counted = count_of(subject.count, wording.one, wording.many);
+    let counted = format::plural_as(subject.count, wording.one, wording.many);
     match subject.finished {
         None => format!("{verb} {counted}{}", wording.tail),
         Some(finished) => format!(
             "{verb} {} of {counted}{}",
-            format_count(finished),
+            format::count(finished),
             wording.tail
         ),
     }
@@ -149,6 +199,13 @@ pub fn undo_label(subject: &PlanSubject) -> String {
 
 /// A job's name before its plan is drafted, when only the request's kind is known: "Converting
 /// files", "Cleaning up items".
+impl PlanKind {
+    /// What a change of this kind is called before its plan names it: "Convert".
+    pub fn label(self) -> &'static str {
+        wording_of(self).name
+    }
+}
+
 pub fn doing_label(kind: PlanKind) -> String {
     let wording = wording_of(kind);
     format!("{} {}{}", wording.doing, wording.many, wording.tail)
@@ -168,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn titles_and_labels_read_as_glazier_cores() {
+    fn titles_and_labels_keep_their_wording() {
         assert_eq!(
             plan_title(&subject(PlanKind::Optimize, 206)),
             "Converted 206 files"

@@ -1,58 +1,38 @@
 //! Stills to AVIF through libavif with aom, at `media-format`'s archive settings, for Tidy's
 //! Convert (plan 063, Phase 6).
 //!
-//! Electron Oriel encodes with jSquash's wasm build of libavif (`@jsquash/avif`), whose
+//! The Electron app encoded with jSquash's wasm build of libavif (`@jsquash/avif`), whose
 //! `avif_enc.cpp` turns each option into libavif calls. [`Libavif::encode`] makes the same calls
 //! in the same order on a native libavif: the same pixel format, matrix, chroma downsampling,
 //! quality and aom options, so a file differs from the wasm encoder's only by the libavif and aom
 //! releases and the thread count.
 //!
-//! What it takes is what glazier-core's `encodeStillToAvif` hands the wasm encoder: pixels with
+//! What it takes is what the Electron app handed the wasm encoder: pixels with
 //! EXIF orientation already applied, converted to sRGB (from an embedded ICC profile, or CMYK),
 //! 8-bit, interleaved. Like jSquash it writes no ICC profile, no EXIF and no rotation or mirror
 //! box: the file's `colr` box says unspecified primaries and transfer with the BT.601 matrix,
 //! full range, which every decoder reads as sRGB. The decode that gets there is sharp's
-//! `.rotate().toColourspace("srgb").ensureAlpha().raw({ depth: "uchar" })`, which the libvips
-//! binding in `oriel-core-tidy` can repeat exactly, since it loads the same libvips build.
+//! `.rotate().toColourspace("srgb").ensureAlpha().raw({ depth: "uchar" })`, which `oriel-vips`
+//! repeats exactly, since it loads the same libvips build.
 //!
 //! libavif is BSD-licensed, but it is loaded at run time as libvips and libmpv are, so a build
-//! needs no C toolchain and the app carries one copy of it. [`Libavif::get`] looks in this order,
-//! first found wins:
-//!
-//! 1. `Contents/Frameworks/libavif.16.dylib` of the app bundle this runs from (on Windows, one of
-//!    [`LIBAVIF_WINDOWS_FILES`] in the `libavif` folder beside the executable, where `package
-//!    windows` stages MSYS2's build with the DLLs it needs, or beside the executable itself);
-//! 2. the file `ORIEL_LIBAVIF` names;
-//! 3. the vendored set, `apps/oriel/.vendor/libavif/current` (`cargo run -p xtask -- vendor`),
-//!    or on Windows `apps/oriel/.vendor/libavif-windows` (`vendor libavif-windows`).
-//!
-//! On Windows a libavif loads with its own folder searched first for the DLLs it needs (aom,
-//! dav1d, rav1e, SVT-AV1, libyuv and MinGW's runtime), so they need not sit beside the executable.
+//! needs no C toolchain and the app carries one copy of it. [`Libavif::get`] finds it by
+//! `oriel_core_paths::NativeSet::LIBAVIF`. On Windows a libavif loads with its own folder
+//! searched first for the DLLs it needs (aom, dav1d, rav1e, SVT-AV1, libyuv and MinGW's runtime),
+//! so they need not sit beside the executable.
 
 mod ffi;
 
-use std::ffi::{CStr, CString, OsString, c_int};
+use std::ffi::{CStr, CString, c_int};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use libloading::Library;
 pub use oriel_core_format::{ARCHIVE_AVIF_OPTIONS, AvifEncodeOptions, encode_archive_avif};
+use oriel_core_paths::{NativeSet, NativeSource};
 
 use ffi::{Api, EncoderHead, RgbImageSlot, RwData};
-
-/// Names a libavif to load when the app does not carry one.
-pub const LIBAVIF_VARIABLE: &str = "ORIEL_LIBAVIF";
-
-/// libavif 1.x's file name, the one the vendored set and the bundle carry.
-pub const LIBAVIF_FILE: &str = "libavif.16.dylib";
-
-/// libavif 1.x's names on Windows, beside the installed app: CMake's MSVC build makes
-/// `avif.dll`, MinGW's (MSYS2's package) `libavif-16.dll`.
-pub const LIBAVIF_WINDOWS_FILES: [&str; 2] = ["avif.dll", "libavif-16.dll"];
-
-/// The folder beside the executable the Windows package stages libavif and its DLLs in.
-pub const LIBAVIF_WINDOWS_FOLDER: &str = "libavif";
 
 /// What went wrong, in words for a log or a journal entry.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -101,112 +81,6 @@ pub struct Still<'a> {
     pub samples: Samples<'a>,
 }
 
-/// Where the libavif that loaded came from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LibavifSource {
-    /// `Contents/Frameworks` of the app bundle this runs from.
-    Bundle,
-    /// The file [`LIBAVIF_VARIABLE`] names.
-    Override,
-    /// The development set in `apps/oriel/.vendor/libavif/current`.
-    Vendored,
-}
-
-impl fmt::Display for LibavifSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Bundle => "the app bundle's libavif",
-            Self::Override => LIBAVIF_VARIABLE,
-            Self::Vendored => "the vendored libavif",
-        })
-    }
-}
-
-/// What [`choose`] looks at, so tests can stand in for the process's own.
-struct Places {
-    executable: Option<PathBuf>,
-    override_file: Option<OsString>,
-    vendored: PathBuf,
-}
-
-impl Places {
-    fn of_this_process() -> Self {
-        Self {
-            executable: std::env::current_exe().ok(),
-            override_file: std::env::var_os(LIBAVIF_VARIABLE).filter(|value| !value.is_empty()),
-            vendored: vendored_set(),
-        }
-    }
-}
-
-/// `apps/oriel/.vendor/libavif/current`, found from this crate's folder at compile time, as
-/// `oriel-tools` finds its development cache.
-fn vendored_set() -> PathBuf {
-    let vendor = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(2)
-        .expect("crates/avif sits two folders under the workspace")
-        .join(".vendor");
-    if cfg!(windows) {
-        vendor.join("libavif-windows")
-    } else {
-        vendor.join("libavif").join("current")
-    }
-}
-
-/// The vendored set's entry library on this system.
-fn vendored_file() -> &'static str {
-    if cfg!(windows) {
-        LIBAVIF_WINDOWS_FILES[1]
-    } else {
-        LIBAVIF_FILE
-    }
-}
-
-/// `X.app/Contents` when `executable` is `X.app/Contents/MacOS/<name>`.
-fn bundle_contents(executable: &Path) -> Option<&Path> {
-    let macos = executable.parent()?;
-    let contents = macos.parent()?;
-    (macos.file_name()? == "MacOS" && contents.file_name()? == "Contents").then_some(contents)
-}
-
-/// The libavif to load, first match wins: the bundle's, the override, the vendored set. Once one
-/// is chosen, failing to load it is an error rather than a fall through, so a broken copy shows.
-fn choose(places: &Places) -> std::result::Result<(PathBuf, LibavifSource), String> {
-    #[cfg(windows)]
-    if let Some(folder) = places.executable.as_deref().and_then(Path::parent)
-        && let Some(found) = [folder.join(LIBAVIF_WINDOWS_FOLDER), folder.to_path_buf()]
-            .iter()
-            .flat_map(|folder| LIBAVIF_WINDOWS_FILES.map(|name| folder.join(name)))
-            .find(|path| path.is_file())
-    {
-        return Ok((found, LibavifSource::Bundle));
-    }
-    if let Some(contents) = places.executable.as_deref().and_then(bundle_contents) {
-        let bundled = contents.join("Frameworks").join(LIBAVIF_FILE);
-        if bundled.is_file() {
-            return Ok((bundled, LibavifSource::Bundle));
-        }
-    }
-    if let Some(file) = &places.override_file {
-        return Ok((PathBuf::from(file), LibavifSource::Override));
-    }
-    let vendored = places.vendored.join(vendored_file());
-    if vendored.is_file() {
-        return Ok((vendored, LibavifSource::Vendored));
-    }
-    if cfg!(windows) {
-        return Err(format!(
-            "no libavif: fetch it with `cargo run -p xtask -- vendor libavif-windows` in \
-             apps/oriel, or set {LIBAVIF_VARIABLE} to one"
-        ));
-    }
-    Err(format!(
-        "no libavif: fetch it with `pnpm --filter @latch-works/oriel vendor` (or `cargo run \
-         -p xtask -- vendor libavif` in apps/oriel), or set {LIBAVIF_VARIABLE} to one"
-    ))
-}
-
 /// Loads a library.
 ///
 /// # Safety
@@ -240,7 +114,7 @@ static LIBAVIF: OnceLock<std::result::Result<Libavif, String>> = OnceLock::new()
 pub struct Libavif {
     api: Api,
     path: PathBuf,
-    source: LibavifSource,
+    source: NativeSource,
     version: String,
     _library: Library,
 }
@@ -256,12 +130,14 @@ impl fmt::Debug for Libavif {
 }
 
 impl Libavif {
-    /// The process's libavif, found by the search order above and loaded on first use.
+    /// The process's libavif, found by `NativeSet::LIBAVIF` and loaded on first use.
     pub fn get() -> Result<&'static Libavif> {
         LIBAVIF
             .get_or_init(|| {
-                let (path, source) = choose(&Places::of_this_process())?;
-                Self::load(&path, source)
+                let found = NativeSet::LIBAVIF
+                    .locate()
+                    .map_err(|error| error.to_string())?;
+                Self::load(&found.path, found.source)
             })
             .as_ref()
             .map_err(|error| AvifError(error.clone()))
@@ -269,10 +145,10 @@ impl Libavif {
 
     /// Loads libavif from `path`, outside the search order: for tests and measurements.
     pub fn open(path: &Path) -> Result<Libavif> {
-        Self::load(path, LibavifSource::Override).map_err(AvifError)
+        Self::load(path, NativeSource::Variable).map_err(AvifError)
     }
 
-    fn load(path: &Path, source: LibavifSource) -> std::result::Result<Libavif, String> {
+    fn load(path: &Path, source: NativeSource) -> std::result::Result<Libavif, String> {
         // SAFETY: loading libavif runs its initialisers (and aom's and dav1d's), which have no
         // preconditions.
         let library = unsafe { open_library(path) }
@@ -291,7 +167,7 @@ impl Libavif {
         &self.path
     }
 
-    pub fn source(&self) -> LibavifSource {
+    pub fn source(&self) -> NativeSource {
         self.source
     }
 
@@ -467,7 +343,7 @@ impl Libavif {
     }
 
     /// Encodes `still` at `ARCHIVE_AVIF_OPTIONS`, and once more at the low-memory speed when that
-    /// fails, as Electron Oriel's `createArchiveAvifEncoder` does.
+    /// fails.
     pub fn encode_archive(&self, still: &Still<'_>, threads: u32) -> Result<Vec<u8>> {
         encode_archive_avif(|options| self.encode(still, options, threads))
     }
@@ -534,63 +410,6 @@ impl<T> Drop for Owned<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-
-    fn scratch(test: &str) -> PathBuf {
-        let folder = std::env::temp_dir()
-            .join("oriel-avif-tests")
-            .join(format!("{test}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&folder);
-        fs::create_dir_all(&folder).unwrap();
-        folder
-    }
-
-    fn put(file: &Path) -> PathBuf {
-        fs::create_dir_all(file.parent().unwrap()).unwrap();
-        fs::write(file, b"").unwrap();
-        file.to_path_buf()
-    }
-
-    #[test]
-    fn a_bundle_loads_its_own_then_the_override_then_the_vendored_set() {
-        let root = scratch("choose");
-        let contents = root.join("Oriel.app/Contents");
-        let executable = contents.join("MacOS/oriel");
-        let vendored = root.join(".vendor/libavif/current");
-        let places = |executable: &Path, override_file: Option<&str>| Places {
-            executable: Some(executable.to_path_buf()),
-            override_file: override_file.map(OsString::from),
-            vendored: vendored.clone(),
-        };
-
-        let error = choose(&places(&executable, None)).unwrap_err();
-        assert!(error.contains("vendor"), "{error}");
-
-        let dev = put(&vendored.join(vendored_file()));
-        assert_eq!(
-            choose(&places(&executable, None)).unwrap(),
-            (dev.clone(), LibavifSource::Vendored)
-        );
-        assert_eq!(
-            choose(&places(&executable, Some("/elsewhere/libavif.dylib"))).unwrap(),
-            (
-                PathBuf::from("/elsewhere/libavif.dylib"),
-                LibavifSource::Override
-            )
-        );
-
-        let bundled = put(&contents.join("Frameworks").join(LIBAVIF_FILE));
-        assert_eq!(
-            choose(&places(&executable, Some("/elsewhere/libavif.dylib"))).unwrap(),
-            (bundled, LibavifSource::Bundle)
-        );
-        // Outside a bundle the same Frameworks folder is not looked at.
-        let loose = root.join("bin/oriel");
-        assert_eq!(
-            choose(&places(&loose, None)).unwrap(),
-            (dev, LibavifSource::Vendored)
-        );
-    }
 
     #[test]
     fn a_still_must_fill_its_buffer_at_its_depth() {

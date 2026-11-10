@@ -53,7 +53,6 @@ enum EntrySummary {
         key: String,
         path: String,
         name: String,
-        has_children: bool,
     },
     Comic {
         key: String,
@@ -73,7 +72,6 @@ impl EntrySummary {
                 key: key.clone(),
                 path: folder.path.clone(),
                 name: folder.name.clone(),
-                has_children: folder.has_children,
             },
             BrowserEntry::Comic { key, comic } => Self::Comic {
                 key: key.clone(),

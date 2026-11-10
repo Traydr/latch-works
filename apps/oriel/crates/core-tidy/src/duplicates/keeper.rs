@@ -1,12 +1,15 @@
-//! Which copy of a picture or video to keep, from glazier-core's `duplicates/keeper.ts`.
+//! Which copy of a picture or video to keep.
 
 use std::cmp::Ordering;
 
+use oriel_core_domain::collation::Collation;
+use oriel_core_domain::number::js_round;
+use oriel_core_format::{VideoCodec, is_archive_video};
 use serde::{Deserialize, Serialize};
 
-use crate::collation::{js_length, natural_order};
+use crate::collation::js_length;
 use crate::contract::{AudioState, FileFormat, FileId, FileKind, KeepReason};
-use crate::number::js_round;
+use crate::optimize::candidates::video_container;
 use crate::scan::preferred_extension;
 
 /// What the keeper rules compare about each copy in a group.
@@ -49,16 +52,20 @@ fn audio_rank(state: Option<AudioState>) -> i32 {
     }
 }
 
-/// Already in the archive format: an AVIF still, or MP4 with a codec the archive keeps.
+/// Already in the archive format: an AVIF still, or a video the archive keeps as it is.
 fn is_archive_format(candidate: &KeeperCandidate) -> bool {
     if candidate.kind == FileKind::Image {
         return candidate.format == Some(FileFormat::Avif);
     }
-    candidate.format == Some(FileFormat::Mp4)
-        && matches!(
-            candidate.video_codec.as_deref(),
-            Some("h264" | "hevc" | "av1")
+    video_container(candidate.format).is_some_and(|container| {
+        is_archive_video(
+            container,
+            candidate
+                .video_codec
+                .as_deref()
+                .map(VideoCodec::from_ffprobe),
         )
+    })
 }
 
 /// 2 for the format's own extension (`.mp4`), 1 for another it accepts (`.m4v`), 0 for a wrong
@@ -86,7 +93,7 @@ fn stem_of(rel_path: &str) -> String {
 }
 
 /// ` (1)`, ` copy`, ` copy 2`, `-copy`, `_copy`, ` 2`: what systems append to a copy's name.
-/// glazier-core's `/^(?: \(\d+\)| copy(?: \d+)?|[-_]copy(?:[-_ ]?\d+)?| \d+)$/i`, by hand.
+/// `/^(?: \(\d+\)| copy(?: \d+)?|[-_]copy(?:[-_ ]?\d+)?| \d+)$/i`, by hand.
 fn is_copy_suffix(suffix: &str) -> bool {
     let digits = |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
     let copy_word = |text: &str| {
@@ -134,7 +141,7 @@ fn pixels(candidate: &KeeperCandidate) -> i64 {
     candidate.width.unwrap_or(0) * candidate.height.unwrap_or(0)
 }
 
-/// Ascending numbers as an order, the sign of glazier-core's `left - right`.
+/// Ascending numbers as an order, the sign of `left - right`.
 fn by<T: PartialOrd>(left: T, right: T) -> Ordering {
     left.partial_cmp(&right).unwrap_or(Ordering::Equal)
 }
@@ -193,22 +200,12 @@ const KEEPER_RULES: [(KeepReason, KeeperRule); 13] = [
         by(js_length(&right.rel_path), js_length(&left.rel_path))
     }),
     (KeepReason::NameOrder, |left, right| {
-        natural_order(&right.rel_path, &left.rel_path)
+        Collation::Natural.compare(&right.rel_path, &left.rel_path)
     }),
 ];
 
 fn is_reencode_of(file: &KeeperCandidate, source: &KeeperCandidate) -> bool {
     file.reencoded_from.is_some() && file.reencoded_from == source.sha256
-}
-
-/// `Greater` when `left` is the better copy to keep; each rule only breaks ties of the one
-/// before.
-pub fn compare_keepers(left: &KeeperCandidate, right: &KeeperCandidate) -> Ordering {
-    KEEPER_RULES
-        .iter()
-        .map(|(_, compare)| compare(left, right))
-        .find(|order| order.is_ne())
-        .unwrap_or(Ordering::Equal)
 }
 
 /// The first rule that tells two copies apart, which is why the winner is kept. Copies no rule
@@ -221,7 +218,7 @@ pub fn keep_reason(winner: &KeeperCandidate, loser: &KeeperCandidate) -> KeepRea
 }
 
 /// Copies, best keeper first, and the rule that put the first ahead of the second. The sort is
-/// stable, as JavaScript's is, so copies no rule separates keep their order.
+/// stable, so copies no rule separates keep their order.
 pub fn rank_keepers<T: AsRef<KeeperCandidate> + Clone>(
     candidates: &[T],
 ) -> (Vec<T>, Option<KeepReason>) {
@@ -275,6 +272,16 @@ impl AsRef<KeeperCandidate> for KeeperCandidate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `Greater` when `left` is the better copy to keep by every rule, a re-encode against its
+    /// source too; each rule only breaks ties of the one before.
+    fn compare_keepers(left: &KeeperCandidate, right: &KeeperCandidate) -> Ordering {
+        KEEPER_RULES
+            .iter()
+            .map(|(_, compare)| compare(left, right))
+            .find(|order| order.is_ne())
+            .unwrap_or(Ordering::Equal)
+    }
 
     /// A 1000×1000 PNG of a megabyte, in a folder of no preference: the copy every case varies.
     fn copy(id: FileId, rel_path: &str) -> KeeperCandidate {

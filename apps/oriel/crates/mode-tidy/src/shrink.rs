@@ -1,4 +1,4 @@
-//! Shrink (`views/ShrinkView.tsx`): videos re-encoded to AV1 in runs, the most bytes saved first.
+//! Shrink: videos re-encoded to AV1 in runs, the most bytes saved first.
 //! A run can be stopped at any time: finished videos stay done, and the next run starts with what
 //! is left. How much a run takes is remembered (`oriel.tidy.shrink.batch`).
 
@@ -8,27 +8,28 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon};
 use gpui_kit::{
     AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement as _,
-    IntoElement, KeyDownEvent, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
-    prelude::FluentBuilder as _, px,
+    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Subscription, TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
-use oriel_core_tidy::contract::{RootId, ShrinkItem, ShrinkSummary, shrink_batch};
-use oriel_runtime::JobProgress;
+use oriel_core_domain::format;
+use oriel_core_tidy::contract::{ShrinkItem, ShrinkSummary, shrink_batch};
+use oriel_ui::JobProgress;
 use oriel_ui::TextRole as _;
 use oriel_ui::segmented::{Segmented, SegmentedItem};
 use oriel_ui::{LocalStorage, TopBar};
 
 use crate::actions::PerformOptions;
-use crate::changes::PlanRequest;
-use crate::format;
-use crate::loaded::Loaded;
+use crate::loaded::{Loaded, PageReads, Read};
 use crate::pages::TidyPage;
 use crate::state::TidyState;
 use crate::thumbs::Thumbs;
 use crate::widgets;
+use oriel_core_tidy::contract::PlanRequest;
+
+/// How many files Shrink re-encodes at a time, as stored.
+const SHRINK_BATCH_KEY: &str = "oriel.tidy.shrink.batch";
 
 const SOURCE: &str = "shrink";
-const BATCH_KEY: &str = "oriel.tidy.shrink.batch";
 
 /// How much a run takes, by the bytes of its originals; "all" takes every video.
 const BATCHES: [(&str, &str, Option<f64>); 3] = [
@@ -37,37 +38,13 @@ const BATCHES: [(&str, &str, Option<f64>); 3] = [
     ("all", "All", None),
 ];
 
-fn skip_words(reason: &str) -> Option<(&'static str, &'static str)> {
-    Some(match reason {
-        "Already AV1" => ("is already AV1", "are already AV1"),
-        "Already compact" => (
-            "is already compact, so AV1 would save little",
-            "are already compact, so AV1 would save little",
-        ),
-        "Came out no smaller as AV1" => {
-            ("came out no smaller as AV1", "came out no smaller as AV1")
-        }
-        "Won't decode" => ("won't open", "won't open"),
-        "A file with the target name already exists" => (
-            "would take a name already in use",
-            "would take a name already in use",
-        ),
-        _ => return None,
-    })
-}
-
 fn left_reasons(summary: &ShrinkSummary) -> Vec<String> {
     summary
         .skipped
         .iter()
         .filter(|entry| entry.files > 0)
-        .map(|entry| match skip_words(&entry.reason) {
-            Some((one, many)) => format!(
-                "{} {}",
-                format::plural(entry.files, "video"),
-                if entry.files == 1 { one } else { many }
-            ),
-            None => format!("{}: {}", format::plural(entry.files, "video"), entry.reason),
+        .map(|entry| {
+            crate::labels::skip_reason(&entry.reason, entry.files, Some(("video", "videos")))
         })
         .collect()
 }
@@ -94,7 +71,7 @@ pub struct ShrinkPage {
     summary: Loaded<ShrinkSummary>,
     left_open: bool,
     about_open: bool,
-    seen: (Option<RootId>, u64),
+    reads: PageReads,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -111,29 +88,26 @@ impl ShrinkPage {
             summary: Loaded::default(),
             left_open: false,
             about_open: false,
-            seen: (None, 0),
+            reads: PageReads::default(),
             _subscriptions: subscriptions,
         }
     }
 
     fn sync(&mut self, cx: &mut Context<Self>) {
-        let state = self.state.read(cx);
-        let key = (state.root_id(), state.catalog_version());
-        if state.page() != TidyPage::Shrink || key == self.seen {
-            cx.notify();
-            return;
-        }
-        self.seen = key;
-        let (Some(engine), Some(root_id)) = (state.engine().cloned(), state.root_id()) else {
+        cx.notify();
+        let Some(Read {
+            engine, root_id, ..
+        }) = self.reads.due(TidyPage::Shrink, self.state.read(cx))
+        else {
             return;
         };
-        self.summary
-            .load(engine.shrink_summary(root_id), |this| &mut this.summary, cx);
+        let summary = engine.ask(move |engine| engine.shrink_summary(root_id), cx);
+        self.summary.load(summary, |this| &mut this.summary, cx);
         cx.notify();
     }
 
     fn batch(cx: &App) -> (&'static str, Option<f64>) {
-        let stored = LocalStorage::get(cx, BATCH_KEY).unwrap_or("5");
+        let stored = LocalStorage::get(cx, SHRINK_BATCH_KEY).unwrap_or("5");
         BATCHES
             .iter()
             .find(|(value, _, _)| *value == stored)
@@ -149,7 +123,7 @@ impl ShrinkPage {
             .summary
             .data()
             .is_none_or(|summary| summary.items.is_empty());
-        if empty || state.change_status(SOURCE).is_some() {
+        if empty || state.change_status(SOURCE, cx).is_some() {
             return;
         }
         let (_, limit_bytes) = Self::batch(cx);
@@ -165,19 +139,6 @@ impl ShrinkPage {
             );
         });
     }
-
-    fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        // It is the open menu's, or nothing's; the page must not act on it behind the menu.
-        if oriel_ui::popups::popup_open(window, cx) {
-            return;
-        }
-        if oriel_ui::keys::command_held(&event.keystroke.modifiers)
-            && event.keystroke.key == "enter"
-        {
-            self.shrink(window, cx);
-            cx.stop_propagation();
-        }
-    }
 }
 
 impl Focusable for ShrinkPage {
@@ -188,8 +149,8 @@ impl Focusable for ShrinkPage {
 
 impl Render for ShrinkPage {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let shell = self.state.read(cx).shell.clone();
-        let status = self.state.read(cx).change_status(SOURCE);
+        let shell = self.state.read(cx).shell().clone();
+        let status = self.state.read(cx).change_status(SOURCE, cx);
         let Some(summary) = self.summary.data().cloned() else {
             let body = match self.summary.error().cloned() {
                 Some(error) => {
@@ -200,7 +161,7 @@ impl Render for ShrinkPage {
                         error,
                         move |_, cx| {
                             this.update(cx, |this, cx| {
-                                this.seen = (None, 0);
+                                this.reads.forget();
                                 this.sync(cx);
                             })
                             .ok();
@@ -216,7 +177,7 @@ impl Render for ShrinkPage {
                 .flex()
                 .flex_col()
                 .size_full()
-                .child(TopBar::new(&shell, "Shrink"))
+                .child(TopBar::new(&shell, TidyPage::Shrink.label()))
                 .child(body);
         };
         let (choice, limit) = Self::batch(cx);
@@ -227,7 +188,7 @@ impl Render for ShrinkPage {
             .state
             .read(cx)
             .change_for(SOURCE)
-            .map(|change| change.progress(cx));
+            .map(|change| change.job.progress(cx));
         let running = self.state.read(cx).running_file(cx);
         let pausing = running.as_ref().filter(|file| file.pausing);
         let paused = run.as_ref().is_some_and(JobProgress::is_paused) && pausing.is_none();
@@ -271,7 +232,7 @@ impl Render for ShrinkPage {
                     SegmentedItem::new(SharedString::from(format!("shrink-batch-{value}")), label)
                         .selected(value == choice)
                         .on_click(move |_, window, cx| {
-                            LocalStorage::set(cx, BATCH_KEY, value);
+                            LocalStorage::set(cx, SHRINK_BATCH_KEY, value);
                             window.refresh();
                         })
                 }),
@@ -290,7 +251,7 @@ impl Render for ShrinkPage {
                 widgets::primary_action(
                     "shrink-run",
                     format!("Shrink {}", format::count(batch.len() as i64)),
-                    "⌘↩",
+                    widgets::MAIN_ACTION_KEYS,
                 )
                 .disabled(batch.is_empty())
                 .on_click(cx.listener(|this, _, window, cx| this.shrink(window, cx))),
@@ -298,7 +259,7 @@ impl Render for ShrinkPage {
             )
             .into_any_element()
         });
-        let top_bar = TopBar::new(&shell, "Shrink")
+        let top_bar = TopBar::new(&shell, TidyPage::Shrink.label())
             .when_some(batches, |bar, batches| bar.trailing(batches))
             .when_some(action, |bar, action| bar.trailing(action));
 
@@ -505,7 +466,6 @@ impl Render for ShrinkPage {
             .id("shrink")
             .track_focus(&self.focus)
             .key_context("TidyShrink")
-            .on_key_down(cx.listener(Self::on_key_down))
             .flex()
             .flex_col()
             .size_full()

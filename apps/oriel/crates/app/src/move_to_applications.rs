@@ -1,7 +1,6 @@
 //! On macOS, offers to move an Oriel started outside Applications (from the disk image, or
-//! Downloads) into it, as Electron Oriel's `offerMoveToApplications` does: once a launch, with
-//! "Don't ask again" remembered in the shell's folder (`move-to-applications-declined`, the file
-//! Electron Oriel writes).
+//! Downloads) into it: once a launch, with "Don't ask again" remembered in the shell's folder
+//! (`move-to-applications-declined`, the file Electron Oriel wrote).
 //!
 //! Moving copies the bundle into `/Applications` (`~/Applications` when that is not writable),
 //! replacing an older copy only when the owner says so, moves the old copy to the Trash unless it
@@ -9,19 +8,13 @@
 //! again from Applications once this process has gone.
 //!
 //! The offer skips development builds, binaries outside a bundle and checks' runs: a run with
-//! `ORIEL_DATA_DIR` set is offered only with `ORIEL_MOVE_OFFER=1`, and there
-//! `ORIEL_APPLICATIONS_DIR` names the folder to move into, so a check never touches the real
-//! Applications.
+//! `ORIEL_DATA_DIR` set is offered only with `ORIEL_MOVE_OFFER=1` (or takes it unasked with
+//! `ORIEL_MOVE_OFFER=move`), and there `ORIEL_APPLICATIONS_DIR` names the folder to move into, so
+//! a check never touches the real Applications.
 
 use std::path::{Path, PathBuf};
 
-/// The file whose presence says "Don't ask again", in the shell's folder.
-pub const DECLINED_FILE: &str = "move-to-applications-declined";
-/// `1` offers the move in a run with `ORIEL_DATA_DIR` set, for a check; `move` takes the
-/// offer there without asking, as clicking Move to Applications (and Replace) would.
-pub const OFFER_VARIABLE: &str = "ORIEL_MOVE_OFFER";
-/// The folder a check's run moves into, in place of Applications; read only in such a run.
-pub const APPLICATIONS_VARIABLE: &str = "ORIEL_APPLICATIONS_DIR";
+use oriel_core_paths::Package;
 
 /// What the app knows at launch that decides the offer.
 #[derive(Debug)]
@@ -32,10 +25,32 @@ pub struct Situation {
     pub development: bool,
     /// A run with its own data folder (`ORIEL_DATA_DIR`), as checks make.
     pub test_run: bool,
-    /// [`OFFER_VARIABLE`] is `1`.
-    pub forced: bool,
+    /// What `ORIEL_MOVE_OFFER` asks of a run with `ORIEL_DATA_DIR` set.
+    pub forced: Option<MoveOffer>,
     /// [`DECLINED_FILE`] is there.
     pub declined: bool,
+}
+
+/// `ORIEL_MOVE_OFFER`, which a check sets to see the offer in a run that would skip it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoveOffer {
+    /// `1`: offers the move.
+    Ask,
+    /// `move`: takes the offer without asking, as clicking Move to Applications (and Replace)
+    /// would.
+    Take,
+}
+
+impl MoveOffer {
+    pub const VARIABLE: &str = "ORIEL_MOVE_OFFER";
+
+    pub fn parse(value: Option<&str>) -> Option<Self> {
+        match value? {
+            "1" => Some(Self::Ask),
+            "move" => Some(Self::Take),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -60,7 +75,7 @@ pub fn decide(situation: &Situation) -> Decision {
     if situation.development {
         return Decision::Skip(Skip::Development);
     }
-    if situation.test_run && !situation.forced {
+    if situation.test_run && situation.forced.is_none() {
         return Decision::Skip(Skip::TestRun);
     }
     let Some(bundle) = bundle_of(&situation.executable) else {
@@ -77,17 +92,15 @@ pub fn decide(situation: &Situation) -> Decision {
 
 /// The `.app` whose `Contents/MacOS` holds `executable`.
 pub fn bundle_of(executable: &Path) -> Option<PathBuf> {
-    let macos = executable.parent()?;
-    let contents = macos.parent()?;
+    let Some(Package::MacBundle(contents)) = Package::of_executable(executable) else {
+        return None;
+    };
     let bundle = contents.parent()?;
-    (macos.file_name()? == "MacOS"
-        && contents.file_name()? == "Contents"
-        && bundle.extension()? == "app")
-        .then(|| bundle.to_path_buf())
+    (bundle.extension()? == "app").then(|| bundle.to_path_buf())
 }
 
-/// Whether `bundle` is in `/Applications` or `~/Applications`, at any depth, as Electron's
-/// `isInApplicationsFolder` reads it, however either is spelled ([`inside`]).
+/// Whether `bundle` is in `/Applications` or `~/Applications`, at any depth, however either is
+/// spelled ([`inside`]).
 pub fn in_applications(bundle: &Path, home: &Path) -> bool {
     inside(bundle, Path::new("/Applications")) || inside(bundle, &home.join("Applications"))
 }
@@ -164,29 +177,30 @@ mod mac {
 
     use gpui_kit::{AnyWindowHandle, App, AsyncWindowContext, PromptLevel};
     use oriel_core_paths::DataRoot;
+    use oriel_launch::Variables;
 
-    use super::{
-        APPLICATIONS_VARIABLE, DECLINED_FILE, Decision, OFFER_VARIABLE, Situation, decide,
-        destination,
-    };
+    use super::{Decision, MoveOffer, Situation, decide, destination};
+
+    /// Where a check's move goes, in place of Applications.
+    const APPLICATIONS_DIR: &str = "ORIEL_APPLICATIONS_DIR";
 
     impl Situation {
-        fn now(data: &DataRoot) -> Option<Self> {
+        fn now(data: &DataRoot, launch: &Variables) -> Option<Self> {
             Some(Self {
                 executable: std::env::current_exe().ok()?,
                 home: std::env::home_dir()?,
                 development: cfg!(debug_assertions),
                 test_run: data.is_sandboxed(),
-                forced: std::env::var(OFFER_VARIABLE)
-                    .is_ok_and(|value| value == "1" || value == "move"),
-                declined: data.shell().join(DECLINED_FILE).exists(),
+                forced: MoveOffer::parse(launch.get(MoveOffer::VARIABLE)),
+                declined: data.move_to_applications_declined().exists(),
             })
         }
     }
 
     /// Asks over `window`, when [`decide`] says to, and moves the app if the owner agrees.
-    pub fn offer(data: &DataRoot, window: AnyWindowHandle, cx: &mut App) {
-        let Some(situation) = Situation::now(data) else {
+    /// `launch` holds the check's variables.
+    pub fn offer(data: &DataRoot, launch: &Variables, window: AnyWindowHandle, cx: &mut App) {
+        let Some(situation) = Situation::now(data, launch) else {
             return;
         };
         let bundle = match decide(&situation) {
@@ -196,8 +210,8 @@ mod mac {
                 return;
             }
         };
-        let folder = match std::env::var_os(APPLICATIONS_VARIABLE) {
-            Some(folder) if situation.test_run && !folder.is_empty() => PathBuf::from(folder),
+        let folder = match launch.get(APPLICATIONS_DIR) {
+            Some(folder) if situation.test_run => PathBuf::from(folder),
             _ => destination(&situation.home, writable(Path::new("/Applications"))),
         };
         // Already there under another spelling, or a check's own folder, where the moved copy
@@ -206,16 +220,16 @@ mod mac {
             log::debug!("no offer to move to Applications: it is there already");
             return;
         }
-        let declined = data.shell().join(DECLINED_FILE);
+        let declined = data.move_to_applications_declined();
         // A check's old copy goes to its own trash, never the owner's.
         let sandbox = situation.test_run.then(|| data.clone());
-        let unasked =
-            situation.test_run && std::env::var(OFFER_VARIABLE).is_ok_and(|v| v == "move");
+        let unasked = situation.test_run && situation.forced == Some(MoveOffer::Take);
+        let launch = launch.clone();
         window
             .update(cx, |_, window, cx| {
                 window
                     .spawn(cx, async move |cx| {
-                        ask(cx, bundle, folder, declined, unasked, sandbox).await;
+                        ask(cx, bundle, folder, declined, unasked, sandbox, &launch).await;
                     })
                     .detach();
             })
@@ -229,6 +243,7 @@ mod mac {
         declined: PathBuf,
         unasked: bool,
         sandbox: Option<DataRoot>,
+        launch: &Variables,
     ) {
         let answer = if unasked {
             Ok(0)
@@ -239,7 +254,7 @@ mod mac {
             Ok(0) => {}
             Ok(2) => {
                 let now = std::time::SystemTime::now();
-                let stamp = format!("{}\n", oriel_core_sync::iso_timestamp(now));
+                let stamp = format!("{}\n", oriel_core_domain::format::iso_timestamp(now));
                 if let Err(error) = fs::write(&declined, stamp) {
                     log::warn!("could not remember the declined move: {error}");
                 }
@@ -255,16 +270,19 @@ mod mac {
             return;
         }
         if target.exists() {
-            let replace = cx.prompt(
-                PromptLevel::Warning,
-                "Replace the Oriel in Applications?",
-                Some(
-                    "An older copy is there. Your folders, catalogs and settings are not touched.",
-                ),
-                &["Replace", "Cancel"],
-            );
-            if !unasked && replace.await != Ok(0) {
-                return;
+            if !unasked {
+                let replace = cx.prompt(
+                    PromptLevel::Warning,
+                    "Replace the Oriel in Applications?",
+                    Some(
+                        "An older copy is there. Your folders, catalogs and settings are not \
+                         touched.",
+                    ),
+                    &["Replace", "Cancel"],
+                );
+                if replace.await != Ok(0) {
+                    return;
+                }
             }
             if is_running(&target) {
                 failed(
@@ -295,7 +313,7 @@ mod mac {
         {
             log::warn!("the old copy stays at {}: {error}", bundle.display());
         }
-        if let Err(error) = relaunch(&target) {
+        if let Err(error) = relaunch(&target, launch) {
             failed(
                 cx,
                 &format!("It is in Applications, but did not start: {error}"),
@@ -403,7 +421,14 @@ mod mac {
             fs::rename(&target, &replaced).map_err(describe)?;
         }
         if let Err(error) = fs::rename(&staging, &target) {
-            fs::rename(&replaced, &target).ok();
+            if replaced.exists()
+                && let Err(restore) = fs::rename(&replaced, &target)
+            {
+                return Err(format!(
+                    "{error}. The old copy could not be put back ({restore}); it is at {}",
+                    replaced.display()
+                ));
+            }
             return Err(error.to_string());
         }
         if replaced.exists() {
@@ -412,7 +437,7 @@ mod mac {
         Ok(target)
     }
 
-    /// Moves the old copy to the Trash, as Electron's move does, so it can be taken back.
+    /// Moves the old copy to the Trash, so it can be taken back.
     fn trash(path: &Path, sandbox: Option<&DataRoot>) -> Result<(), String> {
         use objc2_foundation::{NSFileManager, NSString, NSURL};
 
@@ -430,22 +455,19 @@ mod mac {
     }
 
     /// Starts the app at `target` through LaunchServices once this process has gone, so the two
-    /// never hold the data folder at once. The check variables go along, since `open` passes
+    /// never hold the data folder at once. The launch's variables go along, since `open` passes
     /// no environment of its own.
-    fn relaunch(target: &Path) -> std::io::Result<()> {
+    fn relaunch(target: &Path, launch: &Variables) -> std::io::Result<()> {
         let mut open = vec![OsString::from("/usr/bin/open")];
-        for (name, value) in std::env::vars_os() {
-            // The moved copy is not offered the move again.
-            let passed = {
-                let name = name.to_string_lossy();
-                name.starts_with("ORIEL_") && name != OFFER_VARIABLE
-            };
-            if passed {
-                let mut pair = name;
-                pair.push("=");
-                pair.push(value);
-                open.extend([OsString::from("--env"), pair]);
-            }
+        // The moved copy is not offered the move again.
+        for (name, value) in launch
+            .iter()
+            .filter(|(name, _)| *name != MoveOffer::VARIABLE)
+        {
+            open.extend([
+                OsString::from("--env"),
+                OsString::from(format!("{name}={value}")),
+            ]);
         }
         open.push(target.as_os_str().to_owned());
         // `$0` is the process id; the rest is `open` and its arguments.
@@ -463,7 +485,7 @@ mod mac {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use super::{Decision, Situation, Skip, decide, destination};
+    use super::{Decision, MoveOffer, Situation, Skip, decide, destination};
 
     fn situation(executable: &str) -> Situation {
         Situation {
@@ -471,7 +493,7 @@ mod tests {
             home: PathBuf::from("/Users/owner"),
             development: false,
             test_run: false,
-            forced: false,
+            forced: None,
             declined: false,
         }
     }
@@ -520,7 +542,7 @@ mod tests {
         let mut check = situation(IN_IMAGE);
         check.test_run = true;
         assert_eq!(decide(&check), Decision::Skip(Skip::TestRun));
-        check.forced = true;
+        check.forced = Some(MoveOffer::Ask);
         assert!(matches!(decide(&check), Decision::Offer { .. }));
         let mut declined = situation(IN_IMAGE);
         declined.declined = true;

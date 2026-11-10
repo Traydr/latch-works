@@ -1,0 +1,16 @@
+[package]
+name = "oriel-vips"
+description = "libvips through its C API, loaded at run time: the stills View decodes off macOS and the pictures Tidy probes, prints and converts, read as sharp reads them."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# libvips is LGPL, so it is loaded at run time from the dylib the app ships, never linked in.
+libloading = "0.8"
+log.workspace = true
+oriel-core-paths.workspace = true
+
+[lints]
+workspace = true

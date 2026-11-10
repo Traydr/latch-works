@@ -1,11 +1,13 @@
 //! What every mode's window shares: which mode shows, whether the sidebar is the rail, the work
-//! each mode reports, which section of Settings is open, and the folders the modes work on.
+//! each mode reports, which section of Settings is open, the folders the modes work on, and what
+//! one mode hands another.
 
 use gpui_kit::assets::IconName;
-use gpui_kit::{AppContext as _, Context, Entity};
+use gpui_kit::{App, AppContext as _, Context, Entity, EventEmitter, Subscription, Window};
 
-use crate::activity::Activity;
-use crate::folders::KnownFolder;
+use crate::activity::{Activity, ActivityJob, JobCommand};
+use crate::folders::{HandOff, KnownFolder};
+use crate::mode::ModeMap;
 
 /// Oriel's three modes, in the switcher's order (⌘1–3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -49,31 +51,22 @@ impl ModeId {
         }
     }
 
-    pub fn shortcut(self) -> &'static str {
+    /// The keys that show the mode.
+    pub fn keys(self) -> &'static str {
         match self {
-            ModeId::View => "⌘1",
-            ModeId::Tidy => "⌘2",
-            ModeId::Sync => "⌘3",
-        }
-    }
-
-    pub fn index(self) -> usize {
-        match self {
-            ModeId::View => 0,
-            ModeId::Tidy => 1,
-            ModeId::Sync => 2,
+            ModeId::View => crate::cmd_or_ctrl!("1"),
+            ModeId::Tidy => crate::cmd_or_ctrl!("2"),
+            ModeId::Sync => crate::cmd_or_ctrl!("3"),
         }
     }
 }
 
-/// Work a mode is doing, shown on its switcher button while another mode is on screen (plan 059):
-/// a ring for work with a known end, a dot for work without one.
+/// How a mode's work shows on its switcher button while another mode is on screen (plan 059): a
+/// ring for work with a known end, a dot for work without one.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ModeActivity {
-    /// A scan or an analysis: a dot.
     Working,
-    /// A push or a Tidy change, `0.0..=1.0` done: a ring, and the Dock's progress. Quitting waits
-    /// for it.
+    /// `0.0..=1.0` done; the Dock shows it too.
     Progress(f32),
 }
 
@@ -105,6 +98,76 @@ impl ModeActivity {
             )
         })
     }
+}
+
+/// What a mode reports it is doing. Report `Work::default()` when it is idle.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Work {
+    /// How the switcher shows it.
+    pub shown: Option<ModeActivity>,
+    /// Whether quitting waits for it: work that changes files or the server, and can finish.
+    pub holds_quit: bool,
+    /// Its rows in the activity panel.
+    pub jobs: Vec<ActivityJob>,
+}
+
+/// One mode's line to the shell's switcher and activity panel.
+#[derive(Clone)]
+pub struct ModeReporter {
+    shell: Entity<ShellState>,
+    mode: ModeId,
+}
+
+impl ModeReporter {
+    pub fn new(shell: &Entity<ShellState>, mode: ModeId) -> Self {
+        Self {
+            shell: shell.clone(),
+            mode,
+        }
+    }
+
+    /// Reports the mode's work as it is now, in one call so the switcher and the panel agree.
+    pub fn report(&self, work: Work, cx: &mut App) {
+        let Work {
+            shown,
+            holds_quit,
+            jobs,
+        } = work;
+        let mode = self.mode;
+        let board = self.shell.read(cx).jobs.clone();
+        self.shell
+            .update(cx, |shell, cx| shell.set_work(mode, shown, holds_quit, cx));
+        board.update(cx, |board, cx| board.set_jobs(mode, jobs, cx));
+    }
+
+    /// Calls `on_command` with each Pause, Resume and Stop pressed in the panel on one of this
+    /// mode's jobs.
+    pub fn on_command<T: 'static>(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<T>,
+        mut on_command: impl FnMut(&mut T, &JobCommand, &mut Window, &mut Context<T>) + 'static,
+    ) -> Subscription {
+        let mode = self.mode;
+        let board = self.shell.read(cx).jobs.clone();
+        cx.subscribe_in(
+            &board,
+            window,
+            move |this, _, command: &JobCommand, window, cx| {
+                if command.mode() == mode {
+                    on_command(this, command, window, cx);
+                }
+            },
+        )
+    }
+}
+
+/// What a mode asks of the shell: show mode `to` with `target`, as Open in View, Show in Tidy and
+/// Sync this folder do.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HandOffRequest {
+    pub to: ModeId,
+    pub target: HandOff,
 }
 
 /// A section of the one Settings page: the app's own, or one mode's.
@@ -158,11 +221,14 @@ pub struct ShellState {
     /// expanded it all the same.
     narrow_window: bool,
     expanded_while_narrow: bool,
-    activity: [Option<ModeActivity>; 3],
+    activity: ModeMap<Option<ModeActivity>>,
+    holds_quit: ModeMap<bool>,
     jobs: Entity<Activity>,
     settings: Option<SettingsSection>,
     folders: Vec<KnownFolder>,
 }
+
+impl EventEmitter<HandOffRequest> for ShellState {}
 
 impl ShellState {
     pub fn new(mode: ModeId, rail: bool, cx: &mut Context<Self>) -> Self {
@@ -171,7 +237,8 @@ impl ShellState {
             rail,
             narrow_window: false,
             expanded_while_narrow: false,
-            activity: [None; 3],
+            activity: ModeMap::default(),
+            holds_quit: ModeMap::default(),
             jobs: cx.new(|_| Activity::default()),
             settings: None,
             folders: Vec::new(),
@@ -179,7 +246,7 @@ impl ShellState {
     }
 
     /// Every mode's jobs, running and queued, which the shell draws at the window's bottom
-    /// right; each mode publishes its own there with [`Activity::set_jobs`].
+    /// right; each mode reports its own through its [`ModeReporter`].
     pub fn jobs(&self) -> &Entity<Activity> {
         &self.jobs
     }
@@ -216,48 +283,58 @@ impl ShellState {
         }
     }
 
-    /// What `mode` is doing, if anything.
+    /// How `mode`'s work shows, if it reports any.
     pub fn activity(&self, mode: ModeId) -> Option<ModeActivity> {
-        self.activity[mode.index()]
+        self.activity[mode]
     }
 
-    /// Modes report their work here; the shell draws it, shows it in the Dock, and keeps the app
-    /// open for a [`ModeActivity::Progress`]. Report `None` when the work ends.
-    pub fn set_activity(
+    fn set_work(
         &mut self,
         mode: ModeId,
-        activity: Option<ModeActivity>,
+        shown: Option<ModeActivity>,
+        holds_quit: bool,
         cx: &mut Context<Self>,
     ) {
-        let slot = &mut self.activity[mode.index()];
-        if *slot == activity {
-            return;
-        }
-        let changed = ModeActivity::shown(*slot) != ModeActivity::shown(activity);
-        *slot = activity;
+        let changed = ModeActivity::shown(self.activity[mode]) != ModeActivity::shown(shown)
+            || self.holds_quit[mode] != holds_quit;
+        self.activity[mode] = shown;
+        self.holds_quit[mode] = holds_quit;
         if changed {
             cx.notify();
         }
     }
 
-    /// Whether a mode is running work that quitting must wait for: a push or a Tidy change.
-    pub fn is_busy(&self) -> bool {
-        self.activity
-            .iter()
-            .any(|activity| matches!(activity, Some(ModeActivity::Progress(_))))
+    /// Whether a mode runs work that quitting must wait for.
+    pub fn holds_quit(&self) -> bool {
+        self.holds_quit.values().any(|holds| *holds)
     }
 
-    /// The mean of the modes' progress, `0.0..=1.0`, while any reports some; the Dock shows it.
+    /// Whether no mode reports work.
+    pub fn is_idle(&self) -> bool {
+        self.activity.values().all(Option::is_none) && !self.holds_quit()
+    }
+
+    /// The mean of the rings' progress, `0.0..=1.0`, while any mode shows one; the Dock shows it.
     pub fn progress(&self) -> Option<f32> {
         let ratios: Vec<f32> = self
             .activity
-            .iter()
+            .values()
             .filter_map(|activity| match activity {
                 Some(ModeActivity::Progress(ratio)) => Some(ratio.clamp(0., 1.)),
                 _ => None,
             })
             .collect();
         (!ratios.is_empty()).then(|| ratios.iter().sum::<f32>() / ratios.len() as f32)
+    }
+
+    /// Whether `mode` is on screen, with no Settings over it.
+    pub fn shows(&self, mode: ModeId) -> bool {
+        self.mode == mode && self.settings.is_none()
+    }
+
+    /// Asks the shell to show mode `to` with `target`.
+    pub fn hand_off(&mut self, to: ModeId, target: HandOff, cx: &mut Context<Self>) {
+        cx.emit(HandOffRequest { to, target });
     }
 
     pub fn mode(&self) -> ModeId {
@@ -346,13 +423,5 @@ mod tests {
             "View · working"
         );
         assert_eq!(ModeActivity::Progress(1.7).percent(), 100);
-    }
-
-    #[test]
-    fn mode_keys_round_trip() {
-        for mode in ModeId::ALL {
-            assert_eq!(ModeId::from_key(mode.key()), Some(mode));
-        }
-        assert_eq!(ModeId::from_key("frame-view"), None);
     }
 }

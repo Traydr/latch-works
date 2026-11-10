@@ -59,11 +59,7 @@ impl RenderOnce for GeneralSettings {
                             Button::new("reveal-data-folder")
                                 .bar_size()
                                 .icon(Icon::new(IconName::FolderOpen))
-                                .label(if cfg!(target_os = "macos") {
-                                    "Show in Finder"
-                                } else {
-                                    "Show in Explorer"
-                                })
+                                .label(oriel_ui::keys::REVEAL_LABEL)
                                 .on_click(move |_, _, cx| cx.open_with_system(&folder)),
                         ),
                 ),
@@ -73,7 +69,11 @@ impl RenderOnce for GeneralSettings {
                     .px_1()
                     .text_caption()
                     .text_color(cx.theme().muted_foreground)
-                    .child(format!("{} {}", crate::APP_NAME, env!("CARGO_PKG_VERSION"))),
+                    .child(format!(
+                        "{} {}",
+                        oriel_core_paths::APP_NAME,
+                        crate::about::VERSION
+                    )),
             )
     }
 }

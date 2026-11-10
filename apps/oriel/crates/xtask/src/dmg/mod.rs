@@ -26,7 +26,9 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
 
-use crate::bundle::{self, APP_NAME, ICON_FILE};
+use oriel_core_paths::{APP_NAME, Package};
+
+use crate::bundle::{self, ICON_FILE};
 use crate::support::{self, capture, log, run_here};
 
 /// The volume's name, which Finder shows in its sidebar and the window's title.
@@ -73,8 +75,8 @@ pub fn make() -> Result<PathBuf> {
 
 /// Makes the image of `app`, beside it, and returns where the image is.
 fn make_from(app: &Path) -> Result<PathBuf> {
-    let workspace = support::workspace();
-    let version = bundle::crate_version(&workspace)?;
+    let workspace = oriel_core_paths::workspace();
+    let version = bundle::VERSION;
     let app = std::path::absolute(app)?;
     if !app.join("Contents/Info.plist").is_file() {
         bail!("{} is not an app bundle", app.display());
@@ -85,12 +87,15 @@ fn make_from(app: &Path) -> Result<PathBuf> {
     let work = folder.join(".dmg-work");
     if work.exists() {
         // A run stopped midway may have left its image mounted there.
-        let _ = detach(&work.join("mount"));
+        let mount = work.join("mount");
+        if is_mount_point(&mount) {
+            detach(&mount)?;
+        }
         fs::remove_dir_all(&work)?;
     }
     fs::create_dir_all(&work)?;
     let writable = work.join("writable.dmg");
-    let image = folder.join(image_name(&version, "arm64"));
+    let image = folder.join(image_name(version, "arm64"));
     let made = make_writable(&app, &workspace, &work, &writable).and_then(|()| {
         // ULFO is LZFSE, as Electron Oriel's DMG; it opens on macOS 10.11 and later, well under
         // the app's own floor.
@@ -205,7 +210,8 @@ fn fill(app: &Path, workspace: &Path, mount: &Path) -> Result<()> {
     // The volume shows the app's icon: `.VolumeIcon.icns` and the root's custom-icon flag, set
     // in its Finder info directly, as appdmg does, since SetFile comes only with Xcode.
     let volume_icon = mount.join(".VolumeIcon.icns");
-    fs::copy(app.join("Contents/Resources").join(ICON_FILE), &volume_icon)
+    let resources = Package::MacBundle(app.join("Contents")).resources();
+    fs::copy(resources.join(ICON_FILE), &volume_icon)
         .context("copying the app's icon onto the volume")?;
     set_finder_flags(mount, HAS_CUSTOM_ICON)?;
     // Their dot names hide them already; the flag hides them as Finder's own files are.
@@ -260,6 +266,16 @@ fn set_finder_flags(path: &Path, flags: u8) -> Result<()> {
 
 /// Unmounts the image, waiting for Spotlight or Finder to let go of it as appdmg does, and
 /// forcing it the last time.
+/// Whether a volume is mounted at `folder`: its device differs from its parent's.
+fn is_mount_point(folder: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    let device = |path: &Path| fs::metadata(path).map(|metadata| metadata.dev());
+    match (device(folder), folder.parent().map(device)) {
+        (Ok(own), Some(Ok(parent))) => own != parent,
+        _ => false,
+    }
+}
+
 fn detach(mount: &Path) -> Result<()> {
     let mut wait = Duration::from_secs(1);
     for attempt in 1..=5 {

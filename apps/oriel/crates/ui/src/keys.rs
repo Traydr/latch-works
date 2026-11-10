@@ -1,4 +1,5 @@
-//! The command key: ⌘ on macOS and Ctrl elsewhere, as Electron's `CmdOrCtrl` reads.
+//! The command key, ⌘ on macOS and Ctrl elsewhere, keys as the owner reads them, and the
+//! system's own words for its file manager.
 //!
 //! GPUI reads `cmd-` as the Windows key on Windows, where Windows keeps most of its combinations
 //! for itself (⊞1 opens the first taskbar app, ⊞M minimises every window). GPUI's own
@@ -18,6 +19,90 @@ macro_rules! cmd_or_ctrl {
             concat!("ctrl-", $keys)
         }
     };
+}
+
+/// Opens Settings at the section of the mode on screen.
+pub const SETTINGS: &str = cmd_or_ctrl!(",");
+/// The sidebar full or as the rail.
+pub const SIDEBAR: &str = cmd_or_ctrl!("\\");
+
+/// What a command that shows a file in the system's file manager is called there.
+pub const REVEAL_LABEL: &str = if cfg!(target_os = "macos") {
+    "Show in Finder"
+} else {
+    "Show in Explorer"
+};
+
+/// A GPUI keystroke as the owner reads it: `cmd-alt-1` is ⌥⌘1 on macOS and Ctrl+Alt+1 elsewhere,
+/// where the command key is Ctrl ([`cmd_or_ctrl!`]). A key it has no name for is written as it is,
+/// its first letter upper case: `1–9`, `Click`.
+pub fn display(keystroke: &str) -> String {
+    let mac = cfg!(target_os = "macos");
+    let (modifiers, key) = match keystroke.strip_suffix("--") {
+        Some(modifiers) => (modifiers, "-"),
+        None => keystroke.rsplit_once('-').unwrap_or(("", keystroke)),
+    };
+    let held = |name: &str| modifiers.split('-').any(|modifier| modifier == name);
+    let command = held("cmd");
+    let parts = [
+        (held("ctrl") || (command && !mac), "⌃", "Ctrl"),
+        (held("alt"), "⌥", "Alt"),
+        (held("shift"), "⇧", "Shift"),
+        (command && mac, "⌘", ""),
+    ];
+    let key = key_name(key, mac);
+    if mac {
+        let mut text: String = parts
+            .iter()
+            .filter(|(held, ..)| *held)
+            .map(|(_, glyph, _)| *glyph)
+            .collect();
+        text.push_str(&key);
+        text
+    } else {
+        let mut words: Vec<&str> = parts
+            .iter()
+            .filter(|(held, ..)| *held)
+            .map(|(.., word)| *word)
+            .collect();
+        words.push(&key);
+        words.join("+")
+    }
+}
+
+/// A tooltip or menu row with its keys: "Rescan  ⌘R".
+pub fn labelled(label: &str, keystroke: &str) -> String {
+    format!("{label}  {}", display(keystroke))
+}
+
+fn key_name(key: &str, mac: bool) -> String {
+    let named = match key {
+        "enter" if mac => "↩",
+        "enter" => "Enter",
+        "backspace" if mac => "⌫",
+        "backspace" => "Backspace",
+        "delete" if mac => "⌦",
+        "delete" => "Delete",
+        "escape" => "Esc",
+        "space" => "Space",
+        "tab" => "Tab",
+        "left" => "←",
+        "right" => "→",
+        "up" => "↑",
+        "down" => "↓",
+        "pageup" => "PgUp",
+        "pagedown" => "PgDn",
+        "home" => "Home",
+        "end" => "End",
+        _ => {
+            let mut chars = key.chars();
+            return match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+                None => String::new(),
+            };
+        }
+    };
+    named.to_owned()
 }
 
 /// Whether the command key is held, for a key or click handler: ⌘ on macOS, where Ctrl does not

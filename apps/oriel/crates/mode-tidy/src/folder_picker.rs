@@ -1,10 +1,10 @@
-//! Tidy's own folder picker (`components/FolderPicker.tsx`), in place of the system's: a path
+//! Tidy's own folder picker, in place of the system's: a path
 //! field that lists the folders inside what is typed and narrows them as a name is typed, with
 //! the places beside it. ↑ ↓ highlight a folder, ↩ opens it, ↩ on nothing highlighted (or ⌘↩)
 //! chooses, ⌘↑ goes to the enclosing folder.
 //!
-//! A picker for a folder to tidy lists Electron Oriel's places (the home folder, its usual
-//! folders, the drives) and chooses any folder, as Electron's does. In a sandboxed run
+//! A picker for a folder to tidy lists the usual places (the home folder, its usual folders, the
+//! drives) and chooses any folder. In a sandboxed run
 //! (`ORIEL_DATA_DIR` set), where Tidy changes files only inside its sandbox or the temp folder,
 //! it offers those two first, lists the rest as unavailable, with the rule as their caption and in
 //! each one's tooltip, and cannot choose a folder outside them. A picker `within` a root (Move
@@ -63,7 +63,7 @@ impl NamedPath for FolderEntry {
     }
 }
 
-/// A folder's listing, or why there is none (`FolderListing`).
+/// A folder's listing, or why there is none.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Listing {
     pub path: PathBuf,
@@ -76,7 +76,7 @@ fn offered(name: &str) -> bool {
     !name.starts_with('.') && !is_system_junk_directory(name) && !name.ends_with(".app")
 }
 
-/// The folders inside `folder`, in natural order; a symlink to a folder counts (`listFolder`).
+/// The folders inside `folder`, in natural order; a symlink to a folder counts.
 pub fn list_folder(folder: &Path) -> Listing {
     let parent = folder.parent().map(Path::to_path_buf);
     let folders = match std::fs::read_dir(folder) {
@@ -117,7 +117,7 @@ struct Place {
     available: bool,
 }
 
-/// The places beside the list, under their headings, as Electron Oriel's `folderPlaces` finds
+/// The places beside the list, under their headings, found
 /// them, after Oriel's own two in a sandboxed run.
 fn places_for(sandbox: Option<&DataRoot>) -> Vec<(SharedString, Vec<Place>)> {
     let admits = |path: &Path| sandbox.is_none_or(|data| data.admits_tidy_root(path));
@@ -187,8 +187,7 @@ fn places_for(sandbox: Option<&DataRoot>) -> Vec<(SharedString, Vec<Place>)> {
     groups
 }
 
-/// Mounted drives, from `/Volumes`; the startup disk shows there as a link to `/`
-/// (`listVolumes`).
+/// Mounted drives, from `/Volumes`; the startup disk shows there as a link to `/`.
 fn list_volumes() -> Vec<FolderEntry> {
     let Ok(entries) = std::fs::read_dir("/Volumes") else {
         return Vec::new();
@@ -267,10 +266,6 @@ impl FolderPicker {
         };
         picker.open(start, true, select, window, cx);
         picker
-    }
-
-    pub fn listing(&self) -> Option<&Listing> {
-        self.listing.as_ref()
     }
 
     /// The folder the primary button would choose: the highlighted one, else the one listed.
@@ -645,7 +640,7 @@ impl Render for FolderPicker {
             .options
             .sandbox
             .as_ref()
-            .map(crate::links::sandbox_rule);
+            .map(oriel_core_tidy::sandbox_rule);
         let mut index = 0;
         let mut explained = false;
         let places = (!self.places.is_empty()).then(|| {
@@ -677,7 +672,7 @@ impl Render for FolderPicker {
                                 .text_color(theme.muted_foreground)
                                 .child(heading.clone()),
                         )
-                        .when(explain && rule.is_some(), |this| {
+                        .when_some(rule.clone().filter(|_| explain), |this, rule| {
                             this.child(
                                 div()
                                     .id("picker-places-rule")
@@ -686,10 +681,7 @@ impl Render for FolderPicker {
                                     .pb(px(6.))
                                     .text_caption()
                                     .text_color(theme.muted_foreground)
-                                    .child(
-                                        "With ORIEL_DATA_DIR set, Tidy works only in the \
-                                         sandbox and the temp folder",
-                                    ),
+                                    .child(rule),
                             )
                         })
                         .children(places.iter().map(|place| {
@@ -783,7 +775,7 @@ impl Render for FolderPicker {
             self.options
                 .sandbox
                 .as_ref()
-                .map(crate::links::sandbox_rule)
+                .map(oriel_core_tidy::sandbox_rule)
         } else {
             None
         };
@@ -828,7 +820,10 @@ impl Render for FolderPicker {
                                             .quiet_edge(cx)
                                             .icon(Icon::new(IconName::ArrowUp))
                                             .accessibility_label("Enclosing folder")
-                                            .tooltip("Enclosing folder  ⌘↑")
+                                            .tooltip(oriel_ui::keys::labelled(
+                                                "Enclosing folder",
+                                                "cmd-up",
+                                            ))
                                             .disabled(at_top)
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.go_up(window, cx);
@@ -886,8 +881,8 @@ impl Render for FolderPicker {
                             .bar_size()
                             .primary()
                             .label(action)
-                            .child(crate::widgets::key_hint("⌘↩"))
-                            .tooltip(format!("{}  ⌘↩", self.options.action))
+                            .child(crate::widgets::key_hint("cmd-enter"))
+                            .tooltip(oriel_ui::keys::labelled(&self.options.action, "cmd-enter"))
                             .disabled(!admitted)
                             .on_click(cx.listener(|this, _, window, cx| this.choose(window, cx))),
                     ),

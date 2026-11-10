@@ -1,29 +1,27 @@
 //! Tidy: Overview is home. Duplicates, Convert and Clean up are the work, in any order, and Shrink
 //! is the optional AV1 re-encode beside them; Library and History are the archive; Holding sits at
-//! the foot of the sidebar. As Electron Oriel's Tidy mode draws them (its `modes/tidy/renderer`),
-//! on `oriel-core-tidy`'s engine.
+//! the foot of the sidebar, on `oriel-core-tidy`'s engine.
 //!
-//! [`TidyMode`] is the mode's root: the sidebar, the page on screen, the shell's Tidy commands
-//! (Add Folder…, Rescan, Undo, Select All, Find, the pages on ⌥⌘1–7, the shortcut sheet) and the
-//! folder picker. What the pages share lives in [`TidyState`]; changes to files go through
-//! [`changes::TidyChanges`], whose implementation the app hands in. What Tidy hands the other
-//! modes, and takes from them, goes through the shell as [`TidyEvent`]s and
-//! [`TidyMode::show_hand_off`] ([`links`]).
+//! [`TidyMode`] is the mode's root: the sidebar, the page on screen, Tidy's commands (Add
+//! Folder…, Rescan, Undo, Select All, Find, the pages on ⌥⌘1–7) and the folder picker. What the
+//! pages share lives in [`TidyState`]: every scan, analysis and change is a job running one of the
+//! engine's operations, whose queue decides when each runs, and the state reports them to the
+//! shell's activity panel. What Tidy hands the other modes, and takes from them, goes through the
+//! shell ([`links`]).
 //!
-//! Tidy changes files in any folder the owner adds, as Electron Oriel's does (plan 063, decision
-//! 18). A sandboxed run (`ORIEL_DATA_DIR` set, for checks and agents) keeps to roots under
-//! `DataRoot::sandbox()` or the temp folder, and its folder picker and welcome say so.
+//! Tidy changes files in any folder the owner adds (plan 063, decision 18). A sandboxed run
+//! (`ORIEL_DATA_DIR` set, for checks and agents) keeps to roots under `DataRoot::sandbox()` or
+//! the temp folder, and its folder picker and welcome say so.
 
 mod actions;
-pub mod changes;
 mod check;
 mod cleanup;
 mod convert;
 pub mod duplicates;
 mod folder_picker;
-pub mod format;
 mod history;
 mod holding;
+mod labels;
 pub mod library;
 pub mod links;
 mod loaded;
@@ -31,6 +29,7 @@ mod overview;
 mod page_spike;
 mod pages;
 mod quick_look;
+mod selection;
 mod settings;
 mod shortcuts;
 mod shrink;
@@ -42,44 +41,62 @@ mod thumbs;
 mod widgets;
 mod windowed;
 
-pub use actions::{PerformOptions, TidyStep};
-pub use changes::{Changes, EngineChanges, NotYet, TidyChanges};
 pub use duplicates::DuplicatesPage;
-pub use folder_picker::{FolderPicker, PickOptions};
 pub use holding::HoldingPage;
 pub use library::{LibraryMenu, LibraryMode, LibraryPage, MenuChoice, last_menu};
-pub use links::TidyEvent;
-pub use overview::OverviewPage;
-pub use pages::TidyPage;
-pub use quick_look::{QUICK_LOOK_LABEL, last_quick_look};
-pub use shortcuts::open as show_shortcuts;
-pub use state::{LibraryPreset, TidyState};
-pub use synthetic::{LibraryColumn, LibraryDelegate, LibraryRow, SyntheticLibrary, synthetic_rows};
-pub use widgets::last_toast;
+pub use loaded::TidyClient;
+pub use pages::{ShowPage, TidyPage};
+pub use quick_look::last_quick_look;
+pub use state::TidyState;
 
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::time::Instant;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Icon, WindowExt as _};
 use gpui_kit::{
-    AnyElement, AnyView, AppContext as _, Context, Entity, EventEmitter, ExternalPaths,
-    FocusHandle, Focusable, FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent,
-    ParentElement as _, Render, Styled as _, Subscription, Window, div, px,
+    AnyElement, AnyView, App, AppContext as _, Context, Entity, ExternalPaths, FocusHandle,
+    Focusable, FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _,
+    Render, SharedString, Styled as _, Subscription, Task, Window, actions, div, px,
 };
-use oriel_core_paths::DataRoot;
-use oriel_ui::TextRole as _;
+use oriel_launch::Launch;
+use oriel_ui::shortcuts::Sheet;
 use oriel_ui::{
-    ControlSize as _, HandOff, ModeId, ModeLayout, OfferedFolders, ShellState, TopBar, commands,
+    Command, ControlSize as _, FolderSetUp, Foot, HandOff, MenuSlot, Mode, ModeId, ModeLayout,
+    ModeReporter, OfferedFolders, ShellState, TextRole as _, TopBar,
 };
 
 use crate::cleanup::CleanupPage;
 use crate::convert::ConvertPage;
+use crate::folder_picker::PickOptions;
 use crate::history::HistoryPage;
+use crate::overview::OverviewPage;
 use crate::shrink::ShrinkPage;
+use crate::synthetic::{SyntheticLibrary, synthetic_rows};
 use crate::thumbs::Thumbs;
+
+actions!(
+    tidy,
+    [
+        /// Tidy's folder picker, to add a root.
+        AddFolder,
+        /// The root on screen scanned again.
+        Rescan,
+        /// The last change undone, or the text field's own undo when one has focus.
+        UndoChange,
+        /// Every file on the page selected, or the text field's text.
+        SelectAllItems,
+        /// The page's search.
+        Find
+    ]
+);
+
+pub(crate) const ADD_FOLDER_KEYS: &str = oriel_ui::cmd_or_ctrl!("o");
+pub(crate) const RESCAN_KEYS: &str = oriel_ui::cmd_or_ctrl!("r");
+
+/// Work waiting for the engine to list its folders.
+type WhenReady = Box<dyn FnOnce(&mut TidyMode, &mut Window, &mut Context<TidyMode>)>;
 
 pub struct TidyMode {
     shell: Entity<ShellState>,
@@ -97,8 +114,8 @@ pub struct TidyMode {
     /// to Tidy as it comes on screen (⌘2); Tidy passes them on to the page on screen, and keeps
     /// them while there is none (the welcome, "Starting…").
     focus: FocusHandle,
-    /// Phase 0's Library of synthetic rows, shown in place of the catalog's only when the spike
-    /// asks for it (`ORIEL_SPIKE_LIBRARY`).
+    /// The Library of synthetic rows, shown in place of the catalog's only when the spike
+    /// asks for it.
     spike: Option<Entity<SyntheticLibrary>>,
     /// The pages spike, when `ORIEL_SPIKE_TIDY` asks for it.
     page_spike: Option<page_spike::PageSpike>,
@@ -106,48 +123,24 @@ pub struct TidyMode {
     page: TidyPage,
     /// Tidy's own Settings section, which keeps a folder picker's answer.
     settings: Entity<settings::SettingsSection>,
-    /// What another mode handed Tidy before its engine had listed its folders.
-    pending_hand_off: Option<HandOff>,
+    /// What waits for the engine to list its folders: a hand-off, the welcome's folder.
+    when_ready: Vec<WhenReady>,
     _subscriptions: Vec<Subscription>,
 }
 
-impl EventEmitter<TidyEvent> for TidyMode {}
-
 impl TidyMode {
-    /// Tidy for the shell, keeping its catalog in this run's data folder (`ORIEL_DATA_DIR`, or
-    /// `~/.latch-works/oriel`), changing files through the engine's executor. With the variable
-    /// set, the engine refuses any root outside the sandbox.
-    pub fn new(shell: &Entity<ShellState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let data = DataRoot::from_environment().expect("Oriel needs a data folder");
-        let mut tidy = Self::with_data(shell, &data, Rc::new(EngineChanges), window, cx);
-        tidy.page_spike = page_spike::PageSpike::from_environment();
-        tidy.spike = spike::requested_rows().map(|count| {
-            let started = Instant::now();
-            let rows = synthetic_rows(count);
-            let measured = spike::LibrarySpike::from_environment(started.elapsed());
-            shell.update(cx, |shell, cx| shell.go(ModeId::Tidy, cx));
-            cx.new(|cx| SyntheticLibrary::new(rows, measured, window, cx))
-        });
-        if tidy.spike.is_some() {
-            tidy.state
-                .update(cx, |state, cx| state.go(TidyPage::Library, cx));
-        }
-        let state = tidy.state.clone();
-        if let Some(subscription) = check::apply_from_environment(&state, window, cx) {
-            tidy._subscriptions.push(subscription);
-        }
-        tidy
-    }
-
-    /// Tidy keeping its catalog under `data`, changing files through `changes`.
-    pub fn with_data(
+    /// Tidy keeping its catalog under the launch's data root, changing files through the engine's
+    /// executor, set up for the checks and spikes the launch asks for. In a sandboxed run the
+    /// engine refuses any root outside the sandbox.
+    pub fn new(
         shell: &Entity<ShellState>,
-        data: &DataRoot,
-        changes: Changes,
+        launch: &Launch,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let state = cx.new(|cx| TidyState::new(shell, data.clone(), changes, cx));
+        let checks = &check::TidyChecks::from_variables(&launch.variables);
+        let spikes = &launch.variables;
+        let state = cx.new(|cx| TidyState::new(shell, launch.data.clone(), window, cx));
         let thumbs = cx.new(|_| Thumbs::new());
         let overview = cx.new(|cx| OverviewPage::new(&state, &thumbs, cx));
         let duplicates = cx.new(|cx| DuplicatesPage::new(&state, &thumbs, cx));
@@ -165,32 +158,28 @@ impl TidyMode {
                 this.page = state.read(cx).page();
                 cx.notify();
             }),
-            // The pages' Open in View and Sync this folder go to the shell.
-            cx.subscribe(&state, |_, _, event: &TidyEvent, cx| cx.emit(event.clone())),
-            // Pause, Resume and Stop from the shell's activity panel.
-            cx.subscribe_in(
-                &shell.read(cx).jobs().clone(),
+            ModeReporter::new(shell, ModeId::Tidy).on_command(
                 window,
-                |this, _, command: &oriel_ui::JobCommand, window, cx| {
+                cx,
+                |this, command, _, cx| {
                     this.state
-                        .update(cx, |state, cx| state.on_job_command(command, window, cx));
+                        .update(cx, |state, cx| state.on_job_command(command, cx));
                 },
             ),
-            // A hand-off that came while the engine started is shown once its folders are in.
+            // What came while the engine started goes on once its folders are in, or once it
+            // failed to open, which then says why.
             cx.observe_in(&state, window, |this, state, window, cx| {
-                if state.read(cx).is_ready()
-                    && let Some(target) = this.pending_hand_off.take()
-                {
-                    links::take(&state, target, window, cx);
+                let current = state.read(cx);
+                if current.is_ready() || current.engine_error().is_some() {
+                    for work in std::mem::take(&mut this.when_ready) {
+                        work(this, window, cx);
+                    }
                 }
-                state.update(cx, |state, cx| state.catch_up_analysis(window, cx));
             }),
             // Tidy takes the keys when it comes on screen, so its commands and page keys reach it.
-            // Leaving the screen, it pauses Duplicates' video, as Electron Oriel pauses a hidden
-            // mode's media.
+            // Leaving the screen, it pauses Duplicates' video, as a hidden mode's media pauses.
             cx.observe_in(shell, window, |this, shell, window, cx| {
-                let shell = shell.read(cx);
-                if shell.mode() == ModeId::Tidy && shell.settings().is_none() {
+                if shell.read(cx).shows(ModeId::Tidy) {
                     this.focus_page(window, cx);
                 } else {
                     this.duplicates
@@ -204,7 +193,7 @@ impl TidyMode {
                     let page = state.read(cx).page();
                     if shown != Some(page) {
                         shown = Some(page);
-                        if this.shell.read(cx).mode() == ModeId::Tidy {
+                        if this.shell.read(cx).shows(ModeId::Tidy) {
                             this.focus_page(window, cx);
                         }
                     }
@@ -212,7 +201,7 @@ impl TidyMode {
             }),
         ];
         let page = state.read(cx).page();
-        Self {
+        let mut tidy = Self {
             shell: shell.clone(),
             state,
             thumbs,
@@ -229,63 +218,45 @@ impl TidyMode {
             page_spike: None,
             page,
             settings,
-            pending_hand_off: None,
+            when_ready: Vec::new(),
             _subscriptions: subscriptions,
+        };
+        tidy.page_spike = page_spike::PageSpike::start(spikes);
+        tidy.spike = spike::requested_rows(spikes).map(|count| {
+            let started = Instant::now();
+            let rows = synthetic_rows(count);
+            let measured = spike::LibrarySpike::start(spikes, started.elapsed());
+            shell.update(cx, |shell, cx| shell.go(ModeId::Tidy, cx));
+            cx.new(|cx| SyntheticLibrary::new(rows, measured, window, cx))
+        });
+        if tidy.spike.is_some() {
+            tidy.state
+                .update(cx, |state, cx| state.go(TidyPage::Library, cx));
         }
+        let state = tidy.state.clone();
+        if let Some(subscription) = check::apply(checks, &state, window, cx) {
+            tidy._subscriptions.push(subscription);
+        }
+        tidy
     }
 
-    /// Shows what another mode handed Tidy (Show in Tidy, Tidy this folder): the folder of
-    /// Tidy's that holds it, at the Library filtered to it; a folder none holds is added, once
-    /// the owner agrees for a file's (`useHandOff`, `showHandOff`). Waits for the engine to list
-    /// its folders first.
-    pub fn show_hand_off(&mut self, target: HandOff, window: &mut Window, cx: &mut Context<Self>) {
-        if self.state.read(cx).is_ready() {
-            links::take(&self.state, target, window, cx);
+    /// Runs `work` once the engine has listed its folders, or has failed to open.
+    fn when_ready(
+        &mut self,
+        work: impl FnOnce(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let state = self.state.read(cx);
+        if state.is_ready() || state.engine_error().is_some() {
+            work(self, window, cx);
         } else {
-            self.pending_hand_off = Some(target);
+            self.when_ready.push(Box::new(work));
         }
-    }
-
-    /// This mode's section of the one Settings page (⌘,).
-    pub fn settings_section(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        self.settings
-            .update(cx, |section, cx| section.render_section(window, cx))
     }
 
     pub fn state(&self) -> &Entity<TidyState> {
         &self.state
-    }
-
-    pub fn overview(&self) -> &Entity<OverviewPage> {
-        &self.overview
-    }
-
-    /// How much of the window's foot the page on screen keeps for its own commands, which the
-    /// activity panel and toasts stand on.
-    pub fn foot_height(&self, cx: &gpui_kit::App) -> gpui_kit::Pixels {
-        let height = match self.state.read(cx).page() {
-            TidyPage::Duplicates => self.duplicates.read(cx).foot_height(),
-            TidyPage::Library => self.library.read(cx).foot_height(cx),
-            TidyPage::Holding => self.holding.read(cx).foot_height(),
-            _ => 0.,
-        };
-        gpui_kit::px(height)
-    }
-
-    /// The room the page on screen keeps free among its commands, where a toast covers nothing.
-    pub fn toast_slot(&self, cx: &gpui_kit::App) -> Option<gpui_kit::Bounds<gpui_kit::Pixels>> {
-        match self.state.read(cx).page() {
-            TidyPage::Duplicates => self.duplicates.read(cx).toast_slot(),
-            _ => None,
-        }
-    }
-
-    /// The room the page on screen keeps free among its commands for the activity indicator.
-    pub fn activity_room(&self, cx: &gpui_kit::App) -> Option<gpui_kit::Bounds<gpui_kit::Pixels>> {
-        match self.state.read(cx).page() {
-            TidyPage::Duplicates => self.duplicates.read(cx).activity_room(),
-            _ => None,
-        }
     }
 
     pub fn duplicates(&self) -> &Entity<DuplicatesPage> {
@@ -300,12 +271,6 @@ impl TidyMode {
         &self.holding
     }
 
-    /// Phase 0's synthetic Library, when the spike runs.
-    pub fn spike_library(&self) -> Option<&Entity<SyntheticLibrary>> {
-        self.spike.as_ref()
-    }
-
-    /// The page on screen.
     pub fn page(&self) -> TidyPage {
         self.page
     }
@@ -357,13 +322,16 @@ impl TidyMode {
         })
     }
 
-    fn go(&mut self, page: TidyPage, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, cx| state.go(page, cx));
-    }
-
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         // It is the open menu's, or nothing's; the page must not act on it behind the menu.
         if oriel_ui::popups::popup_open(window, cx) {
+            return;
+        }
+        if oriel_ui::keys::command_held(&event.keystroke.modifiers)
+            && event.keystroke.key == "enter"
+        {
+            self.run_main_action(window, cx);
+            cx.stop_propagation();
             return;
         }
         // Tab can leave focus on a sidebar row, outside the page, whose number keys still mean
@@ -383,11 +351,28 @@ impl TidyMode {
         }
     }
 
+    /// ⌘↩: the main action of the page on screen, where it has one.
+    fn run_main_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.state.read(cx).page() {
+            TidyPage::Overview => self
+                .overview
+                .update(cx, |page, cx| page.tidy_up(window, cx)),
+            TidyPage::Convert => self.convert.update(cx, |page, cx| page.convert(window, cx)),
+            TidyPage::CleanUp => self
+                .cleanup
+                .update(cx, |page, cx| page.clean_up(window, cx)),
+            TidyPage::Shrink => self.shrink.update(cx, |page, cx| page.shrink(window, cx)),
+            _ => {}
+        }
+    }
+
     fn render_welcome(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let data = self.state.read(cx).data();
         // Only a sandboxed run says where Tidy may work; the owner's takes any folder.
-        let rule = data.is_sandboxed().then(|| links::sandbox_rule(data));
+        let rule = data
+            .is_sandboxed()
+            .then(|| oriel_core_tidy::sandbox_rule(data));
         div()
             .flex()
             .flex_1()
@@ -445,7 +430,7 @@ impl TidyMode {
                             .primary()
                             .mt_6()
                             .label("Choose folder…")
-                            .child(widgets::key_hint("⌘O"))
+                            .child(widgets::key_hint(ADD_FOLDER_KEYS))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.choose_folder(window, cx);
                             })),
@@ -547,14 +532,13 @@ impl Render for TidyMode {
         // Keys and the menu's commands reach the page on screen when nothing else has focus, as
         // after a launch, and when the shell hands Tidy the keys as it comes on screen (⌘2).
         let unfocused = window.focused(cx).is_none() || self.focus.is_focused(window);
-        if unfocused && self.shell.read(cx).mode() == ModeId::Tidy {
+        if unfocused && self.shell.read(cx).shows(ModeId::Tidy) {
             self.focus_page(window, cx);
         }
         let rail = self.shell.read(cx).rail();
         let navigation = sidebar::navigation(&self.state, rail, window, cx);
         let footer = sidebar::footer(&self.state, rail, window, cx);
         let content = self.render_content(cx);
-        let _ = &self.thumbs;
 
         div()
             .id("tidy")
@@ -563,17 +547,17 @@ impl Render for TidyMode {
             .on_key_down(cx.listener(Self::on_key_down))
             .capture_any_mouse_down(oriel_ui::popups::note_press)
             .child(oriel_ui::popups::press_guard())
-            .on_action(cx.listener(|this, _: &commands::AddFolder, window, cx| {
+            .on_action(cx.listener(|this, _: &AddFolder, window, cx| {
                 this.choose_folder(window, cx);
             }))
-            .on_action(cx.listener(|this, _: &commands::Rescan, window, cx| {
+            .on_action(cx.listener(|this, _: &Rescan, window, cx| {
                 this.state.update(cx, |state, cx| {
                     if let Some(root_id) = state.root_id() {
                         state.start_scan(root_id, window, cx);
                     }
                 });
             }))
-            .on_action(cx.listener(|this, _: &commands::UndoChange, window, cx| {
+            .on_action(cx.listener(|this, _: &UndoChange, window, cx| {
                 // A text field keeps ⌘Z for its own undo.
                 if window.has_focused_input(cx) {
                     cx.propagate();
@@ -586,46 +570,26 @@ impl Render for TidyMode {
                 this.state
                     .update(cx, |state, cx| state.undo_last(window, cx));
             }))
-            .on_action(
-                cx.listener(|this, _: &commands::SelectAllItems, window, cx| {
-                    if window.has_focused_input(cx) {
-                        cx.propagate();
-                        return;
-                    }
-                    match this.state.read(cx).page() {
-                        TidyPage::Library => this
-                            .library
-                            .update(cx, |library, cx| library.select_all(window, cx)),
-                        TidyPage::Holding => this
-                            .holding
-                            .update(cx, |holding, cx| holding.select_all(cx)),
-                        _ => {}
-                    }
-                }),
-            )
-            .on_action(cx.listener(|this, _: &commands::Find, _, cx| {
+            .on_action(cx.listener(|this, _: &SelectAllItems, window, cx| {
+                if window.has_focused_input(cx) {
+                    cx.propagate();
+                    return;
+                }
+                match this.state.read(cx).page() {
+                    TidyPage::Library => this
+                        .library
+                        .update(cx, |library, cx| library.select_all(window, cx)),
+                    TidyPage::Holding => this
+                        .holding
+                        .update(cx, |holding, cx| holding.select_all(cx)),
+                    _ => {}
+                }
+            }))
+            .on_action(cx.listener(|this, _: &Find, _, cx| {
                 this.state.update(cx, |state, cx| state.request_search(cx));
             }))
-            .on_action(cx.listener(|this, _: &commands::ShowOverview, _, cx| {
-                this.go(TidyPage::Overview, cx);
-            }))
-            .on_action(cx.listener(|this, _: &commands::ShowDuplicates, _, cx| {
-                this.go(TidyPage::Duplicates, cx);
-            }))
-            .on_action(cx.listener(|this, _: &commands::ShowConvert, _, cx| {
-                this.go(TidyPage::Convert, cx);
-            }))
-            .on_action(cx.listener(|this, _: &commands::ShowCleanUp, _, cx| {
-                this.go(TidyPage::CleanUp, cx);
-            }))
-            .on_action(cx.listener(|this, _: &commands::ShowLibrary, _, cx| {
-                this.go(TidyPage::Library, cx);
-            }))
-            .on_action(cx.listener(|this, _: &commands::ShowHistory, _, cx| {
-                this.go(TidyPage::History, cx);
-            }))
-            .on_action(cx.listener(|this, _: &commands::ShowHolding, _, cx| {
-                this.go(TidyPage::Holding, cx);
+            .on_action(cx.listener(|this, ShowPage(page): &ShowPage, _, cx| {
+                this.show(*page, cx);
             }))
             .child(
                 ModeLayout::new(&self.shell)
@@ -669,4 +633,119 @@ pub(crate) fn open_add_folder(
     folder_picker::open(options, window, cx, move |folder, window, cx| {
         state.update(cx, |state, cx| state.add_folder(folder, window, cx));
     });
+}
+
+impl Mode for TidyMode {
+    const ID: ModeId = ModeId::Tidy;
+
+    fn commands() -> Vec<Command> {
+        let mut commands = vec![
+            Command::new(AddFolder)
+                .menu(MenuSlot::File, "Add Folder…")
+                .keys(ADD_FOLDER_KEYS)
+                .sheet("Add folder"),
+            Command::new(Rescan)
+                .menu(MenuSlot::File, "Rescan")
+                .keys(RESCAN_KEYS)
+                .sheet("Rescan"),
+            Command::new(UndoChange)
+                .menu(MenuSlot::Undo, "Undo")
+                .keys(oriel_ui::cmd_or_ctrl!("z"))
+                .sheet("Undo"),
+            Command::new(SelectAllItems)
+                .menu(MenuSlot::SelectAll, "Select All")
+                .keys(oriel_ui::cmd_or_ctrl!("a")),
+            Command::new(Find)
+                .menu(MenuSlot::Edit, "Find")
+                .keys(oriel_ui::cmd_or_ctrl!("f"))
+                .sheet("Find"),
+        ];
+        commands.extend(TidyPage::ALL.into_iter().filter_map(|page| {
+            Some(
+                Command::new(ShowPage(page))
+                    .menu(MenuSlot::View, page.label())
+                    .keys(page.keys()?)
+                    .sheet(page.label()),
+            )
+        }));
+        commands
+    }
+
+    fn sheet() -> Sheet {
+        shortcuts::SHEET
+    }
+
+    fn folders(&self, cx: &App) -> Vec<PathBuf> {
+        self.state
+            .read(cx)
+            .roots()
+            .iter()
+            .map(|root| PathBuf::from(&root.path))
+            .collect()
+    }
+
+    /// What the page on screen keeps at the foot for its own commands.
+    fn foot(&self, cx: &App) -> Foot {
+        match self.state.read(cx).page() {
+            TidyPage::Duplicates => {
+                let page = self.duplicates.read(cx);
+                Foot {
+                    height: px(page.foot_height()),
+                    toast_slot: page.toast_slot(),
+                    activity_room: page.activity_room(),
+                }
+            }
+            TidyPage::Library => Foot::height(px(self.library.read(cx).foot_height(cx))),
+            TidyPage::Holding => Foot::height(px(self.holding.read(cx).foot_height())),
+            _ => Foot::default(),
+        }
+    }
+
+    fn settings_section(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        self.settings
+            .update(cx, |section, cx| section.render_section(window, cx))
+    }
+
+    /// Shows what another mode handed Tidy (Show in Tidy, Tidy this folder): the folder of
+    /// Tidy's that holds it, at the Library filtered to it; a folder none holds is added, once
+    /// the owner agrees for a file's. Waits for the engine to list its folders first.
+    fn show_hand_off(&mut self, target: HandOff, window: &mut Window, cx: &mut Context<Self>) {
+        self.shell
+            .update(cx, |shell, cx| shell.go(ModeId::Tidy, cx));
+        self.when_ready(
+            move |this, window, cx| links::take(&this.state, target, window, cx),
+            window,
+            cx,
+        );
+    }
+
+    /// Adds the folder as a root and scans it, once the engine has listed its folders.
+    fn set_up(
+        &mut self,
+        set_up: &FolderSetUp,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<(), SharedString>> {
+        if !set_up.tidy {
+            return Task::ready(Ok(()));
+        }
+        let (added, adding) = futures::channel::oneshot::channel();
+        let folder = set_up.folder.clone();
+        self.when_ready(
+            move |this, window, cx| {
+                let task = this
+                    .state
+                    .update(cx, |state, cx| state.add_root(folder, window, cx));
+                added.send(task).ok();
+            },
+            window,
+            cx,
+        );
+        cx.spawn(async move |_, _| {
+            let task = adding
+                .await
+                .map_err(|_| SharedString::from("Tidy closed."))?;
+            task.await.map(|_| ())
+        })
+    }
 }

@@ -102,8 +102,11 @@ mod tests {
     fn every_icon_the_app_names_is_bundled() {
         let crates = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let mut names = Vec::new();
-        for member in ["ui", "app", "mode-view", "mode-tidy", "mode-sync"] {
-            icons_used(&crates.join(member).join("src"), &mut names);
+        for member in std::fs::read_dir(crates).unwrap() {
+            let source = member.unwrap().path().join("src");
+            if source.is_dir() {
+                icons_used(&source, &mut names);
+            }
         }
         names.retain(|name| name.chars().next().is_some_and(char::is_uppercase));
         names.sort();

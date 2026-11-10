@@ -1,10 +1,11 @@
-//! Where Sync keeps tokens: Electron Oriel's `FileSecretStorage`, in the same format.
+//! Where Sync keeps tokens, in the format Electron Oriel's `FileSecretStorage` wrote, so its files
+//! still open.
 //!
 //! A random 32-byte key sits in `secret-storage.key` in Sync's folder, readable by the user
 //! alone (0600, in a 0700 folder). A token is sealed with AES-256-GCM under a fresh 12-byte nonce
-//! and stored as `nonce | tag | ciphertext`, which the profile file holds in base64. Electron
-//! Oriel chose a key file over the Keychain because an unsigned build's signature changes with
-//! each rebuild and the Keychain asked again every time; the same holds for Oriel.
+//! and stored as `nonce | tag | ciphertext`, which the profile file holds in base64. A key file
+//! rather than the Keychain, because an unsigned build's signature changes with each rebuild and
+//! the Keychain would ask again every time.
 
 use std::fs;
 use std::io::{self, Write as _};
@@ -18,13 +19,16 @@ const KEY_BYTES: usize = 32;
 const IV_BYTES: usize = 12;
 const TAG_BYTES: usize = 16;
 
-/// The key file's name in Sync's folder.
-pub const KEY_FILE_NAME: &str = "secret-storage.key";
+/// Why a sealed token did not open.
+#[derive(Debug)]
+pub enum OpenError {
+    /// The key could not be read or made, so no token opens.
+    Key(io::Error),
+    /// The token was sealed with another key, or was changed.
+    Sealed,
+}
 
-/// Seals and opens tokens with the key in one file, made on first use.
-///
-/// The key is read once and kept, as `FileSecretStorage` keeps it, since the profile list asks
-/// whether each token opens every time it draws.
+/// Seals and opens tokens with the key in one file, made on first use and then kept.
 #[derive(Clone, Debug)]
 pub struct FileSecretStorage {
     key_path: PathBuf,
@@ -37,15 +41,6 @@ impl FileSecretStorage {
             key_path,
             key: Arc::default(),
         }
-    }
-
-    /// The storage for Sync's folder: its key in `<folder>/secret-storage.key`.
-    pub fn in_folder(folder: &Path) -> Self {
-        Self::new(folder.join(KEY_FILE_NAME))
-    }
-
-    pub fn key_path(&self) -> &Path {
-        &self.key_path
     }
 
     /// `iv | tag | ciphertext` of `plain_text`.
@@ -65,21 +60,22 @@ impl FileSecretStorage {
         Ok(sealed)
     }
 
-    /// The token in `iv | tag | ciphertext`, or an error when it was sealed with another key or
-    /// was changed.
-    pub fn decrypt(&self, sealed: &[u8]) -> io::Result<String> {
+    /// The token in `iv | tag | ciphertext`.
+    pub fn decrypt(&self, sealed: &[u8]) -> Result<String, OpenError> {
+        let cipher =
+            Aes256Gcm::new_from_slice(self.load_key().map_err(OpenError::Key)?).map_err(|_| {
+                OpenError::Key(io::Error::other("Sync's secret key has the wrong length"))
+            })?;
         if sealed.len() < IV_BYTES + TAG_BYTES {
-            return Err(io::Error::other("the sealed token is too short"));
+            return Err(OpenError::Sealed);
         }
-        let cipher = Aes256Gcm::new_from_slice(self.load_key()?)
-            .map_err(|_| io::Error::other("Sync's secret key has the wrong length"))?;
         let (iv, rest) = sealed.split_at(IV_BYTES);
         let (tag, data) = rest.split_at(TAG_BYTES);
         let mut data = data.to_vec();
         cipher
             .decrypt_in_place_detached(Nonce::from_slice(iv), b"", &mut data, Tag::from_slice(tag))
-            .map_err(|_| io::Error::other("the token could not be unlocked with this key"))?;
-        String::from_utf8(data).map_err(io::Error::other)
+            .map_err(|_| OpenError::Sealed)?;
+        String::from_utf8(data).map_err(|_| OpenError::Sealed)
     }
 
     /// The key, made on first use. Creation never overwrites a key another process wrote first.

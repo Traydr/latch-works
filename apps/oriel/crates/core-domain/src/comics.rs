@@ -36,8 +36,7 @@ pub struct ComicEntry<T> {
 }
 
 /// How a comic's folder is found from its pages' paths and shown. Archive paths are the default
-/// ([`ArchiveComicPaths`]); a caller with absolute OS paths supplies its own, as Electron Oriel's
-/// View does.
+/// ([`ArchiveComicPaths`]); a caller with absolute OS paths, as View, supplies its own.
 pub trait ComicPathAdapter {
     fn display_name_from_path(&self, path: &str) -> String;
     fn get_parent_path(&self, path: &str) -> String;

@@ -1,7 +1,7 @@
-//! The sniff pass, from glazier-core's `passes/sniff-pass.ts`: reads the first bytes of every
+//! The sniff pass: reads the first bytes of every
 //! file not yet identified and records its real format.
 
-use crate::catalog::files::{SqlParams, initial_kind};
+use crate::catalog::files::{SqlParams, initial_kind, record_format};
 use crate::catalog::rows::to_absolute_path;
 use crate::contract::{FileFormat, FileId};
 use crate::passes::{PassContext, for_each_concurrent};
@@ -57,13 +57,9 @@ pub fn run_sniff_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
             };
             let mismatch = !file.is_junk && is_extension_mismatch(format, &file.ext);
             let id = file.id;
-            context.catalog.blocking(move |connection| {
-                connection.execute(
-                    "UPDATE files SET format = ?1, kind = ?2, ext_mismatch = ?3 WHERE id = ?4",
-                    rusqlite::params![format.as_str(), kind.as_str(), i64::from(mismatch), id],
-                )?;
-                Ok(())
-            })
+            context
+                .catalog
+                .blocking(move |connection| record_format(connection, id, format, kind, mismatch))
         },
     )
 }

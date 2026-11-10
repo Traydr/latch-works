@@ -1,7 +1,5 @@
-//! Sync's screens, as Electron Oriel draws them (`ProfileSidebar.tsx`, `SyncPage.tsx`,
-//! `PlanWorkspace.tsx`, `PlanTree.tsx`, `RunPanel.tsx`, `ProfileSetupView.tsx`,
-//! `SyncSettings.tsx`): the profiles in the sidebar, the plan as the page, the run floating over
-//! the plan's lower right and the run log along the bottom.
+//! Sync's screens: the profiles in the sidebar, the plan as the page, the run floating over the
+//! plan's lower right and the run log along the bottom.
 
 use std::ops::Range;
 use std::time::SystemTime;
@@ -22,9 +20,8 @@ use gpui_kit::{
     TestSupportExt as _, Window, canvas, div, prelude::FluentBuilder as _, px, relative,
     uniform_list,
 };
-use oriel_core_domain::format_bytes;
-use oriel_core_index::SyncPlanAction;
-use oriel_core_sync::{RunAction, format_count, parse_iso_timestamp};
+use oriel_core_domain::format;
+use oriel_core_sync::{PlanCounts, RunAction, RunStatus, SyncPlanAction};
 use oriel_ui::TextRole as _;
 use oriel_ui::locations::{LocationItem, LocationSwitcher, shared_locations};
 use oriel_ui::segmented::{Segmented, SegmentedItem};
@@ -33,13 +30,11 @@ use oriel_ui::{
 };
 
 use crate::profiles::{Profile, TokenState};
-use crate::run::{self, ItemState, PruneAvailability, RunPhase};
-use crate::{FocusPlanFilter, KEY_CONTEXT, RowModel, RunFilter, Screen, SyncMode, ToggleRunLog};
+use crate::run::{self, ItemCode, ItemState, PruneAvailability, RunPhase};
+use crate::{FocusPlanFilter, RUN_LOG_KEYS, RowModel, RunFilter, Screen, SyncMode, ToggleRunLog};
 
-/// A plan row's height, as Electron Oriel's `h-8`.
 const ROW_HEIGHT: f32 = 40.;
 
-/// The run panel's width.
 const RUN_PANEL_WIDTH: f32 = 400.;
 
 /// Points along the throughput chart.
@@ -73,7 +68,7 @@ pub(crate) fn confirm(
     });
 }
 
-/// How a profile's state reads in the sidebar (`profileStatus`).
+/// How a profile's state reads in the sidebar.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tone {
     Error,
@@ -92,10 +87,10 @@ fn tone_color(tone: Tone, cx: &App) -> Hsla {
     }
 }
 
-fn describe_pending(counts: oriel_core_sync::PlanCounts) -> (String, Tone) {
+fn describe_pending(counts: PlanCounts) -> (String, Tone) {
     let pending = counts.changes();
     if pending > 0 {
-        (format!("{} to sync", format_count(pending)), Tone::Warning)
+        (format!("{} to sync", format::count(pending)), Tone::Warning)
     } else {
         ("In sync".to_owned(), Tone::Ok)
     }
@@ -113,11 +108,11 @@ fn action_name(action: RunAction) -> &'static str {
 fn profile_status(
     profile: &Profile,
     token: TokenState,
-    current: Option<oriel_core_sync::PlanCounts>,
+    current: Option<PlanCounts>,
 ) -> (String, Tone) {
-    use oriel_core_sync::RunStatus;
     match token {
         TokenState::Unreadable => return ("Token unreadable".to_owned(), Tone::Error),
+        TokenState::KeyUnreadable => return ("Secret key unreadable".to_owned(), Tone::Error),
         TokenState::None => return ("No token saved".to_owned(), Tone::Warning),
         TokenState::Saved => {}
     }
@@ -137,37 +132,28 @@ fn profile_status(
             RunAction::Plan => last
                 .plan_counts
                 .map_or(("Planned".to_owned(), Tone::Neutral), describe_pending),
-            RunAction::Push => (format!("Pushed {}", format_count(last.pushed)), Tone::Ok),
-            RunAction::Prune => (format!("Pruned {}", format_count(last.pushed)), Tone::Ok),
+            RunAction::Push => (format!("Pushed {}", format::count(last.applied)), Tone::Ok),
+            RunAction::Prune => (format!("Pruned {}", format::count(last.applied)), Tone::Ok),
             RunAction::Doctor => ("Connection checked".to_owned(), Tone::Ok),
         },
     }
 }
 
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map_or(0, |since| since.as_millis() as i64)
-}
-
-/// "Last push 18 ok, 0 failed · 2d ago" (`describeLastRun`).
+/// "Last push 18 ok, 0 failed · 5 min ago".
 fn describe_last_run(profile: &Profile) -> Option<String> {
     let last = profile.last_run.as_ref()?;
-    let ago = parse_iso_timestamp(&last.completed_at)
-        .map(|at| run::format_ago(at, now_ms()))
+    let ago = format::parse_iso_timestamp(&last.completed_at)
+        .map(|at| format::relative(Some(at as f64), format::now_ms()))
         .unwrap_or_default();
     let detail = match last.action {
         RunAction::Push | RunAction::Prune => format!(
             "{} ok, {} failed",
-            format_count(last.pushed),
-            format_count(last.failed)
+            format::count(last.applied),
+            format::count(last.failed)
         ),
         _ => last.status.as_str().to_owned(),
     };
-    let name = match last.action {
-        RunAction::Doctor => "check",
-        action => action.as_str(),
-    };
+    let name = action_name(last.action).to_lowercase();
     Some(format!("Last {name} {detail} · {ago}"))
 }
 
@@ -177,15 +163,6 @@ fn plan_action_label(action: SyncPlanAction) -> &'static str {
         SyncPlanAction::Update => "Update",
         SyncPlanAction::Delete => "Delete",
         SyncPlanAction::Keep => "Keep",
-    }
-}
-
-fn plan_action_key(action: SyncPlanAction) -> &'static str {
-    match action {
-        SyncPlanAction::Upload => "upload",
-        SyncPlanAction::Update => "update",
-        SyncPlanAction::Delete => "delete",
-        SyncPlanAction::Keep => "keep",
     }
 }
 
@@ -202,7 +179,21 @@ fn plan_action_color(action: SyncPlanAction, cx: &App) -> Hsla {
 fn format_size(size: Option<u64>) -> String {
     match size {
         None | Some(0) => "\u{2014}".to_owned(),
-        Some(size) => format_bytes(size as f64),
+        Some(size) => format::bytes(size),
+    }
+}
+
+/// Why a saved token cannot be used, under the token's field.
+fn token_hint(state: TokenState) -> Option<&'static str> {
+    match state {
+        TokenState::Unreadable => {
+            Some("The saved token could not be unlocked. Enter it again to replace it.")
+        }
+        TokenState::KeyUnreadable => Some(
+            "Sync's secret key could not be read, so the saved token cannot be unlocked or \
+             replaced.",
+        ),
+        TokenState::Saved | TokenState::None => None,
     }
 }
 
@@ -241,7 +232,6 @@ impl SyncMode {
             .child(
                 div()
                     .id("sync-page")
-                    .key_context(KEY_CONTEXT)
                     .capture_any_mouse_down(oriel_ui::popups::note_press)
                     .child(oriel_ui::popups::press_guard())
                     .track_focus(&self.focus_handle)
@@ -550,18 +540,12 @@ impl SyncMode {
                                                     .aria_label("Sync API token")
                                                     .disabled(self.form.clear_token),
                                             )
-                                            .when(token_state == TokenState::Unreadable, |this| {
-                                                this.child(
-                                                    div()
-                                                        .text_caption()
-                                                        .text_color(theme.muted_foreground)
-                                                        .child(
-                                                            "The saved token could not be \
-                                                             unlocked. Enter it again to \
-                                                             replace it.",
-                                                        ),
-                                                )
-                                            })
+                                            .children(token_hint(token_state).map(|hint| {
+                                                div()
+                                                    .text_caption()
+                                                    .text_color(theme.muted_foreground)
+                                                    .child(hint)
+                                            }))
                                             .when(has_saved_token, |this| {
                                                 this.child(
                                                     oriel_ui::checkbox_target(Checkbox::new(
@@ -628,9 +612,9 @@ impl SyncMode {
                     .map_or(0, |since| since.as_millis() as i64);
                 format!(
                     "Planned {} · {} files · {}",
-                    run::format_ago(planned, now_ms()),
-                    format_count(reviewed.plan.total_files),
-                    format_bytes(reviewed.plan.total_bytes as f64)
+                    format::relative(Some(planned as f64), format::now_ms()),
+                    format::count(reviewed.plan.total_files),
+                    format::bytes(reviewed.plan.total_bytes)
                 )
             }
             None => describe_last_run(profile).unwrap_or_default(),
@@ -726,13 +710,10 @@ impl SyncMode {
                                             div()
                                                 .text_caption()
                                                 .text_color(theme.muted_foreground)
-                                                .child(if token_state == TokenState::Unreadable {
-                                                    "The saved token could not be unlocked. \
-                                                     Enter it again to replace it."
-                                                } else {
+                                                .child(token_hint(token_state).unwrap_or(
                                                     "Saved encrypted, with a key kept in this \
-                                                     app's data folder."
-                                                }),
+                                                     app's data folder.",
+                                                )),
                                         ),
                                 )
                             })
@@ -884,9 +865,13 @@ impl SyncMode {
                             check.update(cx, |this, cx| this.check_connection(window, cx));
                         }),
                 )
-                .item(oriel_ui::menu_row("Run log  ⌘L").on_click(move |_, _, cx| {
-                    log.update(cx, |this, cx| this.toggle_run_log(cx));
-                }))
+                .item(
+                    oriel_ui::menu_row(oriel_ui::keys::labelled("Run log", RUN_LOG_KEYS)).on_click(
+                        move |_, _, cx| {
+                            log.update(cx, |this, cx| this.toggle_run_log(cx));
+                        },
+                    ),
+                )
                 .separator()
                 .item(
                     oriel_ui::menu_row("Open in View").on_click(move |_, _, cx| {
@@ -917,7 +902,10 @@ impl SyncMode {
         };
         let counts = reviewed.plan.counts;
         let push_count = counts.to_push();
-        let push_bytes = self.plan_facts.push_bytes;
+        let push_bytes = self
+            .plan_facts
+            .as_ref()
+            .map_or(0, |facts| facts.push_bytes());
         let running = self.run.running;
         let pushed = self.push_completed;
         let prune = self.prune_availability();
@@ -942,7 +930,7 @@ impl SyncMode {
                         true,
                         format!(
                             "Delete the {} remote entries this plan lists",
-                            format_count(*delete_count)
+                            format::count(*delete_count)
                         ),
                     ),
                     PruneAvailability::Disabled { reason } => (false, (*reason).to_owned()),
@@ -950,16 +938,16 @@ impl SyncMode {
                 this.child(
                     Button::new("sync-prune")
                         .bar_size()
-                        // Locked until the plan's push has run, as Electron Oriel draws it.
+                        // Locked until the plan's push has run.
                         .when(!enabled, |this| this.icon(Icon::new(IconName::Lock)))
                         .label(format!(
                             "Prune {}{}",
-                            format_count(counts.delete),
+                            format::count(counts.delete),
                             if enabled { "…" } else { "" }
                         ))
                         .when(enabled, |this| this.outline().danger())
                         .tooltip(tooltip.clone())
-                        .accessibility_label(format!("Prune {}", format_count(counts.delete)))
+                        .accessibility_label(format!("Prune {}", format::count(counts.delete)))
                         .disabled(running || !enabled)
                         .on_click(
                             cx.listener(|this, _, window, cx| this.confirm_prune(window, cx)),
@@ -977,8 +965,8 @@ impl SyncMode {
                         } else {
                             format!(
                                 "Push {} · {}",
-                                format_count(push_count),
-                                format_bytes(push_bytes as f64)
+                                format::count(push_count),
+                                format::bytes(push_bytes)
                             )
                         })
                         .disabled(running || push_count == 0)
@@ -1053,8 +1041,8 @@ impl SyncMode {
         let show_run_state = self.shows_run_state();
         let changes = plan.counts.changes();
         let filters: AnyElement = if show_run_state {
-            let (settled, failed) = self.run_tally();
-            let all = self.plan_facts.changes;
+            let (settled, failed) = self.run.tally();
+            let all = self.plan_facts.as_ref().map_or(0, |facts| facts.changes);
             let counts = [all, all - settled - failed, settled, failed];
             Segmented::new("sync-run-filter", "Run filter")
                 .items(
@@ -1068,7 +1056,7 @@ impl SyncMode {
                     .map(|(filter, label, count)| {
                         SegmentedItem::new(
                             SharedString::from(format!("run-filter-{label}")),
-                            format!("{label} {}", format_count(count)),
+                            format!("{label} {}", format::count(count)),
                         )
                         .selected(self.run_filter == filter)
                         .on_click(
@@ -1089,26 +1077,22 @@ impl SyncMode {
                         SyncPlanAction::Delete,
                     ]
                     .into_iter()
-                    .filter(|action| match action {
-                        SyncPlanAction::Upload => plan.counts.upload > 0,
-                        SyncPlanAction::Update => plan.counts.update > 0,
-                        _ => plan.counts.delete > 0,
-                    })
-                    .map(|action| {
-                        let count = match action {
-                            SyncPlanAction::Upload => plan.counts.upload,
-                            SyncPlanAction::Update => plan.counts.update,
-                            _ => plan.counts.delete,
-                        };
+                    .map(|action| (action, plan.counts.get(action)))
+                    .filter(|(_, count)| *count > 0)
+                    .map(|(action, count)| {
                         let selected = self.action_filter.contains(&action);
                         let dimmed = !self.action_filter.is_empty() && !selected;
-                        let text =
-                            format!("{} to {}", format_count(count), plan_action_key(action));
-                        let detail = (action != SyncPlanAction::Delete)
-                            .then(|| format_bytes(self.plan_facts.bytes(action) as f64));
+                        let text = format!("{} to {}", format::count(count), action.as_str());
+                        let detail = (action != SyncPlanAction::Delete).then(|| {
+                            format::bytes(
+                                self.plan_facts
+                                    .as_ref()
+                                    .map_or(0, |facts| facts.bytes(action)),
+                            )
+                        });
                         Button::new(SharedString::from(format!(
                             "plan-count-{}",
-                            plan_action_key(action)
+                            action.as_str()
                         )))
                         .bar_size()
                         .outline()
@@ -1118,7 +1102,7 @@ impl SyncMode {
                         // too heavy behind words in the light theme.
                         .when(selected, |this| this.bg(theme.secondary_active))
                         .accessibility_label(text.clone())
-                        .tooltip(format!("Show only what to {}", plan_action_key(action)))
+                        .tooltip(format!("Show only what to {}", action.as_str()))
                         .child(
                             div()
                                 .flex()
@@ -1238,16 +1222,16 @@ impl SyncMode {
                     .text_color(theme.muted_foreground)
                     .child(status_text(
                         "plan-count-keep",
-                        format!("{} unchanged", format_count(plan.counts.keep)),
+                        format!("{} unchanged", format::count(plan.counts.keep)),
                     ))
-                    .when(plan.skipped > 0, |this| {
+                    .when(!plan.skipped_entries.is_empty(), |this| {
                         this.child(
                             Button::new("plan-skipped")
                                 .row_size()
                                 .ghost()
                                 .label(format!(
                                     "{} skipped · {}",
-                                    format_count(plan.skipped),
+                                    format::count(plan.skipped_entries.len()),
                                     if self.show_skipped { "hide" } else { "why?" }
                                 ))
                                 .on_click(cx.listener(|this, _, _, cx| this.toggle_skipped(cx))),
@@ -1268,10 +1252,7 @@ impl SyncMode {
                         .text_caption()
                         .text_color(theme.muted_foreground)
                         .children(plan.skipped_entries.iter().map(|entry| {
-                            let reason = serde_json::to_value(entry.reason)
-                                .ok()
-                                .and_then(|value| value.as_str().map(str::to_owned))
-                                .unwrap_or_default();
+                            let reason = entry.reason.as_str();
                             div()
                                 .flex()
                                 .flex_row()
@@ -1311,10 +1292,10 @@ impl SyncMode {
                     } => {
                         let progress = show_state.then(|| {
                             items.iter().fold((0usize, 0usize), |(done, failed), &at| {
-                                match self.plan_states.get(at).copied() {
-                                    Some(crate::ITEM_SETTLED) => (done + 1, failed),
-                                    Some(crate::ITEM_FAILED) => (done, failed + 1),
-                                    _ => (done, failed),
+                                match self.run.code(at) {
+                                    ItemCode::Settled => (done + 1, failed),
+                                    ItemCode::Failed => (done, failed + 1),
+                                    ItemCode::Remaining => (done, failed),
                                 }
                             })
                         });
@@ -1377,7 +1358,7 @@ impl SyncMode {
                                                 String::new()
                                             }
                                         ),
-                                        None => format_count(item_count),
+                                        None => format::count(item_count),
                                     }),
                             )
                             .on_click(cx.listener(move |this, _, _, cx| {
@@ -1407,7 +1388,7 @@ impl SyncMode {
                         .hover(|style| style.bg(theme.accent).text_color(theme.foreground))
                         .child(format!(
                             "Show {} more in {}",
-                            format_count(hidden),
+                            format::count(hidden),
                             if label.is_empty() {
                                 "this folder"
                             } else {
@@ -1422,10 +1403,9 @@ impl SyncMode {
                         name,
                         action,
                         size,
+                        item,
                     } => {
-                        let state = show_state
-                            .then(|| self.run.item_states.get(&path).cloned())
-                            .flatten();
+                        let state = show_state.then(|| self.run.item(item).cloned()).flatten();
                         let mark: AnyElement = match &state {
                             Some(ItemState::Active) => Spinner::new().xsmall().into_any_element(),
                             Some(ItemState::Done | ItemState::Skipped(_)) => {
@@ -1580,7 +1560,7 @@ impl SyncMode {
                             div()
                                 .text_caption()
                                 .text_color(theme.muted_foreground)
-                                .child(run::format_clock(elapsed)),
+                                .child(format::duration(Some(elapsed))),
                         ),
                 )
                 .child(Progress::new("run-preparing").value(100.))
@@ -1597,12 +1577,12 @@ impl SyncMode {
                             .flex()
                             .flex_row()
                             .gap_3()
-                            .child(stat("files", format_count(progress.scan_files_found), None))
                             .child(stat(
-                                "hashed",
-                                format_bytes(progress.bytes_hashed as f64),
+                                "files",
+                                format::count(progress.scan_files_found),
                                 None,
-                            )),
+                            ))
+                            .child(stat("hashed", format::bytes(progress.bytes_hashed), None)),
                     )
                 })
                 .into_any_element()
@@ -1671,7 +1651,7 @@ impl SyncMode {
                                 .when(cx.theme().is_dark(), |this| {
                                     this.text_color(gpui_kit::rgb(0xf87171))
                                 })
-                                .label(format!("Prune {}…", format_count(count)))
+                                .label(format!("Prune {}…", format::count(count)))
                                 .tooltip(format!(
                                     "Delete the {} the reviewed plan lists",
                                     run::describe_remote_entries(count)
@@ -1688,7 +1668,12 @@ impl SyncMode {
                         this.child(
                             Button::new("run-retry")
                                 .bar_size()
-                                .label(format!("Retry {} failed", format_count(progress.failed)))
+                                .label("Push again")
+                                .tooltip(format!(
+                                    "Plan again and push what is still to send, the {} failed \
+                                     included",
+                                    format::count(progress.failed)
+                                ))
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.push_now(window, cx);
                                 })),
@@ -1762,7 +1747,7 @@ impl SyncMode {
                                     .ml_auto()
                                     .text_caption()
                                     .text_color(theme.muted_foreground)
-                                    .child(run::format_clock(elapsed)),
+                                    .child(format::duration(Some(elapsed))),
                             ),
                     )
                     .child(
@@ -1780,14 +1765,14 @@ impl SyncMode {
                             .child(if by_bytes {
                                 format!(
                                     "{} / {}",
-                                    format_bytes(bytes_processed as f64),
-                                    format_bytes(progress.bytes_total as f64)
+                                    format::bytes(bytes_processed),
+                                    format::bytes(progress.bytes_total)
                                 )
                             } else {
                                 format!(
                                     "{} / {} items",
-                                    format_count(processed),
-                                    format_count(progress.item_total)
+                                    format::count(processed),
+                                    format::count(progress.item_total)
                                 )
                             }),
                     ),
@@ -1817,7 +1802,7 @@ impl SyncMode {
                                     .ml_auto()
                                     .text_body()
                                     .font_weight(FontWeight::MEDIUM)
-                                    .child(format!("{}/s on average", format_bytes(rate))),
+                                    .child(format!("{}/s on average", format::bytes(rate))),
                             ),
                     )
                     .child(
@@ -1866,18 +1851,18 @@ impl SyncMode {
                         verb,
                         format!(
                             "{} / {}",
-                            format_count(progress.pushed),
-                            format_count(progress.item_total)
+                            format::count(progress.pushed),
+                            format::count(progress.item_total)
                         ),
                         Some(theme.success),
                     ))
                     .child(stat(
                         "failed",
-                        format_count(progress.failed),
+                        format::count(progress.failed),
                         (progress.failed > 0).then_some(theme.danger),
                     ))
                     .when(progress.skipped > 0, |this| {
-                        this.child(stat("skipped", format_count(progress.skipped), None))
+                        this.child(stat("skipped", format::count(progress.skipped), None))
                     }),
             )
     }
@@ -1932,7 +1917,7 @@ impl SyncMode {
                             .text_color(theme.muted_foreground)
                             .child(format!(
                                 "{} {}",
-                                format_count(self.run.logs.len()),
+                                format::count(self.run.logs.len()),
                                 if self.run.running {
                                     "lines, live"
                                 } else {
@@ -1946,7 +1931,7 @@ impl SyncMode {
                                 .row_size()
                                 .ghost()
                                 .label("Close")
-                                .tooltip("⌘L")
+                                .tooltip(oriel_ui::keys::display(RUN_LOG_KEYS))
                                 .on_click(cx.listener(|this, _, _, cx| this.toggle_run_log(cx))),
                         ),
                     ),
@@ -2000,13 +1985,17 @@ impl SyncMode {
                             .child(
                                 div()
                                     .text_caption()
-                                    .text_color(if state == TokenState::Unreadable {
-                                        theme.danger
-                                    } else {
-                                        theme.muted_foreground
+                                    .text_color(match state {
+                                        TokenState::Unreadable | TokenState::KeyUnreadable => {
+                                            theme.danger
+                                        }
+                                        TokenState::Saved | TokenState::None => {
+                                            theme.muted_foreground
+                                        }
                                     })
                                     .child(match state {
                                         TokenState::Unreadable => "Token unreadable",
+                                        TokenState::KeyUnreadable => "Secret key unreadable",
                                         TokenState::Saved => "Token saved",
                                         TokenState::None => "No token saved",
                                     }),

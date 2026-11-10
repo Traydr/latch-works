@@ -1,5 +1,4 @@
-//! Naming a file's format from its first bytes, and whether its extension agrees, from
-//! glazier-core's `scan/sniff.ts`.
+//! Naming a file's format from its first bytes, and whether its extension agrees.
 
 use std::fs::File;
 use std::io::Read as _;

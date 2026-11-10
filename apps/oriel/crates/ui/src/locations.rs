@@ -9,21 +9,15 @@
 
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
 use gpui_kit::assets::IconName;
-use gpui_kit::base::ElementExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
-    App, Bounds, Context, ElementId, FocusHandle, FontWeight, Global, Hsla,
-    InteractiveElement as _, IntoElement, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent,
-    ParentElement as _, Pixels, PlatformInput, RenderOnce, SharedString,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
-    prelude::FluentBuilder as _, px,
+    App, Context, ElementId, FocusHandle, FontWeight, Global, Hsla, InteractiveElement as _,
+    IntoElement, ParentElement as _, RenderOnce, SharedString, StatefulInteractiveElement as _,
+    Styled as _, TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
 
 use crate::controls::TextRole as _;
@@ -36,13 +30,6 @@ pub const SWITCHER_ID: &str = "location-switcher";
 
 /// The menu's width: the switcher's, which is the full sidebar's inside its 8 px margins.
 pub const MENU_WIDTH: f32 = SIDEBAR_WIDTH - 16.;
-
-/// `ORIEL_LOCATIONS_MENU=1` opens the switcher's menu a moment after the window first draws,
-/// for checking it in a real window, where scripted clicks are not allowed.
-pub const OPEN_MENU_VARIABLE: &str = "ORIEL_LOCATIONS_MENU";
-
-/// How long the check waits before it opens the menu.
-const MENU_DELAY: Duration = Duration::from_secs(4);
 
 type MenuBuilder = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>;
 
@@ -224,50 +211,7 @@ impl RenderOnce for LocationSwitcher {
                     .max_w(px(MENU_WIDTH))
                     .scrollable(true)
             }))
-            .when(opens_at_start(), |this| {
-                this.on_prepaint(|bounds, window, cx| {
-                    // A moment after the window first draws, once the mode has listed its places.
-                    window
-                        .spawn(cx, async move |cx| {
-                            cx.background_executor().timer(MENU_DELAY).await;
-                            cx.update(|window, cx| press(bounds, window, cx)).ok();
-                        })
-                        .detach();
-                })
-            })
     }
-}
-
-/// Whether the check variable asks for the menu, the first time only.
-fn opens_at_start() -> bool {
-    static ASKED: OnceLock<bool> = OnceLock::new();
-    static OPENED: AtomicBool = AtomicBool::new(false);
-    *ASKED.get_or_init(|| std::env::var(OPEN_MENU_VARIABLE).is_ok_and(|value| value == "1"))
-        && !OPENED.swap(true, Ordering::Relaxed)
-}
-
-/// A click in the middle of `bounds`, as the check's stand-in for the owner's.
-fn press(bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
-    let position = bounds.center();
-    window.dispatch_event(
-        PlatformInput::MouseDown(MouseDownEvent {
-            button: MouseButton::Left,
-            position,
-            modifiers: Modifiers::default(),
-            click_count: 1,
-            first_mouse: false,
-        }),
-        cx,
-    );
-    window.dispatch_event(
-        PlatformInput::MouseUp(MouseUpEvent {
-            button: MouseButton::Left,
-            position,
-            modifiers: Modifiers::default(),
-            click_count: 1,
-        }),
-        cx,
-    );
 }
 
 /// The element id of the menu's row for `folder`: `location:<path>`.

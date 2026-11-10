@@ -10,7 +10,9 @@ use gpui_kit::{
     AppContext as _, ElementId, Entity, Modifiers, ScrollDelta, TestAppContext, point, px,
 };
 use oriel_core_tidy::contract::FileId;
-use oriel_mode_tidy::{LibraryPage, TidyPage, last_quick_look, last_toast};
+use oriel_mode_tidy::{LibraryPage, TidyPage, last_quick_look};
+use oriel_ui::ARM_DELAY;
+use oriel_ui::toast::last_toast;
 
 fn library(cx: &mut TestAppContext, session: &Session) -> Entity<LibraryPage> {
     cx.read(|cx| session.tidy.read(cx).library().clone())
@@ -100,7 +102,7 @@ async fn a_second_press_of_hold_moves_no_other_file(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "second-press-hold");
+    let session = launch(cx, "second-press-hold");
     open_library(cx, &session).await;
     click(cx, &session, ("library-row", 3usize));
     settle(cx, &session).await;
@@ -125,7 +127,7 @@ async fn a_second_press_in_the_grid_moves_no_other_file(cx: &mut TestAppContext)
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "second-press-grid");
+    let session = launch(cx, "second-press-grid");
     open_library(cx, &session).await;
     click(cx, &session, "library-mode-grid");
     settle(cx, &session).await;
@@ -148,7 +150,7 @@ async fn a_second_press_in_the_grid_moves_no_other_file(cx: &mut TestAppContext)
 /// and its second press reaches no file under where the bar was, to select it or open it. (The
 /// test platform has no way to open a file, so opening one fails the test.)
 async fn double_click_on_the_bar(cx: &mut TestAppContext, test: &str, grid: bool) {
-    let session = launch_changing(cx, test);
+    let session = launch(cx, test);
     one_chosen_under_the_bar(cx, &session, grid).await;
     let spot = centre_of(cx, &session, "selection-hold");
 
@@ -181,7 +183,7 @@ async fn a_press_on_the_bar_chooses_nothing_under_it(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "bar-covers");
+    let session = launch(cx, "bar-covers");
     open_library(cx, &session).await;
     // The bar shows while the Inspector is closed.
     press(cx, &session, "i");
@@ -202,7 +204,7 @@ async fn a_press_on_the_bar_chooses_nothing_under_it(cx: &mut TestAppContext) {
     assert_eq!(held_files(&session).len(), 2, "a third file moved");
 
     // The toast covers where the button was by now, so a row above it stands for the rows.
-    std::thread::sleep(Duration::from_millis(550));
+    cx.executor().advance_clock(ARM_DELAY);
     click(cx, &session, ("library-row", 4usize));
     assert_eq!(selection(cx, &session).len(), 1);
 }
@@ -213,7 +215,7 @@ async fn the_wheel_over_the_bar_scrolls_the_list(cx: &mut TestAppContext) {
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "bar-scrolls");
+    let session = launch(cx, "bar-scrolls");
     one_chosen_under_the_bar(cx, &session, false).await;
     let library = library(cx, &session);
     let scrolled = |cx: &mut TestAppContext| {
@@ -240,7 +242,7 @@ async fn clearing_the_selection_leaves_the_cursor_where_it_is(cx: &mut TestAppCo
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "clear-keeps-cursor");
+    let session = launch(cx, "clear-keeps-cursor");
     open_library(cx, &session).await;
     click(cx, &session, "library-mode-grid");
     settle(cx, &session).await;
@@ -280,7 +282,7 @@ async fn clearing_the_selection_leaves_the_cursor_where_it_is(cx: &mut TestAppCo
     settle(cx, &session).await;
     assert_eq!(selection(cx, &session), Vec::<FileId>::new());
     assert_eq!(cursor(cx, &session), Some(4));
-    std::thread::sleep(Duration::from_millis(550));
+    cx.executor().advance_clock(ARM_DELAY);
     press(cx, &session, "down");
     assert_eq!(cursor(cx, &session), Some(5));
     assert_eq!(selection(cx, &session), [id_at(cx, &session, 5)]);
@@ -299,7 +301,7 @@ async fn a_press_on_the_activity_indicator_chooses_no_file(cx: &mut TestAppConte
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "press-on-activity");
+    let session = launch(cx, "press-on-activity");
     open_library(cx, &session).await;
     press(cx, &session, "i");
     pause_a_rescan(cx, &session);
@@ -336,7 +338,7 @@ fn pause_a_rescan(cx: &mut TestAppContext, session: &Session) {
             let root_id = state.root_id().unwrap();
             state.start_scan(root_id, window, cx);
             let scan = state.scan().unwrap().job.clone();
-            scan.update(cx, |job, cx| job.set_paused(true, cx));
+            scan.set_paused(true, cx);
         });
     })
     .unwrap();
@@ -349,7 +351,7 @@ fn resume_the_rescan(cx: &mut TestAppContext, session: &Session) {
         session.state.update(cx, |state, cx| {
             if let Some(scan) = state.scan() {
                 let scan = scan.job.clone();
-                scan.update(cx, |job, cx| job.set_paused(false, cx));
+                scan.set_paused(false, cx);
             }
         });
     });
@@ -361,7 +363,7 @@ async fn a_second_click_of_restore_restores_no_other_file(cx: &mut TestAppContex
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "second-press-restore");
+    let session = launch(cx, "second-press-restore");
     open_library(cx, &session).await;
     for row in [5usize, 3, 1] {
         click(cx, &session, ("library-row", row));
@@ -394,7 +396,7 @@ async fn a_second_click_of_restore_restores_no_other_file(cx: &mut TestAppContex
     let holds_press_at = |cx: &mut TestAppContext, spot| {
         cx.read(|cx| {
             let holding = session.tidy.read(cx).holding().read(cx);
-            holding.holds_press_at(spot)
+            holding.holds_press_at(spot, cx)
         })
     };
     // Its button shows while the pointer is on the tile.
@@ -417,7 +419,6 @@ async fn a_second_click_of_restore_restores_no_other_file(cx: &mut TestAppContex
     .unwrap();
     let where_restored = centre_of(cx, &session, ("restore-held", tiles[0]));
     let elsewhere = centre_of(cx, &session, ("held", tiles[2]));
-    let pressed = std::time::Instant::now();
     restore(cx, tiles[0]);
     // The page hears of it after the file has moved, and arms the guard as it says so.
     wait_for(cx, &session, "the restore", |cx| {
@@ -427,14 +428,11 @@ async fn a_second_click_of_restore_restores_no_other_file(cx: &mut TestAppContex
     assert_eq!(held_files(&session).len(), 2);
     render(cx, &session);
     // Just after, presses wait where the restored tile was, and only there.
-    if pressed.elapsed() < Duration::from_millis(500) {
-        assert!(holds_press_at(cx, where_restored));
-    }
+    assert!(holds_press_at(cx, where_restored));
     assert!(!holds_press_at(cx, elsewhere));
 
-    // A press too soon for anyone to have read the tile that came under the pointer, while one
-    // on another tile works. A machine this busy can take longer over it than the wait lasts,
-    // when it rightly works too.
+    // A press too soon for anyone to have read the tile that came under the pointer does nothing,
+    // while one on another tile works.
     let tiles = held_tiles(cx);
     let (next, other) = (tiles[0], tiles[1]);
     cx.update_window(session.handle, |_, window, cx| {
@@ -444,17 +442,15 @@ async fn a_second_click_of_restore_restores_no_other_file(cx: &mut TestAppContex
     .unwrap();
     let spot = centre_of(cx, &session, ("restore-held", next));
     let other_tile = centre_of(cx, &session, ("held", other));
-    if holds_press_at(cx, spot) {
-        assert!(!holds_press_at(cx, other_tile));
-    }
+    assert!(holds_press_at(cx, spot));
+    assert!(!holds_press_at(cx, other_tile));
     restore(cx, next);
-    let in_time = holds_press_at(cx, spot);
     wait_for_change(cx, &session).await;
     let held = held_files(&session).len();
-    assert_eq!(held, if in_time { 2 } else { 1 }, "in time: {in_time}");
+    assert_eq!(held, 2, "a press too soon brought one back");
 
     // The second press of a double-click slow enough to outlast that does nothing either.
-    std::thread::sleep(Duration::from_millis(550));
+    cx.executor().advance_clock(ARM_DELAY);
     let next = held_tiles(cx)[0];
     cx.update_window(session.handle, |_, window, cx| {
         window.hover(("held", next), cx);
@@ -471,7 +467,7 @@ async fn a_second_click_of_restore_restores_no_other_file(cx: &mut TestAppContex
     );
 
     // Once the owner has had time to see what is there, it works.
-    std::thread::sleep(Duration::from_millis(550));
+    cx.executor().advance_clock(ARM_DELAY);
     let next = held_tiles(cx)[0];
     restore(cx, next);
     wait_for_change(cx, &session).await;
@@ -485,7 +481,7 @@ async fn a_double_click_on_holdings_bar_reaches_no_tile_under_it(cx: &mut TestAp
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "holding-bar-twice");
+    let session = launch(cx, "holding-bar-twice");
     add_files(&session, 40);
     open_library(cx, &session).await;
     click(cx, &session, "library-select-all");
@@ -559,7 +555,7 @@ async fn a_double_click_on_holdings_bar_reaches_no_tile_under_it(cx: &mut TestAp
     click(cx, &session, ("held", tile));
     assert_eq!(chosen_tiles(cx), 1);
 
-    std::thread::sleep(Duration::from_millis(550));
+    cx.executor().advance_clock(ARM_DELAY);
     click(cx, &session, ("held", tile));
     settle(cx, &session).await;
     let spot = centre_of(cx, &session, "holding-restore");
@@ -627,7 +623,7 @@ async fn after_a_command_only_a_chosen_file_is_a_target(cx: &mut TestAppContext)
         .ok()
         .and_then(|seeds| seeds.parse().ok())
         .unwrap_or(1);
-    let session = launch_changing(cx, "only-chosen");
+    let session = launch(cx, "only-chosen");
     add_files(&session, 40);
     open_library(cx, &session).await;
     click(cx, &session, ("library-row", 0usize));
@@ -726,7 +722,7 @@ async fn a_file_on_its_way_to_holding_is_refused_plainly(cx: &mut TestAppContext
     if !media_ready() {
         return;
     }
-    let session = launch_changing(cx, "on-its-way");
+    let session = launch(cx, "on-its-way");
     open_library(cx, &session).await;
     click(cx, &session, ("library-row", 3usize));
     let going = id_at(cx, &session, 3);

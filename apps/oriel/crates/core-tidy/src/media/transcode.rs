@@ -1,38 +1,29 @@
-//! Videos and animations to MP4 through the pinned ffmpeg, from glazier-core's
-//! `media/ffmpeg-transcode.ts`.
+//! Videos and animations to MP4 through the pinned ffmpeg. ffmpeg is Oriel's only converter
+//! (plan 063, "Conversion is slower"). Videos get Electron Oriel's ffmpeg arguments word for
+//! word. Animations get
+//! [`ANIMATION_MP4_SETTINGS`] (`docs/research/oriel-rs/phase-1.md`):
 //!
-//! Electron Oriel converts through Mediabunny on WebCodecs and falls back to ffmpeg; Oriel has
-//! no WebCodecs, so ffmpeg is its only path (plan 063, "Conversion is slower"). Videos get the
-//! fallback's arguments word for word. Animations get them too, with the decisions Mediabunny
-//! makes where ffmpeg's own differ (`oriel-core-format`'s `animation` module, and
-//! `docs/research/oriel-rs/phase-1.md`), since Electron Oriel keeps Mediabunny's result whenever
-//! it passes the executor's check:
-//!
-//! - an odd size is padded to even, the frame at the top left, where the fallback crops;
-//! - transparency is drawn over black ([`ANIMATION_BACKGROUND`]);
+//! - an odd size is padded to even, the frame at the top left;
+//! - transparency is drawn over the settings' background;
 //! - each image frame is one video frame at its own time, where ffmpeg would resample to a
 //!   constant rate;
-//! - a key frame at least every [`ANIMATION_MP4_SETTINGS`]' interval.
+//! - a key frame at least every so many seconds.
 //!
-//! GIF delays keep ffmpeg's reading (under 20 ms shows for 100 ms): Mediabunny's 10 ms for such
-//! a frame makes a result shorter than the catalog's duration, which the executor's check
-//! rejects, and Electron Oriel then keeps ffmpeg's. Quality stays the fallback's CRF, not
-//! Mediabunny's bitrate.
+//! GIF delays keep ffmpeg's reading (under 20 ms shows for 100 ms): the 10 ms Mediabunny gives
+//! such a frame makes a result shorter than the catalog's duration, which the executor's check
+//! rejects.
 
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::Duration;
 
 use oriel_core_format::{
-    ANIMATION_BACKGROUND, ANIMATION_MP4_SETTINGS, ArchiveVideoCodec, AudioTrackPlan, VideoTrackPlan,
+    ANIMATION_MP4_SETTINGS, ArchiveVideoCodec, AudioTrackPlan, VideoTrackPlan,
 };
 use oriel_runtime::CancelToken;
-use oriel_tools::ToolRun;
+use oriel_tools::{ToolError, ToolRun};
 
-use crate::contract::{EncoderCapabilities, VideoEncoders};
-
-use super::ToolFailure;
-use crate::contract::VideoQuality;
+use crate::contract::{EncoderCapabilities, VideoEncoders, VideoQuality};
 
 /// A long video re-encoded in software takes a while; this bounds a hung ffmpeg, not a slow one.
 const TRANSCODE_TIMEOUT: Duration = Duration::from_secs(6 * 60 * 60);
@@ -109,10 +100,10 @@ fn audio_args(audio: AudioTrackPlan) -> &'static [&'static str] {
     }
 }
 
-/// The filter an animation goes through: drawn over black (premultiplying by alpha is exactly
-/// "source over black"), then padded to even with the frame at the top left.
+/// The filter an animation goes through: premultiplied by alpha, which is exactly "source over
+/// black", then padded to even with the frame at the top left in the background colour.
 fn animation_filter() -> String {
-    let [red, green, blue] = ANIMATION_BACKGROUND;
+    let [red, green, blue] = ANIMATION_MP4_SETTINGS.background;
     format!(
         "format=gbrap,premultiply=inplace=1,format=gbrp,\
          pad=ceil(iw/2)*2:ceil(ih/2)*2:0:0:color=0x{red:02x}{green:02x}{blue:02x},\
@@ -120,8 +111,8 @@ fn animation_filter() -> String {
     )
 }
 
-/// ffmpeg's arguments for a job, as glazier-core's `ffmpegArgs` builds them (animations aside,
-/// see the module's notes).
+/// ffmpeg's arguments for a job: Electron Oriel's for a video, the module's notes for an
+/// animation.
 pub fn ffmpeg_args(job: &TranscodeJob<'_>) -> Vec<std::ffi::OsString> {
     let (src, out) = match job {
         TranscodeJob::Animation { src, out } | TranscodeJob::Video { src, out, .. } => (src, out),
@@ -145,7 +136,7 @@ pub fn ffmpeg_args(job: &TranscodeJob<'_>) -> Vec<std::ffi::OsString> {
             push(audio_args(*audio));
         }
         TranscodeJob::Animation { .. } => {
-            let crf = crf(ANIMATION_MP4_SETTINGS.codec, VideoQuality::High).to_string();
+            let crf = ANIMATION_MP4_SETTINGS.crf.to_string();
             let key_frames = format!(
                 "expr:gte(t,n_forced*{})",
                 ANIMATION_MP4_SETTINGS.key_frame_interval_seconds
@@ -207,7 +198,7 @@ fn encoder_names(listing: &str) -> HashSet<String> {
         .collect()
 }
 
-/// What Tidy can encode with (glazier-core's `EncoderCapabilities`). Oriel has no WebCodecs,
+/// What Tidy can encode with. Oriel has no WebCodecs,
 /// so its video encoders are the pinned ffmpeg's: libx264, libx265 and SVT-AV1.
 pub fn encoder_capabilities(
     ffmpeg: Option<&Path>,
@@ -249,7 +240,7 @@ pub fn transcode_with_ffmpeg(
     job: &TranscodeJob<'_>,
     cancel: Option<&CancelToken>,
     on_seconds: &(dyn Fn(f64) + Send + Sync),
-) -> Result<(), ToolFailure> {
+) -> Result<(), ToolError> {
     let mut run = ToolRun::new(ffmpeg, TRANSCODE_TIMEOUT)
         .args(["-nostats", "-progress", "pipe:1"])
         .args(ffmpeg_args(job));
@@ -261,14 +252,10 @@ pub fn transcode_with_ffmpeg(
             on_seconds(seconds);
         }
     };
-    let output = match run.run_streaming(&on_stdout) {
-        Ok(output) => output,
-        Err(error) if error.is_cancelled() => return Err(ToolFailure::Cancelled),
-        Err(error) => return Err(ToolFailure::Failed(format!("{error}"))),
-    };
+    let output = run.run_streaming(&on_stdout)?;
     if !output.success() {
         let last = output.stderr.trim().lines().last().unwrap_or("").to_owned();
-        return Err(ToolFailure::Failed(if last.is_empty() {
+        return Err(ToolError::Failed(if last.is_empty() {
             "ffmpeg could not convert the file.".to_owned()
         } else {
             last
@@ -344,6 +331,18 @@ mod tests {
             text(ffmpeg_args(&remux)),
             "-hide_banner -loglevel error -y -i /a/in.mov -map 0:v:0 -c:v copy -an \
              -map_metadata 0 -movflags +faststart -f mp4 /a/in.mp4"
+        );
+        let animation = TranscodeJob::Animation {
+            src: Path::new("/a/in.gif"),
+            out: Path::new("/a/in.mp4"),
+        };
+        assert_eq!(
+            text(ffmpeg_args(&animation)),
+            "-hide_banner -loglevel error -y -i /a/in.gif -map 0:v:0 -c:v libx264 -preset medium \
+             -crf 20 -vf format=gbrap,premultiply=inplace=1,format=gbrp,\
+             pad=ceil(iw/2)*2:ceil(ih/2)*2:0:0:color=0x000000,format=yuv420p -pix_fmt yuv420p \
+             -fps_mode passthrough -force_key_frames expr:gte(t,n_forced*2) -an -map_metadata 0 \
+             -movflags +faststart -f mp4 /a/in.mp4"
         );
     }
 

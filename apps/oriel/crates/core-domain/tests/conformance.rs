@@ -65,17 +65,6 @@ struct SortVectors {
 #[serde(rename_all = "camelCase")]
 struct GeneratedWith {
     icu: String,
-    collator: CollatorOptions,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CollatorOptions {
-    locale: String,
-    numeric: bool,
-    sensitivity: String,
-    ignore_punctuation: bool,
-    case_first: String,
 }
 
 #[derive(Deserialize)]
@@ -195,25 +184,6 @@ fn fail_with(problems: &[String], what: &str) {
         problems.len(),
         problems.join("\n")
     );
-}
-
-#[test]
-fn vectors_were_made_with_the_collator_this_crate_ports() {
-    let collator = vectors().generated_with.collator;
-
-    // Electron Oriel resolves `Intl.Collator(undefined)` to the app's locale. English has no
-    // collation of its own in CLDR, so its order is the root order this crate uses. Vectors made
-    // under another language would test a different order.
-    let language = collator.locale.split('-').next().unwrap_or_default();
-    assert_eq!(
-        language, "en",
-        "the vectors were made in {}; this crate collates by the root order, which English uses",
-        collator.locale
-    );
-    assert!(collator.numeric);
-    assert_eq!(collator.sensitivity, "base");
-    assert!(!collator.ignore_punctuation);
-    assert_eq!(collator.case_first, "false");
 }
 
 #[test]

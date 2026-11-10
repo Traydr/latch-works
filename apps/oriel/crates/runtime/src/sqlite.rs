@@ -1,9 +1,8 @@
 //! SQLite: one connection per catalog, on a thread of its own, called from async code.
 //!
-//! The connection is set up as Electron Oriel sets up its catalogs (glazier-core's
-//! `catalog/database.ts`, View's `db/mediaIndexService.ts`), so either app can open the other's
-//! files later: WAL, `synchronous = NORMAL`, foreign keys on, and no double-quoted string literals,
-//! the last two being `node:sqlite`'s defaults.
+//! The connection is set up as Electron Oriel set up its catalogs, so catalogs it wrote still
+//! open: WAL, `synchronous = NORMAL`, foreign keys on, and no double-quoted string literals (the
+//! last two were `node:sqlite`'s defaults).
 
 use std::fmt;
 use std::future::Future;
@@ -36,9 +35,10 @@ pub struct Database {
 }
 
 impl Database {
-    /// Opens the catalog at `path`, creating it if absent, on a new thread; sets the connection up
-    /// as Electron Oriel does; and brings the schema up to date with `migrations` (see
-    /// [`migrate`]). Resolves once the catalog is ready, or with the error that stopped it.
+    /// Opens the catalog at `path`, creating it if absent, on a new thread; sets the connection
+    /// up; and brings the schema up to date with `migrations`: each entry upgrades the catalog by
+    /// one `user_version`, entries only append, and a catalog newer than `migrations` is left as it
+    /// is. Resolves once the catalog is ready, or with the error that stopped it.
     pub fn open(
         path: impl Into<PathBuf>,
         migrations: &'static [&'static str],
@@ -198,11 +198,11 @@ fn connect(path: &Path, migrations: &[&str]) -> rusqlite::Result<Connection> {
     Ok(connection)
 }
 
-/// Brings a catalog's schema up to date, by glazier-core's rule: each entry of `migrations`
-/// upgrades the catalog by one `user_version`, entries only append, and a catalog replays the
-/// ones past its version, each in its own `BEGIN IMMEDIATE` transaction with its version bump. A
-/// catalog newer than `migrations` is left as it is, as glazier-core leaves it.
-pub fn migrate(connection: &mut Connection, migrations: &[&str]) -> rusqlite::Result<()> {
+/// Brings a catalog's schema up to date: each entry of `migrations` upgrades the catalog by one
+/// `user_version`, entries only append, and a catalog replays the ones past its version, each in
+/// its own `BEGIN IMMEDIATE` transaction with its version bump. A catalog newer than `migrations`
+/// is left as it is.
+fn migrate(connection: &mut Connection, migrations: &[&str]) -> rusqlite::Result<()> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     let applied = usize::try_from(version).unwrap_or(0);
     for (index, migration) in migrations.iter().enumerate().skip(applied) {

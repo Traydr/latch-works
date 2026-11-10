@@ -1,23 +1,24 @@
-//! Files in the catalog: what a walk records, and the Library's queries, from glazier-core's
-//! `catalog/files.ts`.
+//! Files in the catalog: what a walk records, what the passes learn about a file, what a change
+//! does to a file's row, and the Library's queries.
 
 use std::collections::BTreeSet;
 
-use oriel_core_domain::{
-    IMAGE_EXTENSIONS, MediaType, PDF_EXTENSIONS, VIDEO_EXTENSIONS, detect_media_type,
-};
+use oriel_core_domain::{MediaType, detect_media_type, shown_extensions};
 use rusqlite::types::Value;
-use rusqlite::{Connection, ToSql};
+use rusqlite::{Connection, OptionalExtension as _, ToSql, params};
 
-use super::rows::{AUDIO_STATE_SQL, FILE_COLUMNS, FILES_FROM, FileRecord};
+use super::details::forget_details_of;
+use super::rows::{FILE_COLUMNS, FILES_FROM, FileRecord, audio_state_sql};
 use super::transaction;
-use crate::collation::numeric_order;
 use crate::contract::{
     AudioState, Count, FacetCount, FileFacets, FileFilter, FileFlag, FileFormat, FileId,
     FileIdList, FileKind, FilePage, FileQuery, FileSortColumn, MAX_BULK_FILES, MAX_PAGE_ROWS,
-    RootId, SelectionSummary,
+    OptimizeCategory, RootId, SelectionSummary,
 };
+use crate::passes::probe::PROBE_VERSION;
 use crate::scan::WalkedFile;
+use crate::scan::{dir_of, extension_of, is_extension_mismatch, name_of};
+use oriel_core_domain::collation::Collation;
 
 /// Named statement parameters, bound as `$name`, built up as a query is.
 #[derive(Clone, Debug, Default)]
@@ -50,8 +51,9 @@ impl SqlParams {
     }
 }
 
-/// Columns derived from a file's bytes, and the value each returns to when the bytes change.
-/// The walk's upsert resets them all whenever size, mtime or ctime moved, so nothing stale (a
+/// Columns derived from a file's bytes, and the value each returns to when the bytes change: the
+/// walk's upsert resets them all whenever size, mtime or ctime moved, a conversion's result
+/// starts from them, and an undone conversion's original returns to them, so nothing stale (a
 /// hash, a probe, a fingerprint) outlives the content it describes.
 const DERIVED_COLUMN_RESETS: [(&str, &str); 23] = [
     ("format", "NULL"),
@@ -125,8 +127,19 @@ pub fn initial_kind(name: &str, junk: bool) -> FileKind {
     }
 }
 
+/// `column = reset` for every derived column but those in `except`.
+fn derived_resets(except: &[&str]) -> String {
+    DERIVED_COLUMN_RESETS
+        .iter()
+        .filter(|(column, _)| !except.contains(column))
+        .map(|(column, reset)| format!("{column} = {reset}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Records a batch of walked files in one transaction, keeping what is known about each file
-/// whose bytes did not change.
+/// whose bytes did not change. The prints of files whose bytes did are dropped with the rest;
+/// the scan moves the prints' generation once its walk ends.
 pub fn upsert_walked_files(
     connection: &mut Connection,
     root_id: RootId,
@@ -145,7 +158,7 @@ pub fn upsert_walked_files(
                     .with("name", file.name.clone())
                     .with("ext", file.ext.clone())
                     .with("size", file.size)
-                    // glazier-core binds JavaScript numbers, which SQLite stores as REAL here.
+                    // Stored as REAL, as Electron Oriel's catalogs hold them.
                     .with("mtime_ms", file.mtime_ms as f64)
                     .with("ctime_ms", file.ctime_ms as f64)
                     .with("dev", file.dev.clone())
@@ -202,8 +215,7 @@ pub fn query_records(
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
-/// The records of these files, in slices of 500 as glazier-core asks for them; missing ids are
-/// left out.
+/// The records of these files, asked for in slices of 500; missing ids are left out.
 pub fn get_file_records(
     connection: &Connection,
     file_ids: &[FileId],
@@ -231,12 +243,9 @@ pub fn get_file_records(
     Ok(records)
 }
 
-/// Extensions some Latch Works app shows, as a SQL list; everything else is unsupported.
+/// The extensions a Latch Works app shows, as a SQL list; everything else is unsupported.
 pub fn supported_extensions_sql() -> String {
-    IMAGE_EXTENSIONS
-        .iter()
-        .chain(VIDEO_EXTENSIONS.iter())
-        .chain(PDF_EXTENSIONS.iter())
+    shown_extensions()
         .map(|extension| format!("'{extension}'"))
         .collect::<Vec<_>>()
         .join(", ")
@@ -253,7 +262,21 @@ fn sort_sql(column: FileSortColumn) -> &'static str {
     }
 }
 
-/// What each Library flag matches, as a condition on `files f`.
+/// Hashes held by more than one file on disk (hard links to one file count once), leaving out
+/// junk and empty files: the identical copies Duplicates offers. A subquery over `files`
+/// yielding `sha256`, within the root `root_sql` names, or across every root.
+pub fn exact_copies_sql(root_sql: Option<&str>) -> String {
+    let root = root_sql.map_or_else(String::new, |root| format!("AND root_id = {root}"));
+    format!(
+        "SELECT sha256 FROM files
+    WHERE sha256 IS NOT NULL AND is_junk = 0 AND size > 0 {root}
+    GROUP BY sha256
+    HAVING COUNT(DISTINCT dev || ':' || ino) > 1"
+    )
+}
+
+/// What each Library flag matches, as a condition on `files f`. Overview's findings of the same
+/// names count by the same conditions.
 pub fn flag_sql(flag: FileFlag) -> String {
     match flag {
         FileFlag::ExtensionMismatch => "f.ext_mismatch = 1".to_owned(),
@@ -261,9 +284,11 @@ pub fn flag_sql(flag: FileFlag) -> String {
         FileFlag::ZeroByte => "f.size = 0 AND f.is_junk = 0".to_owned(),
         FileFlag::Junk => "f.is_junk = 1".to_owned(),
         FileFlag::Animated => "COALESCE(f.frames, 1) > 1".to_owned(),
-        FileFlag::Duplicate => "f.sha256 IN (SELECT sha256 FROM files WHERE sha256 IS NOT NULL
-    GROUP BY sha256 HAVING COUNT(*) > 1)"
-            .to_owned(),
+        // The files Duplicates' identical copies are made of.
+        FileFlag::Duplicate => format!(
+            "f.is_junk = 0 AND f.size > 0 AND f.sha256 IN ({})",
+            exact_copies_sql(Some("f.root_id"))
+        ),
         FileFlag::Unsupported => format!(
             "f.is_junk = 0 AND f.ext NOT IN ({})",
             supported_extensions_sql()
@@ -342,7 +367,8 @@ fn build_file_filter(filter: &FileFilter) -> (String, SqlParams) {
             .map(|state| state.as_str())
             .collect();
         clauses.push(format!(
-            "({AUDIO_STATE_SQL}) IN ({})",
+            "({}) IN ({})",
+            audio_state_sql(),
             in_list(&mut params, "audio", &states)
         ));
     }
@@ -365,11 +391,6 @@ fn build_file_filter(filter: &FileFilter) -> (String, SqlParams) {
         format!("WHERE {}", clauses.join(" AND "))
     };
     (clause, params)
-}
-
-/// True when answering the filter needs the convertible files recorded first.
-pub fn filter_needs_convertible(filter: &FileFilter) -> bool {
-    filter.flags.contains(&FileFlag::Convertible)
 }
 
 /// One page of the Library, and how many files and bytes match in all.
@@ -470,7 +491,7 @@ pub fn file_facets(connection: &Connection, filter: &FileFilter) -> anyhow::Resu
             audio_states: Vec::new(),
             ..filter.clone()
         },
-        &format!("({AUDIO_STATE_SQL})"),
+        &format!("({})", audio_state_sql()),
     )?
     .into_iter()
     .filter_map(|row| {
@@ -567,7 +588,8 @@ pub fn selection_summary(
       SUM(CASE WHEN c.id IS NOT NULL THEN f.size ELSE 0 END) AS convertible_bytes,
       SUM(f.kind = 'video') AS videos,
       SUM(f.kind = 'video' AND COALESCE(f.audio_streams, 0) > 0) AS with_audio,
-      SUM(f.ext_mismatch = 1) AS mismatches
+      SUM(f.ext_mismatch = 1) AS mismatches,
+      CASE WHEN COUNT(DISTINCT c.category) = 1 THEN MIN(c.category) END AS convert_as
       FROM files f LEFT JOIN temp.convertible_files c ON c.id = f.id
       WHERE f.id IN (SELECT value FROM json_each($ids))",
         &*params.named(),
@@ -586,6 +608,10 @@ pub fn selection_summary(
                 videos: number(4)?,
                 with_audio: number(5)?,
                 extension_mismatches: number(6)?,
+                convert_as: row
+                    .get::<_, Option<String>>(7)?
+                    .as_deref()
+                    .and_then(OptimizeCategory::parse),
             })
         },
     )?)
@@ -620,15 +646,16 @@ pub fn list_folders(connection: &Connection, root_id: RootId) -> anyhow::Result<
         }
     }
     let mut folders: Vec<String> = folders.into_iter().collect();
-    folders.sort_by(|left, right| numeric_order(left, right));
+    folders.sort_by(|left, right| Collation::Numeric.compare(left, right));
     Ok(folders)
 }
 
-/// Records a root's convertible files for Library queries on this connection to filter by.
+/// Records a root's convertible files, with what Convert would do to each, for Library queries
+/// on this connection to filter by.
 pub fn record_convertible(
     connection: &mut Connection,
     root_id: RootId,
-    file_ids: &[FileId],
+    files: &[(FileId, OptimizeCategory)],
 ) -> anyhow::Result<()> {
     transaction(connection, |transaction| {
         transaction.execute(
@@ -636,17 +663,501 @@ pub fn record_convertible(
             [root_id],
         )?;
         let mut insert = transaction.prepare_cached(
-            "INSERT OR IGNORE INTO temp.convertible_files (id, root_id) VALUES (?1, ?2)",
+            "INSERT OR IGNORE INTO temp.convertible_files (id, root_id, category)
+          VALUES (?1, ?2, ?3)",
         )?;
-        for &id in file_ids {
-            insert.execute([id, root_id])?;
+        for &(id, category) in files {
+            insert.execute(params![id, root_id, category.as_str()])?;
         }
         Ok(())
     })
 }
 
-/// Forgets every recorded convertible file, when the catalog changed under them.
-pub fn forget_convertible(connection: &Connection) -> anyhow::Result<()> {
-    connection.execute("DELETE FROM temp.convertible_files", [])?;
+/// The file at `rel_path` under a root, as the catalog has it.
+pub(crate) fn file_record_at(
+    connection: &Connection,
+    root_id: RootId,
+    rel_path: &str,
+) -> anyhow::Result<Option<FileRecord>> {
+    Ok(query_records(
+        connection,
+        &format!(
+            "SELECT {FILE_COLUMNS} FROM {FILES_FROM} WHERE f.root_id = $root AND f.rel_path = $rel"
+        ),
+        &SqlParams::new()
+            .with("root", root_id)
+            .with("rel", rel_path.to_owned()),
+    )?
+    .pop())
+}
+
+/// Forgets a file that left its root (held, removed, moved outside every root).
+pub(crate) fn forget_file(
+    connection: &Connection,
+    root_id: RootId,
+    rel_path: &str,
+) -> anyhow::Result<()> {
+    connection.execute(
+        "DELETE FROM files WHERE root_id = ?1 AND rel_path = ?2",
+        params![root_id, rel_path],
+    )?;
+    Ok(())
+}
+
+/// Where a file is on its volume and when it last changed, as a walk records it.
+#[derive(Clone, Debug)]
+pub(crate) struct FileIdentity {
+    pub ctime_ms: i64,
+    pub dev: String,
+    pub ino: String,
+}
+
+/// Points a file's row at its new place after a move or a rename, which leaves its bytes, and so
+/// all that was read from them, as they were.
+pub(crate) fn relocate_file(
+    connection: &Connection,
+    (root_id, from): (RootId, &str),
+    (new_root, rel_path): (RootId, &str),
+    identity: &FileIdentity,
+) -> anyhow::Result<()> {
+    let name = name_of(rel_path);
+    let ext = extension_of(name);
+    let format: Option<String> = connection
+        .query_row(
+            "SELECT format FROM files WHERE root_id = ?1 AND rel_path = ?2",
+            params![root_id, from],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    let mismatch = format
+        .as_deref()
+        .and_then(FileFormat::parse)
+        .is_some_and(|format| is_extension_mismatch(format, &ext));
+    connection.execute(
+        "UPDATE files SET root_id = ?1, rel_path = ?2, dir = ?3, name = ?4, ext = ?5,
+      ctime_ms = ?6, dev = ?7, ino = ?8,
+      ext_mismatch = CASE WHEN format IS NULL THEN 0 ELSE ?9 END
+      WHERE root_id = ?10 AND rel_path = ?11",
+        params![
+            new_root,
+            rel_path,
+            dir_of(rel_path),
+            name,
+            ext,
+            identity.ctime_ms,
+            identity.dev,
+            identity.ino,
+            i64::from(mismatch),
+            root_id,
+            from
+        ],
+    )?;
+    Ok(())
+}
+
+/// What a conversion wrote in place of a file, as its check found it.
+#[derive(Clone, Debug)]
+pub(crate) struct ConvertedFile {
+    pub rel_path: String,
+    pub size: i64,
+    pub mtime_ms: i64,
+    pub identity: FileIdentity,
+    pub kind: &'static str,
+    pub format: FileFormat,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub frames: Option<i64>,
+    pub duration_ms: Option<f64>,
+    pub video_codec: Option<String>,
+    pub audio_codec: Option<String>,
+    pub audio_streams: Option<i64>,
+    pub bitrate: Option<f64>,
+    /// Its head hash and SHA-256, when its source was one of a possible set of copies.
+    pub hashes: Option<(String, String)>,
+    /// The audio track was carried over, so its loudness stands.
+    pub keep_loudness: bool,
+    /// It was kept for being smaller, so it counts as re-encoded to save space.
+    pub reencoded: bool,
+}
+
+/// Rewrites a converted file's row, which keeps its id and what the owner said about it: its
+/// new place and bytes, the facts just checked, and every other derived column as for new bytes.
+/// Other rows of the same inode, which a hard link of the result has just touched, take its
+/// change time.
+pub(crate) fn replace_converted_file(
+    connection: &Connection,
+    root_id: RootId,
+    from: &str,
+    file: &ConvertedFile,
+) -> anyhow::Result<()> {
+    const WRITTEN: [&str; 13] = [
+        "format",
+        "probe_version",
+        "width",
+        "height",
+        "frames",
+        "duration_ms",
+        "video_codec",
+        "audio_codec",
+        "audio_streams",
+        "bitrate",
+        "head_hash",
+        "sha256",
+        "reencoded",
+    ];
+    let kept_loudness: &[&str] = if file.keep_loudness {
+        &["loudness_version", "loudness_max_db"]
+    } else {
+        &[]
+    };
+    let except: Vec<&str> = WRITTEN.iter().chain(kept_loudness).copied().collect();
+    let name = name_of(&file.rel_path);
+    let params = SqlParams::new()
+        .with("rel_path", file.rel_path.clone())
+        .with("dir", dir_of(&file.rel_path).to_owned())
+        .with("name", name.to_owned())
+        .with("ext", extension_of(name))
+        .with("size", file.size)
+        .with("mtime_ms", file.mtime_ms)
+        .with("ctime_ms", file.identity.ctime_ms)
+        .with("dev", file.identity.dev.clone())
+        .with("ino", file.identity.ino.clone())
+        .with("kind", file.kind.to_owned())
+        .with("format", file.format.as_str().to_owned())
+        .with("probe_version", PROBE_VERSION)
+        .with("width", file.width)
+        .with("height", file.height)
+        .with("frames", file.frames)
+        .with("duration_ms", file.duration_ms)
+        .with("video_codec", file.video_codec.clone())
+        .with("audio_codec", file.audio_codec.clone())
+        .with("audio_streams", file.audio_streams)
+        .with("bitrate", file.bitrate)
+        .with(
+            "head_hash",
+            file.hashes.as_ref().map(|hashes| hashes.0.clone()),
+        )
+        .with(
+            "sha256",
+            file.hashes.as_ref().map(|hashes| hashes.1.clone()),
+        )
+        .with("reencoded", i64::from(file.reencoded))
+        .with("root_id", root_id)
+        .with("from", from.to_owned());
+    connection.execute(
+        &format!(
+            "UPDATE files SET rel_path = $rel_path, dir = $dir, name = $name, ext = $ext,
+          size = $size, mtime_ms = $mtime_ms, ctime_ms = $ctime_ms, dev = $dev, ino = $ino,
+          kind = $kind, {}, {}
+          WHERE root_id = $root_id AND rel_path = $from",
+            derived_resets(&except),
+            WRITTEN
+                .iter()
+                .map(|column| format!("{column} = ${column}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        &*params.named(),
+    )?;
+    connection.execute(
+        "UPDATE files SET ctime_ms = ?1 WHERE dev = ?2 AND ino = ?3",
+        params![file.identity.ctime_ms, file.identity.dev, file.identity.ino],
+    )?;
+    Ok(())
+}
+
+/// After a conversion's undo, points its row back at the original, so the file keeps its id and
+/// what the owner said about it. What was read from the result goes, its prints with it, so the
+/// scan an undo asks for reads the original afresh.
+pub(crate) fn point_back_at_original(
+    connection: &Connection,
+    root_id: RootId,
+    rel_path: &str,
+    original: &str,
+) -> anyhow::Result<()> {
+    let id: Option<FileId> = connection
+        .query_row(
+            "SELECT id FROM files WHERE root_id = ?1 AND rel_path = ?2",
+            params![root_id, rel_path],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(id) = id else {
+        return Ok(());
+    };
+    let name = name_of(original);
+    let moved = connection.execute(
+        &format!(
+            "UPDATE OR IGNORE files SET rel_path = ?1, dir = ?2, name = ?3, ext = ?4, {}
+          WHERE id = ?5",
+            derived_resets(&[])
+        ),
+        params![original, dir_of(original), name, extension_of(name), id],
+    )?;
+    if moved > 0 {
+        forget_details_of(connection, id)?;
+    }
+    Ok(())
+}
+
+/// Which plan kind found a file would not get smaller, so it stops offering it until its bytes
+/// change: Convert and Shrink each keep their own mark.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NotSmaller {
+    Convert,
+    Shrink,
+}
+
+pub(crate) fn mark_not_smaller(
+    connection: &Connection,
+    mark: NotSmaller,
+    root_id: RootId,
+    rel_path: &str,
+) -> anyhow::Result<()> {
+    let column = match mark {
+        NotSmaller::Convert => "optimize_not_smaller",
+        NotSmaller::Shrink => "shrink_not_smaller",
+    };
+    connection.execute(
+        &format!("UPDATE files SET {column} = 1 WHERE root_id = ?1 AND rel_path = ?2"),
+        params![root_id, rel_path],
+    )?;
+    Ok(())
+}
+
+/// Records a file's fingerprint, or why there is none, on the row the pass selected while it is
+/// unchanged. Says whether it was; the pass moves the fingerprints' generation once it ends.
+pub(crate) fn record_fingerprint(
+    connection: &Connection,
+    file: &SelectedFile,
+    version: i64,
+    print: Option<String>,
+    error: Option<String>,
+) -> anyhow::Result<bool> {
+    let params = same_row_params(file)
+        .with("version", version)
+        .with("print", print)
+        .with("error", error.as_deref().map(error_text));
+    let written = connection.execute(
+        &format!(
+            "UPDATE files SET fingerprint_version = $version, fingerprint = $print,
+      fingerprint_error = $error WHERE {SAME_ROW_SQL}"
+        ),
+        &*params.named(),
+    )?;
+    Ok(written > 0)
+}
+
+// What the passes learn about a file.
+
+/// A row as a pass selected it; the pass works on it only while the catalog still agrees.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SelectedFile {
+    pub id: FileId,
+    pub root_id: RootId,
+    pub rel_path: String,
+    pub size: i64,
+    pub mtime_ms: f64,
+}
+
+/// True when the file's row still has the path, size and mtime the pass selected it with. A
+/// background pass can resume after a change moved, held or converted the file.
+pub(crate) fn still_selected(connection: &Connection, file: &SelectedFile) -> anyhow::Result<bool> {
+    let current: Option<(RootId, String, i64, f64)> = connection
+        .query_row(
+            "SELECT root_id, rel_path, size, mtime_ms FROM files WHERE id = ?1",
+            [file.id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?;
+    Ok(current.is_some_and(|(root_id, rel_path, size, mtime_ms)| {
+        root_id == file.root_id
+            && rel_path == file.rel_path
+            && size == file.size
+            && mtime_ms == file.mtime_ms
+    }))
+}
+
+/// The WHERE condition that writes a pass's result only to the row it selected, unchanged.
+pub(super) const SAME_ROW_SQL: &str = "id = $id AND root_id = $root_id AND rel_path = $rel_path
+  AND size = $size AND mtime_ms = $mtime_ms";
+
+pub(super) fn same_row_params(file: &SelectedFile) -> SqlParams {
+    SqlParams::new()
+        .with("id", file.id)
+        .with("root_id", file.root_id)
+        .with("rel_path", file.rel_path.clone())
+        .with("size", file.size)
+        .with("mtime_ms", file.mtime_ms)
+}
+
+/// At most 500 UTF-16 code units, as catalogs from Electron Oriel store them, of an error, cut at a
+/// character.
+pub(super) fn error_text(message: &str) -> String {
+    let mut units = 0;
+    let mut end = message.len();
+    for (index, character) in message.char_indices() {
+        units += character.len_utf16();
+        if units > 500 {
+            end = index;
+            break;
+        }
+    }
+    message[..end].to_owned()
+}
+
+/// Records a file's real format, and the kind and extension mismatch that follow from it.
+pub(crate) fn record_format(
+    connection: &Connection,
+    id: FileId,
+    format: FileFormat,
+    kind: FileKind,
+    mismatch: bool,
+) -> anyhow::Result<()> {
+    connection.execute(
+        "UPDATE files SET format = ?1, kind = ?2, ext_mismatch = ?3 WHERE id = ?4",
+        params![format.as_str(), kind.as_str(), i64::from(mismatch), id],
+    )?;
+    Ok(())
+}
+
+/// What libvips read of a still or an animation.
+pub(crate) struct StillProbe {
+    pub width: i64,
+    pub height: i64,
+    pub frames: i64,
+    pub has_alpha: bool,
+    pub duration_ms: Option<f64>,
+}
+
+pub(crate) fn record_still_probe(
+    connection: &Connection,
+    id: FileId,
+    version: i64,
+    probe: &StillProbe,
+) -> anyhow::Result<()> {
+    connection.execute(
+        "UPDATE files SET probe_version = ?1, probe_error = NULL, width = ?2, height = ?3,
+      frames = ?4, has_alpha = ?5, duration_ms = ?6 WHERE id = ?7",
+        params![
+            version,
+            probe.width,
+            probe.height,
+            probe.frames,
+            i64::from(probe.has_alpha),
+            probe.duration_ms,
+            id
+        ],
+    )?;
+    Ok(())
+}
+
+/// Records what ffprobe read of a video. One with sound and no picture becomes audio.
+pub(crate) fn record_video_probe(
+    connection: &Connection,
+    id: FileId,
+    version: i64,
+    probe: &oriel_tools::VideoProbe,
+) -> anyhow::Result<()> {
+    let params = SqlParams::new()
+        .with("version", version)
+        .with("width", probe.width)
+        .with("height", probe.height)
+        .with("duration", probe.duration_ms)
+        .with("video", probe.video_codec.clone())
+        .with("audio", probe.audio_codec.clone())
+        .with("streams", probe.audio_streams)
+        .with("bitrate", probe.bitrate)
+        .with("id", id);
+    connection.execute(
+        "UPDATE files SET probe_version = $version, probe_error = NULL, width = $width,
+      height = $height, duration_ms = $duration, video_codec = $video, audio_codec = $audio,
+      audio_streams = $streams, bitrate = $bitrate,
+      kind = CASE WHEN $video IS NULL AND $streams > 0 THEN 'audio' ELSE kind END
+      WHERE id = $id",
+        &*params.named(),
+    )?;
+    Ok(())
+}
+
+/// Records why a file could not be probed, which the "won't decode" finding lists.
+pub(crate) fn record_probe_error(
+    connection: &Connection,
+    id: FileId,
+    version: i64,
+    message: &str,
+) -> anyhow::Result<()> {
+    connection.execute(
+        "UPDATE files SET probe_version = ?1, probe_error = ?2 WHERE id = ?3",
+        params![version, error_text(message), id],
+    )?;
+    Ok(())
+}
+
+/// Records the hash of a file's two ends, and its whole SHA-256 when reading the ends read it
+/// all.
+pub(crate) fn record_edge_hash(
+    connection: &Connection,
+    id: FileId,
+    edge: &str,
+    sha256: Option<&str>,
+) -> anyhow::Result<()> {
+    match sha256 {
+        Some(sha256) => connection.execute(
+            "UPDATE files SET head_hash = ?1, sha256 = ?2 WHERE id = ?3",
+            params![edge, sha256, id],
+        )?,
+        None => connection.execute(
+            "UPDATE files SET head_hash = ?1 WHERE id = ?2",
+            params![edge, id],
+        )?,
+    };
+    Ok(())
+}
+
+pub(crate) fn record_sha256(
+    connection: &Connection,
+    id: FileId,
+    sha256: &str,
+) -> anyhow::Result<()> {
+    connection.execute(
+        "UPDATE files SET sha256 = ?1 WHERE id = ?2",
+        params![sha256, id],
+    )?;
+    Ok(())
+}
+
+/// Records a soundtrack's peak level, or that it was tried and has none, on the row the pass
+/// selected while it is unchanged.
+pub(crate) fn record_loudness(
+    connection: &Connection,
+    file: &SelectedFile,
+    version: i64,
+    peak: Option<f64>,
+) -> anyhow::Result<()> {
+    let params = same_row_params(file)
+        .with("version", version)
+        .with("peak", peak);
+    connection.execute(
+        &format!(
+            "UPDATE files SET loudness_version = $version, loudness_max_db = $peak
+      WHERE {SAME_ROW_SQL}"
+        ),
+        &*params.named(),
+    )?;
+    Ok(())
+}
+
+/// Forgets an empty folder a change removed.
+pub(crate) fn forget_empty_folder(
+    connection: &Connection,
+    root_id: RootId,
+    rel_path: &str,
+) -> anyhow::Result<()> {
+    connection.execute(
+        "DELETE FROM empty_folders WHERE root_id = ?1 AND rel_path = ?2",
+        params![root_id, rel_path],
+    )?;
     Ok(())
 }

@@ -5,14 +5,17 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
+use std::path::Path;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
+use oriel_core_paths::DataRoot;
+use oriel_launch::variables;
 use serde_json::{Value, json};
 
 use super::process::{self, Sample, Spec};
 use super::spike_log::{self, LogReader};
-use super::{Outcome, Row, Settings, Turn};
+use super::{Outcome, Row, Settings, Turn, clear};
 
 /// How often the log is read and the app sampled, as `rs_run.py` polled.
 const POLL: Duration = Duration::from_millis(20);
@@ -20,6 +23,25 @@ const POLL: Duration = Duration::from_millis(20);
 const LIMIT: Duration = Duration::from_secs(1_800);
 /// When the warm start's CPU at rest is read, after the first thumbnails.
 const SETTLED: [(u64, &str); 3] = [(30, "idle-30s"), (60, "idle-60s"), (90, "idle-90s")];
+
+/// Turns on "Enable recursive mode by default" in View's settings under `data`, keeping what the
+/// file already holds, so the fixture's subfolders are listed as `rs_run.py`'s runs listed them.
+fn recurse_by_default(data: &Path) -> Result<()> {
+    let path = DataRoot::at(data.to_path_buf())?.view_settings();
+    let mut state: Value = fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    let settings = &mut state["settings"];
+    if !settings.is_object() {
+        *settings = json!({});
+    }
+    settings["recursiveDefault"] = Value::Bool(true);
+    fs::create_dir_all(path.parent().context("View's settings file has a folder")?)?;
+    fs::write(&path, serde_json::to_string_pretty(&state)?)
+        .with_context(|| format!("writing {}", path.display()))
+}
 
 pub fn run(row: Row, turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {
     // The warm start reopens the cold start's folder, whose first screen of thumbnails is on
@@ -30,27 +52,34 @@ pub fn run(row: Row, turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {
         _ => "data-fill",
     });
     if matches!(row, Row::ColdStart | Row::Fill) {
-        let _ = fs::remove_dir_all(&data);
+        clear(&data)?;
     }
+    recurse_by_default(&data)?;
     let log = turn.folder.join(format!("{}.log.jsonl", row.name()));
-    let _ = fs::remove_file(&log);
+    clear(&log)?;
 
     let mut env: Vec<(String, OsString)> = vec![
-        ("ORIEL_DATA_DIR".into(), data.clone().into()),
-        ("ORIEL_OPEN".into(), settings.fixture.join("stills").into()),
-        ("ORIEL_SPIKE_LOG".into(), log.clone().into()),
-        ("ORIEL_SPIKE_WINDOW".into(), "1280x900".into()),
-        ("ORIEL_SPIKE_QUIT".into(), "1".into()),
+        (variables::DATA_DIR.into(), data.clone().into()),
+        (
+            variables::OPEN.into(),
+            settings.fixture.join("stills").into(),
+        ),
+        (variables::SPIKE_LOG.into(), log.clone().into()),
+        (variables::SPIKE_WINDOW.into(), "1280x900".into()),
+        (variables::SPIKE_QUIT.into(), "1".into()),
     ];
     let variables: &[(&str, &str)] = match row {
-        Row::ColdStart => &[("ORIEL_SPIKE_REST_MS", "1000")],
-        Row::Fill => &[("ORIEL_SPIKE_FILL", "1"), ("ORIEL_SPIKE_REST_MS", "10000")],
-        Row::Scroll => &[
-            ("ORIEL_SPIKE_REST_MS", "60000"),
-            ("ORIEL_SPIKE_SCROLL", "5000"),
-            ("ORIEL_SPIKE_STEPS", "20"),
+        Row::ColdStart => &[(variables::SPIKE_REST_MS, "1000")],
+        Row::Fill => &[
+            (variables::SPIKE_FILL, "1"),
+            (variables::SPIKE_REST_MS, "10000"),
         ],
-        _ => &[("ORIEL_SPIKE_REST_MS", "100000")],
+        Row::Scroll => &[
+            (variables::SPIKE_REST_MS, "60000"),
+            (variables::SPIKE_SCROLL, "5000"),
+            (variables::SPIKE_STEPS, "20"),
+        ],
+        _ => &[(variables::SPIKE_REST_MS, "100000")],
     };
     env.extend(
         variables

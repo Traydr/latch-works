@@ -1,11 +1,9 @@
-//! Quitting, as Electron Oriel quits (plan 059, decision 2): closing the window or ⌘Q quits at
-//! once, unless a mode reports [`ModeActivity::Progress`], a push or a Tidy change. Then the
-//! window hides, the Dock icon keeps showing the progress, and the app quits once the work ends.
+//! Quitting (plan 059, decision 2): closing the window or ⌘Q quits at once, unless a mode reports
+//! work that holds quitting, a push or a Tidy change. Then the window hides, the Dock icon keeps
+//! showing the progress, and the app quits once the work ends.
 //! Quitting again meanwhile quits at once, and the window coming back (the Dock icon, a file
 //! opened with the app, ⌘-Tab) calls the quit off. The system's own quit requests (the Dock
 //! icon's Quit, logging out) are answered the same way (`terminate`).
-//!
-//! [`ModeActivity::Progress`]: oriel_ui::ModeActivity::Progress
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -99,15 +97,20 @@ impl QuitGuard {
 
     fn sync_hold(&self, cx: &App) {
         self.holds
-            .set(!self.waiting && self.state.read(cx).is_busy());
+            .set(!self.waiting && self.state.read(cx).holds_quit());
     }
 
     /// Quits now, or hides the window and quits when the work ends.
     pub fn request(&mut self, cx: &mut Context<Self>) {
-        if self.waiting || !self.state.read(cx).is_busy() {
+        if self.waiting || !self.state.read(cx).holds_quit() {
             self.platform.quit(cx);
             return;
         }
+        self.start_waiting(cx);
+    }
+
+    /// Hides the window and waits for the work to end before quitting.
+    fn start_waiting(&mut self, cx: &mut Context<Self>) {
         self.waiting = true;
         self.stop_paused(cx);
         self.sync_hold(cx);
@@ -125,15 +128,11 @@ impl QuitGuard {
     /// Whether closing the window may go ahead now. While work runs it may not: the window
     /// hides instead, and the app quits when the work ends.
     pub fn allows_close(&mut self, cx: &mut Context<Self>) -> bool {
-        if !self.state.read(cx).is_busy() {
+        if !self.state.read(cx).holds_quit() {
             return true;
         }
         if !self.waiting {
-            self.waiting = true;
-            self.stop_paused(cx);
-            self.sync_hold(cx);
-            self.platform.hide(cx);
-            cx.notify();
+            self.start_waiting(cx);
         }
         false
     }
@@ -148,7 +147,7 @@ impl QuitGuard {
     }
 
     fn finish_if_idle(&mut self, cx: &mut Context<Self>) {
-        if self.waiting && !self.state.read(cx).is_busy() {
+        if self.waiting && !self.state.read(cx).holds_quit() {
             self.waiting = false;
             self.platform.quit(cx);
         }

@@ -1,4 +1,4 @@
-//! Overview (`views/OverviewView.tsx`): what tidying the folder would do, with Tidy up (⌘↩)
+//! Overview: what tidying the folder would do, with Tidy up (⌘↩)
 //! running every step but duplicates as one change, then the similar versions and identical
 //! copies that wait for the owner, Shrink, holding, and what else the scan found.
 
@@ -15,6 +15,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
     prelude::FluentBuilder as _, px,
 };
+use oriel_core_domain::format;
 use oriel_core_tidy::contract::{
     DuplicateScope, DuplicateSetPage, DuplicateSetRequest, FileFlag, FileFormat, FindingKind,
     RootId, SimilarityLevel, Tidy,
@@ -23,14 +24,14 @@ use oriel_ui::TextRole as _;
 use oriel_ui::focus::FocusReveal;
 use oriel_ui::{ControlSize as _, TopBar};
 
-use crate::actions::{PerformOptions, TidyStep};
-use crate::changes::{PlanKind, PlanRequest};
-use crate::format;
-use crate::loaded::Loaded;
+use crate::actions::PerformOptions;
+use crate::loaded::{Loaded, PageReads, Read};
 use crate::pages::TidyPage;
 use crate::state::{LibraryPreset, TidyState};
 use crate::thumbs::{self, Thumbs};
 use crate::widgets;
+use oriel_core_tidy::TidyStep;
+use oriel_core_tidy::contract::{OptimizeCategory, PlanKind, PlanRequest};
 
 pub(crate) const TIDY_SOURCE: &str = "overview:tidy";
 
@@ -108,7 +109,7 @@ pub struct OverviewPage {
     started: (Option<RootId>, BTreeSet<StepId>),
     /// What the last Tidy up this visit took out of the folder, for the done card.
     keepers: Loaded<DuplicateSetPage>,
-    seen: (Option<RootId>, u64),
+    reads: PageReads,
     /// The hero card's rows as last drawn, which ↑ ↓ move between, and the one they rest on: its
     /// ring shows, and ↩ or → open its page.
     shown_steps: Vec<(StepId, TidyPage)>,
@@ -128,7 +129,7 @@ impl OverviewPage {
             focus: cx.focus_handle(),
             started: (None, BTreeSet::new()),
             keepers: Loaded::default(),
-            seen: (None, 0),
+            reads: PageReads::default(),
             shown_steps: Vec::new(),
             focused_step: None,
             _subscriptions: subscriptions,
@@ -137,20 +138,17 @@ impl OverviewPage {
 
     /// Reads the similar sets' keepers again when the catalog moves, while Overview shows.
     fn sync(&mut self, cx: &mut Context<Self>) {
+        cx.notify();
         let state = self.state.read(cx);
         if state.page() != TidyPage::Overview {
             // A row's ring is for this visit only, as a focused button's is.
             self.focused_step = None;
-            cx.notify();
             return;
         }
-        let key = (state.root_id(), state.catalog_version());
-        if key == self.seen {
-            cx.notify();
-            return;
-        }
-        self.seen = key;
-        let (Some(engine), Some(root_id)) = (state.engine().cloned(), state.root_id()) else {
+        let Some(Read {
+            engine, root_id, ..
+        }) = self.reads.due(TidyPage::Overview, state)
+        else {
             return;
         };
         let level = state
@@ -164,8 +162,8 @@ impl OverviewPage {
             scope: DuplicateScope::Similar,
             dismissed: false,
         };
-        self.keepers
-            .load(engine.duplicate_sets(request), |this| &mut this.keepers, cx);
+        let keepers = engine.ask(|engine| engine.duplicate_sets(request), cx);
+        self.keepers.load(keepers, |this| &mut this.keepers, cx);
         cx.notify();
     }
 
@@ -190,7 +188,7 @@ impl OverviewPage {
                 icon: IconName::Sparkles,
                 title: "Junk and empty folders",
                 caption: parts.into_iter().flatten().collect::<Vec<_>>().join(" · "),
-                todo: cleanup.junk + cleanup.empty_folders + cleanup.extensions > 0,
+                todo: cleanup.count() > 0,
                 open: TidyPage::CleanUp,
                 action: "Clean up",
             },
@@ -266,7 +264,7 @@ impl OverviewPage {
             StepId::CleanUp => {
                 state.perform(PlanRequest::Cleanup { root_id }, source, window, cx);
             }
-            StepId::Silent => state.perform_all(
+            StepId::Silent => state.perform_steps(
                 "Remove silent soundtracks",
                 vec![TidyStep::SilentVideos(root_id)],
                 "Removed silent soundtracks".into(),
@@ -288,15 +286,14 @@ impl OverviewPage {
         cx.notify();
     }
 
-    /// Tidy up: Clean up, then silent soundtracks, then Convert, as one change with one Undo
-    /// (`tidyUpSteps`). Duplicates are not a step: the owner decides every set.
+    /// Tidy up: Clean up, then silent soundtracks, then Convert, as one change with one Undo.
+    /// Duplicates are not a step: the owner decides every set.
     pub fn tidy_up(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
-        let (Some(root), Some(data)) = (state.root().cloned(), state.overview.data().cloned())
-        else {
+        let (Some(root), Some(data)) = (state.root().cloned(), state.overview().cloned()) else {
             return;
         };
-        if state.change_status(TIDY_SOURCE).is_some() {
+        if state.change_status(TIDY_SOURCE, cx).is_some() {
             return;
         }
         let categories = state.convert_categories();
@@ -307,27 +304,12 @@ impl OverviewPage {
             .map(|step| step.id)
             .collect();
         self.keep(todo, cx);
-        let mut steps = Vec::new();
-        let cleanup = &data.cleanup;
-        if cleanup.junk + cleanup.empty_folders + cleanup.extensions > 0 {
-            steps.push(TidyStep::Planned(PlanRequest::Cleanup { root_id: root.id }));
-        }
-        if data.silent_tracks.files > 0 {
-            steps.push(TidyStep::SilentVideos(root.id));
-        }
-        if !categories.is_empty() {
-            steps.push(TidyStep::Planned(PlanRequest::Optimize {
-                root_id: root.id,
-                categories,
-                file_ids: None,
-            }));
-        }
-        if steps.is_empty() {
+        if !todo_any(&data, &categories) {
             return;
         }
         let title = format!("Tidied up {}", root.name);
         self.state.update(cx, |state, cx| {
-            state.perform_all("Tidy up", steps, title, TIDY_SOURCE, window, cx);
+            state.tidy_up(categories, title, TIDY_SOURCE, window, cx);
         });
         cx.notify();
     }
@@ -341,10 +323,7 @@ impl OverviewPage {
             return;
         }
         let keys = &event.keystroke;
-        if oriel_ui::keys::command_held(&keys.modifiers) && keys.key == "enter" {
-            self.tidy_up(window, cx);
-            cx.stop_propagation();
-        } else if !keys.modifiers.modified() && keys.key == "d" {
+        if !keys.modifiers.modified() && keys.key == "d" {
             self.state.update(cx, |state, cx| {
                 state.open_duplicates(DuplicateScope::Similar, cx);
             });
@@ -355,7 +334,7 @@ impl OverviewPage {
     }
 
     /// ↑ ↓ move between the hero card's rows, from the first or the last; ↩ and → open the page of
-    /// the row they rest on, as Electron's arrows move the focus between its row buttons.
+    /// the row they rest on.
     fn move_between_steps(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         let at = self
             .focused_step
@@ -388,7 +367,7 @@ impl OverviewPage {
         let state = self.state.read(cx);
         let theme = cx.theme();
         let scanning = state.root_id().is_some_and(|id| state.is_scanning(id));
-        let meta = state.overview.data().map(|data| {
+        let meta = state.overview().map(|data| {
             let scanned = if scanning {
                 "scanning".to_string()
             } else {
@@ -415,7 +394,7 @@ impl OverviewPage {
             })
             .disabled(scanning)
             .accessibility_label("Rescan")
-            .tooltip("Rescan  ⌘R")
+            .tooltip(oriel_ui::keys::labelled("Rescan", crate::RESCAN_KEYS))
             .on_click(cx.listener(|this, _, window, cx| {
                 this.state.update(cx, |state, cx| {
                     if let Some(root_id) = state.root_id() {
@@ -458,7 +437,7 @@ impl OverviewPage {
                         })),
                 )
         });
-        TopBar::new(&state.shell, "Overview")
+        TopBar::new(state.shell(), TidyPage::Overview.label())
             .when_some(meta, |bar, meta| {
                 bar.quiet(
                     div()
@@ -482,9 +461,7 @@ impl OverviewPage {
             .root()
             .map(|root| root.name.clone())
             .unwrap_or_else(|| "the folder".into());
-        let progress = state
-            .scan()
-            .map(|scan| scan.job.read(cx).progress().clone());
+        let progress = state.scan().map(|scan| scan.job.progress(cx));
         let done = progress.as_ref().map_or(0, |progress| progress.done());
         let total = progress.as_ref().map_or(0, |progress| progress.total());
         div()
@@ -634,10 +611,10 @@ impl OverviewPage {
 
         // Another page's change running, Tidy up queues behind it.
         let action: AnyElement = widgets::while_changing(
-            widgets::primary_action("overview-tidy-up", "Tidy up", "⌘↩")
+            widgets::primary_action("overview-tidy-up", "Tidy up", widgets::MAIN_ACTION_KEYS)
                 .page_size()
                 .on_click(cx.listener(|this, _, window, cx| this.tidy_up(window, cx))),
-            state.change_status(TIDY_SOURCE),
+            state.change_status(TIDY_SOURCE, cx),
         )
         .into_any_element();
 
@@ -1155,7 +1132,7 @@ impl OverviewPage {
     }
 }
 
-/// What a scan finds that needs a look, and the Library filter that shows it (`ATTENTION`).
+/// What a scan finds that needs a look, and the Library filter that shows it.
 fn attention(kind: FindingKind, count: i64) -> (String, LibraryPreset) {
     let flags = |flag| LibraryPreset {
         flags: vec![flag],
@@ -1200,8 +1177,8 @@ impl Render for OverviewPage {
         let top_bar = self.render_top_bar(cx);
         let state = self.state.read(cx);
         let root = state.root().cloned();
-        let data = state.overview.data().cloned();
-        let error = state.overview.error().cloned();
+        let data = state.overview().cloned();
+        let error = state.overview_error().cloned();
         let scanning = root.as_ref().is_some_and(|root| state.is_scanning(root.id));
         let never_scanned = root
             .as_ref()
@@ -1261,8 +1238,7 @@ impl Render for OverviewPage {
                 let held = self
                     .state
                     .read(cx)
-                    .holding
-                    .data()
+                    .holding_preview()
                     .filter(|held| held.total > 0)
                     .map(|held| (held.total, held.total_bytes));
                 let holding = held.map(|(files, bytes)| {
@@ -1332,4 +1308,9 @@ impl Render for OverviewPage {
             .child(top_bar)
             .child(body)
     }
+}
+
+/// Whether Tidy up has a step to run: clean-up, silent soundtracks, or a conversion switched on.
+fn todo_any(tidy: &Tidy, categories: &[OptimizeCategory]) -> bool {
+    tidy.cleanup.count() > 0 || tidy.silent_tracks.files > 0 || !categories.is_empty()
 }

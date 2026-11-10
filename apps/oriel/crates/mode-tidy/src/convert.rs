@@ -1,4 +1,4 @@
-//! Convert (`views/ConvertView.tsx`): stills to AVIF, animations and videos to MP4, in sections
+//! Convert: stills to AVIF, animations and videos to MP4, in sections
 //! of tiles with what each is estimated to leave, the Options that switch kinds off, and the
 //! files left as they are and why. Convert N (⌘↩) runs every section as one change.
 
@@ -8,47 +8,27 @@ use gpui_kit::component::menu::DropdownMenu as _;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon};
 use gpui_kit::{
     AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement as _,
-    IntoElement, KeyDownEvent, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
-    prelude::FluentBuilder as _, px,
+    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Subscription, TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
-use oriel_core_tidy::contract::{
-    FileFilter, FileFlag, FileFormat, FileKind, FilePage, FileQuery, FileRow, FileSortColumn,
-    RootId, Tidy,
-};
+use oriel_core_domain::format;
+use oriel_core_tidy::contract::{FileFlag, FileRow, Tidy};
 use oriel_ui::TextRole as _;
 use oriel_ui::focus::FocusReveal;
 use oriel_ui::{ControlSize as _, TopBar};
 
 use crate::actions::PerformOptions;
-use crate::changes::PlanRequest;
-use crate::format;
-use crate::loaded::Loaded;
+use crate::loaded::{Loaded, PageReads, Read};
 use crate::pages::TidyPage;
 use crate::state::{ConvertGroup, LibraryPreset, TidyState};
 use crate::thumbs::Thumbs;
 use crate::widgets;
+use oriel_core_tidy::contract::PlanRequest;
 
 const SOURCE: &str = "convert";
 
 /// Tiles shown per section; the rest are a link to the Library.
 const TILE_LIMIT: usize = 60;
-
-/// Rows read per section to find its tiles among files of other categories.
-const SECTION_PAGE: u32 = 300;
-
-/// Why the engine left files out, said the way the owner would say it (`SKIP_WORDS`).
-fn skip_words(reason: &str) -> Option<(&'static str, &'static str)> {
-    Some(match reason {
-        "Already as small as they get" => ("came out no smaller", "came out no smaller"),
-        "Won't decode" => ("won't open", "won't open"),
-        "A file with the target name already exists" => (
-            "would take a name already in use",
-            "would take a name already in use",
-        ),
-        _ => return None,
-    })
-}
 
 /// One line per reason files stay as they are, plus kinds switched off in Options.
 fn left_reasons(tidy: &Tidy, off: &[ConvertGroup]) -> Vec<String> {
@@ -57,18 +37,7 @@ fn left_reasons(tidy: &Tidy, off: &[ConvertGroup]) -> Vec<String> {
         .skipped
         .iter()
         .filter(|entry| entry.files > 0)
-        .map(|entry| match skip_words(&entry.reason) {
-            Some((one, many)) => format!(
-                "{} {}",
-                format::count(entry.files),
-                if entry.files == 1 { one } else { many }
-            ),
-            None => format!(
-                "{}: {}",
-                format::count(entry.files),
-                entry.reason.trim_end_matches('.')
-            ),
-        });
+        .map(|entry| crate::labels::skip_reason(&entry.reason, entry.files, None));
     let switched_off = off.iter().filter_map(|group| {
         let (files, _) = group.totals(tidy);
         let (one, many) = group.nouns();
@@ -82,48 +51,33 @@ fn left_reasons(tidy: &Tidy, off: &[ConvertGroup]) -> Vec<String> {
     skipped.chain(switched_off).collect()
 }
 
-/// The files a section's query reads, and which of them belong to it (`SECTION_FILES`).
-fn section_query(group: ConvertGroup) -> (FileKind, Vec<FileFormat>) {
-    match group {
-        ConvertGroup::Pictures => (
-            FileKind::Image,
-            vec![
-                FileFormat::Png,
-                FileFormat::Jpeg,
-                FileFormat::Webp,
-                FileFormat::Bmp,
-            ],
-        ),
-        ConvertGroup::Animations => (
-            FileKind::Image,
-            vec![FileFormat::Gif, FileFormat::Png, FileFormat::Webp],
-        ),
-        ConvertGroup::Videos => (FileKind::Video, Vec::new()),
+/// Converts every section switched on in the folder on screen, as one change, unless Convert's
+/// change already runs or waits.
+pub(crate) fn convert(state: &mut TidyState, window: &mut Window, cx: &mut Context<TidyState>) {
+    let Some(root_id) = state.root_id() else {
+        return;
+    };
+    let categories = state.convert_categories();
+    if categories.is_empty() || state.change_status(SOURCE, cx).is_some() {
+        return;
     }
-}
-
-fn belongs(group: ConvertGroup, row: &FileRow) -> bool {
-    match group {
-        ConvertGroup::Pictures => row.frames.unwrap_or(1) <= 1,
-        ConvertGroup::Animations => {
-            row.format == Some(FileFormat::Gif) || row.frames.unwrap_or(1) > 1
-        }
-        // MP4 under another extension only needs renaming, which Clean up does.
-        ConvertGroup::Videos => {
-            !(row.format == Some(FileFormat::Mp4) && !row.ext.eq_ignore_ascii_case("mp4"))
-        }
-    }
+    let request = PlanRequest::Optimize {
+        root_id,
+        categories,
+        file_ids: None,
+    };
+    state.perform(request, PerformOptions::from(SOURCE), window, cx);
 }
 
 pub struct ConvertPage {
     state: Entity<TidyState>,
     thumbs: Entity<Thumbs>,
     focus: FocusHandle,
-    pictures: Loaded<FilePage>,
-    animations: Loaded<FilePage>,
-    videos: Loaded<FilePage>,
+    pictures: Loaded<Vec<FileRow>>,
+    animations: Loaded<Vec<FileRow>>,
+    videos: Loaded<Vec<FileRow>>,
     left_open: bool,
-    seen: (Option<RootId>, u64),
+    reads: PageReads,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -141,12 +95,12 @@ impl ConvertPage {
             animations: Loaded::default(),
             videos: Loaded::default(),
             left_open: false,
-            seen: (None, 0),
+            reads: PageReads::default(),
             _subscriptions: subscriptions,
         }
     }
 
-    fn slot(&mut self, group: ConvertGroup) -> &mut Loaded<FilePage> {
+    fn slot(&mut self, group: ConvertGroup) -> &mut Loaded<Vec<FileRow>> {
         match group {
             ConvertGroup::Pictures => &mut self.pictures,
             ConvertGroup::Animations => &mut self.animations,
@@ -155,32 +109,20 @@ impl ConvertPage {
     }
 
     fn sync(&mut self, cx: &mut Context<Self>) {
-        let state = self.state.read(cx);
-        let key = (state.root_id(), state.catalog_version());
-        if state.page() != TidyPage::Convert || key == self.seen {
-            cx.notify();
-            return;
-        }
-        self.seen = key;
-        let (Some(engine), Some(root_id)) = (state.engine().cloned(), state.root_id()) else {
+        cx.notify();
+        let Some(Read {
+            engine, root_id, ..
+        }) = self.reads.due(TidyPage::Convert, self.state.read(cx))
+        else {
             return;
         };
         for group in ConvertGroup::ALL {
-            let (kind, formats) = section_query(group);
-            let query = FileQuery {
-                filter: FileFilter {
-                    kinds: vec![kind],
-                    formats,
-                    flags: vec![FileFlag::Convertible],
-                    ..FileFilter::root(Some(root_id))
-                },
-                sort: FileSortColumn::Path,
-                descending: false,
-                offset: 0,
-                limit: SECTION_PAGE,
-            };
-            let answer = engine.list_files(query);
-            let slot: fn(&mut Self) -> &mut Loaded<FilePage> = match group {
+            let categories = group.categories().to_vec();
+            let answer = engine.ask(
+                move |engine| engine.convertible_files(root_id, categories, TILE_LIMIT),
+                cx,
+            );
+            let slot: fn(&mut Self) -> &mut Loaded<Vec<FileRow>> = match group {
                 ConvertGroup::Pictures => |this| &mut this.pictures,
                 ConvertGroup::Animations => |this| &mut this.animations,
                 ConvertGroup::Videos => |this| &mut this.videos,
@@ -192,39 +134,8 @@ impl ConvertPage {
 
     /// Convert N: every section switched on, as one change.
     pub fn convert(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let state = self.state.read(cx);
-        let Some(root_id) = state.root_id() else {
-            return;
-        };
-        let categories = state.convert_categories();
-        if categories.is_empty() || state.change_status(SOURCE).is_some() {
-            return;
-        }
-        self.state.update(cx, |state, cx| {
-            state.perform(
-                PlanRequest::Optimize {
-                    root_id,
-                    categories,
-                    file_ids: None,
-                },
-                PerformOptions::from(SOURCE),
-                window,
-                cx,
-            );
-        });
-    }
-
-    fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        // It is the open menu's, or nothing's; the page must not act on it behind the menu.
-        if oriel_ui::popups::popup_open(window, cx) {
-            return;
-        }
-        if oriel_ui::keys::command_held(&event.keystroke.modifiers)
-            && event.keystroke.key == "enter"
-        {
-            self.convert(window, cx);
-            cx.stop_propagation();
-        }
+        self.state
+            .update(cx, |state, cx| convert(state, window, cx));
     }
 
     fn render_section(
@@ -238,31 +149,20 @@ impl ConvertPage {
         let state = self.state.read(cx);
         let (files, bytes) = group.totals(tidy);
         let estimate = state.estimate(group.categories());
-        // Electron's test, `!video.avc && !ffmpeg`: Oriel encodes video only through ffmpeg.
+        // Oriel encodes video only through ffmpeg.
         let no_video_encoder = group == ConvertGroup::Videos
             && state
                 .capabilities()
                 .is_some_and(|found| !found.video.avc && !found.ffmpeg);
         let warning = cx.theme().warning;
         let ratio = estimate.ratio();
-        let rows: Vec<FileRow> = self
-            .slot(group)
-            .data()
-            .map(|page| {
-                page.rows
-                    .iter()
-                    .filter(|row| belongs(group, row))
-                    .take(TILE_LIMIT)
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
+        let rows: Vec<FileRow> = self.slot(group).data().cloned().unwrap_or_default();
         let more = files - rows.len() as i64;
         let loaded = self.slot(group).data().is_some();
         let repeated = widgets::repeated_names(&rows.iter().collect::<Vec<_>>());
         let running = self.state.read(cx).running_file(cx);
         // Estimates wait behind a running change, so while one runs there is nothing to wait for.
-        let changing = self.state.read(cx).has_change();
+        let changing = self.state.read(cx).is_changing();
         let tiles: Vec<AnyElement> = rows
             .iter()
             .map(|row| {
@@ -275,7 +175,7 @@ impl ConvertPage {
             })
             .collect();
         let (one, many) = group.nouns();
-        let kind = section_query(group).0;
+        let kind = group.kind();
         let more_button = (more > 0 && loaded).then(|| {
             let button = Button::new(SharedString::from(format!("convert-more-{}", group.key())))
                 .row_size()
@@ -405,15 +305,15 @@ impl Render for ConvertPage {
         self.state
             .update(cx, |state, cx| state.ask_capabilities(cx));
         let state = self.state.read(cx);
-        let shell = state.shell.clone();
-        let tidy = state.overview.data().cloned();
-        let error = state.overview.error().cloned();
+        let shell = state.shell().clone();
+        let tidy = state.overview().cloned();
+        let error = state.overview_error().cloned();
         let enabled: Vec<ConvertGroup> = state.convert_groups().iter().copied().collect();
         let off: Vec<ConvertGroup> = ConvertGroup::ALL
             .into_iter()
             .filter(|group| !enabled.contains(group))
             .collect();
-        let status = state.change_status(SOURCE);
+        let status = state.change_status(SOURCE, cx);
         let changing = state.is_changing();
 
         let Some(tidy) = tidy else {
@@ -436,7 +336,7 @@ impl Render for ConvertPage {
                 .flex()
                 .flex_col()
                 .size_full()
-                .child(TopBar::new(&shell, "Convert"))
+                .child(TopBar::new(&shell, TidyPage::Convert.label()))
                 .child(body);
         };
 
@@ -497,7 +397,7 @@ impl Render for ConvertPage {
                 widgets::primary_action(
                     "convert-run",
                     format!("Convert {}", format::count(files)),
-                    "⌘↩",
+                    widgets::MAIN_ACTION_KEYS,
                 )
                 .disabled(files == 0)
                 .on_click(cx.listener(|this, _, window, cx| this.convert(window, cx))),
@@ -505,7 +405,7 @@ impl Render for ConvertPage {
             )
             .into_any_element()
         });
-        let top_bar = TopBar::new(&shell, "Convert")
+        let top_bar = TopBar::new(&shell, TidyPage::Convert.label())
             .when_some(meta, |bar, meta| {
                 bar.quiet(
                     div()
@@ -602,7 +502,6 @@ impl Render for ConvertPage {
             .id("convert")
             .track_focus(&self.focus)
             .key_context("TidyConvert")
-            .on_key_down(cx.listener(Self::on_key_down))
             .flex()
             .flex_col()
             .size_full()

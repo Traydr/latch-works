@@ -3,32 +3,20 @@
 //! the steps a case takes.
 
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use gpui_kit::test::TestWindowExt as _;
+use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, Context, ElementId, Entity, InputEvent as _,
     IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _,
     Pixels, Point, Render, Styled as _, TestAppContext, Window, WindowBounds, WindowOptions, div,
     px, size,
 };
-use oriel_core_paths::DataRoot;
-use oriel_core_tidy::passes::Media;
-use oriel_mode_tidy::changes::{Changes, EngineChanges, NotYet};
+use oriel_core_paths::{DataRoot, LocateError, NativeSet};
+use oriel_core_tidy::Media;
+use oriel_launch::Launch;
 use oriel_mode_tidy::{TidyMode, TidyPage, TidyState};
-use oriel_ui::{ActivityIndicator, ModeId, ShellState};
-
-/// The changes the read-side cases run with: "not available yet", as the app has them until the
-/// executor is trusted with files.
-pub fn not_yet() -> Changes {
-    Rc::new(NotYet)
-}
-
-/// The changes the ignored cases run with: the engine's executor.
-pub fn executor() -> Changes {
-    Rc::new(EngineChanges)
-}
+use oriel_ui::{Foot, Mode as _, ModeId, ShellState};
 
 /// A folder of its own under the temp folder, which Tidy's sandbox admits.
 pub fn scratch(test: &str) -> PathBuf {
@@ -40,14 +28,22 @@ pub fn scratch(test: &str) -> PathBuf {
     std::fs::canonicalize(folder).unwrap()
 }
 
-/// Whether this machine has what a scan's analysis needs.
+/// Whether this machine has what a scan's analysis needs: libvips, libavif and the pinned ffmpeg
+/// and ffprobe. Only a development copy never made skips, as `oriel_test_archive::require` says;
+/// a libvips found that Tidy does not read through fails the test.
 pub fn media_ready() -> bool {
-    let media = Media::locate();
-    let ready = media.vips.is_some() && media.ffmpeg.is_some() && media.ffprobe.is_some();
-    if !ready {
-        eprintln!("skipped: needs libvips and the pinned ffmpeg and ffprobe");
+    if let Err(error @ LocateError::NotInDevelopment { .. }) = NativeSet::LIBVIPS.locate() {
+        return oriel_test_archive::require::<(), _>("libvips", Err(error)).is_some();
     }
-    ready
+    if oriel_test_archive::libavif().is_none() || oriel_test_archive::media_tools().is_none() {
+        return false;
+    }
+    let media = Media::locate();
+    assert!(
+        media.loaded_vips().is_some(),
+        "Tidy does not read through the libvips found: {media:?}"
+    );
+    true
 }
 
 /// Tidy alone in a window, with its Settings section drawn in place of the page while
@@ -61,21 +57,12 @@ pub struct Harness {
 
 impl Render for Harness {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Where the shell stands toasts and the indicator, or a toast rests on the panel's
-        // controls here, where it never does in the app, and takes their presses.
         let jobs = self.shell.read(cx).jobs().clone();
-        let tidy = self.tidy.read(cx);
-        let (foot, slot, room) = if self.settings {
-            (gpui_kit::px(0.), None, None)
+        let foot = if self.settings {
+            Foot::default()
         } else {
-            (
-                tidy.foot_height(cx),
-                tidy.toast_slot(cx),
-                tidy.activity_room(cx),
-            )
+            self.tidy.read(cx).foot(cx)
         };
-        let standing = foot + jobs.read(cx).footprint();
-        oriel_ui::toast::dock_toasts(standing, window.viewport_size(), slot, cx);
         let content = if self.settings {
             let section = self
                 .tidy
@@ -84,11 +71,13 @@ impl Render for Harness {
         } else {
             self.tidy.clone().into_any_element()
         };
-        div()
-            .relative()
-            .size_full()
-            .child(content)
-            .child(ActivityIndicator::new(&jobs, foot).room(room))
+        oriel_ui::stand_on_foot(
+            div().relative().size_full().child(content),
+            foot,
+            &jobs,
+            window,
+            cx,
+        )
     }
 }
 
@@ -103,16 +92,11 @@ pub struct Session {
 }
 
 pub fn launch(cx: &mut TestAppContext, test: &str) -> Session {
-    launch_in(cx, scratch(test), not_yet())
-}
-
-/// Tidy changing files through the engine's executor.
-pub fn launch_changing(cx: &mut TestAppContext, test: &str) -> Session {
-    launch_in(cx, scratch(test), executor())
+    launch_in(cx, scratch(test))
 }
 
 /// Tidy over a data folder in `root`, with the archive built beside it.
-pub fn launch_in(cx: &mut TestAppContext, root: PathBuf, changes: Changes) -> Session {
+pub fn launch_in(cx: &mut TestAppContext, root: PathBuf) -> Session {
     // The engine's work runs on threads of its own, so the scheduler has to be allowed to wait.
     cx.executor().allow_parking();
     cx.update(|cx| {
@@ -137,7 +121,7 @@ pub fn launch_in(cx: &mut TestAppContext, root: PathBuf, changes: Changes) -> Se
             |window, cx| {
                 let shell = cx.new(|cx| ShellState::new(ModeId::Tidy, false, cx));
                 let tidy =
-                    cx.new(|cx| TidyMode::with_data(&shell, &data, changes.clone(), window, cx));
+                    cx.new(|cx| TidyMode::new(&shell, &Launch::of(data.clone()), window, cx));
                 parts = Some((tidy.clone(), shell.clone()));
                 let jobs = shell.read(cx).jobs().clone();
                 cx.new(|cx| {
@@ -263,9 +247,8 @@ pub fn click(cx: &mut TestAppContext, session: &Session, id: impl Into<ElementId
     render(cx, session);
 }
 
-/// Clicks `id` once it is drawn: what a page shows of the file at hand comes and goes as its
-/// list reads itself again.
-pub async fn click_when_drawn(cx: &mut TestAppContext, session: &Session, id: &'static str) {
+/// Waits until `id` is drawn.
+pub fn wait_until_drawn(cx: &mut TestAppContext, session: &Session, id: &'static str) {
     for _ in 0..1000 {
         cx.run_until_parked();
         let drawn = cx
@@ -275,12 +258,18 @@ pub async fn click_when_drawn(cx: &mut TestAppContext, session: &Session, id: &'
             })
             .unwrap();
         if drawn {
-            click(cx, session, id);
             return;
         }
         tick(cx);
     }
     panic!("{id} was never drawn");
+}
+
+/// Clicks `id` once it is drawn: what a page shows of the file at hand comes and goes as its
+/// list reads itself again.
+pub async fn click_when_drawn(cx: &mut TestAppContext, session: &Session, id: &'static str) {
+    wait_until_drawn(cx, session, id);
+    click(cx, session, id);
 }
 
 /// The middle of what `id` draws.
@@ -360,7 +349,7 @@ fn press_and_release(
 /// Edit › Undo (⌘Z), as the shell's menu sends it to the mode on screen.
 pub fn undo(cx: &mut TestAppContext, session: &Session) {
     cx.update_window(session.handle, |_, window, cx| {
-        window.dispatch_action(Box::new(oriel_ui::commands::UndoChange), cx);
+        window.dispatch_action(Box::new(oriel_mode_tidy::UndoChange), cx);
     })
     .unwrap();
     cx.run_until_parked();
@@ -372,6 +361,23 @@ pub fn press(cx: &mut TestAppContext, session: &Session, key: &'static str) {
         .unwrap();
     cx.run_until_parked();
     render(cx, session);
+}
+
+/// The keys of Tidy's jobs in the activity panel that start with `prefix` (`change-`, `scan-` or
+/// `analysis-`), in the panel's order.
+pub fn job_keys(cx: &mut TestAppContext, session: &Session, prefix: &str) -> Vec<String> {
+    cx.read(|cx| {
+        session
+            .shell
+            .read(cx)
+            .jobs()
+            .read(cx)
+            .jobs_of(ModeId::Tidy)
+            .iter()
+            .map(|job| job.key().to_string())
+            .filter(|key| key.starts_with(prefix))
+            .collect()
+    })
 }
 
 /// The label of the element `id`, if it is drawn.
@@ -444,27 +450,52 @@ pub fn set_with(cx: &mut TestAppContext, session: &Session, name: &str) -> usize
     })
 }
 
-pub fn kept_names(cx: &mut TestAppContext, session: &Session) -> Vec<String> {
-    cx.read(|cx| {
-        let mut names = session.tidy.read(cx).duplicates().read(cx).kept_names();
-        names.sort();
-        names
+/// A version on Duplicates' stage, as its tile says: its file's id and name, and whether resolving
+/// the set keeps it.
+struct Version {
+    id: u64,
+    name: String,
+    kept: bool,
+}
+
+fn stage(cx: &mut TestAppContext, session: &Session) -> Vec<Version> {
+    cx.update_window(session.handle, |_, window, cx| {
+        window.render_frame(cx);
+        let mut versions: Vec<Version> = Vec::new();
+        for element in window.elements() {
+            if let Some(ElementId::NamedInteger(kind, id)) = element.path().last()
+                && kind.as_ref() == "version"
+                && versions.iter().all(|version| version.id != *id)
+            {
+                versions.push(Version {
+                    id: *id,
+                    name: element.label().unwrap_or_default().to_owned(),
+                    kept: element.selected() == Some(true),
+                });
+            }
+        }
+        versions
     })
+    .unwrap()
+}
+
+/// The names of the versions on the stage that resolving the set keeps, sorted.
+pub fn kept_names(cx: &mut TestAppContext, session: &Session) -> Vec<String> {
+    let mut names: Vec<String> = stage(cx, session)
+        .into_iter()
+        .filter(|version| version.kept)
+        .map(|version| version.name)
+        .collect();
+    names.sort();
+    names
 }
 
 pub fn file_id(cx: &mut TestAppContext, session: &Session, name: &str) -> u64 {
-    cx.read(|cx| {
-        session
-            .tidy
-            .read(cx)
-            .duplicates()
-            .read(cx)
-            .rows()
-            .iter()
-            .find(|row| row.file.name == name)
-            .map(|row| row.file.id as u64)
-            .unwrap_or_else(|| panic!("{name} is not on the stage"))
-    })
+    stage(cx, session)
+        .into_iter()
+        .find(|version| version.name == name)
+        .map(|version| version.id)
+        .unwrap_or_else(|| panic!("{name} is not on the stage"))
 }
 
 /// Waits for the change running to finish.
@@ -479,7 +510,9 @@ pub async fn wait_for_change(cx: &mut TestAppContext, session: &Session) {
 
 pub fn held_files(session: &Session) -> Vec<String> {
     // Holding sits outside the root, in Tidy's data folder; the executor names it.
-    let holding = session.root.join("data").join("tidy").join("holding");
+    let holding = DataRoot::at(session.root.join("data"))
+        .unwrap()
+        .tidy_holding();
     let mut held = Vec::new();
     let mut stack = vec![holding.clone()];
     while let Some(folder) = stack.pop() {

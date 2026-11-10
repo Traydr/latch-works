@@ -1,8 +1,7 @@
-//! Running ffmpeg and ffprobe, ported from glazier-core's `media/run-tool.ts`: killed at its
-//! timeout or when its token is cancelled, stdout kept as bytes up to a bound, the end of stderr
-//! kept for messages, and the exit status. A non-zero exit is not an error; callers read the
-//! status. As in the TypeScript, the kill is `SIGKILL` to the tool alone: ffmpeg and ffprobe start
-//! no processes of their own, so there is no group to kill.
+//! Running ffmpeg and ffprobe: killed at its timeout or when its token is cancelled, stdout kept
+//! as bytes up to a bound, the end of stderr kept for messages, and the exit status. A non-zero
+//! exit is not an error; callers read the status. The kill is `SIGKILL` to the tool alone: ffmpeg
+//! and ffprobe start no processes of their own, so there is no group to kill.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -212,6 +211,8 @@ pub enum ToolError {
     Killed,
     /// Reading from the tool or waiting for it failed.
     Io(io::Error),
+    /// The tool ran and said why it gave no answer.
+    Failed(String),
 }
 
 impl ToolError {
@@ -227,6 +228,7 @@ impl fmt::Display for ToolError {
             Self::Cancelled => f.write_str("cancelled"),
             Self::Killed => f.write_str("the tool was stopped from outside the app"),
             Self::Io(_) => f.write_str("running the tool"),
+            Self::Failed(message) => f.write_str(message),
         }
     }
 }
@@ -235,19 +237,14 @@ impl std::error::Error for ToolError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Start { source, .. } | Self::Io(source) => Some(source),
-            Self::Cancelled | Self::Killed => None,
+            Self::Cancelled | Self::Killed | Self::Failed(_) => None,
         }
     }
 }
 
-/// Set, tools run on when their job is paused, as they do where they cannot be suspended, to see
-/// what the app says then on a machine where they can.
-pub const KEEP_RUNNING_VARIABLE: &str = "ORIEL_TOOLS_KEEP_RUNNING";
-
-/// Whether a tool in the middle of a file stops at once when its job is paused. Where it cannot,
-/// it runs to the end of that file, and the app says "Pausing" until it has.
-pub fn tools_suspend() -> bool {
-    cfg!(unix) && std::env::var_os(KEEP_RUNNING_VARIABLE).is_none()
+/// How many tools this process started are running now.
+pub fn running_tools() -> usize {
+    lock(&RUNNING).len()
 }
 
 /// Kills every tool this process started that is still running, and refuses any more. The app
@@ -363,7 +360,7 @@ impl Tool {
     }
 
     /// Windows has no documented call to suspend a process, so a tool runs to its end there and
-    /// the app says so: see [`tools_suspend`].
+    /// the app says so: see [`oriel_runtime::tools_suspend`].
     #[cfg(not(unix))]
     fn suspend(&mut self) {}
 
@@ -471,7 +468,9 @@ fn collect(
                 killed = true;
                 running.kill();
             }
-            Some(Event::Hold(true)) if !killed && held_since.is_none() && tools_suspend() => {
+            Some(Event::Hold(true))
+                if !killed && held_since.is_none() && oriel_runtime::tools_suspend() =>
+            {
                 running.suspend();
                 held_since = Some(Instant::now());
             }
@@ -621,14 +620,11 @@ mod tests {
         });
         wait_for("the tool to start", || said.load(Ordering::SeqCst) >= 3);
         token.hold(true);
-        std::thread::sleep(Duration::from_millis(300));
-        let at_hold = said.load(Ordering::SeqCst);
-        std::thread::sleep(Duration::from_millis(500));
-        assert_eq!(
-            said.load(Ordering::SeqCst),
-            at_hold,
-            "it went on while held"
-        );
+        // Longer than the rest of the count takes unheld, so a hold that did not stop it would
+        // let it finish.
+        std::thread::sleep(Duration::from_millis(2_500));
+        assert!(said.load(Ordering::SeqCst) < 40, "it went on while held");
+        assert!(!tool.is_finished(), "it finished while held");
         token.hold(false);
         let output = tool.join().unwrap().unwrap();
         assert!(output.success());

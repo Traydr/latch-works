@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { copyFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import sharp from "sharp";
+import { ARCHIVE_AVIF_QUALITY } from "../../../../packages/media-format/src/avif.ts";
 import type { ComicPageEntry, StillEntry, StillFormat, VideoEntry } from "./plan.ts";
 import { type Random, seededRandom } from "./random.ts";
 
@@ -11,11 +12,16 @@ const execFileAsync = promisify(execFile);
 const JPEG_QUALITY = 90;
 
 /**
- * AVIFs as Tidy writes them for the largest stills (`ARCHIVE_AVIF_SHARP_OPTIONS`: quality 70,
- * 4:2:0, 8-bit), but at effort 2 rather than 3, which makes 10k camera-sized AVIFs in minutes
+ * AVIFs with the settings Tidy writes stills with (`ARCHIVE_AVIF_OPTIONS`: the archive's quality,
+ * 4:2:0, 8-bit), encoded by sharp at effort 2, which makes 10k camera-sized AVIFs in minutes
  * rather than hours. Decoders see the same kind of file.
  */
-const AVIF_OPTIONS = { bitdepth: 8, chromaSubsampling: "4:2:0", effort: 2, quality: 70 } as const;
+const AVIF_OPTIONS = {
+  bitdepth: 8,
+  chromaSubsampling: "4:2:0",
+  effort: 2,
+  quality: ARCHIVE_AVIF_QUALITY,
+} as const;
 
 /** Re-encodes for near-duplicates use a visibly different quality. */
 const REENCODE_JPEG_QUALITY = 75;

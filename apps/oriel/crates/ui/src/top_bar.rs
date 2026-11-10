@@ -81,19 +81,15 @@ impl RenderOnce for TopBar {
         let shell = self.shell.clone();
         let rail = self.shell.read(cx).rail();
         // `SidebarToggle`'s words and icons: the sidebar compacts to the rail and expands back.
-        let (toggle_label, toggle_tooltip, toggle_icon) = if rail {
-            (
-                "Expand sidebar",
-                "Expand sidebar  ⌘\\",
-                gpui_kit::assets::IconName::PanelLeftOpen,
-            )
+        let (toggle_label, toggle_icon) = if rail {
+            ("Expand sidebar", gpui_kit::assets::IconName::PanelLeftOpen)
         } else {
             (
                 "Compact sidebar",
-                "Compact sidebar  ⌘\\",
                 gpui_kit::assets::IconName::PanelLeftClose,
             )
         };
+        let toggle_tooltip = crate::keys::labelled(toggle_label, crate::keys::SIDEBAR);
 
         DragStrip::new("top-bar")
             .accessible(Role::Toolbar, self.title.clone())

@@ -1,4 +1,4 @@
-//! The planner, from glazier-core's `plans/planner.ts`: a request becomes concrete steps against
+//! The planner: a request becomes concrete steps against
 //! the catalog as it is now, saved as a draft plan the owner can review. Nothing here touches the
 //! disk; the executor does, and re-checks each file first.
 
@@ -21,16 +21,17 @@ use crate::catalog::{now_ms, transaction};
 use crate::contract::{
     ActionCount, FileId, FileKind, LockstepCounts, OptimizeCategory, PlanId, PlanKind, PlanPreview,
     PlanRequest, PlanStepAction, ResolveGroup, Root, RootId, Settings, VideoCodecChoice,
-    VideoQuality, shrink_batch,
+    VideoQuality, duplicate_hold_reason, shrink_batch,
 };
 use crate::duplicates::{add_dismissal, removals_for};
 use crate::optimize::candidates::video_source_of;
 use crate::optimize::shrink::find_shrink_candidates;
 use crate::optimize::{extension_fixes, find_optimize_candidates};
+use crate::paths::is_within;
 use crate::scan::preferred_extension;
 
-/// What a step does, stored as JSON beside it in glazier-core's form: the `kind` matches the
-/// step's `action` column.
+/// What a step does, stored as JSON beside it in the form Electron Oriel's catalogs have it, so
+/// their plans still undo: the `kind` matches the step's `action` column.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -109,11 +110,28 @@ pub struct DraftStep {
 
 /// A request the planner refuses, with the reason the owner sees.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PlanRequestError(pub String);
+pub enum PlanRequestError {
+    /// The request names nothing there is anything to do for, such as a Tidy up step whose
+    /// files went in an earlier step.
+    NothingToDo,
+    Refused(String),
+}
+
+impl PlanRequestError {
+    /// Whether `error` is the planner's [`Self::NothingToDo`].
+    pub fn is_nothing_to_do(error: &anyhow::Error) -> bool {
+        error
+            .chain()
+            .any(|cause| matches!(cause.downcast_ref(), Some(Self::NothingToDo)))
+    }
+}
 
 impl std::fmt::Display for PlanRequestError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        match self {
+            Self::NothingToDo => f.write_str("There is nothing to do for this selection."),
+            Self::Refused(reason) => f.write_str(reason),
+        }
     }
 }
 
@@ -122,9 +140,6 @@ impl std::error::Error for PlanRequestError {}
 /// Why a duplicate decision is not carried out.
 pub const CHANGED_SINCE_SEEN: &str =
     "These files have changed since you saw them, so nothing was moved. Look at them again.";
-
-/// The message a plan with no steps fails with; Tidy up skips such a step rather than report it.
-pub const NOTHING_TO_DO: &str = "There is nothing to do for this selection.";
 
 /// What the planner reads besides the catalog.
 #[derive(Clone, Debug)]
@@ -180,7 +195,7 @@ fn load_records(connection: &Connection, ids: &[FileId]) -> anyhow::Result<Vec<F
     let unique = unique_ids(ids.iter().copied());
     let records = get_file_records(connection, &unique)?;
     if records.len() != unique.len() {
-        bail!(PlanRequestError(
+        bail!(PlanRequestError::Refused(
             "Some of these files are no longer in the catalog, so nothing changed.".into()
         ));
     }
@@ -260,12 +275,12 @@ fn draft_resolution(
         }
         let keepers: Vec<&FileRecord> = group.keep.iter().filter_map(|id| by_id.get(id)).collect();
         let Some(keeper) = keepers.first().copied() else {
-            bail!(PlanRequestError(
+            bail!(PlanRequestError::Refused(
                 "Every duplicate group must keep a file and remove others.".into()
             ));
         };
         if group.remove.iter().any(|id| group.keep.contains(id)) {
-            bail!(PlanRequestError(
+            bail!(PlanRequestError::Refused(
                 "Every duplicate group must keep a file and remove others.".into()
             ));
         }
@@ -296,7 +311,7 @@ fn draft_resolution(
             draft.steps.push(file_step(
                 record,
                 StepSpec::Hold {
-                    reason: format!("Duplicate of {}", keeper.rel_path),
+                    reason: duplicate_hold_reason(&keeper.rel_path),
                     keepers: keeper_states.clone(),
                 },
                 None,
@@ -312,7 +327,7 @@ fn draft_resolution(
         }
     }
     if changed_since_seen == groups.len() {
-        bail!(PlanRequestError(CHANGED_SINCE_SEEN.into()));
+        bail!(PlanRequestError::Refused(CHANGED_SINCE_SEEN.into()));
     }
     if changed_since_seen > 0 {
         draft.warnings.push(if changed_since_seen == 1 {
@@ -391,7 +406,7 @@ fn junk_hold(record: &FileRecord) -> DraftStep {
     )
 }
 
-/// glazier-core's `isPlainFileName`: no path separators, no NUL, not `.` or `..`, and at most
+/// A plain file name: no path separators, no NUL, not `.` or `..`, and at most
 /// 255 UTF-16 code units.
 fn is_plain_file_name(name: &str) -> bool {
     name != "."
@@ -400,39 +415,11 @@ fn is_plain_file_name(name: &str) -> bool {
         && name.encode_utf16().count() <= 255
 }
 
-/// Whether `target` is `root` or inside it, as glazier-core's `isWithin` decides through
-/// `path.relative` (which also counts a first component starting with `..` as outside).
-#[cfg(not(windows))]
-pub fn is_within(target: &Path, root: &Path) -> bool {
-    match target.strip_prefix(root) {
-        Ok(relative) => {
-            let text = relative.to_string_lossy();
-            text.is_empty() || !text.starts_with("..")
-        }
-        Err(_) => false,
-    }
-}
-
-/// [`is_within`] on Windows, where `path.relative` lowercases both paths first: NTFS names do not
-/// differ by case alone, so `C:\Photos` and `c:\photos\a` are one folder and a file in it.
-#[cfg(windows)]
-pub fn is_within(target: &Path, root: &Path) -> bool {
-    let lowered = |path: &Path| -> Vec<String> {
-        path.components()
-            .map(|part| part.as_os_str().to_string_lossy().to_lowercase())
-            .collect()
-    };
-    let (target, root) = (lowered(target), lowered(root));
-    target.len() >= root.len()
-        && target[..root.len()] == root[..]
-        && target
-            .get(root.len())
-            .is_none_or(|first| !first.starts_with(".."))
-}
-
 fn require_files(ids: &[FileId]) -> anyhow::Result<()> {
     if ids.is_empty() {
-        bail!(PlanRequestError("The request names no files.".into()));
+        bail!(PlanRequestError::Refused(
+            "The request names no files.".into()
+        ));
     }
     Ok(())
 }
@@ -472,7 +459,7 @@ pub fn draft_steps(
                 .any(|root| is_within(&target, Path::new(&root.path)));
             if !in_root {
                 draft.warnings.push(
-                    "The target folder is outside every root, so moved files leave Glazier's \
+                    "The target folder is outside every root, so moved files leave Tidy's \
                      catalog."
                         .into(),
                 );
@@ -501,7 +488,7 @@ pub fn draft_steps(
                     continue;
                 }
                 if !is_plain_file_name(name) {
-                    bail!(PlanRequestError(format!(
+                    bail!(PlanRequestError::Refused(format!(
                         "\"{name}\" is not a usable file name."
                     )));
                 }
@@ -533,7 +520,9 @@ pub fn draft_steps(
             file_ids,
         } => {
             if categories.is_empty() {
-                bail!(PlanRequestError("The request names no categories.".into()));
+                bail!(PlanRequestError::Refused(
+                    "The request names no categories.".into()
+                ));
             }
             let wanted: Option<HashSet<FileId>> =
                 file_ids.as_ref().map(|ids| ids.iter().copied().collect());
@@ -608,7 +597,7 @@ pub fn draft_steps(
             }
             if skipped > 0 {
                 draft.warnings.push(format!(
-                    "{skipped} selected files are not videos Glazier can rewrite and are left out."
+                    "{skipped} selected files are not videos Tidy can rewrite and are left out."
                 ));
             }
         }
@@ -618,7 +607,7 @@ pub fn draft_steps(
                     .iter()
                     .any(|group| group.keep.is_empty() || group.remove.is_empty())
             {
-                bail!(PlanRequestError(
+                bail!(PlanRequestError::Refused(
                     "Every duplicate group must keep a file and remove others.".into()
                 ));
             }
@@ -720,7 +709,7 @@ pub fn save_plan(
     draft: &PlanDraft,
 ) -> anyhow::Result<PlanPreview> {
     if draft.steps.is_empty() && draft.dismissals.is_empty() {
-        bail!(PlanRequestError(NOTHING_TO_DO.into()));
+        bail!(PlanRequestError::NothingToDo);
     }
     let plan_id = transaction(connection, |transaction| {
         transaction.execute(
@@ -809,7 +798,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn step_specs_are_stored_in_glazier_cores_json() {
+    fn step_specs_are_stored_in_electron_oriels_json() {
         let video = StepSpec::ConvertVideo {
             video: VideoTrackPlan::Encode {
                 codec: ArchiveVideoCodec::Av1,
@@ -843,17 +832,23 @@ mod tests {
         );
         let parsed: StepSpec = serde_json::from_str(r#"{"kind":"move"}"#).unwrap();
         assert_eq!(parsed, StepSpec::Move);
+        // A hold recorded before steps kept their keepers still reads.
+        let held: StepSpec =
+            serde_json::from_str(r#"{"kind":"hold","reason":"Duplicate of a.png"}"#).unwrap();
+        assert_eq!(
+            held,
+            StepSpec::Hold {
+                reason: "Duplicate of a.png".into(),
+                keepers: Vec::new(),
+            }
+        );
     }
 
     #[test]
-    fn file_names_and_folders_are_checked_as_glazier_core_checks_them() {
+    fn file_names_are_checked() {
         assert!(is_plain_file_name("cover.avif"));
         assert!(!is_plain_file_name(".."));
         assert!(!is_plain_file_name("a/b"));
         assert!(!is_plain_file_name(&"x".repeat(256)));
-        assert!(is_within(Path::new("/r/a/b"), Path::new("/r")));
-        assert!(is_within(Path::new("/r"), Path::new("/r")));
-        assert!(!is_within(Path::new("/rb/a"), Path::new("/r")));
-        assert!(!is_within(Path::new("/r/..x"), Path::new("/r")));
     }
 }

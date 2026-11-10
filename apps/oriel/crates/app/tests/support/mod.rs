@@ -15,12 +15,15 @@ use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, ElementId, Entity, Focusable as _,
     TestAppContext, VisualTestContext, WindowBounds, WindowOptions, px, size,
 };
+use oriel::Launch;
 use oriel::quit::QuitPlatform;
 use oriel::shell::Shell;
 use oriel_core_paths::DataRoot;
 use oriel_media::still::{Still, WebpSettings};
+use oriel_mode_view::ViewMode;
 use oriel_mode_view::catalog::ScanState;
-use oriel_ui::{LocalStorage, ModeId};
+use oriel_ui::ModeId;
+use oriel_ui::test_window::TestWindow;
 
 /// A folder of its own under the temp folder, emptied first, with symlinks resolved (the temp
 /// folder is behind one on macOS, and View and Tidy keep resolved paths).
@@ -75,25 +78,26 @@ impl QuitPlatform for Recorder {
 pub struct Opened {
     pub handle: AnyWindowHandle,
     pub shell: Entity<Shell>,
+    pub platform: Rc<Recorder>,
 }
 
-/// GPUI Kit, the store of preferences in `data`'s shell folder, the theme and the keys, as the
-/// app starts them. Tidy's engine and View's scans run on threads of their own, so the scheduler
-/// may wait for them.
+/// The app's start, as `oriel::run` does it, over `data`. Tidy's engine and View's scans run on
+/// threads of their own, so the scheduler may wait for them.
 pub fn start(cx: &mut TestAppContext, data: &DataRoot) {
     cx.executor().allow_parking();
     data.create_folders().unwrap();
-    cx.update(|cx| {
-        gpui_kit::init(cx);
-        LocalStorage::init(LocalStorage::open(&data.shell()), cx);
-        oriel_ui::theme::init(cx);
-        oriel::actions::init(cx);
-    });
+    cx.update(|cx| oriel::init(&Launch::of(data.clone()), cx));
 }
 
 pub fn open_shell(cx: &mut TestAppContext, data: &DataRoot) -> Opened {
+    open_launch(cx, Launch::of(data.clone()))
+}
+
+/// The shell as `launch` sets it up.
+pub fn open_launch(cx: &mut TestAppContext, launch: Launch) -> Opened {
+    let platform = Rc::new(Recorder::default());
     let (handle, shell) = cx.update(|cx| {
-        let platform: Rc<dyn QuitPlatform> = Rc::new(Recorder::default());
+        let platform: Rc<dyn QuitPlatform> = platform.clone();
         gpui_kit::open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(
@@ -104,7 +108,7 @@ pub fn open_shell(cx: &mut TestAppContext, data: &DataRoot) -> Opened {
             },
             cx,
             |window, cx| {
-                let shell = cx.new(|cx| Shell::with_data(data.clone(), platform, window, cx));
+                let shell = cx.new(|cx| Shell::new(&launch, platform, window, cx));
                 shell.focus_handle(cx).focus(window, cx);
                 shell
             },
@@ -112,13 +116,15 @@ pub fn open_shell(cx: &mut TestAppContext, data: &DataRoot) -> Opened {
         .expect("open the test window")
     });
     frame(cx, handle);
-    Opened { handle, shell }
+    Opened {
+        handle,
+        shell,
+        platform,
+    }
 }
 
 pub fn frame(cx: &mut TestAppContext, handle: AnyWindowHandle) {
-    cx.run_until_parked();
-    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
-        .unwrap();
+    TestWindow::new(handle).render(cx);
 }
 
 /// Lets the modes' threads, their timers and the app's tasks run until `done` holds.
@@ -143,9 +149,7 @@ pub fn wait_until(
 }
 
 pub fn press(cx: &mut TestAppContext, handle: AnyWindowHandle, key: &str) {
-    cx.update_window(handle, |_, window, cx| window.press(key, cx))
-        .unwrap();
-    frame(cx, handle);
+    TestWindow::new(handle).press(cx, key);
 }
 
 pub fn click(cx: &mut TestAppContext, handle: AnyWindowHandle, id: impl Into<ElementId>) {
@@ -173,13 +177,7 @@ pub fn label_of(
     handle: AnyWindowHandle,
     id: impl Into<ElementId>,
 ) -> Option<String> {
-    let id = id.into();
-    cx.update_window(handle, |_, window, _| {
-        window
-            .try_find(id)
-            .and_then(|element| element.label().map(str::to_owned))
-    })
-    .unwrap()
+    TestWindow::new(handle).label(cx, id)
 }
 
 pub fn is_drawn(
@@ -208,7 +206,7 @@ pub fn heading(cx: &mut TestAppContext, handle: AnyWindowHandle) -> Option<Strin
 /// Whether View shows `folder`, with its scan done.
 pub fn view_shows(opened: &Opened, folder: &Path, cx: &mut TestAppContext) -> bool {
     cx.update(|cx| {
-        let view = opened.shell.read(cx).view().read(cx);
+        let view = opened.shell.read(cx).mode::<ViewMode>().read(cx);
         view.folder(cx).as_deref() == Some(folder)
             && view.catalog().read(cx).state() == ScanState::Done
             && !view.gallery().read(cx).tiles().is_empty()

@@ -1,21 +1,159 @@
-//! A small Pane View for tests, behind the `test-support` feature: the five sync routes on a
-//! local port, its library in memory, and the signed upload checked as S3 checks it.
+//! Test support, behind the `test-support` feature: a small Pane View on a local port, and the
+//! e2e stack's description for the tests and the bench that run against the real one.
 //!
-//! It answers what Pane View answers (`apps/pane-view/src/routes/api.sync.*.ts`): the snapshot,
-//! sync runs, upload URLs signed with the length and SHA-256 headers (plan 026), the PUT, and
-//! complete-object for uploads and deletes. Requests without the token get a 401. It is a
-//! stand-in for the routes the generated schema names, not for Pane View's storage or database.
+//! [`FakePaneView`] serves the five sync routes with its library in memory. Each request body
+//! must have the shape of the bodies `conformance/lockstep-core/wire.json` lists for its route,
+//! which Pane View's routes are tested to accept, and may write only into a running sync run.
+//! Pane View's other checks of a body stay Pane View's: the fake stands in for the routes'
+//! shapes and the storage behind them. Upload URLs are signed with the length and SHA-256 headers
+//! (plan 026), the PUT is checked as S3 checks it, and a registration must name stored bytes of
+//! its hash. Requests without the token get a 401.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, LazyLock, Mutex, PoisonError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use sha2::{Digest as _, Sha256};
+
+use crate::api::routes;
+
+/// The e2e stack every suite runs against (`e2e/stack.json`): the e2e Pane View, its sync token,
+/// and the fixture folders, which `docs/runbooks/e2e.md` sets up.
+#[derive(Clone, Debug)]
+pub struct E2eStack {
+    pub url: String,
+    pub sync_token: String,
+    /// The archive the stack is seeded with.
+    pub archive: PathBuf,
+    /// The two-file source the Sync spec pushes.
+    pub lockstep_source: PathBuf,
+}
+
+impl E2eStack {
+    pub fn get() -> Self {
+        let stack: Value = serde_json::from_str(include_str!("../../../../../e2e/stack.json"))
+            .expect("e2e/stack.json is JSON");
+        let text = |value: &Value| {
+            value
+                .as_str()
+                .expect("a string in e2e/stack.json")
+                .to_owned()
+        };
+        let e2e = std::fs::canonicalize(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../../e2e"))
+            .expect("the repository's e2e folder");
+        Self {
+            url: format!(
+                "http://127.0.0.1:{}",
+                stack["paneView"]["port"]
+                    .as_u64()
+                    .expect("a port in e2e/stack.json")
+            ),
+            sync_token: text(&stack["paneView"]["syncToken"]),
+            archive: e2e.join(text(&stack["fixtures"]["archive"])),
+            lockstep_source: e2e.join(text(&stack["fixtures"]["lockstepSource"])),
+        }
+    }
+}
+
+/// What the body of each sync request looks like, from the examples in `wire.json`.
+struct Wire {
+    upload_url: Shape,
+    complete_object: Shape,
+    delete: Shape,
+    create_run: Shape,
+    finalize: Shape,
+}
+
+static WIRE: LazyLock<Wire> = LazyLock::new(|| {
+    let wire: Value =
+        serde_json::from_str(include_str!("../../../conformance/lockstep-core/wire.json"))
+            .expect("wire.json is JSON");
+    let examples = |list: &str, field: &str| {
+        Shape::of(
+            wire[list]
+                .as_array()
+                .expect("a list in wire.json")
+                .iter()
+                .map(|case| &case[field]),
+        )
+    };
+    Wire {
+        upload_url: examples("registrations", "uploadUrl"),
+        complete_object: examples("registrations", "completeObject"),
+        delete: Shape::of([&wire["delete"]]),
+        create_run: Shape::of([&wire["createRun"]]),
+        finalize: examples("finalize", "body"),
+    }
+});
+
+/// The JSON shape a body must have: an object's keys, each required when every example has it,
+/// and the kind of each value. No other key is allowed.
+#[derive(Debug)]
+enum Shape {
+    Object(BTreeMap<String, (Shape, bool)>),
+    String,
+    Number,
+}
+
+impl Shape {
+    fn of<'a>(examples: impl IntoIterator<Item = &'a Value>) -> Self {
+        let examples: Vec<&Value> = examples.into_iter().collect();
+        match examples[0] {
+            Value::Object(_) => {
+                let objects: Vec<&Map<String, Value>> = examples
+                    .iter()
+                    .map(|example| example.as_object().expect("examples of one shape"))
+                    .collect();
+                let mut keys: Vec<&String> =
+                    objects.iter().flat_map(|object| object.keys()).collect();
+                keys.sort();
+                keys.dedup();
+                Self::Object(
+                    keys.into_iter()
+                        .map(|key| {
+                            let values: Vec<&Value> = objects
+                                .iter()
+                                .filter_map(|object| object.get(key))
+                                .collect();
+                            let required = values.len() == objects.len();
+                            (key.clone(), (Self::of(values), required))
+                        })
+                        .collect(),
+                )
+            }
+            Value::String(_) => Self::String,
+            Value::Number(_) => Self::Number,
+            other => panic!("wire.json has no {other} in a body"),
+        }
+    }
+
+    /// Why `value` does not have this shape, if it does not.
+    fn check(&self, value: &Value, at: &str) -> Result<(), String> {
+        match (self, value) {
+            (Self::String, Value::String(_)) | (Self::Number, Value::Number(_)) => Ok(()),
+            (Self::Object(keys), Value::Object(object)) => {
+                if let Some(extra) = object.keys().find(|key| !keys.contains_key(*key)) {
+                    return Err(format!("{at}{extra} is not part of the body"));
+                }
+                for (key, (shape, required)) in keys {
+                    match object.get(key) {
+                        Some(value) => shape.check(value, &format!("{at}{key}."))?,
+                        None if *required => return Err(format!("{at}{key} is required")),
+                        None => {}
+                    }
+                }
+                Ok(())
+            }
+            _ => Err(format!("{} has the wrong type", at.trim_end_matches('.'))),
+        }
+    }
+}
 
 /// One library entry: what the snapshot lists.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,6 +167,7 @@ pub struct FakeEntry {
 pub struct FakeRun {
     pub id: String,
     pub source_root: String,
+    /// The finalize body; once there, the run takes no more writes.
     pub outcome: Option<Value>,
 }
 
@@ -37,8 +176,24 @@ struct State {
     library: BTreeMap<String, FakeEntry>,
     objects: HashMap<String, Vec<u8>>,
     runs: Vec<FakeRun>,
-    requests: Vec<String>,
     puts: Vec<HashMap<String, String>>,
+}
+
+impl State {
+    /// Pane View's answer to a write into the run `id` that is not running, if it is not.
+    fn refuse_write(&self, id: &Value) -> Option<(u16, Value)> {
+        match self
+            .runs
+            .iter()
+            .find(|run| Some(run.id.as_str()) == id.as_str())
+        {
+            None => Some((404, json!({ "error": "Sync run not found." }))),
+            Some(run) if run.outcome.is_some() => {
+                Some((409, json!({ "error": "Sync run is not accepting writes." })))
+            }
+            Some(_) => None,
+        }
+    }
 }
 
 /// The fake server. It stops when dropped.
@@ -46,20 +201,78 @@ pub struct FakePaneView {
     address: SocketAddr,
     token: String,
     state: Arc<Mutex<State>>,
-    active_puts: Arc<AtomicUsize>,
-    peak_puts: Arc<AtomicUsize>,
-    put_delay: Arc<Mutex<Duration>>,
+    puts: Arc<Gate>,
     put_failure: Arc<Mutex<Option<u16>>>,
-    deletes: Arc<Deletes>,
+    deletes: Arc<Gate>,
     stop: Arc<AtomicBool>,
 }
 
-/// How many deletes were in flight, and how long each is held.
+/// The requests of one kind in flight, and the most there have been at once. A test can hold
+/// each until a number are in flight together, so a run's concurrency shows without timing it.
 #[derive(Default)]
-struct Deletes {
-    active: AtomicUsize,
-    peak: AtomicUsize,
-    delay: Mutex<Duration>,
+struct Gate {
+    state: Mutex<GateState>,
+    changed: Condvar,
+}
+
+#[derive(Default)]
+struct GateState {
+    active: usize,
+    peak: usize,
+    /// Requests wait until this many are in flight; 0 holds none.
+    together: usize,
+    open: bool,
+}
+
+impl Gate {
+    /// The longest a request waits for the others, so a run that never sends enough at once
+    /// fails its test rather than hanging it.
+    const PATIENCE: Duration = Duration::from_secs(10);
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, GateState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn hold(&self, together: usize) {
+        let mut state = self.lock();
+        state.together = together;
+        state.open = false;
+    }
+
+    fn open(&self) {
+        self.lock().open = true;
+        self.changed.notify_all();
+    }
+
+    fn enter(&self) {
+        let mut state = self.lock();
+        state.active += 1;
+        state.peak = state.peak.max(state.active);
+        if state.active >= state.together {
+            state.open = true;
+            self.changed.notify_all();
+        }
+        let deadline = Instant::now() + Self::PATIENCE;
+        while !state.open {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            state = self
+                .changed
+                .wait_timeout(state, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
+
+    fn leave(&self) {
+        self.lock().active -= 1;
+    }
+
+    fn peak(&self) -> usize {
+        self.lock().peak
+    }
 }
 
 impl FakePaneView {
@@ -71,9 +284,7 @@ impl FakePaneView {
             address,
             token: token.to_owned(),
             state: Arc::default(),
-            active_puts: Arc::default(),
-            peak_puts: Arc::default(),
-            put_delay: Arc::default(),
+            puts: Arc::default(),
             put_failure: Arc::default(),
             deletes: Arc::default(),
             stop: Arc::default(),
@@ -101,9 +312,7 @@ impl FakePaneView {
             address: self.address,
             token: self.token.clone(),
             state: self.state.clone(),
-            active_puts: self.active_puts.clone(),
-            peak_puts: self.peak_puts.clone(),
-            put_delay: self.put_delay.clone(),
+            puts: self.puts.clone(),
             put_failure: self.put_failure.clone(),
             deletes: self.deletes.clone(),
         }
@@ -133,27 +342,19 @@ impl FakePaneView {
         self.lock().runs.clone()
     }
 
-    /// Every request as `METHOD /path`, in arrival order.
-    pub fn requests(&self) -> Vec<String> {
-        self.lock().requests.clone()
-    }
-
     /// The headers of each upload, lower-cased.
     pub fn uploads(&self) -> Vec<HashMap<String, String>> {
         self.lock().puts.clone()
     }
 
-    /// The most uploads that were in flight at once.
+    /// The most uploads there have been in flight at once.
     pub fn peak_uploads(&self) -> usize {
-        self.peak_puts.load(Ordering::SeqCst)
+        self.puts.peak()
     }
 
-    /// Holds each upload this long before answering, so concurrency shows.
-    pub fn delay_uploads(&self, delay: Duration) {
-        *self
-            .put_delay
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = delay;
+    /// Holds each upload until `together` are in flight at once, then answers them all.
+    pub fn hold_uploads(&self, together: usize) {
+        self.puts.hold(together);
     }
 
     /// Answers every upload with this status, as an overloaded store would.
@@ -164,18 +365,14 @@ impl FakePaneView {
             .unwrap_or_else(PoisonError::into_inner) = Some(status);
     }
 
-    /// Holds each delete this long before answering, so concurrency shows.
-    pub fn delay_deletes(&self, delay: Duration) {
-        *self
-            .deletes
-            .delay
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = delay;
+    /// Holds each delete until `together` are in flight at once, then answers them all.
+    pub fn hold_deletes(&self, together: usize) {
+        self.deletes.hold(together);
     }
 
-    /// The most deletes that were in flight at once.
+    /// The most deletes there have been in flight at once.
     pub fn peak_deletes(&self) -> usize {
-        self.deletes.peak.load(Ordering::SeqCst)
+        self.deletes.peak()
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -186,6 +383,8 @@ impl FakePaneView {
 impl Drop for FakePaneView {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
+        self.puts.open();
+        self.deletes.open();
         // Wakes the accept loop so it sees the stop.
         let _ = TcpStream::connect(self.address);
     }
@@ -196,11 +395,9 @@ struct Shared {
     address: SocketAddr,
     token: String,
     state: Arc<Mutex<State>>,
-    active_puts: Arc<AtomicUsize>,
-    peak_puts: Arc<AtomicUsize>,
-    put_delay: Arc<Mutex<Duration>>,
+    puts: Arc<Gate>,
     put_failure: Arc<Mutex<Option<u16>>>,
-    deletes: Arc<Deletes>,
+    deletes: Arc<Gate>,
 }
 
 struct Request {
@@ -287,12 +484,6 @@ impl Shared {
             .next()
             .unwrap_or_default()
             .to_owned();
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .requests
-            .push(format!("{} {route}", request.method));
-
         if request.method == "PUT" && route.starts_with("/upload/") {
             let (status, body) = self.put(&route["/upload/".len()..], &request);
             respond(&stream, status, &body);
@@ -307,28 +498,28 @@ impl Shared {
             return;
         }
         let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
-        let delete = route == "/api/sync/complete-object" && body["action"] == "delete";
+        let delete = route == routes::COMPLETE_OBJECT && body["action"] == "delete";
         if delete {
-            let active = self.deletes.active.fetch_add(1, Ordering::SeqCst) + 1;
-            self.deletes.peak.fetch_max(active, Ordering::SeqCst);
-            let delay = *self
-                .deletes
-                .delay
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            thread::sleep(delay);
+            self.deletes.enter();
         }
         let (status, answer) = self.route(&request.method, &route, &body);
         if delete {
-            self.deletes.active.fetch_sub(1, Ordering::SeqCst);
+            self.deletes.leave();
         }
         respond(&stream, status, &answer);
     }
 
     fn route(&self, method: &str, route: &str, body: &Value) -> (u16, Value) {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let wire = &*WIRE;
+        let bad = |error: String| (400, json!({ "error": error }));
+        let finalized_run = route
+            .strip_prefix(routes::RUNS)
+            .and_then(|rest| rest.strip_prefix('/'))
+            .and_then(|rest| rest.strip_suffix("/complete"))
+            .filter(|id| route == routes::complete_run(id));
         match (method, route) {
-            ("GET", "/api/sync/snapshot") => {
+            ("GET", routes::SNAPSHOT) => {
                 let entries: Vec<Value> = state
                     .library
                     .iter()
@@ -336,39 +527,37 @@ impl Shared {
                         json!({ "path": path, "sha256": entry.sha256, "size": entry.size })
                     })
                     .collect();
-                (200, json!({ "entries": entries, "status": "database" }))
+                (200, json!({ "entries": entries }))
             }
-            ("POST", "/api/sync/runs") => {
+            ("POST", routes::RUNS) => {
+                if let Err(error) = wire.create_run.check(body, "") {
+                    return bad(error);
+                }
                 let id = format!("00000000-0000-4000-8000-{:012}", state.runs.len() + 1);
                 state.runs.push(FakeRun {
                     id: id.clone(),
                     source_root: body["sourceRoot"].as_str().unwrap_or_default().to_owned(),
                     outcome: None,
                 });
-                (200, json!({ "status": "database", "syncRunId": id }))
+                (200, json!({ "syncRunId": id }))
             }
-            ("POST", "/api/sync/upload-url") => {
-                let sha256 = body["sha256"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_ascii_lowercase();
-                let size = body["size"].as_f64().unwrap_or_default() as u64;
-                let filename = body["filename"].as_str().unwrap_or_default();
-                let extension = filename.rsplit('.').next().unwrap_or_default();
-                let object_key = format!("originals/{sha256}.{extension}");
-                let checksum = base64_of_hex(&sha256);
+            ("POST", routes::UPLOAD_URL) => {
+                if let Err(error) = wire.upload_url.check(body, "") {
+                    return bad(error);
+                }
+                let sha256 = body["sha256"].as_str().unwrap_or_default();
+                let size = body["size"].as_u64().unwrap_or_default();
+                let object_key = format!("originals/{}", sha256.to_ascii_lowercase());
                 (
                     200,
                     json!({
                         "headers": {
                             "Content-Length": size.to_string(),
                             "Content-Type": body["contentType"],
-                            "x-amz-checksum-sha256": checksum,
-                            "x-amz-meta-sha256": sha256,
+                            "x-amz-checksum-sha256": base64_of_hex(sha256),
+                            "x-amz-meta-sha256": sha256.to_ascii_lowercase(),
                         },
-                        "maxUploadBytes": 5_368_709_120u64,
                         "objectKey": object_key,
-                        "status": "signed-url-ready",
                         "uploadUrl": format!(
                             "http://{}/upload/{object_key}?X-Amz-SignedHeaders=content-length",
                             self.address
@@ -376,36 +565,50 @@ impl Shared {
                     }),
                 )
             }
-            ("POST", "/api/sync/complete-object") => {
-                let path = body["logicalPath"].as_str().unwrap_or_default().to_owned();
-                if body["action"] == "delete" {
-                    state.library.remove(&path);
-                    return (200, json!({ "status": "database" }));
+            ("POST", routes::COMPLETE_OBJECT) if body["action"] == "delete" => {
+                if let Err(error) = wire.delete.check(body, "") {
+                    return bad(error);
+                }
+                if let Some(refused) = state.refuse_write(&body["syncRunId"]) {
+                    return refused;
+                }
+                let path = body["logicalPath"].as_str().unwrap_or_default();
+                state.library.remove(path);
+                (200, json!({}))
+            }
+            ("POST", routes::COMPLETE_OBJECT) => {
+                if let Err(error) = wire.complete_object.check(body, "") {
+                    return bad(error);
+                }
+                if let Some(refused) = state.refuse_write(&body["syncRunId"]) {
+                    return refused;
                 }
                 let object_key = body["objectKey"].as_str().unwrap_or_default();
                 let Some(object) = state.objects.get(object_key) else {
-                    return (400, json!({ "error": "object was not uploaded" }));
+                    return bad("object was not uploaded".to_owned());
                 };
                 let entry = FakeEntry {
                     sha256: hex(&Sha256::digest(object)),
                     size: object.len() as u64,
                 };
                 if Some(entry.sha256.as_str()) != body["sha256"].as_str() {
-                    return (400, json!({ "error": "sha256 does not match storage" }));
+                    return bad("sha256 does not match storage".to_owned());
                 }
+                let path = body["logicalPath"].as_str().unwrap_or_default().to_owned();
                 state.library.insert(path, entry);
-                (200, json!({ "status": "database" }))
+                (200, json!({}))
             }
-            ("POST", route)
-                if route.starts_with("/api/sync/runs/") && route.ends_with("/complete") =>
-            {
-                let id = &route["/api/sync/runs/".len()..route.len() - "/complete".len()];
+            ("POST", _) if finalized_run.is_some() => {
+                if let Err(error) = wire.finalize.check(body, "") {
+                    return bad(error);
+                }
+                let id = finalized_run.unwrap_or_default();
                 match state.runs.iter_mut().find(|run| run.id == id) {
                     Some(run) => {
                         run.outcome = Some(body.clone());
-                        (200, json!({ "status": "database" }))
+                        (200, json!({}))
                     }
-                    None => (404, json!({ "error": "no such run" })),
+                    None => (404, json!({ "error": "Sync run not found." })),
                 }
             }
             _ => (404, json!({ "error": "not found" })),
@@ -415,13 +618,7 @@ impl Shared {
     /// The signed PUT, checked as S3 checks a presigned upload: the declared length, and the
     /// bytes against the declared SHA-256.
     fn put(&self, object_key: &str, request: &Request) -> (u16, Value) {
-        let active = self.active_puts.fetch_add(1, Ordering::SeqCst) + 1;
-        self.peak_puts.fetch_max(active, Ordering::SeqCst);
-        let delay = *self
-            .put_delay
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        thread::sleep(delay);
+        self.puts.enter();
         let failure = *self
             .put_failure
             .lock()
@@ -450,7 +647,7 @@ impl Shared {
             Some((200, Value::Null))
         })()
         .unwrap_or((400, json!({ "error": "missing signed headers" })));
-        self.active_puts.fetch_sub(1, Ordering::SeqCst);
+        self.puts.leave();
         answer
     }
 }

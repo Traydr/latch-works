@@ -1,21 +1,17 @@
 //! The capsule player: one video filling the view, fitted and letterboxed, with GPUI-drawn
-//! controls over it in one low capsule, as Electron Oriel's `VideoPlayerChrome`: back and
-//! forward 5 s, play or pause, the elapsed time, the scrubber, the length, then the volume and
-//! the playback speed, each opening a small panel straight up from the capsule.
+//! controls over it in one low capsule: back and forward 5 s, play or pause, the elapsed time,
+//! the scrubber, the length, then the volume and the playback speed, each opening a small panel
+//! straight up from the capsule.
 //!
-//! The player holds what `useViewerVideoModel` holds: the volume and mute, the speed, whether it
-//! loops, and the held 2×. It applies them to the engine and says when the owner changed the
-//! volume or picked a speed ([`CapsulePlayerEvent`]), so the viewer can keep them for the next
-//! video: the volume and mute across launches, the speed for the viewer's session.
+//! The player holds the volume and mute, the speed, whether it loops, and the held 2×. It
+//! applies them to the video and says when the owner changed the volume or picked a speed
+//! ([`CapsulePlayerEvent`]), so the viewer can keep them for the next video: the volume and mute
+//! across launches, the speed for the viewer's session.
 //!
 //! Keys, while the player has focus: Space or 2 plays or pauses, 1 and 3 skip 5 s, M mutes, and
 //! 4 plays at 2× while it is held. ← and → are the viewer's, which steps to the previous or next
-//! item, as Electron Oriel's viewer does. A click on the picture plays or pauses. libmpv does the
-//! playing (`oriel_media::mpv`), or AVPlayer (`oriel_media::video`) with `ORIEL_VIDEO=avplayer`
-//! or where libmpv cannot be loaded; this view only draws its picture and sends it commands.
-//!
-//! The file names only `gpui_kit` and `oriel_media`, so the media crate's spike examples can
-//! build it as it is.
+//! item. A click on the picture plays or pauses. libmpv does the playing
+//! (`oriel_media::video`); this view only draws its picture and sends it commands.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -27,13 +23,14 @@ use gpui_kit::component::Icon;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::{
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, FontWeight,
-    Global, InteractiveElement as _, IntoElement, KeyBinding, KeyUpEvent, MouseButton,
+    Global, InteractiveElement as _, IntoElement, KeyDownEvent, KeyUpEvent, MouseButton,
     MouseMoveEvent, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window,
     actions, div, prelude::FluentBuilder as _, px, relative, rgba,
 };
-use oriel_media::mpv::{AnyPlayer, MpvPlayer, pump_frames};
-use oriel_media::video::{SeekMode, VideoError, VideoPlayer};
+use oriel_media::video::{Player, Scrubber, SeekMode, VideoError, pump_frames};
+use oriel_ui::MENU_ROW_HEIGHT;
+use oriel_ui::shortcuts::KeyTable;
 
 actions!(
     capsule_player,
@@ -52,27 +49,26 @@ actions!(
 );
 
 pub(crate) const KEY_CONTEXT: &str = "CapsulePlayer";
-/// The key that plays at 2× while it is held (`HOTKEYS.videoTemporarySpeed`).
-pub(crate) const HOLD_KEY: &str = "4";
-/// Electron Oriel's `VIDEO_SKIP_SECONDS`.
+/// How far the skip buttons and keys move.
 const SKIP_SECONDS: f64 = 5.;
-/// How far short of the end a skip stops, in seconds (`commitSeek`'s `total - 0.05`).
+/// How far short of the end a skip stops, in seconds, so a skip near the end neither ends nor
+/// loops the video.
 const END_MARGIN: f64 = 0.05;
 /// The scrubber's resolution, as a share of the video: a tenth of a second in a 17-minute one.
 const SCRUB_STEP: f32 = 0.0001;
-/// The speeds the speed panel offers (`SPEEDS`).
+/// The speeds the speed panel offers.
 pub const SPEEDS: [f32; 6] = [0.5, 0.75, 1., 1.25, 1.5, 2.];
 /// The speed a held 4 plays at.
 pub const HELD_SPEED: f32 = 2.;
 
-/// The capsule is dark on any theme, as the picture behind it is: Electron's `zinc-900/65`,
-/// its `white/10` ring, `violet-400` for the played part of the timeline and `violet-300` for a
-/// control that is on.
+/// The capsule is dark on any theme, as the picture behind it is: zinc 900 at 65 %, a ring of
+/// white at 10 %, violet 400 for the played part of the timeline and violet 300 for a control
+/// that is on.
 const CAPSULE: u32 = 0x18181ba6;
 const CAPSULE_RING: u32 = 0xffffff1a;
 const PLAYED: u32 = 0xa78bfaff;
 const ACTIVE: u32 = 0xc4b5fdff;
-/// A panel over the picture: `zinc-900/90`.
+/// A panel over the picture: zinc 900 at 90 %.
 const PANEL: u32 = 0x18181be6;
 const PANEL_GAP: f32 = 12.;
 /// A panel's corner radius.
@@ -94,14 +90,20 @@ const SPEED_BUTTON_WIDTH: f32 = 52.;
 const CAPSULE_HEIGHT: f32 = 64.;
 const CAPSULE_BUTTON: f32 = 48.;
 const PLAY_BUTTON: f32 = 56.;
-/// A row of the speed panel: `oriel_ui::MENU_ROW_HEIGHT`, which this file cannot name, as the
-/// media crate's spike builds it without the house kit.
-const SPEED_ROW_HEIGHT: f32 = 40.;
 
 /// Marks that the player's keys are bound, so the first player binds them for the app.
 struct KeysBound;
 
 impl Global for KeysBound {}
+
+/// The player's keys. The digits go by where the key is, whatever it types
+/// ([`KeyTable::digit_action`]).
+pub(crate) const VIDEO_KEYS: KeyTable = oriel_ui::key_table!("Video" {
+    "Play or pause" => ["space" => TogglePlayback, "2" => TogglePlayback],
+    "Back or forward 5 seconds" => ["1" => SkipBack, "3" => SkipForward],
+    "Mute" => ["m" => ToggleMute],
+    "Play at 2× while held" => ["4" => HoldSpeed],
+});
 
 /// The player's keys, bound once for the app. They live in the player's own key context, so
 /// they reach the video shown while the player has focus.
@@ -110,21 +112,7 @@ fn bind_keys(cx: &mut App) {
         return;
     }
     cx.set_global(KeysBound);
-    cx.bind_keys(key_bindings(KEY_CONTEXT));
-}
-
-/// The player's keys in `context`: the player's own, and the viewer's, which hands them to the
-/// player when something else in the viewer has focus.
-pub(crate) fn key_bindings(context: &'static str) -> [KeyBinding; 6] {
-    let context = Some(context);
-    [
-        KeyBinding::new("space", TogglePlayback, context),
-        KeyBinding::new("2", TogglePlayback, context),
-        KeyBinding::new("1", SkipBack, context),
-        KeyBinding::new("3", SkipForward, context),
-        KeyBinding::new("m", ToggleMute, context),
-        KeyBinding::new(HOLD_KEY, HoldSpeed, context),
-    ]
+    cx.bind_keys(VIDEO_KEYS.bindings(KEY_CONTEXT, cx));
 }
 
 /// How a player starts: View's settings and what the viewer kept from the last video.
@@ -156,7 +144,7 @@ impl Default for PlayerOptions {
 /// What the owner changed, for the viewer to keep.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CapsulePlayerEvent {
-    /// The volume or mute changed: Electron Oriel keeps both across launches.
+    /// The volume or mute changed: the viewer keeps both across launches.
     VolumeChanged { volume: f32, muted: bool },
     /// The owner picked a speed (never the held 2×): kept while the viewer is open.
     SpeedChanged(f32),
@@ -172,12 +160,10 @@ pub enum CapsulePanel {
 /// The interface the viewer relies on: built for a path, rendered as a view.
 pub struct CapsulePlayer {
     path: PathBuf,
-    video: Result<AnyPlayer, VideoError>,
+    video: Result<Player, VideoError>,
     focus: FocusHandle,
-    scrubber: Entity<SliderState>,
+    scrubber: Scrubber,
     volume_slider: Entity<SliderState>,
-    /// Whether a scrub paused the video, to resume it when the scrub ends.
-    resume_after_scrub: bool,
     volume: f32,
     muted: bool,
     /// The speed playing runs at, the held 2× included.
@@ -207,9 +193,21 @@ impl CapsulePlayer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let video = Player::open(&path);
+        Self::with_video(path, video, options, window, cx)
+    }
+
+    /// Plays `video`, opened from `path` by the caller, as `options` say, with the player
+    /// focused for its keys.
+    pub fn with_video(
+        path: PathBuf,
+        mut video: Result<Player, VideoError>,
+        options: PlayerOptions,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         bind_keys(cx);
         let volume = options.volume.clamp(0., 1.);
-        let mut video = AnyPlayer::open(&path);
         if let Ok(video) = &mut video {
             video.set_volume(volume);
             video.set_muted(options.muted);
@@ -221,10 +219,10 @@ impl CapsulePlayer {
                 video.play();
             }
         }
-        let scrubber = cx.new(|_| SliderState::new().min(0.).max(1.).step(SCRUB_STEP));
+        let scrubber = Scrubber::new(SCRUB_STEP, cx);
         let volume_slider = cx.new(|_| SliderState::new().min(0.).max(1.).step(0.01));
         let subscriptions = vec![
-            cx.subscribe_in(&scrubber, window, Self::on_scrub),
+            cx.subscribe_in(scrubber.slider(), window, Self::on_scrub),
             cx.subscribe_in(&volume_slider, window, Self::on_volume_drag),
             // A held 4 whose key-up goes to another app would otherwise play at 2× for good.
             cx.observe_window_activation(window, |this, window, cx| {
@@ -241,7 +239,6 @@ impl CapsulePlayer {
             focus,
             scrubber,
             volume_slider,
-            resume_after_scrub: false,
             volume,
             muted: options.muted,
             speed: options.speed,
@@ -259,20 +256,19 @@ impl CapsulePlayer {
 
     /// The video's length, once it is known.
     pub fn duration(&self) -> Option<Duration> {
-        self.video.as_ref().ok().and_then(AnyPlayer::duration)
+        self.video.as_ref().ok().and_then(Player::duration)
     }
 
     /// Where playback is, or where the newest seek is going.
     pub fn position(&self) -> Duration {
         self.video
             .as_ref()
-            .map(AnyPlayer::position)
+            .map(Player::position)
             .unwrap_or_default()
     }
 
-    /// Whether the video is playing.
     pub fn is_playing(&self) -> bool {
-        self.video.as_ref().is_ok_and(AnyPlayer::is_playing)
+        self.video.as_ref().is_ok_and(Player::is_playing)
     }
 
     /// The volume set, 0 to 1, whether or not it is muted.
@@ -295,10 +291,9 @@ impl CapsulePlayer {
     }
 
     pub fn is_looping(&self) -> bool {
-        self.video.as_ref().is_ok_and(AnyPlayer::is_looping)
+        self.video.as_ref().is_ok_and(Player::is_looping)
     }
 
-    /// The panel the capsule has open.
     pub fn panel(&self) -> Option<CapsulePanel> {
         self.panel
     }
@@ -309,16 +304,6 @@ impl CapsulePlayer {
             Ok(video) => video.error(),
             Err(error) => Some(error),
         }
-    }
-
-    /// The player itself, for a caller that measures or drives it.
-    pub fn video_mut(&mut self) -> Option<&mut VideoPlayer> {
-        self.video.as_mut().ok().and_then(AnyPlayer::av_player_mut)
-    }
-
-    /// The libmpv player, when it is the one playing.
-    pub fn mpv_mut(&mut self) -> Option<&mut MpvPlayer> {
-        self.video.as_mut().ok().and_then(AnyPlayer::mpv_mut)
     }
 
     /// Shows or hides the controls. The viewer hides them while a video plays untouched; a
@@ -335,7 +320,7 @@ impl CapsulePlayer {
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
-        command: impl FnOnce(&mut AnyPlayer),
+        command: impl FnOnce(&mut Player),
     ) {
         let Ok(video) = &mut self.video else {
             return;
@@ -345,7 +330,7 @@ impl CapsulePlayer {
         cx.notify();
     }
 
-    fn video_of(&mut self) -> &mut AnyPlayer {
+    fn video_of(&mut self) -> &mut Player {
         self.video
             .as_mut()
             .expect("frames are pumped only for a video that opened")
@@ -357,16 +342,27 @@ impl CapsulePlayer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.command(window, cx, AnyPlayer::toggle_playback);
+        self.command(window, cx, Player::toggle_playback);
     }
 
-    /// Pauses the video, as Electron Oriel pauses a hidden mode's media; it stays paused when
-    /// the mode shows again.
+    /// Pauses the video, as View does when it leaves the screen; it stays paused when View shows
+    /// again.
     pub fn pause(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.end_hold(window, cx);
         if self.is_playing() {
-            self.command(window, cx, AnyPlayer::pause);
+            self.command(window, cx, Player::pause);
         }
+    }
+
+    /// Moves the video to `target`, as closely as `mode` says.
+    pub fn seek(
+        &mut self,
+        target: Duration,
+        mode: SeekMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.command(window, cx, |video| video.seek(target, mode));
     }
 
     pub fn skip_back(&mut self, _: &SkipBack, window: &mut Window, cx: &mut Context<Self>) {
@@ -377,8 +373,8 @@ impl CapsulePlayer {
         self.skip(SKIP_SECONDS, window, cx);
     }
 
-    /// `skip`, through `commitSeek`: `seconds` from where it is, on the exact frame, and never
-    /// past the last 50 ms, so a skip near the end neither ends nor loops the video.
+    /// Moves `seconds` from where it is, on the exact frame, and never past [`END_MARGIN`] before
+    /// the end.
     fn skip(&mut self, seconds: f64, window: &mut Window, cx: &mut Context<Self>) {
         self.command(window, cx, |video| {
             let target = (video.position().as_secs_f64() + seconds).max(0.);
@@ -400,7 +396,7 @@ impl CapsulePlayer {
         self.volume_changed(cx);
     }
 
-    /// `changeVolume`: the level, clamped, and unmuted when it is above nothing.
+    /// Sets the level, clamped, unmuting when it is above nothing.
     pub fn set_volume(&mut self, volume: f32, window: &mut Window, cx: &mut Context<Self>) {
         self.apply_volume(volume, window, cx);
         self.volume_changed(cx);
@@ -430,8 +426,8 @@ impl CapsulePlayer {
         });
     }
 
-    /// `applySpeed` from the speed panel: the speed the video plays at from now on. A held 4
-    /// lets go to the speed picked.
+    /// The speed panel's pick: the speed the video plays at from now on. A held 4 lets go to the
+    /// speed picked.
     pub fn set_speed(&mut self, speed: f32, window: &mut Window, cx: &mut Context<Self>) {
         self.held_from = None;
         self.apply_speed(speed, window, cx);
@@ -443,8 +439,8 @@ impl CapsulePlayer {
         self.command(window, cx, |video| video.set_rate(speed));
     }
 
-    /// `beginHoldBoost`: 2× until the key is let go, then the speed chosen before. A key held
-    /// down repeats; only the first press counts.
+    /// 2× until the key is let go, then the speed chosen before. A key held down repeats; only
+    /// the first press counts.
     pub fn hold_speed(&mut self, _: &HoldSpeed, window: &mut Window, cx: &mut Context<Self>) {
         if self.held_from.is_some() {
             return;
@@ -453,16 +449,31 @@ impl CapsulePlayer {
         self.apply_speed(HELD_SPEED, window, cx);
     }
 
-    /// `endHoldBoost`.
     pub fn end_hold(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(speed) = self.held_from.take() {
             self.apply_speed(speed, window, cx);
         }
     }
 
+    /// The digit keys, sent as their actions wherever focus is in the player or the viewer.
+    pub fn on_key_down(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(action) = VIDEO_KEYS.digit_action(&event.keystroke) {
+            window.dispatch_action(action, cx);
+            cx.stop_propagation();
+        }
+    }
+
     /// Lets go of a held 4 when its key comes up.
     pub fn on_key_up(&mut self, event: &KeyUpEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if event.keystroke.key == HOLD_KEY {
+        if VIDEO_KEYS
+            .digit_action(&event.keystroke)
+            .is_some_and(|action| action.partial_eq(&HoldSpeed))
+        {
             self.end_hold(window, cx);
         }
     }
@@ -488,27 +499,17 @@ impl CapsulePlayer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (fraction, mode) = match event {
-            SliderEvent::Change(value) => (value.end(), SeekMode::Fast),
-            SliderEvent::Release(value) => (value.end(), SeekMode::Exact),
+        let Some(playing) = self
+            .video
+            .as_ref()
+            .ok()
+            .filter(|video| video.duration().is_some())
+            .map(Player::is_playing)
+        else {
+            return;
         };
-        let releasing = mode == SeekMode::Exact;
-        let mut resume = self.resume_after_scrub;
-        self.command(window, cx, |video| {
-            let Some(duration) = video.duration() else {
-                return;
-            };
-            if !releasing && video.is_playing() {
-                video.pause();
-                resume = true;
-            }
-            video.seek(duration.mul_f32(fraction.clamp(0., 1.)), mode);
-            if releasing && resume {
-                video.play();
-                resume = false;
-            }
-        });
-        self.resume_after_scrub = resume;
+        let scrub = self.scrubber.scrub(event, playing);
+        self.command(window, cx, |video| video.scrub(scrub));
     }
 
     /// The volume panel's slider: a press or a drag sets the level as it goes, and the level is
@@ -526,7 +527,7 @@ impl CapsulePlayer {
         }
     }
 
-    /// The level the volume control shows: nothing while muted (`model.muted ? 0 : volume`).
+    /// The level the volume control shows: nothing while muted.
     fn level(&self) -> f32 {
         if self.muted { 0. } else { self.volume }
     }
@@ -556,7 +557,7 @@ impl Render for CapsulePlayer {
             .items_center()
             .justify_center()
             .when_some(
-                self.video.as_ref().ok().and_then(AnyPlayer::picture),
+                self.video.as_ref().ok().and_then(Player::picture),
                 |this, picture| this.child(picture),
             )
             .when_some(error.clone(), |this, error| {
@@ -581,14 +582,15 @@ impl Render for CapsulePlayer {
             .on_action(cx.listener(Self::skip_forward))
             .on_action(cx.listener(Self::toggle_mute))
             .on_action(cx.listener(Self::hold_speed))
+            .on_key_down(cx.listener(Self::on_key_down))
             .on_key_up(cx.listener(Self::on_key_up))
             .relative()
             .size_full()
             .overflow_hidden()
             .bg(gpui_kit::black())
             .child(picture)
-            // While a panel is open, a press anywhere but the capsule and its panels closes it,
-            // as `useOutsideClose` does; the press still reaches what is under it.
+            // While a panel is open, a press anywhere but the capsule and its panels closes it;
+            // the press still reaches what is under it.
             .when(controls && self.panel.is_some(), |this| {
                 this.child(
                     div()
@@ -609,9 +611,9 @@ impl Render for CapsulePlayer {
 impl CapsulePlayer {
     fn render_capsule(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let video = self.video.as_ref().ok();
-        let playing = video.is_some_and(AnyPlayer::is_playing);
-        let position = video.map(AnyPlayer::position).unwrap_or_default();
-        let duration = video.and_then(AnyPlayer::duration);
+        let playing = video.is_some_and(Player::is_playing);
+        let position = video.map(Player::position).unwrap_or_default();
+        let duration = video.and_then(Player::duration);
         let played = match duration {
             Some(duration) if !duration.is_zero() => {
                 (position.as_secs_f64() / duration.as_secs_f64()).clamp(0., 1.) as f32
@@ -741,20 +743,20 @@ impl CapsulePlayer {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let hover = self.scrub_hover.zip(duration);
-        let slider = Slider::new(&self.scrubber)
+        let slider = Slider::new(self.scrubber.slider())
             .accessibility_label("Video seek position")
             .flex()
             .w_full()
             .items_center()
             .child(
-                SliderTrack::new(&self.scrubber)
+                SliderTrack::new(self.scrubber.slider())
                     .relative()
                     .flex()
                     .items_center()
                     .w_full()
                     .h(px(32.))
                     .child(
-                        SliderIndicator::new(&self.scrubber)
+                        SliderIndicator::new(self.scrubber.slider())
                             .relative()
                             .w_full()
                             .h(px(6.))
@@ -816,7 +818,7 @@ impl CapsulePlayer {
             .min_w_0()
             .items_center()
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
-                let bounds = this.scrubber.read(cx).bounds();
+                let bounds = this.scrubber.slider().read(cx).bounds();
                 let width = f32::from(bounds.size.width);
                 if width > 0. {
                     let along = f32::from(event.position.x - bounds.left()) / width;
@@ -993,7 +995,7 @@ impl CapsulePlayer {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .h(px(SPEED_ROW_HEIGHT))
+                                .h(MENU_ROW_HEIGHT)
                                 .px_3()
                                 .rounded(px(PANEL_ROW_RADIUS))
                                 .text_size(px(15.))
@@ -1107,7 +1109,7 @@ fn capsule_button(
         .child(icon)
 }
 
-/// `volumeIconFor`: crossed out at nothing, one wave below half, two waves from half up.
+/// Crossed out at nothing, one wave below half, two waves from half up.
 fn volume_icon(level: f32) -> IconName {
     if level == 0. {
         IconName::VolumeX
@@ -1118,7 +1120,7 @@ fn volume_icon(level: f32) -> IconName {
     }
 }
 
-/// The seconds a skip moves, inside its arrow, as Electron's `SkipButton` draws it.
+/// The seconds a skip moves, inside its arrow.
 fn skip_count() -> impl IntoElement {
     div()
         .absolute()
@@ -1132,43 +1134,22 @@ fn skip_count() -> impl IntoElement {
         .child(SharedString::new_static("5"))
 }
 
-/// `formatSpeed`: "1×", "0.75×".
+/// "1×", "0.75×": as JavaScript writes the numbers, with no trailing zeros.
 pub fn format_speed(speed: f32) -> SharedString {
     format!("{speed}×").into()
 }
 
-/// `m:ss`, or `h:mm:ss` past an hour, as Electron's `formatClock`.
 fn clock(time: Duration) -> SharedString {
-    let total = time.as_secs();
-    let (hours, minutes, seconds) = (total / 3600, total % 3600 / 60, total % 60);
-    if hours > 0 {
-        format!("{hours}:{minutes:02}:{seconds:02}").into()
-    } else {
-        format!("{minutes}:{seconds:02}").into()
-    }
+    oriel_core_domain::format::clock(time).into()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The capsule's times read as Electron Oriel's `formatClock` writes them.
-    #[test]
-    fn clocks_read_as_electron_oriels() {
-        for (seconds, expected) in [
-            (0, "0:00"),
-            (65, "1:05"),
-            (3599, "59:59"),
-            (3725, "1:02:05"),
-        ] {
-            assert_eq!(clock(Duration::from_secs(seconds)), expected);
-        }
-        assert_eq!(clock(Duration::from_millis(59_999)), "0:59");
-    }
-
     /// Speeds read as JavaScript writes the numbers: no trailing zeros.
     #[test]
-    fn speeds_read_as_electron_oriels() {
+    fn speeds_read_as_javascript_writes_them() {
         let labels: Vec<SharedString> = SPEEDS.iter().map(|&speed| format_speed(speed)).collect();
         assert_eq!(labels, ["0.5×", "0.75×", "1×", "1.25×", "1.5×", "2×"]);
     }

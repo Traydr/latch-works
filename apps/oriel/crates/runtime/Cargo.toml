@@ -1,6 +1,6 @@
 [package]
 name = "oriel-runtime"
-description = "Background work: GPUI jobs, a tokio thread, and a SQLite thread per catalog."
+description = "Background work without UI: cancel and pause tokens, a tokio thread, a SQLite thread per catalog, and file facts."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,6 @@ publish.workspace = true
 autotests = false
 
 [dependencies]
-gpui-kit.workspace = true
 anyhow.workspace = true
 futures.workspace = true
 log.workspace = true
@@ -27,7 +26,6 @@ libc = "0.2"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
-gpui-kit = { workspace = true, features = ["test-support"] }
 reqwest.workspace = true
 
 [[test]]
