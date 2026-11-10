@@ -91,10 +91,9 @@ It was built from the Mac on 2026-10-31 and run on the owner's Windows machine o
 [To check on Windows](#to-check-on-windows) says which pieces have run there. The Oriel workflow's
 `windows` job (`.github/workflows/oriel.yml`, started by hand) runs `cargo clippy --workspace
 --all-targets -- -D warnings` on `windows-latest`, so every `cfg(windows)` branch compiles under
-a check, and tests the crates that need no media. Five of core-sync's lockstep-core vector
-tests are ignored on Windows (`#[cfg_attr(windows, ignore)]`): their vectors were written by
-Node on macOS, so four hold POSIX paths and one makes a file named `trailing.`, which Windows
-cannot. From the Mac the same lint runs for `x86_64-pc-windows-gnullvm` with
+a check; it runs no tests. Five of core-sync's lockstep-core vector tests are ignored on Windows
+(`#[cfg_attr(windows, ignore)]`): their vectors were written by Node on macOS, so four hold POSIX
+paths and one makes a file named `trailing.`, which Windows cannot. From the Mac the same lint runs for `x86_64-pc-windows-gnullvm` with
 [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) (open source; its headers are mingw-w64's)
 on `PATH`, which compiles the C in rusqlite and libwebp-sys:
 

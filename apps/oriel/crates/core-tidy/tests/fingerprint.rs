@@ -130,12 +130,6 @@ fn the_hardware_route_makes_what_libvips_makes() {
     let alpha = encode("alpha.avif", Channels::Rgba, &with_alpha);
 
     let route = hardware.hardware_route(&plain).unwrap();
-    if matches!(route, Err(Declined::Decoder)) && in_a_virtual_machine() {
-        // GitHub's macOS runners are virtual Macs whose VideoToolbox reports a hardware AV1 decoder
-        // and then refuses every frame, so no still here can take the route this test compares.
-        eprintln!("skipped: this virtual Mac's VideoToolbox refuses to decode AV1");
-        return;
-    }
     assert!(
         matches!(route, Ok(()) | Err(Declined::NoDecoder)),
         "a plain still should take the route on a Mac with the decoder: {route:?}"
@@ -152,13 +146,4 @@ fn the_hardware_route_makes_what_libvips_makes() {
         );
         assert_eq!(hash(&hardware, path), hash(&software, path));
     }
-}
-
-/// Whether this Mac runs under a hypervisor (`kern.hv_vmm_present`).
-#[cfg(target_os = "macos")]
-fn in_a_virtual_machine() -> bool {
-    std::process::Command::new("/usr/sbin/sysctl")
-        .args(["-n", "kern.hv_vmm_present"])
-        .output()
-        .is_ok_and(|output| output.stdout.trim_ascii() == b"1")
 }

@@ -1,11 +1,8 @@
 name: Oriel
 
-# Formats, lints and tests the Rust workspace, and checks that the TypeScript packages still
-# produce the conformance vectors the Rust tests read (apps/oriel/conformance/README.md lists the
-# frozen ones no TypeScript makes). A second job lints the workspace on Windows, so its
-# `cfg(windows)` code is compiled too. Off by default:
-# it runs only when started by hand (Actions › Oriel › Run workflow), as the owner runs
-# `pnpm oriel:check` locally.
+# Formats and lints the Rust workspace on macOS and lints it on Windows, so its `cfg(windows)` code
+# is compiled too. The tests run on the owner's machine (`pnpm oriel:check`). Off by default: it
+# runs only when started by hand (Actions › Oriel › Run workflow).
 on:
   workflow_dispatch:
 
@@ -13,26 +10,15 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    # Apple silicon, the platform the pinned media tools and vendored libraries are fetched for.
+  macos:
     runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: apps/oriel
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v6
-        with:
-          run_install: false
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: package.json
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --prod=false
-
       - name: Install the pinned Rust toolchain
-        working-directory: apps/oriel
         run: rustup toolchain install
 
       - uses: actions/cache@v6
@@ -44,36 +30,13 @@ jobs:
           key: oriel-${{ runner.os }}-${{ hashFiles('apps/oriel/Cargo.lock', 'apps/oriel/Cargo.toml', 'apps/oriel/rust-toolchain.toml') }}
           restore-keys: oriel-${{ runner.os }}-
 
-      - name: Check the vectors from TypeScript
-        run: pnpm -r --filter "./packages/**" test
+      - name: Check the formatting
+        run: cargo fmt --check
 
-      - name: Fetch the pinned ffmpeg and ffprobe, and the prebuilt libvips and libavif
-        working-directory: apps/oriel
-        run: |
-          cargo run -p xtask -- fetch-media-tools
-          cargo run -p xtask -- vendor
-
-      - uses: actions/cache@v6
-        with:
-          path: apps/oriel/.libmpv
-          key: oriel-libmpv-${{ runner.os }}-${{ hashFiles('apps/oriel/crates/xtask/src/libmpv/**') }}
-
-      # The video engine's tests need libmpv, which no prebuilt LGPL build provides: build it as
-      # the runbook does (docs/runbooks/oriel.md, "Video through libmpv"). A cached set that is
-      # still intact is kept.
-      - name: Build the LGPL libmpv
-        working-directory: apps/oriel
-        run: |
-          brew install meson ninja pkgconf
-          cargo run -p xtask -- libmpv
-
-      - name: Format, lint and test the Rust workspace
-        run: pnpm oriel:check
+      - name: Lint the Rust workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   windows:
-    # Lints the whole workspace for Windows and tests the crates that need no media. The other
-    # tests need ffmpeg, libvips, libavif and libmpv, which the job above fetches and builds for
-    # Apple silicon only.
     runs-on: windows-latest
     defaults:
       run:
@@ -95,8 +58,3 @@ jobs:
 
       - name: Lint the Rust workspace
         run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Test the crates that need no media
-        run: >-
-          cargo test -p oriel-runtime -p oriel-core-paths -p oriel-core-domain -p oriel-core-format
-          -p oriel-launch -p oriel-core-sync
