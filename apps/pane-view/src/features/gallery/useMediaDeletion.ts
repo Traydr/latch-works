@@ -8,7 +8,7 @@ import {
 } from "react";
 import type { GalleryBrowseSession } from "@/features/gallery/useGalleryBrowse";
 import { useDeleteLibraryEntryMutation } from "@/features/library/library-queries";
-import type { LibraryMediaItem } from "@/features/library/types";
+import type { GalleryMedia } from "@/features/library/listing-contract";
 
 export interface DeletedMediaIds {
   ids: ReadonlySet<string>;
@@ -38,14 +38,14 @@ function retainLiveIds(
 
 export interface UseMediaDeletionOptions {
   /** Every media item on screen; ids that leave it are forgotten once the library has loaded. */
-  allMedia: readonly LibraryMediaItem[];
+  allMedia: readonly GalleryMedia[];
   browseKey: string;
   deletedMedia: DeletedMediaIds;
   library: GalleryBrowseSession["library"];
-  navigableMedia: readonly LibraryMediaItem[];
+  navigableMedia: readonly GalleryMedia[];
   /** Moves the selection to the neighbour of an item deleted while selected. */
   onSelectNeighbour: (mediaId: string) => void;
-  selected: LibraryMediaItem | null;
+  selected: GalleryMedia | null;
 }
 
 export interface MediaDeletion {

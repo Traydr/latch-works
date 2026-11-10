@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import type { SyncRunHistoryEntry } from "../../server/management/sync-run-history";
+import type { SyncRunHistoryEntry } from "./management-contract";
 
 interface SyncRunHistoryTableProps {
   cancellingSyncRunId?: string | null;

@@ -22,15 +22,15 @@ const resumeMaintenanceJobsMiddleware = createMiddleware().server(({ next }) => 
   return next();
 });
 
-const securityHeadersMiddleware = createMiddleware().server(async ({ next, pathname }) => {
+const securityHeadersMiddleware = createMiddleware().server(async ({ next }) => {
   const result = await next();
 
   if (result instanceof Response) {
-    return applySecurityHeadersToResponse(result, pathname);
+    return applySecurityHeadersToResponse(result);
   }
 
   if (result.response instanceof Response) {
-    applySecurityHeadersToResponse(result.response, pathname);
+    applySecurityHeadersToResponse(result.response);
   }
 
   return result;

@@ -1,12 +1,10 @@
-import * as crypto from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   assertSyncApiTokenFromBody,
   createSyncApiTokenVerifier,
   readBearerToken,
   requireSyncApiToken,
-  verifySyncApiToken,
 } from "./api-token";
 
 const syncToken = "test-sync-token-value";
@@ -18,9 +16,7 @@ let configuredSyncToken: string | undefined = syncToken;
  * The guards take a verifier, so the suite controls the configured token
  * without touching the environment.
  */
-const verifier = createSyncApiTokenVerifier({
-  getConfiguredToken: () => configuredSyncToken,
-});
+const verifier = createSyncApiTokenVerifier(() => configuredSyncToken);
 
 function syncRequest(authorization?: string): Request {
   return new Request(
@@ -40,34 +36,21 @@ describe("readBearerToken", () => {
   });
 });
 
-describe("verifySyncApiToken", () => {
+describe("sync token verifier", () => {
   beforeEach(() => {
     configuredSyncToken = syncToken;
   });
 
   it("accepts only an exact match against a configured token", () => {
-    expect(verifySyncApiToken({ token: syncToken }, verifier)).toBe(true);
-    expect(verifySyncApiToken({ token: "wrong-token" }, verifier)).toBe(false);
-    expect(verifySyncApiToken({ token: null }, verifier)).toBe(false);
+    expect(verifier.verify(syncToken)).toBe(true);
+    expect(verifier.verify("wrong-token")).toBe(false);
+    expect(verifier.verify(null)).toBe(false);
   });
 
   it("fails closed when no token is configured", () => {
     configuredSyncToken = undefined;
 
-    expect(verifySyncApiToken({ token: syncToken }, verifier)).toBe(false);
-  });
-
-  it("caches the configured token digest across requests", () => {
-    const digest = vi.fn((token: string) => crypto.createHash("sha256").update(token).digest());
-
-    const verifier = createSyncApiTokenVerifier({
-      digest,
-      getConfiguredToken: () => syncToken,
-    });
-
-    expect(verifier.verify({ token: "wrong-token" })).toBe(false);
-    expect(verifier.verify({ token: syncToken })).toBe(true);
-    expect(digest.mock.calls.filter(([token]) => token === syncToken)).toHaveLength(2);
+    expect(verifier.verify(syncToken)).toBe(false);
   });
 });
 

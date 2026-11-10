@@ -1,12 +1,11 @@
 import { type FormEvent, type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { sharedThumbnailResolver } from "@/features/gallery/batched-thumbnail-resolver";
+import { deliveryCache } from "@/features/delivery/delivery-cache";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
 import { GalleryHeader } from "@/features/gallery/GalleryHeader";
 import { GalleryOverlays } from "@/features/gallery/GalleryOverlays";
-import { entryMedia, type GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { useGalleryLayout } from "@/features/gallery/gallery-layout-context";
 import { useComicActivation } from "@/features/gallery/useComicActivation";
 import { useFolderNeighbours } from "@/features/gallery/useFolderNeighbours";
@@ -14,6 +13,7 @@ import { useGalleryBrowse } from "@/features/gallery/useGalleryBrowse";
 import { useGalleryKeyboard } from "@/features/gallery/useGalleryKeyboard";
 import { useGalleryViewerHandoff } from "@/features/gallery/useGalleryViewerHandoff";
 import { useDeletedMediaIds, useMediaDeletion } from "@/features/gallery/useMediaDeletion";
+import { entryMedia, type GalleryBrowseEntry } from "@/features/library/listing-contract";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -281,15 +281,9 @@ export function GalleryPage(): JSX.Element {
   const closeHotkeys = useCallback(() => setHotkeysOpen(false), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), [setSettingsOpen]);
 
-  // A stale snapshot's root label belongs to the folder being left.
-  const archiveRoot = snapshotIsCurrent
-    ? (library?.archiveRoot ?? "Synced archive")
-    : "Synced archive";
-
   return (
     <>
       <GalleryHeader
-        archiveRoot={archiveRoot}
         canNavigateSiblings={folders.canNavigateSiblings}
         displayPath={displayPath}
         isMobile={isMobile}
@@ -309,6 +303,7 @@ export function GalleryPage(): JSX.Element {
           <GalleryBrowsePane
             columnCountRef={columnCountRef}
             comicMode={effectiveComicMode}
+            comicOpenError={comics.openError}
             deleteError={deletion.selectedDeleteError}
             deletedEntryIds={deletedEntryIds}
             deletingEntryIds={deletion.deletingEntryIds}
@@ -359,7 +354,7 @@ export function GalleryPage(): JSX.Element {
         isRefreshing={showRefreshing}
         onChangeSortMode={browse.setSortMode}
         onRefresh={() => {
-          sharedThumbnailResolver.retryFailedThumbnails();
+          deliveryCache.retryFailed();
           void refresh();
         }}
         onToggleComicMode={() => {

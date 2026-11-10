@@ -173,9 +173,10 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       .limit(1),
     db
       .select({
-        entryBytes: sql`coalesce(sum(${libraryEntries.size}), 0)`.mapWith(Number),
+        entryBytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
       })
       .from(libraryEntries)
+      .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
       .where(isNull(libraryEntries.deletedAt)),
     db
       .select({

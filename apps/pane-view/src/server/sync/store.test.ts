@@ -1,32 +1,26 @@
-import type { S3StorageClient, StoredObjectHead } from "@latch-works/media-storage";
 import { eq, isNull } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
+import { beforeEach, describe, expect, it } from "vitest";
 import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
 import { testDatabaseForSuite } from "../library/test-db";
+import type { StoredObjectHead } from "../media/storage-client";
 import type { SyncStoreDependencies } from "./store";
-import { completeSyncedObject, finalizeSyncRun, markRemoteDeleted } from "./store";
+import { completeSyncedObject, markRemoteDeleted } from "./store";
+import { finalizeSyncRun } from "./sync-runs";
 
 /**
  * The sync writes against executed SQL: the archive is a real database, and
- * only the two things a sync reaches outside it — the cleanup guard and the
- * object storage HEAD attestation — stand in.
+ * only the object storage HEAD attestation stands in.
  */
 
 const testDatabase = testDatabaseForSuite();
 
-const headStoredObject = vi.fn();
-
-// SAFETY: `headStoredObject` is the only call that receives this client and it
-// is faked below, so no S3Client method is ever invoked on it.
-const storage = { bucket: "test-bucket", client: {} as S3StorageClient["client"] };
+/** What object storage holds at `objects/abc`, the key every upload here declares. */
+let storedHead: StoredObjectHead | null;
 
 function dependencies(): SyncStoreDependencies {
   return {
-    acquireLibraryMutationStartupLock: async () => undefined,
-    assertNoActiveCleanupJob: async () => undefined,
     database: testDatabase().db,
-    headStoredObject,
+    headStoredObject: async (key) => (key === "objects/abc" ? storedHead : null),
   };
 }
 
@@ -36,7 +30,6 @@ const attestedHead: StoredObjectHead = {
   checksumSHA256: Buffer.from(sha256, "hex").toString("base64"),
   contentLength: 1024,
   contentType: "image/jpeg",
-  etag: '"etag"',
   metadata: { sha256 },
 };
 
@@ -79,20 +72,19 @@ beforeEach(async () => {
   await db.delete(mediaObjects);
   await db.delete(folders);
   await db.delete(syncRuns);
-  headStoredObject.mockReset();
-  headStoredObject.mockResolvedValue(attestedHead);
+  storedHead = attestedHead;
 });
 
 describe("finalizeSyncRun", () => {
   it("marks completed runs with final counts", async () => {
     const syncRunId = await insertRun("running");
 
-    const result = await finalizeSyncRun(
-      { input: { counts: { pushed: 2, planned: 2 }, status: "completed", syncRunId } },
-      dependencies(),
+    await finalizeSyncRun(
+      syncRunId,
+      { counts: { pushed: 2, planned: 2 }, error: null, status: "completed" },
+      testDatabase().db,
     );
 
-    expect(result).toEqual({ status: "database" });
     const run = await readRun(syncRunId);
     expect(run.status).toBe("completed");
     expect(run.counts).toEqual({ pushed: 2, planned: 2 });
@@ -104,15 +96,13 @@ describe("finalizeSyncRun", () => {
     const syncRunId = await insertRun("running");
 
     await finalizeSyncRun(
+      syncRunId,
       {
-        input: {
-          counts: { failed: 0, planned: 2, pushed: 1 },
-          error: "Run cancelled by user",
-          status: "cancelled",
-          syncRunId,
-        },
+        counts: { failed: 0, planned: 2, pushed: 1 },
+        error: "Run cancelled by user",
+        status: "cancelled",
       },
-      dependencies(),
+      testDatabase().db,
     );
 
     const run = await readRun(syncRunId);
@@ -121,35 +111,15 @@ describe("finalizeSyncRun", () => {
     expect(run.error).toBe("Run cancelled by user");
   });
 
-  it("marks failed runs with error text", async () => {
-    const syncRunId = await insertRun("running");
-
-    await finalizeSyncRun(
-      {
-        input: {
-          counts: { failed: 1, pushed: 0, planned: 1 },
-          error: "1 item(s) failed during push",
-          status: "failed",
-          syncRunId,
-        },
-      },
-      dependencies(),
-    );
-
-    const run = await readRun(syncRunId);
-    expect(run.status).toBe("failed");
-    expect(run.error).toBe("1 item(s) failed during push");
-  });
-
   it("accepts an exact terminal-status replay without updating details", async () => {
     const syncRunId = await insertRun("completed");
 
-    const result = await finalizeSyncRun(
-      { input: { counts: { planned: 2, pushed: 2 }, status: "completed", syncRunId } },
-      dependencies(),
+    await finalizeSyncRun(
+      syncRunId,
+      { counts: { planned: 2, pushed: 2 }, error: null, status: "completed" },
+      testDatabase().db,
     );
 
-    expect(result).toEqual({ status: "database" });
     // The row is only written by the guarded update, which matched nothing.
     expect((await readRun(syncRunId)).counts).toEqual({});
   });
@@ -159,8 +129,9 @@ describe("finalizeSyncRun", () => {
 
     await expect(
       finalizeSyncRun(
-        { input: { counts: { planned: 2, pushed: 2 }, status: "completed", syncRunId } },
-        dependencies(),
+        syncRunId,
+        { counts: { planned: 2, pushed: 2 }, error: null, status: "completed" },
+        testDatabase().db,
       ),
     ).rejects.toThrow("Sync run is already cancelled.");
     expect((await readRun(syncRunId)).status).toBe("cancelled");
@@ -171,8 +142,9 @@ describe("finalizeSyncRun", () => {
 
     await expect(
       finalizeSyncRun(
-        { input: { error: "1 item(s) failed during push", status: "failed", syncRunId } },
-        dependencies(),
+        syncRunId,
+        { counts: {}, error: "1 item(s) failed during push", status: "failed" },
+        testDatabase().db,
       ),
     ).rejects.toThrow("Sync run is already completed.");
     expect((await readRun(syncRunId)).status).toBe("completed");
@@ -180,17 +152,11 @@ describe("finalizeSyncRun", () => {
 });
 
 describe("completeSyncedObject", () => {
-  it("performs all writes inside a transaction after HEAD attestation", async () => {
+  it("registers the attested object with its folder, entry and run item", async () => {
     const { db } = testDatabase();
     const syncRunId = await insertRun("running");
 
-    const result = await completeSyncedObject(
-      { input: { ...uploadInput, syncRunId }, storage },
-      dependencies(),
-    );
-
-    expect(result).toEqual({ status: "database" });
-    expect(headStoredObject).toHaveBeenCalledWith(expect.objectContaining({ key: "objects/abc" }));
+    await completeSyncedObject({ ...uploadInput, syncRunId }, dependencies());
 
     const [media] = await db.select().from(mediaObjects);
     expect(media).toMatchObject({ objectKey: "objects/abc", sha256, size: 1024 });
@@ -213,10 +179,10 @@ describe("completeSyncedObject", () => {
 
   it("rejects missing storage objects before opening a transaction", async () => {
     const syncRunId = await insertRun("running");
-    headStoredObject.mockResolvedValue(null);
+    storedHead = null;
 
     await expect(
-      completeSyncedObject({ input: { ...uploadInput, syncRunId }, storage }, dependencies()),
+      completeSyncedObject({ ...uploadInput, syncRunId }, dependencies()),
     ).rejects.toThrow("Uploaded object was not found in storage.");
 
     expect(await testDatabase().db.select().from(mediaObjects)).toEqual([]);
@@ -224,16 +190,15 @@ describe("completeSyncedObject", () => {
 
   it("rejects size mismatches before opening a transaction", async () => {
     const syncRunId = await insertRun("running");
-    headStoredObject.mockResolvedValue({
+    storedHead = {
       checksumSHA256: undefined,
       contentLength: 10,
       contentType: "image/jpeg",
-      etag: '"etag"',
       metadata: undefined,
-    });
+    };
 
     await expect(
-      completeSyncedObject({ input: { ...uploadInput, syncRunId }, storage }, dependencies()),
+      completeSyncedObject({ ...uploadInput, syncRunId }, dependencies()),
     ).rejects.toThrow("Uploaded object size does not match declared size.");
 
     expect(await testDatabase().db.select().from(mediaObjects)).toEqual([]);
@@ -244,7 +209,7 @@ describe("completeSyncedObject", () => {
     const syncRunId = await insertRun("completed");
 
     await expect(
-      completeSyncedObject({ input: { ...uploadInput, syncRunId }, storage }, dependencies()),
+      completeSyncedObject({ ...uploadInput, syncRunId }, dependencies()),
     ).rejects.toThrow("Sync run is not accepting writes.");
 
     expect(await db.select().from(mediaObjects)).toEqual([]);
@@ -255,7 +220,7 @@ describe("completeSyncedObject", () => {
 
 describe("markRemoteDeleted", () => {
   async function seedEntry(syncRunId: string): Promise<void> {
-    await completeSyncedObject({ input: { ...uploadInput, syncRunId }, storage }, dependencies());
+    await completeSyncedObject({ ...uploadInput, syncRunId }, dependencies());
   }
 
   it("validates the sync run before updating library entries", async () => {
@@ -263,12 +228,8 @@ describe("markRemoteDeleted", () => {
     const syncRunId = await insertRun("running");
     await seedEntry(syncRunId);
 
-    const result = await markRemoteDeleted(
-      { logicalPath: "photos/photo.jpg", syncRunId },
-      dependencies(),
-    );
+    await markRemoteDeleted({ logicalPath: "photos/photo.jpg", syncRunId }, testDatabase().db);
 
-    expect(result).toEqual({ status: "database" });
     const [entry] = await db.select().from(libraryEntries);
     expect(entry?.deletedAt).toBeInstanceOf(Date);
     const items = await db.select().from(syncRunItems);
@@ -291,7 +252,7 @@ describe("markRemoteDeleted", () => {
           logicalPath: "photos/photo.jpg",
           syncRunId: "00000000-0000-4000-8000-000000000001",
         },
-        dependencies(),
+        testDatabase().db,
       ),
     ).rejects.toThrow("Sync run not found.");
 
@@ -308,7 +269,7 @@ describe("markRemoteDeleted", () => {
     await expect(
       markRemoteDeleted(
         { logicalPath: "photos/photo.jpg", syncRunId: closedRunId },
-        dependencies(),
+        testDatabase().db,
       ),
     ).rejects.toThrow("Sync run is not accepting writes.");
 
@@ -323,13 +284,17 @@ describe("folder lifecycle", () => {
     const filename = logicalPath.split("/").at(-1) ?? logicalPath;
 
     await completeSyncedObject(
-      { input: { ...uploadInput, filename, logicalPath, syncRunId }, storage },
+      { ...uploadInput, filename, logicalPath, syncRunId },
       dependencies(),
     );
   }
 
   async function finalize(syncRunId: string): Promise<void> {
-    await finalizeSyncRun({ input: { status: "completed", syncRunId } }, dependencies());
+    await finalizeSyncRun(
+      syncRunId,
+      { counts: {}, error: null, status: "completed" },
+      testDatabase().db,
+    );
   }
 
   async function liveFolderPaths(): Promise<string[]> {
@@ -376,9 +341,9 @@ describe("folder lifecycle", () => {
     await upload(run, "photos/new/2026/photo.jpg");
     await markRemoteDeleted(
       { logicalPath: "photos/old/2026/photo.jpg", syncRunId: run },
-      dependencies(),
+      testDatabase().db,
     );
-    await markRemoteDeleted({ logicalPath: "trips/photo.jpg", syncRunId: run }, dependencies());
+    await markRemoteDeleted({ logicalPath: "trips/photo.jpg", syncRunId: run }, testDatabase().db);
 
     // Nothing moves until the run finalizes.
     expect(await liveFolderPaths()).toContain("photos/old/2026");

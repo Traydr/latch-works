@@ -10,14 +10,16 @@
     "db:migrate": "drizzle-kit migrate",
     "dev": "vite dev --port 3000",
     "start": "node --env-file-if-exists=.env .output/server/index.mjs",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1151.0",
+    "@aws-sdk/s3-request-presigner": "^3.1151.0",
     "@better-auth/drizzle-adapter": "^1.7.15",
     "@fontsource-variable/geist": "^5.3.0",
     "@latch-works/media-domain": "workspace:*",
-    "@latch-works/media-storage": "workspace:*",
+    "@latch-works/sync-protocol": "workspace:*",
     "@shutter/client": "workspace:*",
     "@shutter/protocol": "workspace:*",
     "@t3-oss/env-core": "^0.13.11",
@@ -47,6 +49,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.14",
     "@electric-sql/pglite-icu-full": "^0.1.0",
+    "@latch-works/conformance": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/vite": "^4.3.3",
     "@types/d3-scale": "^4.0.9",

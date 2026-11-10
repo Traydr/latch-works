@@ -1,53 +1,15 @@
 import { isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { Database } from "../db";
-import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
+import { initialProgressFor } from "@/lib/library-jobs";
 import { folders, libraryEntries, maintenanceJobs, mediaObjects, syncRuns } from "../db/schema";
 import { testDatabaseForSuite } from "../library/test-db";
 import {
   countEntriesUnderPaths,
-  type FolderDeleteDependencies,
   type FolderDeleteResult,
   softDeleteFolderSubtree,
 } from "./folder-delete";
-import { assertNoActiveCleanupJob, assertNoActiveSyncRun } from "./guards";
-import { initialProgressFor } from "./maintenance-progress";
 
 const testDatabase = testDatabaseForSuite();
-
-/** The prologue collaborators, recording the transaction each one is handed. */
-interface RecordedPrologue {
-  calls: string[];
-  transactions: Database[];
-}
-
-function dependencies(recorded: RecordedPrologue): FolderDeleteDependencies {
-  return {
-    acquireLibraryMutationStartupLock: async (tx) => {
-      recorded.calls.push("lock");
-      recorded.transactions.push(tx);
-    },
-    assertNoActiveCleanupJob: async (tx) => {
-      recorded.calls.push("cleanup-guard");
-      recorded.transactions.push(tx);
-    },
-    assertNoActiveSyncRun: async (tx) => {
-      recorded.calls.push("sync-guard");
-      recorded.transactions.push(tx);
-    },
-    database: testDatabase().db,
-  };
-}
-
-/** The real prologue, so the guards read the rows this suite inserts. */
-function realDependencies(): FolderDeleteDependencies {
-  return {
-    acquireLibraryMutationStartupLock,
-    assertNoActiveCleanupJob,
-    assertNoActiveSyncRun,
-    database: testDatabase().db,
-  };
-}
 
 async function seedFolders(): Promise<void> {
   const { db } = testDatabase();
@@ -77,7 +39,6 @@ async function seedFolders(): Promise<void> {
       mediaObjectId: object.id,
       mtimeMs: 1_700_000_000_000,
       parentPath,
-      size: 1024,
     });
   }
 }
@@ -116,19 +77,19 @@ describe("softDeleteFolderSubtree", () => {
   });
 
   it("rejects deleting the archive root", async () => {
-    await expect(
-      softDeleteFolderSubtree({ folderPaths: [""] }, realDependencies()),
-    ).rejects.toThrow("Cannot delete the archive root");
+    await expect(softDeleteFolderSubtree({ folderPaths: [""] }, testDatabase().db)).rejects.toThrow(
+      "Cannot delete the archive root",
+    );
   });
 
   it("rejects folder paths with parent segments", async () => {
     await expect(
-      softDeleteFolderSubtree({ folderPaths: ["photos/../other"] }, realDependencies()),
+      softDeleteFolderSubtree({ folderPaths: ["photos/../other"] }, testDatabase().db),
     ).rejects.toThrow("Folder path must not contain '..' segments.");
   });
 
   it("rejects empty folder selection", async () => {
-    await expect(softDeleteFolderSubtree({ folderPaths: [] }, realDependencies())).rejects.toThrow(
+    await expect(softDeleteFolderSubtree({ folderPaths: [] }, testDatabase().db)).rejects.toThrow(
       "Select at least one folder",
     );
   });
@@ -143,7 +104,7 @@ describe("softDeleteFolderSubtree", () => {
     });
 
     await expect(
-      softDeleteFolderSubtree({ folderPaths: ["photos/2026"] }, realDependencies()),
+      softDeleteFolderSubtree({ folderPaths: ["photos/2026"] }, testDatabase().db),
     ).rejects.toThrow("cleanup job is still running");
     expect(await liveEntryPaths()).toEqual(["photos/2025/seed.jpg", "photos/2026/seed.jpg"]);
     expect(await liveFolderPaths()).toEqual(["photos", "photos/2025", "photos/2026"]);
@@ -155,41 +116,24 @@ describe("softDeleteFolderSubtree", () => {
     await db.insert(syncRuns).values({ sourceRoot: "/archive", status: "running" });
 
     await expect(
-      softDeleteFolderSubtree({ folderPaths: ["photos/2026"] }, realDependencies()),
+      softDeleteFolderSubtree({ folderPaths: ["photos/2026"] }, testDatabase().db),
     ).rejects.toThrow("sync run is currently active");
     expect(await liveEntryPaths()).toEqual(["photos/2025/seed.jpg", "photos/2026/seed.jpg"]);
     expect(await liveFolderPaths()).toEqual(["photos", "photos/2025", "photos/2026"]);
   });
 
-  it("takes the library mutation lock and runs both guards on the mutation transaction", async () => {
-    await seedFolders();
-    const recorded: RecordedPrologue = { calls: [], transactions: [] };
-
-    await softDeleteFolderSubtree({ folderPaths: ["photos/2026"] }, dependencies(recorded));
-
-    // Lock, then the sync guard, then the cleanup guard, all on one transaction.
-    expect(recorded.calls).toEqual(["lock", "sync-guard", "cleanup-guard"]);
-    const [lockTx] = recorded.transactions;
-    expect(lockTx).toBeDefined();
-    expect(lockTx).not.toBe(testDatabase().db);
-    expect(recorded.transactions).toEqual([lockTx, lockTx, lockTx]);
-  });
-
   it("soft-deletes entries and folders in one transaction", async () => {
     await seedFolders();
-    const recorded: RecordedPrologue = { calls: [], transactions: [] };
 
     const results = await softDeleteFolderSubtree(
       { folderPaths: ["photos/2026/", "photos/2026", "photos/2025"] },
-      dependencies(recorded),
+      testDatabase().db,
     );
 
     expect(results).toEqual([
       { entriesDeleted: 1, foldersDeleted: 1, path: "photos/2026" },
       { entriesDeleted: 1, foldersDeleted: 1, path: "photos/2025" },
     ]);
-    // The prologue runs once, however many roots the selection names.
-    expect(recorded.calls).toEqual(["lock", "sync-guard", "cleanup-guard"]);
     expect(await liveEntryPaths()).toEqual([]);
     expect(await liveFolderPaths()).toEqual(["photos"]);
 
@@ -222,12 +166,11 @@ describe("softDeleteFolderSubtree", () => {
       mediaObjectId: object.id,
       mtimeMs: 1_700_000_000_000,
       parentPath: "Photos/2026",
-      size: 1024,
     });
 
     expect(await countEntriesUnderPaths(["photos", "photos/2026"], db)).toBe(2);
 
-    const results = await softDeleteFolderSubtree({ folderPaths: ["photos"] }, realDependencies());
+    const results = await softDeleteFolderSubtree({ folderPaths: ["photos"] }, testDatabase().db);
 
     expect(results).toEqual([{ entriesDeleted: 2, foldersDeleted: 3, path: "photos" }]);
     expect(await liveEntryPaths()).toEqual(["Photos/2026/seed.jpg"]);
@@ -239,7 +182,7 @@ describe("softDeleteFolderSubtree", () => {
     await failFolderUpdates("photos/2026", "folder update failed");
 
     await expectFailure(
-      softDeleteFolderSubtree({ folderPaths: ["photos/2026"] }, realDependencies()),
+      softDeleteFolderSubtree({ folderPaths: ["photos/2026"] }, testDatabase().db),
       "folder update failed",
     );
 
@@ -252,7 +195,7 @@ describe("softDeleteFolderSubtree", () => {
     await failFolderUpdates("photos/2025", "second root folder update failed");
 
     await expectFailure(
-      softDeleteFolderSubtree({ folderPaths: ["photos/2026", "photos/2025"] }, realDependencies()),
+      softDeleteFolderSubtree({ folderPaths: ["photos/2026", "photos/2025"] }, testDatabase().db),
       "second root folder update failed",
     );
 

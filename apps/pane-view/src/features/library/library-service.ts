@@ -1,185 +1,35 @@
-import type { ComicEntry, FolderNode, GallerySortMode } from "@latch-works/media-domain";
-import { GallerySortModeSchema, toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { GalleryListingPage } from "../../server/library/gallery-listing";
-import { DEFAULT_GALLERY_LISTING_LIMIT } from "../../server/library/gallery-listing";
-import type {
-  DatabaseLibrarySnapshot,
-  LibrarySnapshotReadRequest,
-  SnapshotFolderNode,
-} from "../../server/library/repository";
 import { assertWebSessionAuthorized } from "../auth/assert-web-session";
-import { type GalleryRandomSeed, GalleryRandomSeedSchema } from "../gallery/gallery-random-seed";
-import type { LibraryMediaItem } from "./types";
-
-/** Most excluded child paths one listing request may carry; the client trims to it too. */
-export const EXCLUDED_PATHS_LIMIT = 200;
-
-const libraryRequestSchema = z.object({
-  comicMode: z.boolean().optional(),
-  includeAllFolders: z.boolean().optional(),
-  path: z.string().optional(),
-  query: z.string().optional(),
-  recursive: z.boolean().optional(),
-});
-
-/** The listing request boundary. */
-const galleryListingRequestSchema = z.object({
-  comicMode: z.boolean().optional(),
-  cursor: z.string().optional(),
-  excludedPaths: z.array(z.string()).max(EXCLUDED_PATHS_LIMIT).optional(),
-  limit: z.number().int().min(1).max(200).optional(),
-  path: z.string().optional(),
-  query: z.string().optional(),
-  randomSeed: GalleryRandomSeedSchema,
-  recursive: z.boolean().optional(),
-  showImages: z.boolean(),
-  showVideos: z.boolean(),
-  sortMode: GallerySortModeSchema,
-});
-
-export interface GalleryListingRequest {
-  comicMode: boolean;
-  cursor?: string;
-  /** Direct-child subtrees excluded from recursive/comic aggregation (Plan 054). */
-  excludedPaths?: readonly string[];
-  limit?: number;
-  path: string | undefined;
-  query: string | undefined;
-  randomSeed: GalleryRandomSeed;
-  recursive: boolean;
-  showImages: boolean;
-  showVideos: boolean;
-  sortMode: GallerySortMode;
-}
-
-export interface LibrarySnapshot {
-  allFolders: FolderNode[];
-  archiveRoot: string;
-  currentPath: string;
-  folders: SnapshotFolderNode[];
-  /** Folders sharing `currentPath`'s parent, itself included; empty at the root. */
-  siblings: SnapshotFolderNode[];
-}
-
-const deleteLibraryEntrySchema = z.object({
-  entryId: z.uuid(),
-});
-
-export const deleteLibraryEntry = createServerFn({ method: "POST" })
-  .validator(deleteLibraryEntrySchema)
-  .handler(async ({ data }): Promise<{ deleted: boolean }> => {
-    await assertWebSessionAuthorized();
-
-    const { softDeleteLibraryEntry } = await import("../../server/library/repository");
-    const deleted = await softDeleteLibraryEntry({ entryId: data.entryId });
-
-    return { deleted };
-  });
-
-/**
- * The one archive read a library snapshot needs. The default reads the
- * database; tests pass an in-memory reader.
- */
-interface LibrarySnapshotSource {
-  readDatabaseLibrarySnapshot(
-    request: LibrarySnapshotReadRequest,
-  ): Promise<DatabaseLibrarySnapshot>;
-}
-
-const databaseLibrarySnapshotSource: LibrarySnapshotSource = {
-  async readDatabaseLibrarySnapshot(request) {
-    const { readDatabaseLibrarySnapshot } = await import("../../server/library/repository");
-
-    return readDatabaseLibrarySnapshot(request);
-  },
-};
-
-async function readLibrarySnapshotRequest(
-  data: z.infer<typeof libraryRequestSchema>,
-  source: LibrarySnapshotSource = databaseLibrarySnapshotSource,
-): Promise<LibrarySnapshot> {
-  const currentPath = normalizeLibraryPath(data.path);
-  const query = normalizeQuery(data.query);
-  const comicMode = data.comicMode ?? false;
-  const includeAllFolders = data.includeAllFolders ?? false;
-  const recursive = (data.recursive ?? false) || comicMode;
-
-  const databaseSnapshot = await source.readDatabaseLibrarySnapshot({
-    currentPath,
-    includeAllFolders,
-    query,
-    recursive,
-  });
-
-  return {
-    allFolders: databaseSnapshot.allFolders,
-    archiveRoot: "Synced archive",
-    currentPath,
-    folders: databaseSnapshot.folders,
-    siblings: databaseSnapshot.siblings,
-  };
-}
+import {
+  type GalleryComic,
+  GalleryComicRequestSchema,
+  type GalleryListingPage,
+  GalleryListingRequestSchema,
+  type LibrarySnapshot,
+  LibrarySnapshotRequestSchema,
+  normalizeComicRequest,
+  normalizeListingRequest,
+  normalizeSnapshotRequest,
+} from "./listing-contract";
 
 export const getGalleryListing = createServerFn({ method: "GET" })
-  .validator(galleryListingRequestSchema)
+  .validator(GalleryListingRequestSchema)
   .handler(async ({ data }): Promise<GalleryListingPage> => {
     await assertWebSessionAuthorized();
 
-    const currentPath = normalizeLibraryPath(data.path);
-    const query = normalizeQuery(data.query);
-    const comicMode = data.comicMode ?? false;
-    const recursive = (data.recursive ?? false) || comicMode;
-    const excludedPaths = normalizeExcludedPaths(data.excludedPaths, recursive);
+    const request = normalizeListingRequest(data);
 
-    if (comicMode) {
+    if (request.comicMode) {
       const { readDatabaseComicListing } = await import("../../server/library/comic-listing");
 
-      return readDatabaseComicListing({
-        currentPath,
-        cursor: data.cursor,
-        excludedPaths,
-        limit: data.limit ?? DEFAULT_GALLERY_LISTING_LIMIT,
-        query,
-        randomSeed: data.randomSeed,
-        showImages: data.showImages,
-        showVideos: data.showVideos,
-        sortMode: data.sortMode,
-      });
+      return readDatabaseComicListing(request, data.cursor);
     }
 
     const { readDatabaseGalleryListing } = await import("../../server/library/repository");
 
-    return readDatabaseGalleryListing({
-      currentPath,
-      cursor: data.cursor,
-      excludedPaths,
-      limit: data.limit ?? DEFAULT_GALLERY_LISTING_LIMIT,
-      query,
-      randomSeed: data.randomSeed,
-      recursive,
-      showImages: data.showImages,
-      showVideos: data.showVideos,
-      sortMode: data.sortMode,
-    });
+    return readDatabaseGalleryListing(request, data.cursor);
   });
-
-const galleryComicRequestSchema = z.object({
-  comicId: z.string().min(1),
-  path: z.string().optional(),
-  query: z.string().optional(),
-  showImages: z.boolean().optional(),
-  showVideos: z.boolean().optional(),
-});
-
-export interface GalleryComicRequest {
-  comicId: string;
-  path: string | undefined;
-  query: string | undefined;
-  showImages: boolean;
-  showVideos: boolean;
-}
 
 /**
  * One complete comic (every eligible page in natural order) for the reader.
@@ -187,21 +37,12 @@ export interface GalleryComicRequest {
  * arrays cross the wire; the payload size depends on that comic alone.
  */
 export const getGalleryComic = createServerFn({ method: "GET" })
-  .validator(galleryComicRequestSchema)
-  .handler(async ({ data }): Promise<ComicEntry<LibraryMediaItem>> => {
+  .validator(GalleryComicRequestSchema)
+  .handler(async ({ data }): Promise<GalleryComic> => {
     await assertWebSessionAuthorized();
 
-    const currentPath = normalizeLibraryPath(data.path);
-    const comicId = normalizeLibraryPath(data.comicId);
     const { readDatabaseGalleryComic } = await import("../../server/library/comic-listing");
-
-    const comic = await readDatabaseGalleryComic({
-      comicId,
-      currentPath,
-      query: normalizeQuery(data.query),
-      showImages: data.showImages ?? true,
-      showVideos: data.showVideos ?? true,
-    });
+    const comic = await readDatabaseGalleryComic(normalizeComicRequest(data));
 
     if (!comic) {
       throw new Error("Comic not found");
@@ -211,36 +52,21 @@ export const getGalleryComic = createServerFn({ method: "GET" })
   });
 
 export const getLibrarySnapshot = createServerFn({ method: "GET" })
-  .validator(libraryRequestSchema)
+  .validator(LibrarySnapshotRequestSchema)
   .handler(async ({ data }): Promise<LibrarySnapshot> => {
     await assertWebSessionAuthorized();
 
-    return readLibrarySnapshotRequest(data);
+    const { readDatabaseLibrarySnapshot } = await import("../../server/library/repository");
+
+    return readDatabaseLibrarySnapshot(normalizeSnapshotRequest(data));
   });
 
-function normalizeLibraryPath(path: string | undefined): string {
-  return trimTrailingSlash(toArchivePath(path ?? ""));
-}
+export const deleteLibraryEntry = createServerFn({ method: "POST" })
+  .validator(z.object({ entryId: z.uuid() }))
+  .handler(async ({ data }): Promise<{ deleted: boolean }> => {
+    await assertWebSessionAuthorized();
 
-/**
- * Excludes ride the request only while the (comic-folded) recursive flag is
- * on (Plan 054, Decision 3); otherwise the field is dropped before it reaches
- * the conditions. Entries get the same normalization as `path` and nothing
- * more: `buildLibraryConditions` owns the direct-child guard and the dedupe.
- */
-function normalizeExcludedPaths(
-  excludedPaths: readonly string[] | undefined,
-  recursive: boolean,
-): string[] | undefined {
-  if (!recursive || !excludedPaths || excludedPaths.length === 0) {
-    return undefined;
-  }
+    const { softDeleteLibraryEntry } = await import("../../server/library/repository");
 
-  return excludedPaths.map((path) => normalizeLibraryPath(path));
-}
-
-function normalizeQuery(query: string | undefined): string | undefined {
-  const trimmed = query?.trim();
-
-  return trimmed ? trimmed : undefined;
-}
+    return { deleted: await softDeleteLibraryEntry({ entryId: data.entryId }) };
+  });

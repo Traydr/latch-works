@@ -5,16 +5,21 @@ import { FIXTURE_ITEMS, fixtureComics, fixtureFolderPaths } from "../../src/fixt
 import { expectEntryCount, gotoBrowse, readCardPaths } from "../../src/pane-view.ts";
 
 const SyncRunSchema = z.object({ syncRunId: z.string() });
+const EMPTY_COUNTS = { delete: 0, keep: 0, update: 0, upload: 0 };
 
 test.describe("sync guards", () => {
   test("a wrong sync token is refused and creates no run", async ({ request }) => {
     const response = await request.post("/api/sync/runs", {
-      data: { sourceRoot: "e2e" },
+      data: { counts: EMPTY_COUNTS, sourceRoot: "e2e" },
       headers: { Authorization: "Bearer not-the-token" },
     });
 
     expect(response.status()).toBe(401);
-    const missing = await request.post("/api/sync/runs", { data: { sourceRoot: "e2e" } });
+
+    const missing = await request.post("/api/sync/runs", {
+      data: { counts: EMPTY_COUNTS, sourceRoot: "e2e" },
+    });
+
     expect(missing.status()).toBe(401);
   });
 
@@ -23,7 +28,7 @@ test.describe("sync guards", () => {
     request,
   }) => {
     const started = await request.post("/api/sync/runs", {
-      data: { sourceRoot: "e2e-guard" },
+      data: { counts: EMPTY_COUNTS, sourceRoot: "e2e-guard" },
       headers: { Authorization: `Bearer ${PANE_VIEW_CREDENTIALS.syncToken}` },
     });
 
@@ -42,9 +47,10 @@ test.describe("stats", () => {
   test("the stats page reports the active entry count", async ({ page }) => {
     await page.goto("/stats");
     await expect(page.getByRole("heading", { name: "Archive stats" })).toBeVisible();
-    const active = page.locator("p", { hasText: /^Active entries$/ }).locator("..");
-    await expect(active).toContainText(String(FIXTURE_ITEMS.length));
-    await expect(page.locator("p", { hasText: /^Folders$/ }).locator("..")).toContainText(
+    await expect(page.getByRole("region", { name: "Active entries", exact: true })).toContainText(
+      String(FIXTURE_ITEMS.length),
+    );
+    await expect(page.getByRole("region", { name: "Folders", exact: true })).toContainText(
       String(fixtureFolderPaths().length),
     );
   });

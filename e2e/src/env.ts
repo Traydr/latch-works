@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,27 +7,47 @@ import { z } from "zod";
 /**
  * The e2e suite runs against the local compose stack (docs/localhost) but on
  * its own database and bucket, so a run never touches the developer's synced
- * archive. Connection details come from the repo-root `.env` when present,
- * falling back to the compose defaults.
+ * archive. The stack itself is described in e2e/stack.json; connection details
+ * come from the repo-root `.env` when present, falling back to the compose defaults.
  */
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 const E2E_ROOT = path.join(REPO_ROOT, "e2e");
 
-export const FIXTURE_ARCHIVE_DIR = path.join(E2E_ROOT, ".fixtures", "archive");
+const StackSchema = z.object({
+  paneView: z.object({
+    port: z.number().int(),
+    username: z.string(),
+    password: z.string(),
+    syncToken: z.string(),
+  }),
+  database: z.string(),
+  bucket: z.string(),
+  fixtures: z.object({ archive: z.string(), lockstepSource: z.string() }),
+});
+
+const STACK = StackSchema.parse(
+  JSON.parse(readFileSync(path.join(E2E_ROOT, "stack.json"), "utf8")),
+);
+
+export const FIXTURE_ARCHIVE_DIR = path.join(E2E_ROOT, STACK.fixtures.archive);
 
 /** A second, tiny archive Oriel's Sync stack test pushes on top of the seeded one. */
-export const LOCKSTEP_SOURCE_DIR = path.join(E2E_ROOT, ".fixtures", "lockstep-source");
+export const LOCKSTEP_SOURCE_DIR = path.join(E2E_ROOT, STACK.fixtures.lockstepSource);
 
 export const AUTH_STATE_PATH = path.join(E2E_ROOT, ".auth", "pane-view.json");
 
-const PANE_VIEW_PORT = 3100;
+export const PANE_VIEW_URL = `http://127.0.0.1:${STACK.paneView.port}`;
 
-export const PANE_VIEW_URL = `http://127.0.0.1:${PANE_VIEW_PORT}`;
+export const E2E_DATABASE_NAME = STACK.database;
 
-export const E2E_DATABASE_NAME = "latch_works_e2e";
+export const E2E_BUCKET = STACK.bucket;
 
-export const E2E_BUCKET = "latch-works-e2e";
+export const PANE_VIEW_CREDENTIALS = {
+  password: STACK.paneView.password,
+  syncToken: STACK.paneView.syncToken,
+  username: STACK.paneView.username,
+};
 
 const DotEnvSchema = z.object({
   DATABASE_URL: z.url().default("postgres://user:password@localhost:5432/latch_works"),
@@ -35,18 +56,6 @@ const DotEnvSchema = z.object({
   S3_REGION: z.string().default("auto"),
   S3_SECRET_ACCESS_KEY: z.string().default("rustfsadmin"),
 });
-
-export interface PaneViewCredentials {
-  password: string;
-  syncToken: string;
-  username: string;
-}
-
-export const PANE_VIEW_CREDENTIALS: PaneViewCredentials = {
-  password: "e2e-password-with-length",
-  syncToken: "e2e-sync-token-0123456789abcdef",
-  username: "e2e",
-};
 
 export interface E2eEnvironment {
   /** Connection to the maintenance database, used to create/drop the e2e one. */
@@ -114,7 +123,7 @@ export function paneViewProcessEnv(environment: E2eEnvironment): NodeJS.ProcessE
     PANE_VIEW_SYNC_TOKEN: PANE_VIEW_CREDENTIALS.syncToken,
     PANE_VIEW_TRUST_PROXY_HEADERS: "false",
     PANE_VIEW_USERNAME: PANE_VIEW_CREDENTIALS.username,
-    PORT: String(PANE_VIEW_PORT),
+    PORT: String(STACK.paneView.port),
     S3_ACCESS_KEY_ID: environment.s3.accessKeyId,
     S3_BUCKET: E2E_BUCKET,
     S3_ENDPOINT: environment.s3.endpoint,

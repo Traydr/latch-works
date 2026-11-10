@@ -3,8 +3,8 @@ import type {
   LibraryWipeJobProgress,
   ShutterSourcePurgeJobProgress,
   SoftDeletedPurgeJobProgress,
-} from "../../server/db/schema";
-import type { CleanupJobStatus } from "../../server/management/cleanup-worker";
+} from "@/lib/library-jobs";
+import type { CleanupJobStatus } from "./management-contract";
 
 interface CleanupJobProgressProps {
   cancelError: string | null;
@@ -42,11 +42,7 @@ export function CleanupJobProgress({
   const isWipe = job.type === "library_hard_wipe";
   const isShutterPurge = job.type === "shutter_source_purge";
 
-  const phaseLabel = isWipe
-    ? phaseLabels[job.progress.phase]
-    : isShutterPurge
-      ? shutterPhaseLabels[job.progress.phase]
-      : purgePhaseLabels[job.progress.phase];
+  const progress = describeProgress(job);
 
   const jobTitle = isWipe
     ? "Library wipe cleanup"
@@ -89,18 +85,20 @@ export function CleanupJobProgress({
         </div>
       </div>
 
-      <div className="space-y-1">
-        <div className="flex justify-between text-xs text-muted-foreground">
-          <span>{phaseLabel}</span>
-          <span className="tabular-nums">{job.progress.processedCount} processed</span>
+      {progress ? (
+        <div className="space-y-1">
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>{progress.label}</span>
+            <span className="tabular-nums">{progress.processedCount} processed</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full bg-amber-500 transition-[width]"
+              style={{ width: `${progress.percent}%` }}
+            />
+          </div>
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full bg-amber-500 transition-[width]"
-            style={{ width: `${estimateProgress(job)}%` }}
-          />
-        </div>
-      </div>
+      ) : null}
 
       {job.error ? <p className="text-xs text-destructive">{job.error}</p> : null}
       {cancelError ? <p className="text-xs text-destructive">{cancelError}</p> : null}
@@ -108,29 +106,41 @@ export function CleanupJobProgress({
   );
 }
 
-function estimateProgress(job: CleanupJobStatus): number {
-  if (job.type === "shutter_source_purge") {
-    if (job.status === "completed") return 100;
+/** The phase, count and estimated share done; null when the stored progress was unreadable. */
+function describeProgress(
+  job: CleanupJobStatus,
+): { label: string; percent: number; processedCount: number } | null {
+  if (job.progress === null) return null;
 
-    return { completed: 100, queue_sources: 25, shutter_sources: 60 }[job.progress.phase];
+  const done = job.status === "completed";
+  const { processedCount } = job.progress;
+
+  if (job.type === "shutter_source_purge") {
+    const { phase } = job.progress;
+    const weights = { completed: 100, queue_sources: 25, shutter_sources: 60 };
+
+    return {
+      label: shutterPhaseLabels[phase],
+      percent: done ? 100 : weights[phase],
+      processedCount,
+    };
   }
 
   if (job.type === "soft_deleted_purge") {
-    if (job.status === "completed") return 100;
+    const { phase } = job.progress;
+    const weights = { completed: 100, db_hard_delete: 85, orphaned_media: 35 };
 
-    return { completed: 100, db_hard_delete: 85, orphaned_media: 35 }[job.progress.phase];
+    return { label: purgePhaseLabels[phase], percent: done ? 100 : weights[phase], processedCount };
   }
 
-  const phaseWeights = {
+  const { phase } = job.progress;
+
+  const weights = {
     completed: 100,
     db_hard_delete: 90,
     s3_originals: 40,
     s3_orphan_sweep: 75,
   } satisfies Record<LibraryWipeJobProgress["phase"], number>;
 
-  if (job.status === "completed") {
-    return 100;
-  }
-
-  return phaseWeights[job.progress.phase];
+  return { label: phaseLabels[phase], percent: done ? 100 : weights[phase], processedCount };
 }

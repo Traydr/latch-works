@@ -1,13 +1,14 @@
 import { type GallerySortMode, GallerySortModeSchema } from "@latch-works/media-domain";
 import { describe, expect, it } from "vitest";
+import {
+  entryMedia,
+  type GalleryListingPage,
+  type GalleryRandomSeed,
+  normalizeListingRequest,
+} from "@/features/library/listing-contract";
 import { libraryEntries, mediaObjects } from "../db/schema";
 import { readDatabaseComicListing } from "./comic-listing";
-import type { GalleryListingPage } from "./gallery-listing";
-import {
-  type GalleryRandomSeed,
-  galleryRandomOrderKey,
-  galleryRandomOrderKeySql,
-} from "./gallery-order";
+import { galleryRandomOrderKey, galleryRandomOrderKeySql } from "./gallery-order";
 import { readDatabaseGalleryListing } from "./repository";
 import { type TestDatabase, testDatabaseForSuite } from "./test-db";
 
@@ -50,7 +51,6 @@ async function seed(database: TestDatabase): Promise<void> {
         mediaObjectId: object.id,
         mtimeMs: 1_700_000_000_000 + Math.floor(index / 3) * 1_000,
         parentPath: folder,
-        size: 1024,
       });
     }
   }
@@ -147,20 +147,22 @@ describe("gallery keyset paging", () => {
     it(`media pages follow the ${sortMode} order without skipping or repeating an entry`, async () => {
       const read = (limit: number, cursor?: string) =>
         readDatabaseGalleryListing(
-          {
-            currentPath: "",
-            cursor,
+          normalizeListingRequest({
             limit,
             randomSeed,
             recursive: true,
             showImages: true,
             showVideos: true,
             sortMode,
-          },
+          }),
+          cursor,
           testDatabase().db,
         );
 
-      const whole = (await read(200)).media.map((item) => item.path);
+      const mediaPaths = (page: GalleryListingPage) =>
+        page.entries.flatMap((entry) => entryMedia(entry)?.path ?? []);
+
+      const whole = mediaPaths(await read(200));
       const pages = await readAllPages((cursor) => read(4, cursor));
 
       const seeded = await testDatabase()
@@ -174,30 +176,33 @@ describe("gallery keyset paging", () => {
 
       expect(whole).toEqual(expectedMediaOrder(sortMode, seeded));
       expect(pages.length).toBeGreaterThan(1);
-      expect(pages.flatMap((page) => page.media.map((item) => item.path))).toEqual(whole);
+      expect(pages.flatMap(mediaPaths)).toEqual(whole);
     });
 
     it(`comic pages in ${sortMode} order neither skip nor repeat a comic`, async () => {
       const read = (limit: number, cursor?: string) =>
         readDatabaseComicListing(
-          {
-            currentPath: "",
-            cursor,
+          normalizeListingRequest({
+            comicMode: true,
             limit,
             randomSeed,
             showImages: true,
             showVideos: true,
             sortMode,
-          },
+          }),
+          cursor,
           testDatabase().db,
         );
 
-      const whole = (await read(200)).comics.map((comic) => comic.id);
+      const comicIds = (page: GalleryListingPage) =>
+        page.entries.flatMap((entry) => (entry.kind === "comic" ? [entry.comic.id] : []));
+
+      const whole = comicIds(await read(200));
       const pages = await readAllPages((cursor) => read(2, cursor));
 
       expect([...whole].sort()).toEqual([...comicFolders].sort());
       expect(pages.length).toBeGreaterThan(1);
-      expect(pages.flatMap((page) => page.comics.map((comic) => comic.id))).toEqual(whole);
+      expect(pages.flatMap(comicIds)).toEqual(whole);
     });
   }
 

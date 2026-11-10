@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { testDatabaseForSuite } from "../library/test-db";
-import { libraryEntries, mediaObjects, shutterSourceCleanup } from "./schema";
+import { mediaObjects, shutterSourceCleanup } from "./schema";
 
 /**
  * Hashes are compared as text (the purge queue against media rows, a sync
@@ -44,29 +44,5 @@ describe("sha256 columns", () => {
     await expect(
       db.insert(shutterSourceCleanup).values({ sha256: uppercaseHash }),
     ).rejects.toMatchObject(violating("shutter_source_cleanup_sha256_lowercase"));
-  });
-
-  it("reject a library entry hash that is not lowercase", async () => {
-    const { db } = testDatabase();
-
-    const [media] = await db
-      .insert(mediaObjects)
-      .values(mediaObject(lowercaseHash))
-      .returning({ id: mediaObjects.id });
-
-    if (!media) throw new Error("failed to insert media object");
-
-    const entry = {
-      filename: "photo.jpg",
-      logicalPath: "photo.jpg",
-      mediaObjectId: media.id,
-      mtimeMs: 1_700_000_000_000,
-    };
-
-    await expect(
-      db.insert(libraryEntries).values({ ...entry, sha256: uppercaseHash }),
-    ).rejects.toMatchObject(violating("library_entries_sha256_lowercase"));
-    await db.insert(libraryEntries).values({ ...entry, sha256: lowercaseHash });
-    await db.insert(shutterSourceCleanup).values({ sha256: lowercaseHash });
   });
 });

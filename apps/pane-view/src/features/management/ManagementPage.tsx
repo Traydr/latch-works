@@ -74,7 +74,7 @@ export function ManagementPage() {
         ? `${softDeletedFolders.toLocaleString()} deleted folder${softDeletedFolders === 1 ? "" : "s"}`
         : `${reclaimableOriginals.toLocaleString()} unused original${reclaimableOriginals === 1 ? "" : "s"}`;
 
-  const shutterPurge = overview?.shutterPurge;
+  const shutterEnabled = overview?.shutterEnabled;
   const maintenanceBlocked = Boolean(runningSyncCount > 0 || overview?.activeCleanupJob);
 
   const blockReason =
@@ -366,22 +366,14 @@ export function ManagementPage() {
             Delete Shutter sources associated only with soft-deleted items. This can run before or
             after Pane View storage cleanup, and never targets media referenced by an active item.
           </p>
-          {shutterPurge === "off" ? (
+          {shutterEnabled === false ? (
             <p className="text-sm text-muted-foreground">
               Shutter is not configured on this server, so there is nothing to purge.
             </p>
           ) : null}
-          {shutterPurge === "incomplete" ? (
-            <p className="text-sm text-destructive">
-              Shutter is partly configured: purging needs SHUTTER_CONTROL_URL, SHUTTER_SPACE_ID, and
-              SHUTTER_SPACE_API_TOKEN. Library wipes are refused until they are set.
-            </p>
-          ) : null}
           <Button
             disabled={
-              maintenanceBlocked ||
-              shutterPurge !== "ready" ||
-              purgeShutterSourcesMutation.isPending
+              maintenanceBlocked || !shutterEnabled || purgeShutterSourcesMutation.isPending
             }
             onClick={() => void handlePurgeShutterSources()}
             type="button"

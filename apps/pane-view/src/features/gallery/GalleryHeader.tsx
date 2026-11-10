@@ -1,3 +1,4 @@
+import { getParentPath } from "@latch-works/media-domain";
 import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
 import { type FormEvent, Fragment, type JSX, useMemo } from "react";
 import {
@@ -12,13 +13,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { buildBreadcrumbItems, getParentPath } from "@/features/gallery/browse-search";
+import { buildBreadcrumbItems } from "@/features/gallery/browse-search";
+
+/** The breadcrumb label for the archive root. */
+const ARCHIVE_ROOT_LABEL = "Synced archive";
 
 type Breadcrumbs = ReturnType<typeof buildBreadcrumbItems>;
 
 export interface GalleryHeaderProps {
   /** The archive root's label. */
-  archiveRoot: string;
   canNavigateSiblings: boolean;
   displayPath: string;
   isMobile: boolean;
@@ -36,7 +39,6 @@ export interface GalleryHeaderProps {
 
 /** The page's top bar: the folder path, search, and the preview-panel toggle. */
 export function GalleryHeader({
-  archiveRoot,
   canNavigateSiblings,
   displayPath,
   isMobile,
@@ -60,14 +62,13 @@ export function GalleryHeader({
           <SidebarTrigger className="-ml-1 shrink-0" />
           {isMobile ? (
             <MobilePathHeader
-              currentFolderName={breadcrumbs[breadcrumbs.length - 1]?.label ?? archiveRoot}
+              currentFolderName={breadcrumbs[breadcrumbs.length - 1]?.label ?? ARCHIVE_ROOT_LABEL}
               displayPath={displayPath}
               onNavigateToPath={onNavigateToPath}
               onOpenPathSheet={() => onPathSheetOpenChange(true)}
             />
           ) : (
             <DesktopPathHeader
-              archiveRoot={archiveRoot}
               breadcrumbs={breadcrumbs}
               canNavigateSiblings={canNavigateSiblings}
               displayPath={displayPath}
@@ -116,7 +117,6 @@ export function GalleryHeader({
         </div>
       </header>
       <PathSheet
-        archiveRoot={archiveRoot}
         breadcrumbs={breadcrumbs}
         onNavigateToPath={onNavigateToPath}
         onOpenChange={onPathSheetOpenChange}
@@ -165,14 +165,12 @@ function MobilePathHeader({
 }
 
 function DesktopPathHeader({
-  archiveRoot,
   breadcrumbs,
   canNavigateSiblings,
   displayPath,
   onNavigateSiblingFolder,
   onNavigateToPath,
 }: {
-  archiveRoot: string;
   breadcrumbs: Breadcrumbs;
   canNavigateSiblings: boolean;
   displayPath: string;
@@ -184,7 +182,7 @@ function DesktopPathHeader({
       <div className="hidden items-center gap-1 md:flex">
         <Button
           disabled={!displayPath}
-          onClick={() => onNavigateToPath(getParentPath(displayPath) ?? "")}
+          onClick={() => onNavigateToPath(getParentPath(displayPath))}
           size="sm"
           type="button"
           variant="outline"
@@ -220,7 +218,7 @@ function DesktopPathHeader({
                 onClick={() => onNavigateToPath("")}
                 type="button"
               >
-                {archiveRoot}
+                {ARCHIVE_ROOT_LABEL}
               </button>
             </BreadcrumbLink>
           </BreadcrumbItem>
@@ -255,13 +253,11 @@ function DesktopPathHeader({
 
 /** The phone's folder path: one row per level, the archive root first. */
 function PathSheet({
-  archiveRoot,
   breadcrumbs,
   onNavigateToPath,
   onOpenChange,
   open,
 }: {
-  archiveRoot: string;
   breadcrumbs: Breadcrumbs;
   onNavigateToPath: (path: string) => void;
   onOpenChange: (open: boolean) => void;
@@ -284,7 +280,7 @@ function PathSheet({
             onClick={() => navigateAndClose("")}
             type="button"
           >
-            {archiveRoot}
+            {ARCHIVE_ROOT_LABEL}
           </button>
           {breadcrumbs.map((crumb) => (
             <button

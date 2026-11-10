@@ -1,39 +1,38 @@
+/*
+ * Pane View's reading of the sync request bodies. Each schema extends the shape the Lockstep
+ * clients send (`@latch-works/sync-protocol`) with the server's stricter checks and the error
+ * texts its 400 answers carry; the clients' own wire vectors (wire.json) must all pass.
+ */
 import {
   canonicalizeExtension,
   getBaseName,
   getExtension,
   isSupportedMediaFile,
-  type MediaType,
   toArchivePath,
   trimTrailingSlash,
 } from "@latch-works/media-domain";
-import { originalObjectKey } from "@latch-works/media-storage";
+import {
+  ArchiveMediaTypeSchema,
+  CompleteObjectRequestSchema,
+  CompleteSyncRunRequestSchema,
+  CreateSyncRunRequestSchema,
+  contentTypeForExtension,
+  DeleteObjectRequestSchema,
+  MAX_SYNC_UPLOAD_BYTES,
+  originalObjectKey,
+  SHA256_PATTERN,
+  SyncRunStatusSchema,
+  UploadUrlRequestSchema,
+} from "@latch-works/sync-protocol";
 import { z } from "zod";
+import type { JsonValue } from "@/lib/json";
+import type { CompleteObjectInput, RemoteDeleteInput } from "./store";
+import type { FinalizeSyncRunBody, StartSyncRunInput } from "./sync-runs";
 
-interface SyncObjectPayload {
-  contentType: string;
-  extension: string;
-  filename: string;
-  logicalPath: string;
-  mediaType: MediaType;
-  mtimeMs: number;
-  objectKey: string;
-  sha256: string;
-  size: number;
-  syncRunId: string;
-}
+export type ParsedSyncBody<Body> = { ok: true; body: Body } | { ok: false; error: string };
 
-export type SyncObjectValidationResult =
-  | { ok: true; input: SyncObjectPayload }
-  | { ok: false; error: string };
-
-export const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
-
-/** S3 single-PUT object size limit (multipart required above this). */
-export const MAX_SYNC_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;
-
-/** Per-action counts a sync run reports (`upload`, `keep`, ...); stored as jsonb. */
-export const SyncRunCountsSchema = z.record(z.string(), z.number(), {
+/** Pane View stores whatever counts a client reports and shows them as they are. */
+const SyncRunCountsSchema = z.record(z.string(), z.number(), {
   error: "counts must be an object of numbers",
 });
 
@@ -53,8 +52,7 @@ const truncatedSafeIntegerSchema = (label: string) =>
     .transform(Math.trunc)
     .refine(Number.isSafeInteger, `${label} must be a valid integer`);
 
-/** Declared upload size: required, a non-negative safe integer, within the single-PUT limit. */
-export const UploadSizeSchema = z
+const uploadSizeSchema = z
   .number({
     error: (issue) =>
       issue.input === undefined || issue.input === null
@@ -71,102 +69,170 @@ export const UploadSizeSchema = z
     `size must not exceed ${MAX_SYNC_UPLOAD_BYTES} bytes`,
   );
 
-/**
- * The declared fields of a completed-object payload, in the order their
- * errors are reported. Cross-field rules (filename vs. logicalPath, derived
- * object key, content type) follow in validateSyncObjectPayload.
- */
-const SyncObjectPayloadBodySchema = z.object({
-  mediaType: z.enum(["image", "gif", "video", "pdf"], {
+const SHA256_ERROR = "sha256 must be a 64-character hex string";
+
+const UploadUrlBodySchema = UploadUrlRequestSchema.extend({
+  filename: z.string({ error: "filename and sha256 are required" }).min(1, {
+    error: "filename and sha256 are required",
+  }),
+  sha256: z
+    .string({ error: "filename and sha256 are required" })
+    .min(1, { error: "filename and sha256 are required" })
+    .regex(SHA256_PATTERN, { error: SHA256_ERROR }),
+  size: uploadSizeSchema,
+  contentType: z.string({ error: "contentType is required" }),
+});
+
+const UploadedObjectBodySchema = CompleteObjectRequestSchema.extend({
+  action: z.literal("upload").optional(),
+  mediaType: z.enum(ArchiveMediaTypeSchema.options, {
     error: (issue) =>
       issue.input === "unknown" ? "unsupported media type" : "mediaType is invalid",
   }),
-  // One content hash, one spelling: the storage key is derived from the
-  // lowercase hash, so a second spelling must not become a second media object.
+  // One content hash, one spelling: the storage key is derived from the lowercase hash, so a
+  // second spelling must not become a second media object.
   sha256: z
     .string({ error: "sha256 is required" })
-    .regex(SHA256_PATTERN, {
-      error: "sha256 must be a 64-character hex string",
-    })
+    .regex(SHA256_PATTERN, { error: SHA256_ERROR })
     .transform((sha256) => sha256.toLowerCase()),
   logicalPath: z.string({ error: "logicalPath is required" }),
   filename: z.string({ error: "filename is required" }),
   extension: z.string({ error: "extension is required" }),
   mtimeMs: truncatedSafeIntegerSchema("mtimeMs"),
-  size: UploadSizeSchema,
-  objectKey: z.string({ error: "objectKey must be a string" }).optional(),
+  size: uploadSizeSchema,
+  objectKey: z.string({ error: "objectKey is required" }),
   contentType: z.string({ error: "contentType is required" }),
   syncRunId: syncRunIdSchema("syncRunId is required"),
 });
 
-export type SyncObjectPayloadBody = z.infer<typeof SyncObjectPayloadBodySchema>;
+const RemoteDeleteBodySchema = DeleteObjectRequestSchema.extend({
+  logicalPath: z.string({ error: "logicalPath and syncRunId are required" }),
+  syncRunId: syncRunIdSchema("logicalPath and syncRunId are required"),
+});
 
-/** The complete-object route body: a remote delete, or (the default) an uploaded object. */
-export const CompleteObjectBodySchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("delete"),
-    logicalPath: z.string({ error: "logicalPath and syncRunId are required" }),
-    syncRunId: syncRunIdSchema("logicalPath and syncRunId are required"),
-  }),
-  SyncObjectPayloadBodySchema.extend({ action: z.literal("upload").optional() }),
+/** A remote delete, or (without `action`) an uploaded object. */
+const CompleteObjectBodySchema = z.discriminatedUnion("action", [
+  RemoteDeleteBodySchema,
+  UploadedObjectBodySchema,
 ]);
 
-export function expectedContentTypeForExtension(extension: string): string {
-  switch (extension.toLowerCase()) {
-    case "jpg":
-    case "jpeg":
-      return "image/jpeg";
-    case "png":
-      return "image/png";
-    case "webp":
-      return "image/webp";
-    case "gif":
-      return "image/gif";
-    case "avif":
-      return "image/avif";
-    case "mp4":
-    case "m4v":
-      return "video/mp4";
-    case "webm":
-      return "video/webm";
-    case "mov":
-      return "video/quicktime";
-    case "pdf":
-      return "application/pdf";
-    default:
-      return "application/octet-stream";
+const CreateSyncRunBodySchema = CreateSyncRunRequestSchema.extend({
+  counts: SyncRunCountsSchema,
+  sourceRoot: z.string({ error: "sourceRoot must be a string" }),
+});
+
+const FinalizeSyncRunBodySchema = CompleteSyncRunRequestSchema.extend({
+  counts: SyncRunCountsSchema,
+  error: z.string({ error: "error must be a string" }).optional(),
+  status: z.enum(SyncRunStatusSchema.options, {
+    error: "status must be completed, failed, or cancelled",
+  }),
+});
+
+/**
+ * The first issue as one line. Top-level fields carry messages that name themselves; nested
+ * paths (record entries) are prefixed.
+ */
+function describeFirstIssue(error: z.ZodError): string {
+  const issue = error.issues[0];
+
+  if (!issue) {
+    return "invalid request body";
   }
+
+  return issue.path.length > 1
+    ? `${issue.path.map(String).join(".")}: ${issue.message}`
+    : issue.message;
 }
 
-export function validateSyncContentType(extension: string, contentType: string): string | null {
-  const expected = expectedContentTypeForExtension(extension);
+function parseWith<Schema extends z.ZodType>(
+  schema: Schema,
+  json: JsonValue,
+): ParsedSyncBody<z.output<Schema>> {
+  const result = schema.safeParse(json);
 
-  if (contentType !== expected) {
-    return "contentType does not match extension";
-  }
-
-  return null;
+  return result.success
+    ? { ok: true, body: result.data }
+    : { ok: false, error: describeFirstIssue(result.error) };
 }
 
-export function validateSyncObjectPayload(body: SyncObjectPayloadBody): SyncObjectValidationResult {
-  const logicalPath = normalizeSyncLogicalPath(body.logicalPath);
-  const pathError = validateSyncLogicalPath(logicalPath);
+function contentTypeError(extension: string, contentType: string): string | null {
+  return contentType === contentTypeForExtension(extension)
+    ? null
+    : "contentType does not match extension";
+}
 
-  if (pathError) {
-    return { ok: false, error: pathError };
+/** A logical path as the archive stores it, or why the archive cannot hold it. */
+export function parseSyncLogicalPath(path: string): ParsedSyncBody<string> {
+  const logicalPath = trimTrailingSlash(toArchivePath(path));
+
+  if (!logicalPath) {
+    return { ok: false, error: "logicalPath must not be empty" };
   }
 
+  if (logicalPath.split("/").some((segment) => segment === "..")) {
+    return { ok: false, error: "logicalPath must not contain parent segments" };
+  }
+
+  return { ok: true, body: logicalPath };
+}
+
+/** What `POST /api/sync/upload-url` signs: the derived object key and the content type. */
+export interface UploadTargetInput {
+  contentType: string;
+  objectKey: string;
+  sha256: string;
+  size: number;
+}
+
+export function parseUploadUrlBody(json: JsonValue): ParsedSyncBody<UploadTargetInput> {
+  const parsed = parseWith(UploadUrlBodySchema, json);
+
+  if (!parsed.ok) return parsed;
+
+  const { contentType, filename, sha256, size } = parsed.body;
+
+  if (!isSupportedMediaFile(filename)) {
+    return { ok: false, error: "unsupported media filename" };
+  }
+
+  const extension = getExtension(filename);
+  const error = contentTypeError(extension, contentType);
+
+  if (error) return { ok: false, error };
+
+  return {
+    ok: true,
+    body: {
+      contentType,
+      objectKey: originalObjectKey({ extension, sha256 }),
+      sha256,
+      size,
+    },
+  };
+}
+
+export type CompleteObjectBody =
+  | ({ action: "delete" } & RemoteDeleteInput)
+  | ({ action: "upload" } & CompleteObjectInput);
+
+function validateUploadedObject(
+  body: z.output<typeof UploadedObjectBodySchema>,
+): ParsedSyncBody<CompleteObjectInput> {
+  const path = parseSyncLogicalPath(body.logicalPath);
+
+  if (!path.ok) return path;
+
+  const logicalPath = path.body;
   const filename = body.filename;
-  const derivedFilename = getBaseName(logicalPath);
 
-  if (filename !== derivedFilename) {
+  if (filename !== getBaseName(logicalPath)) {
     return { ok: false, error: "filename must match logicalPath" };
   }
 
   const extension = canonicalizeExtension(body.extension);
-  const derivedExtension = getExtension(filename);
 
-  if (extension !== derivedExtension) {
+  if (extension !== getExtension(filename)) {
     return { ok: false, error: "extension must match filename" };
   }
 
@@ -174,33 +240,26 @@ export function validateSyncObjectPayload(body: SyncObjectPayloadBody): SyncObje
     return { ok: false, error: "unsupported media filename" };
   }
 
-  const derivedObjectKey = originalObjectKey({
-    extension,
-    sha256: body.sha256,
-  });
+  const objectKey = originalObjectKey({ extension, sha256: body.sha256 });
 
-  const objectKey = body.objectKey ?? derivedObjectKey;
-
-  if (objectKey !== derivedObjectKey) {
+  if (body.objectKey !== objectKey) {
     return { ok: false, error: "objectKey does not match derived storage key" };
   }
 
-  const contentTypeError = validateSyncContentType(extension, body.contentType);
+  const error = contentTypeError(extension, body.contentType);
 
-  if (contentTypeError) {
-    return { ok: false, error: contentTypeError };
-  }
+  if (error) return { ok: false, error };
 
   return {
     ok: true,
-    input: {
-      contentType: expectedContentTypeForExtension(extension),
+    body: {
+      contentType: body.contentType,
       extension,
       filename,
       logicalPath,
       mediaType: body.mediaType,
       mtimeMs: body.mtimeMs,
-      objectKey: derivedObjectKey,
+      objectKey,
       sha256: body.sha256,
       size: body.size,
       syncRunId: body.syncRunId,
@@ -208,38 +267,46 @@ export function validateSyncObjectPayload(body: SyncObjectPayloadBody): SyncObje
   };
 }
 
-export function normalizeSyncLogicalPath(path: string): string {
-  return trimTrailingSlash(toArchivePath(path));
+export function parseCompleteObjectBody(json: JsonValue): ParsedSyncBody<CompleteObjectBody> {
+  const parsed = parseWith(CompleteObjectBodySchema, json);
+
+  if (!parsed.ok) return parsed;
+
+  if (parsed.body.action === "delete") {
+    const path = parseSyncLogicalPath(parsed.body.logicalPath);
+
+    if (!path.ok) return path;
+
+    return {
+      ok: true,
+      body: { action: "delete", logicalPath: path.body, syncRunId: parsed.body.syncRunId },
+    };
+  }
+
+  const upload = validateUploadedObject(parsed.body);
+
+  return upload.ok ? { ok: true, body: { action: "upload", ...upload.body } } : upload;
 }
 
-export function validateSyncLogicalPath(logicalPath: string): string | null {
-  if (!logicalPath) {
-    return "logicalPath must not be empty";
-  }
+export function parseCreateSyncRunBody(json: JsonValue): ParsedSyncBody<StartSyncRunInput> {
+  const parsed = parseWith(CreateSyncRunBodySchema, json);
 
-  if (logicalPath.startsWith("/")) {
-    return "logicalPath must be a relative archive path";
-  }
+  if (!parsed.ok) return parsed;
 
-  if (logicalPath.endsWith("/")) {
-    return "logicalPath must not end with a slash";
-  }
-
-  if (logicalPath.split("/").some((segment) => segment === "..")) {
-    return "logicalPath must not contain parent segments";
-  }
-
-  return null;
+  return { ok: true, body: { counts: parsed.body.counts, sourceRoot: parsed.body.sourceRoot } };
 }
 
-export function validateUploadFilename(filename: string): string | null {
-  if (!filename) {
-    return "filename is required";
-  }
+export function parseFinalizeSyncRunBody(json: JsonValue): ParsedSyncBody<FinalizeSyncRunBody> {
+  const parsed = parseWith(FinalizeSyncRunBodySchema, json);
 
-  if (!isSupportedMediaFile(filename)) {
-    return "unsupported media filename";
-  }
+  if (!parsed.ok) return parsed;
 
-  return null;
+  return {
+    ok: true,
+    body: {
+      counts: parsed.body.counts,
+      error: parsed.body.error ?? null,
+      status: parsed.body.status,
+    },
+  };
 }

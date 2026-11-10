@@ -6,6 +6,7 @@ import {
   DeleteObjectsCommand,
   HeadBucketCommand,
   ListObjectsV2Command,
+  NotFound,
   PutBucketCorsCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -63,7 +64,11 @@ async function ensureBucket(environment: E2eEnvironment): Promise<void> {
 
   try {
     await client.send(new HeadBucketCommand({ Bucket: E2E_BUCKET }));
-  } catch {
+  } catch (error) {
+    if (!(error instanceof NotFound)) {
+      throw error;
+    }
+
     await client.send(new CreateBucketCommand({ Bucket: E2E_BUCKET }));
   }
 

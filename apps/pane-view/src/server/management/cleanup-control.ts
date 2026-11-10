@@ -1,4 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { ACTIVE_MAINTENANCE_JOB_STATUSES } from "@/lib/library-jobs";
 import { type Database, db } from "../db";
 import { acquireMaintenanceJobClaim } from "../db/library-coordination-lock";
 import { maintenanceJobs } from "../db/schema";
@@ -45,7 +46,10 @@ function cancelOnceClaimed(jobId: string, database: Database): Promise<{ cancell
         status: "cancelled",
       })
       .where(
-        and(eq(maintenanceJobs.id, jobId), inArray(maintenanceJobs.status, ["pending", "running"])),
+        and(
+          eq(maintenanceJobs.id, jobId),
+          inArray(maintenanceJobs.status, [...ACTIVE_MAINTENANCE_JOB_STATUSES]),
+        ),
       )
       .returning({ id: maintenanceJobs.id });
 

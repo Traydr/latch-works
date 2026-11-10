@@ -88,19 +88,33 @@ test.describe("viewer", () => {
     await setSettingToggle(page, "Autoplay videos", false);
     await closeSettings(page);
 
+    // The viewer saves positions only once the item's remembered state has loaded, and the
+    // reopened viewer must read the saved one.
+    const stateLoaded = page.waitForResponse((response) => response.url().includes("subjectId"));
+
+    const positionSaved = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        (response.request().postData() ?? "").includes("positionMs"),
+    );
+
     const dialog = await openViewer(page, "videos/clip-a.mp4");
     const video = dialog.locator("video");
     await expect
       .poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState))
       .toBeGreaterThan(0);
+    await stateLoaded;
     await video.evaluate(async (element: HTMLVideoElement) => {
       element.currentTime = 2;
       await element.play();
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) =>
+        element.addEventListener("timeupdate", resolve, { once: true }),
+      );
       element.pause();
     });
     const paused = await video.evaluate((element: HTMLVideoElement) => element.currentTime);
     expect(paused).toBeGreaterThanOrEqual(2);
+    await positionSaved;
     await page.keyboard.press("Escape");
 
     const reopened = await openViewer(page, "videos/clip-a.mp4");
@@ -139,7 +153,7 @@ test.describe("viewer", () => {
     await gotoBrowse(page, { path: "docs" });
     const dialog = await openViewer(page, "docs/guide.pdf");
     await expect(dialog.getByText("guide.pdf · 3 pages")).toBeVisible();
-    await expect(dialog.locator("[data-page-number='3']")).toBeAttached();
+    await expect(dialog.getByRole("group", { name: "Page 3", exact: true })).toBeAttached();
     await page.keyboard.press("Escape");
   });
 
@@ -148,15 +162,16 @@ test.describe("viewer", () => {
   }) => {
     await gotoBrowse(page, { path: "docs" });
     const dialog = await openViewer(page, "docs/guide.pdf");
-    const webLink = dialog.locator("[data-page-number='1'] a[href='https://example.com/']");
+    const firstPage = dialog.getByRole("group", { name: "Page 1", exact: true });
+    const webLink = firstPage.getByRole("link", { name: "https://example.com/" });
     await expect(webLink).toHaveAttribute("target", "_blank");
 
     // The project's tall viewport shows every fixture page; a screen-sized one leaves page 3 below.
     await page.setViewportSize({ height: 900, width: 1400 });
-    const lastPage = dialog.locator("[data-page-number='3']");
+    const lastPage = dialog.getByRole("group", { name: "Page 3", exact: true });
     await expect(lastPage).not.toBeInViewport();
 
-    await dialog.locator("[data-page-number='1'] [data-internal-link] a").click();
+    await firstPage.getByRole("link", { name: "Go to page 3" }).click();
     await expect(lastPage).toBeInViewport({ ratio: 0.5 });
     await page.keyboard.press("Escape");
   });

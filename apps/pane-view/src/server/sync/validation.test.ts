@@ -1,69 +1,63 @@
+import { readVectors } from "@latch-works/conformance";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { JsonValue } from "@/lib/json";
-import { postCompleteObject } from "../../routes/api.sync.complete-object";
-import type { SyncRouteDependencies } from "./route-dependencies";
 import type { CompleteObjectInput } from "./store";
 import {
-  validateSyncContentType,
-  validateSyncLogicalPath,
-  validateUploadFilename,
+  type ParsedSyncBody,
+  parseCompleteObjectBody,
+  parseCreateSyncRunBody,
+  parseFinalizeSyncRunBody,
+  parseSyncLogicalPath,
+  parseUploadUrlBody,
 } from "./validation";
 
-const ErrorBodySchema = z.object({ error: z.string() });
+/** The bodies the Lockstep clients send, as lockstep-core's conformance suite writes them. */
+const WireVectorsSchema = z.object({
+  createRun: z.json(),
+  delete: z.json(),
+  finalize: z.array(z.object({ body: z.json(), name: z.string() })),
+  registrations: z.array(
+    z.object({
+      completeObject: z.json(),
+      name: z.string(),
+      uploadUrl: z.json(),
+    }),
+  ),
+});
 
-type UploadResult = { ok: true; input: CompleteObjectInput } | { ok: false; error: string };
+const wire = readVectors({ set: "lockstep-core", name: "wire.json" }, WireVectorsSchema);
 
-function unused(): never {
-  throw new Error("not reached by an upload");
-}
+const RegisteredObjectSchema = z.object({ logicalPath: z.string(), objectKey: z.string() });
 
-/**
- * Posts an upload body through the complete-object route with a stub store:
- * a 400 carries the validation error, and a 200 carries the input the store
- * would have written.
- */
-async function postUpload(body: JsonValue): Promise<UploadResult> {
-  let stored: CompleteObjectInput | undefined;
+describe("the bodies Lockstep sends", () => {
+  it.each(wire.registrations)("$name", ({ completeObject, uploadUrl }) => {
+    const { logicalPath, objectKey } = RegisteredObjectSchema.parse(completeObject);
 
-  const dependencies: SyncRouteDependencies = {
-    assertNoActiveCleanupJob: async () => undefined,
-    completeSyncedObject: async ({ input }) => {
-      stored = input;
+    expect(parseUploadUrlBody(uploadUrl)).toMatchObject({ ok: true, body: { objectKey } });
+    expect(parseCompleteObjectBody(completeObject)).toMatchObject({
+      ok: true,
+      body: { action: "upload", logicalPath, objectKey },
+    });
+  });
 
-      return { status: "database" };
-    },
-    createSignedUploadUrl: unused,
-    finalizeSyncRun: unused,
-    listRemoteSyncSnapshot: unused,
-    markRemoteDeleted: unused,
-    requireSyncApiToken: () => null,
-    startSyncRun: unused,
-  };
+  it("a remote delete", () => {
+    expect(parseCompleteObjectBody(wire.delete)).toMatchObject({
+      ok: true,
+      body: { action: "delete" },
+    });
+  });
 
-  const response = await postCompleteObject(
-    {
-      request: new Request("http://pane-view.test/api/sync/complete-object", {
-        body: JSON.stringify(body),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      }),
-    },
-    dependencies,
-  );
+  it("a run start", () => {
+    expect(parseCreateSyncRunBody(wire.createRun).ok).toBe(true);
+  });
 
-  if (response.status === 400) {
-    const { error } = ErrorBodySchema.parse(await response.json());
+  it.each(wire.finalize)("finalizing $name", ({ body }) => {
+    expect(parseFinalizeSyncRunBody(body).ok).toBe(true);
+  });
+});
 
-    return { ok: false, error };
-  }
-
-  if (!stored) {
-    throw new Error(`unexpected ${response.status} response`);
-  }
-
-  return { ok: true, input: stored };
-}
+const sha256 = "a".repeat(64);
 
 const validPayload = {
   contentType: "image/jpeg",
@@ -72,48 +66,56 @@ const validPayload = {
   logicalPath: "photos/cover.jpg",
   mediaType: "image",
   mtimeMs: 1_700_000_000_000,
-  sha256: "a".repeat(64),
+  objectKey: `originals/sha256/aa/aa/${sha256}.jpg`,
+  sha256,
   size: 128,
   syncRunId: "11111111-1111-4111-8111-111111111111",
 };
 
+function parseUpload(body: JsonValue): ParsedSyncBody<CompleteObjectInput> {
+  const parsed = parseCompleteObjectBody(body);
+
+  if (!parsed.ok) return parsed;
+
+  if (parsed.body.action === "delete") {
+    throw new Error("an upload parsed as a delete");
+  }
+
+  return { ok: true, body: parsed.body };
+}
+
 describe("POST /api/sync/complete-object", () => {
-  it("accepts a valid image ingest payload", async () => {
-    const result = await postUpload(validPayload);
-    expect(result.ok).toBe(true);
-
-    if (result.ok) {
-      expect(result.input.logicalPath).toBe("photos/cover.jpg");
-      expect(result.input.objectKey).toContain(validPayload.sha256);
-    }
-  });
-
-  it("rejects unknown media", async () => {
-    const result = await postUpload({ ...validPayload, mediaType: "unknown" });
+  it("rejects unknown media", () => {
+    const result = parseUpload({ ...validPayload, mediaType: "unknown" });
     expect(result).toEqual({ ok: false, error: "unsupported media type" });
   });
 
-  it("rejects invalid sha256 values", async () => {
-    const result = await postUpload({ ...validPayload, sha256: "abc" });
+  it("rejects invalid sha256 values", () => {
+    const result = parseUpload({ ...validPayload, sha256: "abc" });
     expect(result).toEqual({
       ok: false,
       error: "sha256 must be a 64-character hex string",
     });
   });
 
-  it("stores an uppercase sha256 in its canonical lowercase spelling", async () => {
-    const sha256 = "Ab".repeat(32);
-    const result = await postUpload({ ...validPayload, sha256 });
+  it("stores an uppercase sha256 in its canonical lowercase spelling", () => {
+    const mixedCase = "Ab".repeat(32);
+
+    const result = parseUpload({
+      ...validPayload,
+      objectKey: `originals/sha256/ab/ab/${mixedCase.toLowerCase()}.jpg`,
+      sha256: mixedCase,
+    });
 
     expect(result.ok).toBe(true);
 
     if (result.ok) {
-      expect(result.input.sha256).toBe(sha256.toLowerCase());
+      expect(result.body.sha256).toBe(mixedCase.toLowerCase());
     }
   });
 
-  it("rejects mismatched object keys", async () => {
-    const result = await postUpload({
+  it("rejects mismatched object keys", () => {
+    const result = parseUpload({
       ...validPayload,
       objectKey: "originals/sha256/00/00/wrong.jpg",
     });
@@ -124,8 +126,8 @@ describe("POST /api/sync/complete-object", () => {
     });
   });
 
-  it("rejects filename and logicalPath mismatches", async () => {
-    const result = await postUpload({
+  it("rejects filename and logicalPath mismatches", () => {
+    const result = parseUpload({
       ...validPayload,
       filename: "other.jpg",
     });
@@ -133,8 +135,8 @@ describe("POST /api/sync/complete-object", () => {
     expect(result).toEqual({ ok: false, error: "filename must match logicalPath" });
   });
 
-  it("rejects extension mismatches", async () => {
-    const result = await postUpload({
+  it("rejects extension mismatches", () => {
+    const result = parseUpload({
       ...validPayload,
       extension: "png",
     });
@@ -142,8 +144,8 @@ describe("POST /api/sync/complete-object", () => {
     expect(result).toEqual({ ok: false, error: "extension must match filename" });
   });
 
-  it("accepts jpeg extension aliases and stores them as jpg", async () => {
-    const result = await postUpload({
+  it("accepts jpeg extension aliases and stores them as jpg", () => {
+    const result = parseUpload({
       ...validPayload,
       extension: "jpeg",
       filename: "cover.jpeg",
@@ -153,15 +155,15 @@ describe("POST /api/sync/complete-object", () => {
     expect(result.ok).toBe(true);
 
     if (result.ok) {
-      expect(result.input.extension).toBe("jpg");
-      expect(result.input.objectKey).toBe(
+      expect(result.body.extension).toBe("jpg");
+      expect(result.body.objectKey).toBe(
         `originals/sha256/${validPayload.sha256.slice(0, 2)}/${validPayload.sha256.slice(2, 4)}/${validPayload.sha256}.jpg`,
       );
     }
   });
 
-  it("rejects unsupported filenames even when fields are internally consistent", async () => {
-    const result = await postUpload({
+  it("rejects unsupported filenames even when fields are internally consistent", () => {
+    const result = parseUpload({
       ...validPayload,
       extension: "txt",
       filename: "notes.txt",
@@ -172,8 +174,8 @@ describe("POST /api/sync/complete-object", () => {
     expect(result).toEqual({ ok: false, error: "unsupported media filename" });
   });
 
-  it("rejects mismatched content types", async () => {
-    const result = await postUpload({
+  it("rejects mismatched content types", () => {
+    const result = parseUpload({
       ...validPayload,
       contentType: "image/png",
     });
@@ -182,27 +184,24 @@ describe("POST /api/sync/complete-object", () => {
   });
 });
 
-describe("validateSyncContentType", () => {
-  it("rejects mismatched content types", () => {
-    expect(validateSyncContentType("jpg", "image/png")).toBe(
-      "contentType does not match extension",
-    );
-    expect(validateSyncContentType("jpg", "image/jpeg")).toBeNull();
+describe("parseSyncLogicalPath", () => {
+  it("rejects parent segments", () => {
+    expect(parseSyncLogicalPath("../outside.jpg")).toEqual({
+      ok: false,
+      error: "logicalPath must not contain parent segments",
+    });
   });
 });
 
-describe("validateSyncLogicalPath", () => {
-  it("rejects parent segments and trailing slashes", () => {
-    expect(validateSyncLogicalPath("../outside.jpg")).toBe(
-      "logicalPath must not contain parent segments",
-    );
-    expect(validateSyncLogicalPath("photos/")).toBe("logicalPath must not end with a slash");
-  });
-});
-
-describe("validateUploadFilename", () => {
+describe("POST /api/sync/upload-url", () => {
   it("rejects unsupported filenames", () => {
-    expect(validateUploadFilename("notes.txt")).toBe("unsupported media filename");
-    expect(validateUploadFilename("cover.jpg")).toBeNull();
+    expect(
+      parseUploadUrlBody({
+        contentType: "text/plain",
+        filename: "notes.txt",
+        sha256: "a".repeat(64),
+        size: 1,
+      }),
+    ).toEqual({ ok: false, error: "unsupported media filename" });
   });
 });

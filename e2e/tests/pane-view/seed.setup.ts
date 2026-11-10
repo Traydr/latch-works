@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { RemoteSnapshotResponseSchema } from "@latch-works/sync-protocol";
 import { expect, test as setup } from "@playwright/test";
-import { z } from "zod";
 import {
   AUTH_STATE_PATH,
   FIXTURE_ARCHIVE_DIR,
@@ -13,17 +13,13 @@ import {
 } from "../../src/env.ts";
 import { FIXTURE_ITEMS } from "../../src/fixture.ts";
 
-const SnapshotResponseSchema = z.object({
-  entries: z.array(z.object({ path: z.string(), sha256: z.string(), size: z.number() })),
-  status: z.string(),
-});
-
 /**
  * Seeds the freshly migrated e2e database by pushing the fixture archive with
  * the real Lockstep CLI — the Lockstep → Pane View roundtrip is the seed —
- * then signs in once and stores the session for every spec.
+ * then signs in once and stores the session for every spec. A run that fails
+ * exits non-zero, which rejects with its output.
  */
-function runLockstep(args: string[], home: string): Promise<string> {
+function runLockstep(args: string[], home: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const output: string[] = [];
 
@@ -44,7 +40,7 @@ function runLockstep(args: string[], home: string): Promise<string> {
     child.on("exit", (code) => {
       const text = output.join("");
 
-      if (code === 0) resolve(text);
+      if (code === 0) resolve();
       else reject(new Error(`lockstep ${args.join(" ")} exited with ${code}\n${text}`));
     });
   });
@@ -54,30 +50,28 @@ setup("push the fixture archive through Lockstep", async ({ request }) => {
   setup.setTimeout(300_000);
   const home = await mkdtemp(path.join(os.tmpdir(), "lockstep-e2e-home-"));
 
-  const output = await runLockstep(
-    ["push", "--source", FIXTURE_ARCHIVE_DIR, "--api-url", PANE_VIEW_URL, "--yes"],
-    home,
-  );
-
   // A reused server is already seeded (see playwright.config.ts); a fresh one takes the push.
-  expect(output).toMatch(/Push finished: \d+ change\(s\) applied\.|Nothing to push\./);
-
-  // A second push must find nothing to do: the remote snapshot matches the source.
-  const again = await runLockstep(
+  await runLockstep(
     ["push", "--source", FIXTURE_ARCHIVE_DIR, "--api-url", PANE_VIEW_URL, "--yes"],
     home,
   );
-
-  expect(again).toContain("Nothing to push.");
 
   const snapshot = await request.get("/api/sync/snapshot", {
     headers: { Authorization: `Bearer ${PANE_VIEW_CREDENTIALS.syncToken}` },
   });
 
   expect(snapshot.ok()).toBe(true);
-  const body = SnapshotResponseSchema.parse(await snapshot.json());
+  const body = RemoteSnapshotResponseSchema.parse(await snapshot.json());
   expect(body.entries.map((entry) => entry.path).sort()).toEqual(
     FIXTURE_ITEMS.map((entry) => entry.path).sort(),
+  );
+
+  // Nothing is left to push: verify hashes every file and exits 1 on any drift from the snapshot.
+  const snapshotFile = path.join(home, "snapshot.json");
+  await writeFile(snapshotFile, JSON.stringify(body));
+  await runLockstep(
+    ["verify", "--source", FIXTURE_ARCHIVE_DIR, "--remote-snapshot", snapshotFile, "--hash"],
+    home,
   );
 });
 

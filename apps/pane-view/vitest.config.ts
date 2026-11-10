@@ -1,5 +1,6 @@
 import { loadEnv } from "vite";
-import { defineConfig } from "vitest/config";
+import { defineConfig, mergeConfig } from "vitest/config";
+import shared from "../../vitest.shared.ts";
 
 Object.assign(process.env, loadEnv("test", process.cwd(), ""));
 
@@ -37,12 +38,10 @@ for (const [key, value] of Object.entries(testEnvDefaults)) {
   if (process.env[key] === undefined) testEnv[key] = value;
 }
 
-export default defineConfig({
-  resolve: {
-    tsconfigPaths: true,
-  },
-  test: {
-    env: testEnv,
-    environment: "node",
-  },
-});
+export default mergeConfig(
+  shared,
+  defineConfig({
+    resolve: { tsconfigPaths: true },
+    test: { env: testEnv },
+  }),
+);

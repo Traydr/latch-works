@@ -1,19 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  type GalleryThumbnailRequest,
-  type GalleryThumbnailResolver,
-  type GalleryThumbnailResolveState,
-  sharedThumbnailResolver,
-} from "@/features/gallery/batched-thumbnail-resolver";
-import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
-import {
-  dedupeThumbnailRequests,
-  mediaRevision,
-  supportsGalleryThumbnail,
-} from "@/features/gallery/gallery-page-helpers";
+  type DeliveryCacheRequest,
+  deliveryCache,
+  type SettledDelivery,
+} from "@/features/delivery/delivery-cache";
+import { hasDeliverableRendition, THUMBNAIL_WIDTH } from "@/features/delivery/delivery-contract";
+import { entryMedia, type GalleryBrowseEntry } from "@/features/library/listing-contract";
 
 export interface WindowedThumbnailResolutionResult {
-  resolvedThumbnailUrls: Record<string, string>;
+  /** Settled thumbnails by media id; an item still resolving has none. */
+  thumbnails: ReadonlyMap<string, SettledDelivery>;
 }
 
 /**
@@ -46,14 +42,14 @@ const WINDOW_CHANGE_DEBOUNCE_MS = 200;
  * moved is debounced, and a placeholder from the outgoing folder — whose key
  * is null — is never resolved against at all.
  */
-export function useWindowedThumbnailResolution(
-  { entries: windowedEntries, key: contentKey }: WindowedListing,
-  resolver: GalleryThumbnailResolver = sharedThumbnailResolver,
-): WindowedThumbnailResolutionResult {
-  /** The last batch's URLs, with the window requests they answer. */
+export function useWindowedThumbnailResolution({
+  entries: windowedEntries,
+  key: contentKey,
+}: WindowedListing): WindowedThumbnailResolutionResult {
+  /** The last batch's answers, with the window requests they answer. */
   const [resolution, setResolution] = useState<{
-    requests: GalleryThumbnailRequest[];
-    urls: Record<string, string>;
+    requests: DeliveryCacheRequest[];
+    thumbnails: ReadonlyMap<string, SettledDelivery>;
   } | null>(null);
 
   /** The content this hook last scheduled against; anything else is new content. */
@@ -61,30 +57,31 @@ export function useWindowedThumbnailResolution(
 
   const windowedThumbnailRequests = useMemo(
     () =>
-      dedupeThumbnailRequests(
-        windowedEntries.flatMap((entry): GalleryThumbnailRequest[] => {
-          if (entry.kind === "folder") {
-            return [];
-          }
+      windowedEntries.flatMap((entry): DeliveryCacheRequest[] => {
+        const media = entryMedia(entry);
 
-          const media = entry.kind === "comic" ? entry.comic.cover : entry.media;
-
-          return supportsGalleryThumbnail(media)
-            ? [{ mediaId: media.id, revision: mediaRevision(media) }]
-            : [];
-        }),
-      ),
+        return media && hasDeliverableRendition(media.mediaType)
+          ? [
+              {
+                mediaId: media.id,
+                revision: media.sha256,
+                variant: "thumbnail",
+                width: THUMBNAIL_WIDTH,
+              },
+            ]
+          : [];
+      }),
     [windowedEntries],
   );
 
   // A window no batch has answered yet shows what the cache already holds for it.
-  const cachedThumbnailUrls = useMemo(
-    () => resolver.readCachedGalleryThumbnailState(windowedThumbnailRequests).urls,
-    [resolver, windowedThumbnailRequests],
+  const cachedThumbnails = useMemo(
+    () => deliveryCache.settled(windowedThumbnailRequests),
+    [windowedThumbnailRequests],
   );
 
-  const resolvedThumbnailUrls =
-    resolution?.requests === windowedThumbnailRequests ? resolution.urls : cachedThumbnailUrls;
+  const thumbnails =
+    resolution?.requests === windowedThumbnailRequests ? resolution.thumbnails : cachedThumbnails;
 
   useEffect(() => {
     // A placeholder listing belongs to the folder being left. Its thumbnails
@@ -100,20 +97,19 @@ export function useWindowedThumbnailResolution(
     let retryTimeoutId: number | undefined;
     let resolving = false;
 
-    const applyResolvedState = (resolved: GalleryThumbnailResolveState) => {
-      setResolution({ requests: windowedThumbnailRequests, urls: resolved.urls });
-    };
-
     const resolveAndSchedule = () => {
       resolving = true;
-      void resolver.resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
+      void deliveryCache.resolveWindow(windowedThumbnailRequests).then(() => {
         resolving = false;
 
         if (cancelled) {
           return;
         }
 
-        applyResolvedState(resolved);
+        setResolution({
+          requests: windowedThumbnailRequests,
+          thumbnails: deliveryCache.settled(windowedThumbnailRequests),
+        });
         scheduleNext();
       });
     };
@@ -123,7 +119,7 @@ export function useWindowedThumbnailResolution(
         return;
       }
 
-      const retryDelayMs = resolver.getNextPendingThumbnailRetryMs(windowedThumbnailRequests);
+      const retryDelayMs = deliveryCache.nextAttemptInMs(windowedThumbnailRequests);
 
       if (retryDelayMs === null) {
         return;
@@ -139,7 +135,7 @@ export function useWindowedThumbnailResolution(
         return;
       }
 
-      if (resolver.hasEligibleGalleryThumbnailRequests(windowedThumbnailRequests)) {
+      if (deliveryCache.nextAttemptInMs(windowedThumbnailRequests) === 0) {
         drainTimeoutId = window.setTimeout(resolveAndSchedule, 0);
 
         return;
@@ -150,7 +146,7 @@ export function useWindowedThumbnailResolution(
 
     // A user refresh made failed rows eligible; resolve now, not at the next
     // retry time. A resolve already running drains them when it settles.
-    const unsubscribe = resolver.subscribeToThumbnailRetries(() => {
+    const unsubscribe = deliveryCache.subscribeToRetries(() => {
       if (resolving) {
         return;
       }
@@ -192,9 +188,7 @@ export function useWindowedThumbnailResolution(
         window.clearTimeout(retryTimeoutId);
       }
     };
-  }, [contentKey, resolver, windowedThumbnailRequests]);
+  }, [contentKey, windowedThumbnailRequests]);
 
-  return {
-    resolvedThumbnailUrls,
-  };
+  return { thumbnails };
 }

@@ -16,8 +16,7 @@ export const env = createEnv({
     PANE_VIEW_PASSWORD: z.string(),
     PANE_VIEW_SYNC_TOKEN: z.string().min(16),
     PANE_VIEW_TRUST_PROXY_HEADERS: z.stringbool().default(false),
-    // Optional: when SHUTTER_EDGE_URL is unset, variant delivery falls back to signed
-    // original URLs (see server/media/variant-provider.ts).
+    // All unset or all but the resolver set: server/media/shutter-config.ts checks the set.
     SHUTTER_EDGE_URL: z.url().or(z.literal("")).default(""),
     SHUTTER_CONTROL_URL: z.url().or(z.literal("")).default(""),
     SHUTTER_SPACE_ID: z.string().default(""),

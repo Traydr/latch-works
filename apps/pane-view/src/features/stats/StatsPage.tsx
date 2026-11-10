@@ -73,7 +73,7 @@ function StatCard({
   value: string;
 }) {
   return (
-    <div className="rounded-xl border border-border p-4">
+    <section aria-label={label} className="rounded-xl border border-border p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">{label}</p>
@@ -86,7 +86,7 @@ function StatCard({
           </div>
         ) : null}
       </div>
-    </div>
+    </section>
   );
 }
 

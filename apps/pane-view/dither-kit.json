@@ -26,28 +26,6 @@
         }
       ]
     },
-    "avatar": {
-      "version": "0.1.0",
-      "hash": "sha256:c7a639c023dcfb9f1365f11de35986d265de494b60c1887807aedf6504acf0cd",
-      "files": [
-        {
-          "path": "components/dither-kit/avatar.tsx",
-          "hash": "sha256:bf9736b474a5e050b19b23fb4d858924758d6df1d0a1006eed95f1fc42b84cb5"
-        },
-        {
-          "path": "components/dither-kit/lib.ts",
-          "hash": "sha256:41493601eb53a70f7629f6e50bad233f7185eaad42ba2397ca56ac1afcf1bb5f"
-        },
-        {
-          "path": "components/dither-kit/palette.ts",
-          "hash": "sha256:fd020c230ad818a5d9d6dfdfcb6ef50b0dba012c77f44f1a61449fc9a65947f7"
-        },
-        {
-          "path": "components/dither-kit/pixel.ts",
-          "hash": "sha256:eea1493d54a86d164b40d69c95956238777331ded7a556f099230dab161ab5a7"
-        }
-      ]
-    },
     "bar-chart": {
       "version": "0.1.0",
       "hash": "sha256:fb4a2e9bba84e3558e0e162de42eaf07a741557bfa43167c0e319cdfa75acd0d",
@@ -63,28 +41,6 @@
         {
           "path": "components/dither-kit/bar.tsx",
           "hash": "sha256:2904ff1b0813ae20b976f5a78d57a314729ea3e890b18ba762bbb46d2f550057"
-        }
-      ]
-    },
-    "button": {
-      "version": "0.1.0",
-      "hash": "sha256:d6439a837bfe9f4287bdf59279f4c3c4e7f37f2994b095464b4ed6ba423aae26",
-      "files": [
-        {
-          "path": "components/dither-kit/button.tsx",
-          "hash": "sha256:fd2e5a37b581ce5d8c8adba291da7ccecce3ed79e331ec7a0dda25687eb170ad"
-        },
-        {
-          "path": "components/dither-kit/lib.ts",
-          "hash": "sha256:41493601eb53a70f7629f6e50bad233f7185eaad42ba2397ca56ac1afcf1bb5f"
-        },
-        {
-          "path": "components/dither-kit/palette.ts",
-          "hash": "sha256:fd020c230ad818a5d9d6dfdfcb6ef50b0dba012c77f44f1a61449fc9a65947f7"
-        },
-        {
-          "path": "components/dither-kit/pixel.ts",
-          "hash": "sha256:eea1493d54a86d164b40d69c95956238777331ded7a556f099230dab161ab5a7"
         }
       ]
     },
@@ -184,28 +140,6 @@
         }
       ]
     },
-    "gradient": {
-      "version": "0.1.0",
-      "hash": "sha256:25f54f9db394e0392fc661e86f8d087ec84450eaf7cf3759c88bc4c6e2d83b7f",
-      "files": [
-        {
-          "path": "components/dither-kit/gradient.tsx",
-          "hash": "sha256:c5cfeaff9b5cfe88cf963109c679dc8202d2543d277e11c346f8d02c2a67dfcd"
-        },
-        {
-          "path": "components/dither-kit/lib.ts",
-          "hash": "sha256:41493601eb53a70f7629f6e50bad233f7185eaad42ba2397ca56ac1afcf1bb5f"
-        },
-        {
-          "path": "components/dither-kit/palette.ts",
-          "hash": "sha256:fd020c230ad818a5d9d6dfdfcb6ef50b0dba012c77f44f1a61449fc9a65947f7"
-        },
-        {
-          "path": "components/dither-kit/pixel.ts",
-          "hash": "sha256:eea1493d54a86d164b40d69c95956238777331ded7a556f099230dab161ab5a7"
-        }
-      ]
-    },
     "pie-chart": {
       "version": "0.1.0",
       "hash": "sha256:2c08ce4e2ebe3b522541b38f3e37d2b124ab7692c6501225a3558dbf3ea964ca",
@@ -221,28 +155,6 @@
         {
           "path": "components/dither-kit/pie.tsx",
           "hash": "sha256:1e44525a3119913b042b660be50c9c2c0e34a265ee8ed0aa32c65ce4ce9fd655"
-        }
-      ]
-    },
-    "radar-chart": {
-      "version": "0.1.0",
-      "hash": "sha256:78c9b966e31f80224947f417a7b7f29cc2e367bad865b97c3b5e18fa1f053b0f",
-      "files": [
-        {
-          "path": "components/dither-kit/radar-canvas.tsx",
-          "hash": "sha256:be08e9d801c1dc866a3d8eb74fe70208c888a1f6857b584e5f9de631863535ae"
-        },
-        {
-          "path": "components/dither-kit/radar-chart.tsx",
-          "hash": "sha256:b62686351465de7d14cf4d919938e005691e8363d45ac8e625cb863a4ad421db"
-        },
-        {
-          "path": "components/dither-kit/radar-frame.tsx",
-          "hash": "sha256:a516ed03eb4f5e864532df1f49f265498f1d2c89a676eb93251fad73a6914a67"
-        },
-        {
-          "path": "components/dither-kit/radar.tsx",
-          "hash": "sha256:f55dae75073cef3eab55ede93a5fa394711a9c5736046236ebd11623d02849e9"
         }
       ]
     }

@@ -1,32 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { VIEWER_STATE_SAVE_INTERVAL_MS } from "./viewer-resume";
-import { getViewerState, saveViewerState, type ViewerStateSnapshot } from "./viewer-state-service";
+import type { ViewerStateSnapshot } from "./viewer-state-contract";
+import { getViewerState, saveViewerState } from "./viewer-state-service";
 
 export interface ViewerStatePatch {
   page?: number;
   positionMs?: number;
 }
-
-interface ViewerStateSubject {
-  subjectId: string;
-  subjectType: "library_entry";
-}
-
-interface ViewerStateWrite extends ViewerStateSubject {
-  page?: number;
-  positionMs?: number;
-}
-
-/**
- * The two viewer-state calls the hook makes. The default talks to the server
- * functions; tests pass an in-memory store.
- */
-export interface ViewerStateStore {
-  getViewerState(options: { data: ViewerStateSubject }): Promise<ViewerStateSnapshot | null>;
-  saveViewerState(options: { data: ViewerStateWrite }): Promise<ViewerStateSnapshot | null>;
-}
-
-const serverViewerStateStore: ViewerStateStore = { getViewerState, saveViewerState };
 
 interface InitialViewerState {
   loaded: boolean;
@@ -40,10 +20,7 @@ interface InitialViewerState {
  * item is on screen never feed back into it, or a first view would jump to
  * its own progress.
  */
-export function useLibraryViewerState(
-  subjectId: string | undefined,
-  store: ViewerStateStore = serverViewerStateStore,
-) {
+export function useLibraryViewerState(subjectId: string | undefined) {
   const [initial, setInitial] = useState<InitialViewerState>({
     loaded: false,
     snapshot: null,
@@ -83,13 +60,7 @@ export function useLibraryViewerState(
       clearSaveTimer();
 
       const save = saveQueueRef.current.then(async () => {
-        await store.saveViewerState({
-          data: {
-            subjectId: targetSubjectId,
-            subjectType: "library_entry",
-            ...pending,
-          },
-        });
+        await saveViewerState({ data: { subjectId: targetSubjectId, ...pending } });
       });
 
       // A failed save must not block the ones queued behind it.
@@ -97,7 +68,7 @@ export function useLibraryViewerState(
 
       await save;
     },
-    [clearSaveTimer, store],
+    [clearSaveTimer],
   );
 
   // A throttle, not a debounce: playback reports several times a second, and
@@ -133,14 +104,8 @@ export function useLibraryViewerState(
     let cancelled = false;
 
     void (async () => {
-      const snapshot = await store
-        .getViewerState({
-          data: {
-            subjectId,
-            subjectType: "library_entry",
-          },
-        })
-        .catch(() => null);
+      // No saved position is the fallback when it cannot be read; the item opens at the start.
+      const snapshot = await getViewerState({ data: { subjectId } }).catch(() => null);
 
       if (!cancelled) {
         loadedSubjectIdRef.current = subjectId;
@@ -152,7 +117,7 @@ export function useLibraryViewerState(
       cancelled = true;
       void flushSave(subjectId);
     };
-  }, [store, subjectId, flushSave]);
+  }, [subjectId, flushSave]);
 
   // Closing or backgrounding the tab may be the last chance to save.
   useEffect(() => {

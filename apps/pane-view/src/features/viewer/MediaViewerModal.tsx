@@ -1,0 +1,145 @@
+import { type JSX, useCallback, useEffect, useRef } from "react";
+import { fullViewVariant, PREVIEW_CSS_WIDTH } from "@/features/delivery/delivery-contract";
+import { devicePixelWidth, useDeliveryUrl } from "@/features/delivery/useDeliveryUrl";
+import type { GalleryMedia } from "@/features/library/listing-contract";
+import { MediaViewerSession } from "./MediaViewerSession";
+
+/** Warms the preview the viewer would show for `item`; other types load their original when shown. */
+function usePrefetchNeighborPreview(item: GalleryMedia | undefined): void {
+  const { resolvedUrl } = useDeliveryUrl({
+    request:
+      item && fullViewVariant(item.mediaType) === "preview"
+        ? {
+            mediaId: item.id,
+            revision: item.sha256,
+            variant: "preview",
+            width: devicePixelWidth(PREVIEW_CSS_WIDTH.viewer),
+          }
+        : undefined,
+  });
+
+  useEffect(() => {
+    if (resolvedUrl) {
+      new window.Image().src = resolvedUrl;
+    }
+  }, [resolvedUrl]);
+}
+
+export interface MediaViewerModalProps {
+  autoplayVideos: boolean;
+  /** True while the browse session still has unloaded pages. */
+  hasMore: boolean;
+  /** The live media sequence from the browse session, in display order. */
+  items: readonly GalleryMedia[];
+  loopNavigation: boolean;
+  loopVideos: boolean;
+  /** The current media id (the browse selection). */
+  mediaId: string;
+  onClose: () => void;
+  /** Called with the id to show next; the caller writes it to the selection. */
+  onSelect: (mediaId: string) => void;
+  rememberViewerPosition: boolean;
+  /**
+   * Resolve one step from `mediaId`: the neighbour, the first item of a
+   * freshly loaded page, a wrap, or null to stay. Provided by the session.
+   */
+  stepMedia: (currentId: string, direction: -1 | 1, loop: boolean) => Promise<string | null>;
+}
+
+/**
+ * The viewer is controlled by media id (Plan 052, Decision 6): it renders the
+ * item the browse selection points at, sees pages appended while it is open,
+ * and asks the session to step so forward navigation loads before it loops
+ * and backward stays put on the first item while more pages exist.
+ */
+export function MediaViewerModal({
+  autoplayVideos,
+  hasMore,
+  items,
+  loopNavigation,
+  loopVideos,
+  mediaId,
+  onClose,
+  onSelect,
+  rememberViewerPosition,
+  stepMedia,
+}: MediaViewerModalProps): JSX.Element | null {
+  const index = items.findIndex((candidate) => candidate.id === mediaId);
+  const lastItemRef = useRef<GalleryMedia | undefined>(undefined);
+  const current = index >= 0 ? items[index] : undefined;
+
+  if (current) {
+    lastItemRef.current = current;
+  }
+
+  // Keep the last item mounted if it left the sequence (deleted, filtered)
+  // until the selection moves on; never blank the dialog under the user.
+  const item = current ?? lastItemRef.current;
+
+  const steppingRef = useRef(false);
+
+  const step = useCallback(
+    (delta: -1 | 1) => {
+      // Repeated forward presses during a page load must not queue extra
+      // steps or issue extra requests; Escape is handled by the session dialog.
+      if (steppingRef.current) {
+        return;
+      }
+
+      steppingRef.current = true;
+      void stepMedia(mediaId, delta, loopNavigation)
+        .then((nextId) => {
+          if (nextId && nextId !== mediaId) {
+            onSelect(nextId);
+          }
+        })
+        .finally(() => {
+          steppingRef.current = false;
+        });
+    },
+    [loopNavigation, mediaId, onSelect, stepMedia],
+  );
+
+  const canStepForward =
+    index >= 0 && (index < items.length - 1 || hasMore || (loopNavigation && items.length > 1));
+
+  const canStepBackward =
+    index > 0 || (index >= 0 && loopNavigation && !hasMore && items.length > 1);
+
+  const neighbor = (delta: number): GalleryMedia | undefined => {
+    if (index < 0 || items.length < 2) {
+      return undefined;
+    }
+
+    const target = index + delta;
+
+    if (target >= 0 && target < items.length) {
+      return items[target];
+    }
+
+    return loopNavigation && !hasMore ? items[(target + items.length) % items.length] : undefined;
+  };
+
+  // Two previews each way, so quick stepping lands on an already loaded image.
+  usePrefetchNeighborPreview(neighbor(-2));
+  usePrefetchNeighborPreview(neighbor(-1));
+  usePrefetchNeighborPreview(neighbor(1));
+  usePrefetchNeighborPreview(neighbor(2));
+
+  if (!item) {
+    return null;
+  }
+
+  return (
+    <MediaViewerSession
+      autoplayVideos={autoplayVideos}
+      canStepBackward={canStepBackward}
+      canStepForward={canStepForward}
+      item={item}
+      loopVideos={loopVideos}
+      onClose={onClose}
+      onStep={step}
+      rememberViewerPosition={rememberViewerPosition}
+    />
+  );
+}

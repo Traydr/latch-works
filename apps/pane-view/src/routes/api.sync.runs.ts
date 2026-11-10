@@ -1,46 +1,17 @@
+import type { SyncRunSchema } from "@latch-works/sync-protocol";
 import { createFileRoute } from "@tanstack/react-router";
-import { z } from "zod";
-import { readJsonBody } from "../server/http/json-body";
-import {
-  type SyncRouteDependencies,
-  syncRouteDependencies,
-} from "../server/sync/route-dependencies";
-import { withSyncRouteErrors } from "../server/sync/route-errors";
-import { SyncRunCountsSchema } from "../server/sync/validation";
-
-const StartSyncRunBodySchema = z.object({
-  counts: SyncRunCountsSchema.optional(),
-  sourceRoot: z.string({ error: "sourceRoot must be a string" }).optional(),
-});
-
-export async function postSyncRuns(
-  { request }: { request: Request },
-  dependencies: SyncRouteDependencies = syncRouteDependencies,
-): Promise<Response> {
-  const unauthorized = dependencies.requireSyncApiToken(request);
-
-  if (unauthorized) {
-    return unauthorized;
-  }
-
-  const parsed = await readJsonBody(request, StartSyncRunBodySchema);
-
-  if (!parsed.ok) {
-    return Response.json({ error: parsed.error }, { status: 400 });
-  }
-
-  const syncRun = await dependencies.startSyncRun({
-    input: {
-      counts: parsed.body.counts,
-      sourceRoot: parsed.body.sourceRoot ?? "unknown",
-    },
-  });
-
-  return Response.json(syncRun);
-}
+import type { z } from "zod";
+import { syncRoute } from "../server/sync/route";
+import { startSyncRun } from "../server/sync/sync-runs";
+import { parseCreateSyncRunBody } from "../server/sync/validation";
 
 export const Route = createFileRoute("/api/sync/runs")({
   server: {
-    handlers: { POST: withSyncRouteErrors(postSyncRuns) },
+    handlers: {
+      POST: syncRoute({
+        parse: parseCreateSyncRunBody,
+        handle: (input): Promise<z.input<typeof SyncRunSchema>> => startSyncRun(input),
+      }),
+    },
   },
 });

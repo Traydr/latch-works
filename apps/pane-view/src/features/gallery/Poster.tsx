@@ -1,21 +1,26 @@
-import type { MediaItem } from "@latch-works/media-domain";
+import type { SettledDelivery } from "@/features/delivery/delivery-cache";
+import { hasDeliverableRendition, THUMBNAIL_WIDTH } from "@/features/delivery/delivery-contract";
+import { PaneViewImage } from "@/features/delivery/PaneViewImage";
+import type { GalleryMedia } from "@/features/library/listing-contract";
 import { cn } from "@/lib/utils";
-import { mediaRevision, supportsGalleryThumbnail } from "./gallery-page-helpers";
 import { MediaPlaceholder } from "./MediaPlaceholder";
-import { PaneViewImage } from "./PaneViewImage";
 
+/**
+ * A tile's picture. The grid resolves thumbnails a window at a time, so the
+ * tile shows an empty box until its batch answers, then the thumbnail, or the
+ * media type's placeholder when no thumbnail can exist.
+ */
 export function Poster({
-  cardWidth = 220,
   media,
   priority = false,
-  resolvedThumbnailUrl,
+  thumbnail,
 }: {
-  cardWidth?: number;
-  media: MediaItem;
+  media: GalleryMedia;
   priority?: boolean;
-  resolvedThumbnailUrl?: string;
+  thumbnail?: SettledDelivery;
 }) {
-  const supportsThumbnail = supportsGalleryThumbnail(media);
+  const hasPicture =
+    hasDeliverableRendition(media.mediaType) && thumbnail?.status !== "unavailable";
 
   return (
     <div
@@ -25,23 +30,24 @@ export function Poster({
         media.mediaType === "pdf" && "text-red-300",
       )}
     >
-      {supportsThumbnail ? (
+      {!hasPicture ? (
+        <div className="grid h-full w-full place-items-center text-zinc-500">
+          <MediaPlaceholder mediaType={media.mediaType} size={28} />
+        </div>
+      ) : thumbnail?.status === "ready" ? (
         <PaneViewImage
           alt=""
           className="h-full w-full object-cover"
           mediaId={media.id}
           objectFit="cover"
           priority={priority}
-          readyUrl={resolvedThumbnailUrl}
-          resolveMissing={false}
-          revision={mediaRevision(media)}
+          readyUrl={thumbnail.url}
+          revision={media.sha256}
           variant="thumbnail"
-          width={cardWidth}
+          width={THUMBNAIL_WIDTH}
         />
       ) : (
-        <div className="grid h-full w-full place-items-center text-zinc-500">
-          <MediaPlaceholder mediaType={media.mediaType} size={28} />
-        </div>
+        <div aria-hidden className="h-full w-full bg-zinc-800/80" />
       )}
     </div>
   );

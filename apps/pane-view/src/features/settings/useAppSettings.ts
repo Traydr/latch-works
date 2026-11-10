@@ -25,7 +25,7 @@ function writeSettings(settings: AppSettings): void {
   try {
     window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch {
-    // Ignore storage errors.
+    // Quota or private mode: the settings still apply for this session.
   }
 }
 

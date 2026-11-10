@@ -1,240 +1,189 @@
-import { createConcurrencyLimiter } from "./concurrency-limiter";
-import type { MediaDeliveryRequest } from "./delivery";
+import type { MediaType } from "@latch-works/media-domain";
+import { contentTypeForExtension } from "@latch-works/sync-protocol";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
-  type MediaThumbnailContext,
-  readMediaDeliveryRequest,
-  readMediaThumbnailContext,
-  readMediaThumbnailContextsByEntryIds,
-} from "./repository";
-import type { ShutterPreviewResult } from "./shutter-client";
+  DELIVERY_URL_LIFETIME_SECONDS,
+  type DeliveryOutcome,
+  type DeliveryRequest,
+  type DeliveryResult,
+  deliveryKey,
+} from "@/features/delivery/delivery-contract";
+import { createConcurrencyLimiter } from "@/lib/concurrency-limiter";
+import { db } from "../db";
+import { libraryEntries, mediaObjects } from "../db/schema";
 import {
-  resolveVariantImageUrl,
-  resolveVariantOriginalUrl,
-  resolveVariantPreview,
-} from "./variant-provider";
-
-/** The width a variant resolves at when the caller names none. */
-const DEFAULT_VARIANT_WIDTH = { preview: 960, thumbnail: 320 } as const;
+  type EnabledShutter,
+  resolveShutterImageUrl,
+  resolveShutterOriginalUrl,
+  resolveShutterPreview,
+} from "./shutter-client";
+import { type ShutterConfig, shutterConfig } from "./shutter-config";
+import { createSignedGetUrl } from "./storage-client";
 
 const shutterControlLimiter = createConcurrencyLimiter(6);
 
-/** The archive reads and the three resolutions a delivery makes. */
-export interface MediaDeliveryDependencies {
-  readDeliveryRequest(request: { mediaId: string }): Promise<MediaDeliveryRequest | null>;
-  readThumbnailContext(request: { mediaId: string }): Promise<MediaThumbnailContext | null>;
-  readThumbnailContexts(request: {
-    mediaIds: string[];
-  }): Promise<Map<string, MediaThumbnailContext>>;
-  resolveImageUrl(context: MediaThumbnailContext, width: number): Promise<string>;
-  resolveOriginalUrl(request: MediaDeliveryRequest): Promise<string>;
-  resolvePreview(context: MediaThumbnailContext, width: number): Promise<ShutterPreviewResult>;
-}
-
-const defaultMediaDeliveryDependencies: MediaDeliveryDependencies = {
-  readDeliveryRequest: readMediaDeliveryRequest,
-  readThumbnailContext: readMediaThumbnailContext,
-  readThumbnailContexts: readMediaThumbnailContextsByEntryIds,
-  resolveImageUrl: resolveVariantImageUrl,
-  resolveOriginalUrl: resolveVariantOriginalUrl,
-  resolvePreview: resolveVariantPreview,
-};
-
-type MediaDeliveryVariant = "thumbnail" | "preview" | "original";
-
-export type MediaDeliveryResolveResult =
-  | { pending: true; retryAfterMs: number }
-  | { pending: false; url: string };
-
-/** There is nothing to deliver: no such media, no variant for its type, or no Shutter preview. */
-export class MediaDeliveryNotFoundError extends Error {
-  readonly missing: "media" | "variant" | "preview";
-
-  constructor(missing: "media" | "variant" | "preview", message: string) {
-    super(message);
-    this.name = "MediaDeliveryNotFoundError";
-    this.missing = missing;
-  }
-}
-
-/** Shutter or the bucket signer failed to produce a URL; the message is the resolver's own. */
-export class MediaDeliveryUnavailableError extends Error {
-  readonly resolver: "image" | "original" | "preview";
-
-  constructor(resolver: "image" | "original" | "preview", cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause), { cause });
-    this.name = "MediaDeliveryUnavailableError";
-    this.resolver = resolver;
-  }
-}
-
-async function resolveWith<Result>(
-  resolver: MediaDeliveryUnavailableError["resolver"],
-  resolve: () => Promise<Result>,
-): Promise<Result> {
-  try {
-    return await resolve();
-  } catch (error) {
-    throw new MediaDeliveryUnavailableError(resolver, error);
-  }
-}
-
-async function resolveVariant(
-  context: MediaThumbnailContext,
-  variant: "thumbnail" | "preview",
-  size: number | undefined,
-  dependencies: MediaDeliveryDependencies,
-): Promise<MediaDeliveryResolveResult> {
-  const width = size ?? DEFAULT_VARIANT_WIDTH[variant];
-
-  if (context.mediaType === "image" || context.mediaType === "gif") {
-    return {
-      pending: false,
-      url: await resolveWith("image", () => dependencies.resolveImageUrl(context, width)),
-    };
-  }
-
-  if (context.mediaType !== "video" && context.mediaType !== "pdf") {
-    throw new MediaDeliveryNotFoundError(
-      "variant",
-      "Variant unavailable for unsupported media type",
-    );
-  }
-
-  const preview = await resolveWith("preview", () =>
-    shutterControlLimiter.run(() => dependencies.resolvePreview(context, width)),
-  );
-
-  if (preview.status === "pending") {
-    return { pending: true, retryAfterMs: preview.retryAfterMs };
-  }
-
-  if (preview.status === "failed") {
-    throw new MediaDeliveryNotFoundError(
-      "preview",
-      preview.code ? `Shutter preview failed (${preview.code})` : "Shutter preview unavailable",
-    );
-  }
-
-  return { pending: false, url: preview.url };
+/** One live library entry's original, as delivery reads it. */
+interface MediaDeliveryRow {
+  extension: string;
+  mediaType: MediaType;
+  objectKey: string;
+  sha256: string;
 }
 
 /**
- * The one delivery dispatch: the server functions and the redirect routes all
- * come through here. Throws MediaDeliveryNotFoundError when there is nothing
- * to deliver and MediaDeliveryUnavailableError when a resolver fails.
+ * The content types Shutter's Source Delivery passes through (its
+ * `docs/contracts/v1/source-delivery.md`). Lockstep signs the upload's
+ * Content-Type from the extension, so the type an original was stored with is
+ * the type Shutter sees; anything else Shutter answers 415. The `mkv` and
+ * `bmp` originals Lockstep accepts upload as `application/octet-stream`, so
+ * they stay signed.
  */
-export async function resolveMediaDeliveryUrlForVariant(
-  {
-    mediaId,
-    size,
-    variant,
-  }: {
-    mediaId: string;
-    size?: number;
-    variant: MediaDeliveryVariant;
-  },
-  dependencies: MediaDeliveryDependencies = defaultMediaDeliveryDependencies,
-): Promise<MediaDeliveryResolveResult> {
-  if (variant === "original") {
-    const media = await dependencies.readDeliveryRequest({ mediaId });
+const SHUTTER_SOURCE_DELIVERY_TYPES = new Set([
+  "image/avif",
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "application/pdf",
+]);
 
-    if (!media) throw new MediaDeliveryNotFoundError("media", "Media not found");
+function deliversThroughShutter(
+  row: MediaDeliveryRow,
+  shutter: ShutterConfig,
+): shutter is EnabledShutter {
+  return (
+    shutter.mode === "on" &&
+    SHUTTER_SOURCE_DELIVERY_TYPES.has(contentTypeForExtension(row.extension))
+  );
+}
 
-    return {
-      pending: false,
-      url: await resolveWith("original", () => dependencies.resolveOriginalUrl(media)),
-    };
+/** There is no live library entry with this id. */
+export class MediaDeliveryNotFoundError extends Error {
+  constructor() {
+    super("Media not found");
+    this.name = "MediaDeliveryNotFoundError";
   }
-
-  const context = await dependencies.readThumbnailContext({ mediaId });
-
-  if (!context) throw new MediaDeliveryNotFoundError("media", "Media not found");
-
-  return resolveVariant(context, variant, size, dependencies);
 }
 
-interface MediaDeliveryBatchResolveItem {
-  mediaId: string;
-  size?: number;
-  variant: MediaDeliveryVariant;
+async function readDeliveryRows(
+  mediaIds: readonly string[],
+): Promise<Map<string, MediaDeliveryRow>> {
+  const rows =
+    mediaIds.length === 0
+      ? []
+      : await db
+          .select({
+            entryId: libraryEntries.id,
+            extension: mediaObjects.extension,
+            mediaType: mediaObjects.mediaType,
+            objectKey: mediaObjects.objectKey,
+            sha256: mediaObjects.sha256,
+          })
+          .from(libraryEntries)
+          .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
+          .where(and(inArray(libraryEntries.id, [...mediaIds]), isNull(libraryEntries.deletedAt)));
+
+  return new Map(rows.map(({ entryId, ...row }) => [entryId, row]));
 }
 
-export type MediaDeliveryBatchResult =
-  | { mediaId: string; retryAfterMs: number; size?: number; status: "pending"; variant: string }
-  | { mediaId: string; size?: number; status: "ready"; url: string; variant: string }
-  | { mediaId: string; size?: number; status: "failed"; variant: string };
+/**
+ * The original itself: playback, the PDF viewer, and the download link. It
+ * goes through Shutter when Shutter is on and passes the object's content
+ * type through, so the edge answers repeat plays and seeks; the rest is a
+ * signed bucket URL.
+ */
+function resolveOriginal(row: MediaDeliveryRow, shutter: ShutterConfig): Promise<string> {
+  if (deliversThroughShutter(row, shutter)) return resolveShutterOriginalUrl(row, shutter);
 
-function batchResolveKey(item: MediaDeliveryBatchResolveItem): string {
-  return `${item.variant}:${item.mediaId}:${item.size ?? "default"}`;
-}
-
-/** Resolve each distinct item once; repeats of an item are dropped from the results. */
-export async function resolveMediaDeliveryUrlsForVariants(
-  items: MediaDeliveryBatchResolveItem[],
-  dependencies: MediaDeliveryDependencies = defaultMediaDeliveryDependencies,
-): Promise<MediaDeliveryBatchResult[]> {
-  const seen = new Set<string>();
-
-  const uniqueItems = items.filter((item) => {
-    const key = batchResolveKey(item);
-
-    if (seen.has(key)) return false;
-    seen.add(key);
-
-    return true;
+  return createSignedGetUrl({
+    expiresInSeconds: DELIVERY_URL_LIFETIME_SECONDS,
+    key: row.objectKey,
   });
+}
 
-  const variantIds: string[] = [];
-
-  for (const item of uniqueItems) {
-    if (item.variant !== "original") {
-      variantIds.push(item.mediaId);
-    }
+/**
+ * One item. Without Shutter an image rendition is the signed original (the
+ * requested width is moot) and video and PDF have no preview, so their tiles
+ * show a placeholder while the viewer plays the original.
+ */
+async function resolveRow(
+  row: MediaDeliveryRow,
+  request: DeliveryRequest,
+  shutter: ShutterConfig,
+): Promise<DeliveryOutcome> {
+  if (request.variant === "original") {
+    return { status: "ready", url: await resolveOriginal(row, shutter) };
   }
 
-  const contexts = await dependencies.readThumbnailContexts({ mediaIds: variantIds });
+  const { width } = request;
+
+  if (row.mediaType === "image" || row.mediaType === "gif") {
+    const url =
+      shutter.mode === "on"
+        ? await resolveShutterImageUrl(row, width, shutter)
+        : await resolveOriginal(row, shutter);
+
+    return { status: "ready", url };
+  }
+
+  if (shutter.mode === "off" || (row.mediaType !== "video" && row.mediaType !== "pdf")) {
+    return { status: "unavailable" };
+  }
+
+  const kind = row.mediaType;
+
+  const preview = await shutterControlLimiter.run(() =>
+    resolveShutterPreview(row, kind, width, shutter),
+  );
+
+  if (preview.status === "failed") {
+    console.warn(
+      `[pane-view] Shutter preview failed for ${request.mediaId}${preview.code ? ` (${preview.code})` : ""}`,
+    );
+
+    return { status: "failed" };
+  }
+
+  return preview;
+}
+
+/**
+ * Resolve each distinct item once (repeats are dropped from the results).
+ * Every failure becomes that item's `failed` and is logged here, since the
+ * client only sees a placeholder.
+ */
+export async function resolveMediaDeliveryUrls(
+  items: readonly DeliveryRequest[],
+  shutter: ShutterConfig = shutterConfig,
+): Promise<DeliveryResult[]> {
+  const unique = [...new Map(items.map((item) => [deliveryKey(item), item])).values()];
+  const rows = await readDeliveryRows([...new Set(unique.map((item) => item.mediaId))]);
 
   return Promise.all(
-    uniqueItems.map(async (item): Promise<MediaDeliveryBatchResult> => {
+    unique.map(async (item): Promise<DeliveryResult> => {
+      const row = rows.get(item.mediaId);
+
+      if (!row) return { ...item, status: "failed" };
+
       try {
-        const context = item.variant === "original" ? undefined : contexts.get(item.mediaId);
+        return { ...item, ...(await resolveRow(row, item, shutter)) };
+      } catch (error) {
+        console.error(`[pane-view] Unable to resolve ${deliveryKey(item)}`, error);
 
-        if (item.variant !== "original" && !context) {
-          return {
-            mediaId: item.mediaId,
-            size: item.size,
-            status: "failed",
-            variant: item.variant,
-          };
-        }
-
-        let result: MediaDeliveryResolveResult;
-
-        if (item.variant === "original") {
-          result = await resolveMediaDeliveryUrlForVariant(item, dependencies);
-        } else {
-          if (!context) throw new Error("Media not found");
-          result = await resolveVariant(context, item.variant, item.size, dependencies);
-        }
-
-        return result.pending
-          ? {
-              mediaId: item.mediaId,
-              retryAfterMs: result.retryAfterMs,
-              size: item.size,
-              status: "pending",
-              variant: item.variant,
-            }
-          : {
-              mediaId: item.mediaId,
-              size: item.size,
-              status: "ready",
-              url: result.url,
-              variant: item.variant,
-            };
-      } catch {
-        return { mediaId: item.mediaId, size: item.size, status: "failed", variant: item.variant };
+        return { ...item, status: "failed" };
       }
     }),
   );
+}
+
+/** The original's URL for the download route; throws MediaDeliveryNotFoundError without a live entry. */
+export async function resolveOriginalDeliveryUrl(mediaId: string): Promise<string> {
+  const row = (await readDeliveryRows([mediaId])).get(mediaId);
+
+  if (!row) throw new MediaDeliveryNotFoundError();
+
+  return resolveOriginal(row, shutterConfig);
 }

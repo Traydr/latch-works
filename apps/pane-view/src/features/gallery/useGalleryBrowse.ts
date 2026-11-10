@@ -1,4 +1,3 @@
-import type { ComicEntry } from "@latch-works/media-domain";
 import {
   type InfiniteData,
   keepPreviousData,
@@ -9,25 +8,26 @@ import {
 } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  entryMedia,
-  type GalleryBrowseEntry,
-  toGalleryBrowseEntries,
-} from "@/features/gallery/gallery-browse-entry";
-import { buildBrowseKey } from "@/features/gallery/gallery-page-helpers";
-import {
   createServerGalleryPageSource,
   type GalleryPageSource,
 } from "@/features/gallery/gallery-page-source";
 import {
-  type GalleryListingQueryRequest,
+  browseKeyFor,
   galleryComicKeys,
   galleryListingKeys,
-  type LibrarySnapshotRequest,
   librarySnapshotKeys,
   useLibrarySnapshotQuery,
 } from "@/features/library/library-queries";
-import type { LibraryMediaItem } from "@/features/library/types";
-import type { GalleryListingPage } from "../../server/library/gallery-listing";
+import {
+  comicRequestFor,
+  entryMedia,
+  type GalleryBrowseEntry,
+  type GalleryComic,
+  type GalleryListingPage,
+  type GalleryListingRequest,
+  type GalleryMedia,
+  type LibrarySnapshotRequest,
+} from "@/features/library/listing-contract";
 
 /**
  * The gallery browse session (Plan 052): one cursor path for regular media
@@ -58,7 +58,7 @@ interface LoadNextPageResult {
 
 export interface GalleryBrowseSession {
   /** Every media item in display order, including ones excluded from navigation. */
-  allMedia: LibraryMediaItem[];
+  allMedia: GalleryMedia[];
   browseKey: string;
   /** `browseKey` once its own listing is on screen; null while a placeholder is. */
   contentBrowseKey: string | null;
@@ -73,8 +73,8 @@ export interface GalleryBrowseSession {
   listingError: Error | null;
   loadNextPage(): Promise<LoadNextPageResult>;
   /** Media mode: media; comic mode: covers. Excludes `excludedMediaIds`. */
-  media: LibraryMediaItem[];
-  openComic(comicId: string): Promise<ComicEntry<LibraryMediaItem>>;
+  media: GalleryMedia[];
+  openComic(comicId: string): Promise<GalleryComic>;
   page: GalleryPageState;
   /**
    * Reload the snapshot, every loaded listing page, and opened comics. Never
@@ -98,7 +98,7 @@ export interface UseGalleryBrowseOptions {
   /** Media ids to skip while stepping (deleted locally, awaiting the refetch). */
   excludedMediaIds?: ReadonlySet<string>;
   hydrated: boolean;
-  listingRequest: GalleryListingQueryRequest;
+  listingRequest: GalleryListingRequest;
   snapshotRequest: LibrarySnapshotRequest;
   source?: GalleryPageSource;
 }
@@ -131,7 +131,7 @@ function dedupeEntries(...lists: readonly (readonly GalleryBrowseEntry[])[]): Ga
 function listingEntries(
   data: { pages: readonly GalleryListingPage[] } | undefined,
 ): GalleryBrowseEntry[] {
-  return data ? dedupeEntries(...data.pages.map(toGalleryBrowseEntries)) : [];
+  return data ? dedupeEntries(...data.pages.map((page) => page.entries)) : [];
 }
 
 /** The cursor of the page after `page`, or undefined when it is the last. */
@@ -213,9 +213,7 @@ export function useGalleryBrowse({
     initialPageParam: null,
     placeholderData: keepPreviousData,
     queryFn: async ({ pageParam }): Promise<GalleryListingPage> => {
-      const page = await source.loadPage(
-        pageParam === null ? listingRequest : { ...listingRequest, cursor: pageParam },
-      );
+      const page = await source.loadPage(listingRequest, pageParam);
 
       if (pageParam !== null && page.page.hasMore && page.page.cursor === pageParam) {
         throw new Error("Gallery listing cursor did not advance");
@@ -226,21 +224,7 @@ export function useGalleryBrowse({
     queryKey: galleryListingKeys.listing(listingRequest),
   });
 
-  const browseKey = useMemo(
-    () =>
-      buildBrowseKey({
-        comicMode: listingRequest.comicMode,
-        excludedPaths: listingRequest.excludedPaths,
-        path: listingRequest.path,
-        query: listingRequest.query,
-        randomSeed: listingRequest.randomSeed,
-        recursive: listingRequest.recursive,
-        showImages: listingRequest.showImages,
-        showVideos: listingRequest.showVideos,
-        sortMode: listingRequest.sortMode,
-      }),
-    [listingRequest],
-  );
+  const browseKey = useMemo(() => browseKeyFor(listingRequest), [listingRequest]);
 
   const listingIsCurrent = Boolean(listing) && !isPlaceholderData;
   /**
@@ -510,19 +494,12 @@ export function useGalleryBrowse({
   );
 
   const openComic = useCallback(
-    (comicId: string): Promise<ComicEntry<LibraryMediaItem>> => {
-      const request = liveRef.current.listingRequest;
+    (comicId: string): Promise<GalleryComic> => {
+      const request = comicRequestFor(comicId, liveRef.current.listingRequest);
 
       return queryClient.fetchQuery({
-        queryFn: () =>
-          source.loadComic({
-            comicId,
-            path: request.path,
-            query: request.query,
-            showImages: request.showImages,
-            showVideos: request.showVideos,
-          }),
-        queryKey: galleryComicKeys.comic(comicId, request),
+        queryFn: () => source.loadComic(request),
+        queryKey: galleryComicKeys.comic(request),
         staleTime: 5 * 60 * 1000,
       });
     },
@@ -548,9 +525,6 @@ export function useGalleryBrowse({
   const isReady = Boolean(listing);
   const listingError = !listing && listingQueryError ? listingQueryError : null;
 
-  // A fresh object per render: every consumer destructures fields, and no
-  // effect or memo depends on the session's container identity, so the memo
-  // (and its duplicated dependency list) bought nothing.
   return {
     allMedia,
     browseKey,

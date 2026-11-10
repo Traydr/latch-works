@@ -1,29 +1,15 @@
-import type { GalleryRandomSeed } from "../../server/library/gallery-random-seed";
-
-export {
-  type GalleryRandomSeed,
-  GalleryRandomSeedSchema,
-} from "../../server/library/gallery-random-seed";
-
-export type RandomBytesSource = (bytes: Uint8Array<ArrayBuffer>) => void;
-
-const defaultRandomBytes: RandomBytesSource = (bytes) => {
-  globalThis.crypto.getRandomValues(bytes);
-};
+import type { GalleryRandomSeed } from "@/features/library/listing-contract";
 
 /**
  * Create a fresh seed from 16 random bytes. Never returns `previous`, so
  * Shuffle always changes the permutation even in the astronomically unlikely
  * collision case.
  */
-export function createGalleryRandomSeed(
-  previous?: GalleryRandomSeed | null,
-  randomBytes: RandomBytesSource = defaultRandomBytes,
-): GalleryRandomSeed {
+export function createGalleryRandomSeed(previous?: GalleryRandomSeed | null): GalleryRandomSeed {
   const bytes = new Uint8Array(new ArrayBuffer(16));
 
   for (;;) {
-    randomBytes(bytes);
+    globalThis.crypto.getRandomValues(bytes);
     const seed = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 
     if (seed !== previous) {

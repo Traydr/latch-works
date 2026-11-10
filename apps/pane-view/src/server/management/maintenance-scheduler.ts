@@ -1,10 +1,10 @@
 import { z } from "zod";
+import { initialProgressFor, type MaintenanceJobType } from "@/lib/library-jobs";
 import { type Database, db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
-import { maintenanceJobs } from "../db/schema";
+import { assertNoActiveSyncRun, readActiveCleanupJob } from "../db/library-guards";
+import { ACTIVE_MAINTENANCE_JOB_INDEX, maintenanceJobs } from "../db/schema";
 import { processMaintenanceJob } from "./cleanup-worker";
-import { assertNoActiveSyncRun, readActiveCleanupJob } from "./guards";
-import { initialProgressFor, type MaintenanceJobType } from "./maintenance-progress";
 
 /**
  * The one place a maintenance job is scheduled (Plan 049, Step 4). Every job
@@ -18,19 +18,6 @@ import { initialProgressFor, type MaintenanceJobType } from "./maintenance-progr
  */
 
 export type MaintenanceTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
-
-/**
- * The collaborators the scheduling prologue runs through. The default instance
- * wires the real database, lock, guards, and worker; a suite substitutes its
- * own to drive the prologue and the error mapping without a live archive.
- */
-export interface MaintenanceSchedulerDependencies {
-  acquireLibraryMutationStartupLock(tx: MaintenanceTransaction): Promise<void>;
-  assertNoActiveSyncRun(tx: MaintenanceTransaction): Promise<void>;
-  database: Pick<Database, "transaction">;
-  processMaintenanceJob(jobId: string): void;
-  readActiveCleanupJob(tx: MaintenanceTransaction): Promise<{ id: string } | null>;
-}
 
 export interface MaintenanceJobDescriptor {
   /** Work that must land in the scheduling transaction before the job row exists (library wipe). */
@@ -47,12 +34,6 @@ export interface ScheduleMaintenanceJobResult {
 
 const CLEANUP_IN_PROGRESS_MESSAGE = "A cleanup job is already in progress.";
 
-/** The partial unique indexes that enforce one active job per type (migrations 0011, 0014). */
-const ACTIVE_JOB_UNIQUE_INDEXES = new Set([
-  "maintenance_jobs_active_type_unique",
-  "maintenance_jobs_active_hard_wipe_unique",
-]);
-
 /** The facets of a PostgreSQL driver error the active-job check reads. */
 const PgErrorFacetsSchema = z.object({
   code: z.string().optional(),
@@ -65,7 +46,7 @@ const ThrownPgErrorSchema = PgErrorFacetsSchema.extend({
 });
 
 /**
- * True for a unique violation raised by the active-job indexes — two
+ * True for a unique violation raised by the active-job index — two
  * schedulers racing past the app-level guard. Other unique violations (a
  * descriptor's prepare step, for instance) are not "already in progress" and
  * are rethrown as they are. Drizzle surfaces the driver error as `cause` when
@@ -80,32 +61,22 @@ function isActiveJobUniqueViolation(error: Error): boolean {
 
   return [parsed.data, parsed.data.cause].some(
     (candidate) =>
-      candidate?.code === "23505" &&
-      (candidate.constraint === undefined || ACTIVE_JOB_UNIQUE_INDEXES.has(candidate.constraint)),
+      candidate?.code === "23505" && candidate.constraint === ACTIVE_MAINTENANCE_JOB_INDEX,
   );
 }
 
-/** The real prologue: this database, this lock, these guards, this worker. */
-export const maintenanceSchedulerDependencies: MaintenanceSchedulerDependencies = {
-  acquireLibraryMutationStartupLock,
-  assertNoActiveSyncRun,
-  database: db,
-  processMaintenanceJob,
-  readActiveCleanupJob,
-};
-
 export async function scheduleMaintenanceJob(
   descriptor: MaintenanceJobDescriptor,
-  dependencies: MaintenanceSchedulerDependencies = maintenanceSchedulerDependencies,
+  database: Database = db,
 ): Promise<ScheduleMaintenanceJobResult> {
   let jobId: string | null;
 
   try {
-    jobId = await dependencies.database.transaction(async (tx) => {
-      await dependencies.acquireLibraryMutationStartupLock(tx);
-      await dependencies.assertNoActiveSyncRun(tx);
+    jobId = await database.transaction(async (tx) => {
+      await acquireLibraryMutationStartupLock(tx);
+      await assertNoActiveSyncRun(tx);
 
-      if (await dependencies.readActiveCleanupJob(tx)) {
+      if (await readActiveCleanupJob(tx)) {
         throw new Error(CLEANUP_IN_PROGRESS_MESSAGE);
       }
 
@@ -142,7 +113,7 @@ export async function scheduleMaintenanceJob(
     return { jobId: null, phase: "empty" };
   }
 
-  dependencies.processMaintenanceJob(jobId);
+  processMaintenanceJob(jobId);
 
   return { jobId, phase: "scheduled" };
 }

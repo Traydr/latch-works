@@ -1,6 +1,6 @@
-import type { S3StorageClient } from "@latch-works/media-storage";
 import { eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { initialProgressFor } from "@/lib/library-jobs";
 import {
   folders,
   libraryEntries,
@@ -18,7 +18,6 @@ import {
   processMaintenanceJob,
   processMaintenanceJobBatch,
 } from "./cleanup-worker";
-import { initialProgressFor } from "./maintenance-progress";
 import { hasPurgeableShutterSources } from "./shutter-source-purge";
 import { hasSoftDeletedPurgeWork } from "./soft-deleted-purge";
 
@@ -37,14 +36,11 @@ function dependencies(deletes?: ExternalDeletes): MaintenanceWorkerDependencies 
     database: testDatabase().db,
     deleteObjects: async (keys) => {
       deletes?.objectKeys.push(...keys);
-
-      return { deleted: keys.length };
     },
     listObjectsByPrefix: async () => ({ keys: [], nextContinuationToken: undefined }),
     purgeShutterSource: async (source) => {
       deletes?.shutterSources.push(source.sha256);
     },
-    shutterPurgeReadiness: () => "ready",
   };
 }
 
@@ -91,7 +87,6 @@ async function insertEntry(
       parentPath: logicalPath.includes("/")
         ? logicalPath.slice(0, logicalPath.lastIndexOf("/"))
         : "",
-      size: 1024,
     });
 }
 
@@ -197,10 +192,8 @@ describe("soft-deleted purge", () => {
 
     const cancelling: MaintenanceWorkerDependencies = {
       ...dependencies(),
-      deleteObjects: async (keys) => {
+      deleteObjects: async () => {
         await cancelMaintenanceJob({ jobId }, testDatabase().db);
-
-        return { deleted: keys.length };
       },
     };
 
@@ -266,7 +259,6 @@ describe("soft-deleted purge", () => {
         mediaObjectId: object.id,
         mtimeMs: 1_700_000_000_000,
         parentPath: logicalPath.slice(0, logicalPath.lastIndexOf("/")),
-        size: 1024,
       });
     }
 
@@ -335,40 +327,31 @@ describe("Shutter source purge", () => {
     if (!run) throw new Error("failed to insert sync run");
 
     const syncDependencies: SyncStoreDependencies = {
-      acquireLibraryMutationStartupLock: async () => undefined,
-      assertNoActiveCleanupJob: async () => undefined,
       database: db,
       headStoredObject: async () => ({
         checksumSHA256: Buffer.from(sha256, "hex").toString("base64"),
         contentLength: 1024,
         contentType: "image/jpeg",
-        etag: '"etag"',
         metadata: { sha256 },
       }),
     };
 
-    // SAFETY: the faked headStoredObject is the only call that receives this client.
-    const storage = { bucket: "test-bucket", client: {} as S3StorageClient["client"] };
-
     await completeSyncedObject(
       {
-        input: {
-          contentType: "image/jpeg",
-          extension: "jpg",
-          filename: "e.jpg",
-          logicalPath: "gone/e.jpg",
-          mediaType: "image",
-          mtimeMs: 1_700_000_000_000,
-          objectKey,
-          sha256,
-          size: 1024,
-          syncRunId: run.id,
-        },
-        storage,
+        contentType: "image/jpeg",
+        extension: "jpg",
+        filename: "e.jpg",
+        logicalPath: "gone/e.jpg",
+        mediaType: "image",
+        mtimeMs: 1_700_000_000_000,
+        objectKey,
+        sha256,
+        size: 1024,
+        syncRunId: run.id,
       },
       syncDependencies,
     );
-    await markRemoteDeleted({ logicalPath: "gone/e.jpg", syncRunId: run.id }, syncDependencies);
+    await markRemoteDeleted({ logicalPath: "gone/e.jpg", syncRunId: run.id }, db);
     await db.delete(maintenanceJobs);
 
     expect(await hasPurgeableSources()).toBe(true);
@@ -423,22 +406,6 @@ describe("library wipe", () => {
     expect(pending).toEqual([]);
   });
 
-  it("deletes nothing while Shutter is partly configured", async () => {
-    const sha256 = "9".repeat(64);
-    await insertEntry(await insertMediaObject(sha256), "gone/9.jpg", new Date());
-    const jobId = await insertJob("library_hard_wipe");
-    const deletes: ExternalDeletes = { objectKeys: [], shutterSources: [] };
-
-    await expect(
-      processMaintenanceJobBatch(jobId, {
-        ...dependencies(deletes),
-        shutterPurgeReadiness: () => "incomplete",
-      }),
-    ).rejects.toThrow("Shutter is partly configured");
-    expect(deletes).toEqual({ objectKeys: [], shutterSources: [] });
-    expect(await remainingMediaSha256s()).toEqual([sha256]);
-  });
-
   it("skips the purge but still wipes when there is no Shutter at all", async () => {
     const sha256 = "8".repeat(64);
     await insertEntry(await insertMediaObject(sha256), "gone/8.jpg", new Date());
@@ -449,7 +416,7 @@ describe("library wipe", () => {
     while (
       await processMaintenanceJobBatch(jobId, {
         ...dependencies(deletes),
-        shutterPurgeReadiness: () => "off",
+        purgeShutterSource: null,
       })
     ) {
       // Each batch advances the durable cursor; the job reports when it is done.
@@ -496,7 +463,7 @@ describe("maintenance job claims", () => {
       await vi.waitFor(() => expect(attempts).toBe(1));
       expect(await readStatus()).toBe("pending");
 
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.runOnlyPendingTimersAsync();
       await vi.waitFor(async () => expect(await readStatus()).toBe("completed"));
     } finally {
       vi.useRealTimers();

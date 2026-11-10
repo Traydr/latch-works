@@ -9,7 +9,7 @@ import { ThemeSync } from "@/features/settings/ThemeSync";
 import { useAppSettings } from "@/features/settings/useAppSettings";
 import { useHydrated } from "@/hooks/use-hydrated";
 
-const galleryIndexRoute = getRouteApi("/_gallery/");
+const galleryIndexRoute = getRouteApi("/_authed/_gallery/");
 
 export function GalleryLayout() {
   const search = galleryIndexRoute.useSearch();

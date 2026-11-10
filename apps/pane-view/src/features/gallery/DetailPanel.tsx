@@ -1,15 +1,14 @@
-import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
 import { ChevronLeft, ChevronRight, Download, FolderOpen, ImageIcon, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { hasDeliverableRendition, PREVIEW_CSS_WIDTH } from "@/features/delivery/delivery-contract";
+import { PaneViewImage } from "@/features/delivery/PaneViewImage";
+import { devicePixelWidth } from "@/features/delivery/useDeliveryUrl";
+import type { GalleryMedia } from "@/features/library/listing-contract";
+import { COPY_PATH_ICONS, COPY_PATH_LABELS } from "@/hooks/copy-path-status";
 import type { CopyStatus } from "@/hooks/use-copy-to-clipboard";
-import { COPY_PATH_ICONS, COPY_PATH_LABELS } from "./copy-path-status";
 import { DeleteOverlay } from "./DeleteOverlay";
-import { mediaRevision, supportsGalleryThumbnail } from "./gallery-page-helpers";
 import { MediaPlaceholder } from "./MediaPlaceholder";
-import { PaneViewImage } from "./PaneViewImage";
-
-const detailPreviewWidth = 360;
 
 interface DetailPanelProps {
   copyStatus: CopyStatus;
@@ -23,7 +22,7 @@ interface DetailPanelProps {
   onNavigateToPath: (path: string) => void;
   onOpenViewer: () => void;
   onPrev: () => void;
-  selected: MediaItem | null;
+  selected: GalleryMedia | null;
   showDelete?: boolean;
 }
 
@@ -44,7 +43,7 @@ export function DetailPanel({
 }: DetailPanelProps) {
   const CopyIcon = COPY_PATH_ICONS[copyStatus];
 
-  const supportsThumbnail = selected !== null && supportsGalleryThumbnail(selected);
+  const supportsThumbnail = selected !== null && hasDeliverableRendition(selected.mediaType);
 
   return (
     <aside
@@ -60,9 +59,9 @@ export function DetailPanel({
                 className="h-full w-full object-cover"
                 mediaId={selected.id}
                 objectFit="cover"
-                revision={mediaRevision(selected)}
+                revision={selected.sha256}
                 variant="preview"
-                width={detailPreviewWidth}
+                width={devicePixelWidth(PREVIEW_CSS_WIDTH.detailPanel)}
               />
             ) : (
               <MediaPlaceholder mediaType={selected.mediaType} size={42} />
@@ -167,12 +166,6 @@ export function DetailPanel({
             </div>
             <MetadataItem label="Type" value={selected.mediaType} />
             <MetadataItem label="Size" value={formatBytes(selected.size)} />
-            {selected.width && selected.height ? (
-              <MetadataItem label="Dimensions" value={`${selected.width}×${selected.height}`} />
-            ) : null}
-            {selected.durationMs ? (
-              <MetadataItem label="Duration" value={formatDuration(selected.durationMs)} />
-            ) : null}
             <MetadataItem label="Modified" value={formatModified(selected.mtimeMs)} />
           </dl>
         </div>
@@ -198,14 +191,6 @@ function MetadataItem({ label, value }: { label: string; value: string }) {
       </dd>
     </div>
   );
-}
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function formatModified(mtimeMs: number): string {

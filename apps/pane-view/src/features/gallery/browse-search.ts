@@ -1,4 +1,3 @@
-import { getParentPath as getArchiveParentPath } from "@latch-works/media-domain";
 import { z } from "zod";
 
 /** A free-text search param: trimmed, and absent when empty or not a string. */
@@ -25,14 +24,6 @@ export const GalleryBrowseSearchSchema = z.object({
 
 export type GalleryBrowseSearch = z.infer<typeof GalleryBrowseSearchSchema>;
 
-export function displayPathFromSearch(path: string | undefined): string {
-  return path ?? "";
-}
-
-export function canUseFolderBrowseModes(path: string | undefined): boolean {
-  return displayPathFromSearch(path) !== "";
-}
-
 export function buildBreadcrumbItems(path: string): Array<{ label: string; path: string }> {
   if (!path) {
     return [{ label: "Archive root", path: "" }];
@@ -44,10 +35,6 @@ export function buildBreadcrumbItems(path: string): Array<{ label: string; path:
     label: segment,
     path: segments.slice(0, index + 1).join("/"),
   }));
-}
-
-export function getParentPath(path: string): string {
-  return getArchiveParentPath(path);
 }
 
 export function isTextInputTarget(target: EventTarget | null): boolean {
