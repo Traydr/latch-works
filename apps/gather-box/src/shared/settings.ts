@@ -1,10 +1,10 @@
 import * as z from "zod/mini";
-import type { SiteKey } from "./sites";
-import { getGatherSource } from "./source-catalog";
+import { DOWNLOAD_CONCURRENCY, readPageShortcutsEnabled, SETTINGS_KEY } from "./constants";
+import { getGatherSource, type SiteKey } from "./source-catalog";
 
 export const CredentialsModeSchema = z.enum(["auto", "always", "never", "perSite"]);
 
-export type CredentialsMode = z.infer<typeof CredentialsModeSchema>;
+type CredentialsMode = z.infer<typeof CredentialsModeSchema>;
 
 export const CredentialsChoiceSchema = z.enum(["include", "omit"]);
 
@@ -22,27 +22,28 @@ export interface GatherBoxSettings {
 }
 
 export const DEFAULT_SETTINGS: GatherBoxSettings = {
-  downloadConcurrency: 4,
+  downloadConcurrency: DOWNLOAD_CONCURRENCY.default,
   mediaCompatibilityMode: false,
   useGlobalFolder: false,
   xPostFolders: false,
   verboseLogging: false,
   pageShortcutsEnabled: true,
   credentialsMode: "auto",
-  credentialsPerSite: {}
+  credentialsPerSite: {},
 };
 
 /**
  * Settings survive extension upgrades, so no field can reject the record: each one falls back to
- * its default. `shortcutsEnabled` is the pre-rename name of `pageShortcutsEnabled` and is only
- * consulted when the current name is absent.
+ * its default. `shortcutsEnabled` is the pre-rename name of `pageShortcutsEnabled`.
  */
 export const GatherBoxSettingsSchema = z.catch(
   z.pipe(
     z.object({
       downloadConcurrency: z.pipe(
         z.catch(z.coerce.number(), DEFAULT_SETTINGS.downloadConcurrency),
-        z.transform((value) => Math.min(16, Math.max(1, Math.round(value))))
+        z.transform((value) =>
+          Math.min(DOWNLOAD_CONCURRENCY.max, Math.max(DOWNLOAD_CONCURRENCY.min, Math.round(value))),
+        ),
       ),
       mediaCompatibilityMode: z.catch(z.coerce.boolean(), false),
       useGlobalFolder: z.catch(z.coerce.boolean(), false),
@@ -53,8 +54,8 @@ export const GatherBoxSettingsSchema = z.catch(
       credentialsMode: z.catch(CredentialsModeSchema, DEFAULT_SETTINGS.credentialsMode),
       credentialsPerSite: z.catch(
         z.record(z.string(), z.catch(z.nullable(CredentialsChoiceSchema), null)),
-        {}
-      )
+        {},
+      ),
     }),
     z.transform(
       (stored): GatherBoxSettings => ({
@@ -63,19 +64,14 @@ export const GatherBoxSettingsSchema = z.catch(
         useGlobalFolder: stored.useGlobalFolder,
         xPostFolders: stored.xPostFolders,
         verboseLogging: stored.verboseLogging,
-        pageShortcutsEnabled:
-          stored.pageShortcutsEnabled ??
-          stored.shortcutsEnabled ??
-          DEFAULT_SETTINGS.pageShortcutsEnabled,
+        pageShortcutsEnabled: readPageShortcutsEnabled(stored),
         credentialsMode: stored.credentialsMode,
-        credentialsPerSite: keepKnownSources(stored.credentialsPerSite)
-      })
-    )
+        credentialsPerSite: keepKnownSources(stored.credentialsPerSite),
+      }),
+    ),
   ),
-  () => ({ ...DEFAULT_SETTINGS, credentialsPerSite: {} })
+  () => ({ ...DEFAULT_SETTINGS, credentialsPerSite: {} }),
 );
-
-export const SETTINGS_KEY = "gather-box-settings";
 
 export async function loadSettings(): Promise<GatherBoxSettings> {
   const stored = await chrome.storage.sync.get(SETTINGS_KEY);

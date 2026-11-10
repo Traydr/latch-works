@@ -51,19 +51,5 @@
     "32": "assets/icons/icon32.png",
     "48": "assets/icons/icon48.png",
     "128": "assets/icons/icon128.png"
-  },
-  "declarative_net_request": {
-    "rule_resources": [
-      {
-        "id": "pixiv_referer",
-        "enabled": true,
-        "path": "rules/pixiv-referer.json"
-      },
-      {
-        "id": "redgifs_api_headers",
-        "enabled": true,
-        "path": "rules/redgifs-api.json"
-      }
-    ]
   }
 }

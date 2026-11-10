@@ -1,4 +1,13 @@
-import type { DownloadablePayload, GeneratedStoryPayload } from "./types";
+/** The URL's last path segment, decoded; empty when there is none. */
+export function getUrlFileName(url: string): string {
+  const segment = new URL(url).pathname.split("/").pop() ?? "";
+
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
 
 export function lowercaseFirstAscii(value: string): string {
   const first = value.charAt(0);
@@ -24,7 +33,7 @@ export function sanitizePathSegment(value: string): string {
     return "";
   }
 
-  return sanitized || "";
+  return sanitized;
 }
 
 export function sanitizeFileName(value: string): string {
@@ -48,36 +57,25 @@ export function buildStoryPdfFileName(author: string, title: string): string {
   return `${baseName || "story"}.pdf`;
 }
 
-export function getFolderSegments(payload: DownloadablePayload | GeneratedStoryPayload): string[] {
-  if (Array.isArray(payload.folderSegments)) {
-    return payload.folderSegments.map(sanitizePathSegment).filter(Boolean);
-  }
+/** Folder segments made safe for the file system, with any left empty dropped. */
+export function sanitizeFolderSegments(segments: readonly string[]): string[] {
+  return segments.flatMap((segment) => {
+    const sanitized = sanitizePathSegment(segment);
 
-  const titleSegment = sanitizePathSegment(payload.title || "comic");
-
-  return titleSegment ? [titleSegment] : ["comic"];
+    return sanitized ? [sanitized] : [];
+  });
 }
 
 /**
- * Moves a multi-image X post into a folder named after the post ID and prefixes each file with
- * its position in the post (`01_`, `02_`, ...), so the post's order survives on disk. Single-image
- * posts and other sites pass through unchanged.
+ * Prefixes each file with its position (`01_`, `02_`, ...), so a post's order survives on disk.
  */
-export function groupXPostInFolder(payload: DownloadablePayload): DownloadablePayload {
-  if (payload.site !== "x" || !payload.galleryId || payload.images.length < 2) {
-    return payload;
-  }
+export function numberFileNames<File extends { fileName: string }>(files: readonly File[]): File[] {
+  const width = Math.max(2, String(files.length).length);
 
-  const width = Math.max(2, String(payload.images.length).length);
-
-  return {
-    ...payload,
-    folderSegments: [...payload.folderSegments, payload.galleryId],
-    images: payload.images.map((image, index) => ({
-      ...image,
-      fileName: `${String(index + 1).padStart(width, "0")}_${image.fileName}`
-    }))
-  };
+  return files.map((file, index) => ({
+    ...file,
+    fileName: `${String(index + 1).padStart(width, "0")}_${file.fileName}`,
+  }));
 }
 
 export function buildFolderPreview(rootName: string, segments: string[]): string {

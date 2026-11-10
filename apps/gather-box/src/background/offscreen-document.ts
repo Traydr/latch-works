@@ -1,42 +1,11 @@
-import * as z from "zod/mini";
-import {
-  GET_GATHER_EXECUTOR_STATUS,
-  type GetGatherExecutorStatusMessage
-} from "../shared/gather-run-messages";
+import { OFFSCREEN_DOCUMENT_PATH } from "../shared/constants";
+import { GET_GATHER_EXECUTOR_STATUS, sendExecutorRequest } from "../shared/protocol/executor";
 
-const OFFSCREEN_PATH = "offscreen/offscreen.html";
-
-/** The offscreen document runs at most one Gather Run at a time. */
-const GatherExecutorStatusSchema = z.catch(
-  z.object({ activeRunId: z.catch(z.nullable(z.string()), null) }),
-  { activeRunId: null }
-);
-
-type GatherExecutorStatus = z.infer<typeof GatherExecutorStatusSchema>;
-
-interface OffscreenPlatform {
-  getContexts(documentUrl: string): Promise<chrome.runtime.ExtensionContext[]>;
-  getUrl(path: string): string;
-  createDocument(options: chrome.offscreen.CreateParameters): Promise<void>;
-  sendMessage(message: GetGatherExecutorStatusMessage): Promise<GatherExecutorStatus>;
-}
-
-const chromeOffscreenPlatform: OffscreenPlatform = {
-  getContexts: (documentUrl) =>
-    chrome.runtime.getContexts({
-      contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
-      documentUrls: [documentUrl]
-    }),
-  getUrl: (path) => chrome.runtime.getURL(path),
-  createDocument: (options) => chrome.offscreen.createDocument(options),
-  sendMessage: async (message) =>
-    GatherExecutorStatusSchema.parse(await chrome.runtime.sendMessage(message))
-};
+/** What the executor is running; `unknown` when it exists but did not answer. */
+export type ExecutorStatus = { activeRunId: string | null } | "unknown";
 
 export class OffscreenDocument {
   private creating: Promise<void> | null = null;
-
-  constructor(private readonly platform: OffscreenPlatform = chromeOffscreenPlatform) {}
 
   ensure(): Promise<void> {
     if (this.creating) {
@@ -51,41 +20,42 @@ export class OffscreenDocument {
   }
 
   async isOpen(): Promise<boolean> {
-    const offscreenUrl = this.platform.getUrl(OFFSCREEN_PATH);
-    const contexts = await this.platform.getContexts(offscreenUrl);
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+      documentUrls: [chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH)],
+    });
 
     return contexts.length > 0;
   }
 
-  async getActiveRunId(): Promise<string | null> {
-    try {
-      if (!(await this.isOpen())) {
-        return null;
-      }
+  async getExecutorStatus(): Promise<ExecutorStatus> {
+    const open = await this.isOpen().catch(() => null);
 
-      const status = await this.platform.sendMessage({
-        type: GET_GATHER_EXECUTOR_STATUS,
-        target: "offscreen"
-      });
-
-      return status.activeRunId;
-    } catch {
-      return null;
+    if (open === null) {
+      return "unknown";
     }
+
+    if (!open) {
+      return { activeRunId: null };
+    }
+
+    const status = await sendExecutorRequest({
+      type: GET_GATHER_EXECUTOR_STATUS,
+      target: "offscreen",
+    });
+
+    return "activeRunId" in status ? status : "unknown";
   }
 
   private async discoverOrCreate(): Promise<void> {
-    const offscreenUrl = this.platform.getUrl(OFFSCREEN_PATH);
-    const contexts = await this.platform.getContexts(offscreenUrl);
-
-    if (contexts.length > 0) {
+    if (await this.isOpen()) {
       return;
     }
 
-    await this.platform.createDocument({
-      url: OFFSCREEN_PATH,
+    await chrome.offscreen.createDocument({
+      url: OFFSCREEN_DOCUMENT_PATH,
       reasons: ["BLOBS", "DOM_PARSER"],
-      justification: "Fetch and materialize Gather Outputs in the selected local archive."
+      justification: "Fetch and materialize Gather Outputs in the selected local archive.",
     });
   }
 }

@@ -1,23 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { createGatherRunState, type GatherRunState } from "./gather-run";
 import {
   EMPTY_GATHER_QUEUE,
   GATHER_QUEUE_SCHEMA_VERSION,
+  type GatherQueueJob,
+  type GatherQueueState,
+  GatherQueueStateSchema,
   getGatherQueueBatch,
   getGatherQueueDisplayRun,
   getGatherQueueHandBackItems,
   getLatestGatherQueueResult,
-  getRetryableGatherQueueResult,
   getNextQueuedGatherJob,
   getPermissionRequiredGatherJob,
-  GatherQueueStateSchema,
+  getRetryableGatherQueueResult,
   recordGatherQueueResult,
   recordHandedBackFile,
   recoverStoppedGatherQueue,
   withdrawGatherQueueResult,
-  type GatherQueueJob,
-  type GatherQueueState
 } from "./gather-queue";
+import { createGatherRunState, type GatherRunState } from "./gather-run";
 import { DEFAULT_PROFILE_ID } from "./profiles";
 import { DEFAULT_SETTINGS } from "./settings";
 import type { DownloadablePayload } from "./types";
@@ -31,41 +31,36 @@ function payload(title: string): DownloadablePayload {
     pageUrl: "https://www.pixiv.net/artworks/1",
     galleryId: "1",
     folderSegments: ["artist-1"],
-    skippedCount: 0,
     images: [
       {
-        pageNumber: 1,
-        thumbnailUrl: null,
         originalUrl: "https://i.pximg.net/img-original/1.jpg",
-        fileName: "1.jpg"
-      }
-    ]
+        fileName: "1.jpg",
+      },
+    ],
   };
 }
 
 function run<
-  TPhase extends "collecting" | "queued" | "writing" | "cancelling" | "permission-required"
->(
-  id: string,
-  phase: TPhase
-): ReturnType<typeof createGatherRunState> & { phase: TPhase } {
+  TPhase extends "collecting" | "queued" | "writing" | "cancelling" | "permission-required",
+>(id: string, phase: TPhase): ReturnType<typeof createGatherRunState> & { phase: TPhase } {
   return {
     ...createGatherRunState({
       id,
       tabId: Number(id.at(-1)) || 1,
       windowId: 1,
       tabUrl: `https://www.pixiv.net/artworks/${id}`,
-      siteKey: "pixiv"
+      siteKey: "pixiv",
+      phase,
+      message: "",
     }),
-    phase,
     progress: {
       completed: 0,
       total: 1,
       saved: 0,
       skipped: 0,
       failed: 0,
-      message: phase === "writing" ? "Writing Gather Output..." : "Queued."
-    }
+      message: phase === "writing" ? "Writing Gather Output..." : "Queued.",
+    },
   };
 }
 
@@ -76,7 +71,7 @@ function finished(id: string, createdAt: number, updatedAt: number, saved: numbe
     createdAt,
     updatedAt,
     progress: { completed: saved, total: saved, saved, skipped: 1, failed, message: "" },
-    retryImages: failed > 0 ? payload(id).images : []
+    retryImages: failed > 0 ? payload(id).images : [],
   };
 }
 
@@ -87,14 +82,14 @@ function waiting(id: string, createdAt: number): GatherQueueJob {
     payload: payload(id),
     settings: DEFAULT_SETTINGS,
     destinationId: null,
-    profileId: DEFAULT_PROFILE_ID
+    profileId: DEFAULT_PROFILE_ID,
   };
 }
 
 function finish(queue: GatherQueueState, result: GatherRunState): GatherQueueState {
   return recordGatherQueueResult(
     { ...queue, jobs: queue.jobs.filter((job) => job.run.id !== result.id) },
-    result
+    result,
   );
 }
 
@@ -111,7 +106,7 @@ describe("Gather queue state", () => {
           payload: payload("One"),
           settings: DEFAULT_SETTINGS,
           destinationId: null,
-          profileId: DEFAULT_PROFILE_ID
+          profileId: DEFAULT_PROFILE_ID,
         },
         {
           kind: "output",
@@ -119,16 +114,16 @@ describe("Gather queue state", () => {
           payload: payload("Two"),
           settings: DEFAULT_SETTINGS,
           destinationId: null,
-          profileId: DEFAULT_PROFILE_ID
+          profileId: DEFAULT_PROFILE_ID,
         },
-        { kind: "collecting", run: run("run-3", "collecting") }
-      ]
+        { kind: "collecting", run: run("run-3", "collecting") },
+      ],
     };
 
     expect(getGatherQueueDisplayRun(queue)).toMatchObject({
       id: "run-1",
       queuedCount: 2,
-      progress: { message: "Writing Gather Output..." }
+      progress: { message: "Writing Gather Output..." },
     });
   });
 
@@ -143,24 +138,24 @@ describe("Gather queue state", () => {
           payload: payload("One"),
           settings: DEFAULT_SETTINGS,
           destinationId: null,
-          profileId: DEFAULT_PROFILE_ID
+          profileId: DEFAULT_PROFILE_ID,
         },
-        { run: { id: "broken" }, payload: null, settings: null }
-      ]
+        { run: { id: "broken" }, payload: null, settings: null },
+      ],
     });
 
     expect(restored.jobs).toHaveLength(1);
     expect(restored.jobs[0]).toMatchObject({
       kind: "output",
       run: { id: "run-1" },
-      payload: { title: "One" }
+      payload: { title: "One" },
     });
   });
 
   it("keeps a collecting placeholder until page capture finishes", () => {
     const restored = GatherQueueStateSchema.parse({
       schemaVersion: GATHER_QUEUE_SCHEMA_VERSION,
-      jobs: [{ run: run("run-1", "collecting"), payload: null, settings: null }]
+      jobs: [{ run: run("run-1", "collecting"), payload: null, settings: null }],
     });
 
     expect(restored.jobs).toMatchObject([{ kind: "collecting", run: { phase: "collecting" } }]);
@@ -178,7 +173,7 @@ describe("Gather queue state", () => {
           payload: payload("One"),
           settings: DEFAULT_SETTINGS,
           destinationId: null,
-          profileId: DEFAULT_PROFILE_ID
+          profileId: DEFAULT_PROFILE_ID,
         },
         {
           kind: "output",
@@ -186,9 +181,9 @@ describe("Gather queue state", () => {
           payload: payload("Two"),
           settings: DEFAULT_SETTINGS,
           destinationId: null,
-          profileId: DEFAULT_PROFILE_ID
-        }
-      ]
+          profileId: DEFAULT_PROFILE_ID,
+        },
+      ],
     };
 
     expect(getNextQueuedGatherJob(queued)?.run.id).toBe("run-1");
@@ -199,7 +194,7 @@ describe("Gather queue state", () => {
       payload: payload("One"),
       settings: DEFAULT_SETTINGS,
       destinationId: null,
-      profileId: DEFAULT_PROFILE_ID
+      profileId: DEFAULT_PROFILE_ID,
     };
     expect(getNextQueuedGatherJob(queued)).toBeNull();
   });
@@ -215,30 +210,30 @@ describe("Gather queue state", () => {
           run: {
             ...run("run-1", "permission-required"),
             tabId: 7,
-            tabUrl: "https://www.pixiv.net/artworks/old"
+            tabUrl: "https://www.pixiv.net/artworks/old",
           },
           payload: payload("One"),
           settings: { ...DEFAULT_SETTINGS, useGlobalFolder: false },
           destinationId: null,
-          profileId: DEFAULT_PROFILE_ID
-        }
-      ]
+          profileId: DEFAULT_PROFILE_ID,
+        },
+      ],
     };
 
     expect(getPermissionRequiredGatherJob(siteScoped, "pixiv", DEFAULT_PROFILE_ID)?.run.id).toBe(
-      "run-1"
+      "run-1",
     );
     expect(getPermissionRequiredGatherJob(siteScoped, "reddit", DEFAULT_PROFILE_ID)).toBeNull();
 
     const firstJob = siteScoped.jobs[0];
 
-    if (firstJob.kind !== "output") {
+    if (firstJob?.kind !== "output") {
       throw new Error("Expected an output job.");
     }
 
     firstJob.settings = { ...DEFAULT_SETTINGS, useGlobalFolder: true };
     expect(getPermissionRequiredGatherJob(siteScoped, "reddit", DEFAULT_PROFILE_ID)?.run.id).toBe(
-      "run-1"
+      "run-1",
     );
 
     // Another profile prompts for a different folder, so it cannot confirm this one.
@@ -251,13 +246,13 @@ describe("Gather queue state", () => {
       phase: "failed" as const,
       updatedAt: 200,
       failedItems: [{ fileName: "missing.jpg", reason: "network", kind: "error" as const }],
-      retryImages: [payload("One").images[0]]
+      retryImages: payload("One").images.slice(0, 1),
     };
 
     const complete = {
       ...run("run-2", "writing"),
       phase: "complete" as const,
-      updatedAt: 300
+      updatedAt: 300,
     };
 
     const queue: GatherQueueState = {
@@ -270,10 +265,10 @@ describe("Gather queue state", () => {
           payload: payload("Three"),
           settings: DEFAULT_SETTINGS,
           destinationId: null,
-          profileId: DEFAULT_PROFILE_ID
-        }
+          profileId: DEFAULT_PROFILE_ID,
+        },
       ],
-      results: [failed, complete]
+      results: [failed, complete],
     };
 
     expect(getLatestGatherQueueResult(queue)?.id).toBe("run-2");
@@ -293,10 +288,10 @@ describe("Gather queue state", () => {
           payload: payload("One"),
           settings: DEFAULT_SETTINGS,
           destinationId: null,
-          profileId: DEFAULT_PROFILE_ID
+          profileId: DEFAULT_PROFILE_ID,
         },
-        { kind: "collecting", run: run("run-2", "collecting") }
-      ]
+        { kind: "collecting", run: run("run-2", "collecting") },
+      ],
     };
 
     const recovered = recoverStoppedGatherQueue(queue, 500);
@@ -306,13 +301,11 @@ describe("Gather queue state", () => {
           id: "run-1",
           phase: "queued",
           updatedAt: 500,
-          progress: { message: "Recovered and queued after browser restart." }
-        }
-      }
+          progress: { message: "Recovered and queued after browser restart." },
+        },
+      },
     ]);
-    expect(recovered.ended).toMatchObject([
-      { id: "run-2", phase: "interrupted", updatedAt: 500 }
-    ]);
+    expect(recovered.ended).toMatchObject([{ id: "run-2", phase: "interrupted", updatedAt: 500 }]);
   });
 
   it("keeps a cancelling job through storage and finishes the cancellation on restart", () => {
@@ -326,7 +319,7 @@ describe("Gather queue state", () => {
           payload: payload("One"),
           settings: DEFAULT_SETTINGS,
           destinationId: null,
-          profileId: DEFAULT_PROFILE_ID
+          profileId: DEFAULT_PROFILE_ID,
         },
         {
           kind: "output",
@@ -334,14 +327,14 @@ describe("Gather queue state", () => {
           payload: payload("Two"),
           settings: DEFAULT_SETTINGS,
           destinationId: null,
-          profileId: DEFAULT_PROFILE_ID
-        }
-      ]
+          profileId: DEFAULT_PROFILE_ID,
+        },
+      ],
     });
 
     expect(stored.jobs).toMatchObject([
       { run: { id: "run-1", phase: "cancelling" } },
-      { run: { id: "run-2", phase: "queued" } }
+      { run: { id: "run-2", phase: "queued" } },
     ]);
     expect(getNextQueuedGatherJob(stored)).toBeNull();
 
@@ -352,8 +345,15 @@ describe("Gather queue state", () => {
 
   it("tallies every run that went through the queue together, listing only the latest", () => {
     // run-1 finishes with nothing else queued, so the queue empties and its batch closes.
-    let queue = finish({ ...EMPTY_GATHER_QUEUE, jobs: [waiting("run-1", 0)] }, finished("run-1", 0, 10, 5));
-    queue = { ...queue, jobs: Array.from({ length: 8 }, (_, index) => waiting(`run-${index + 2}`, 20)) };
+    let queue = finish(
+      { ...EMPTY_GATHER_QUEUE, jobs: [waiting("run-1", 0)] },
+      finished("run-1", 0, 10, 5),
+    );
+
+    queue = {
+      ...queue,
+      jobs: Array.from({ length: 8 }, (_, index) => waiting(`run-${index + 2}`, 20)),
+    };
     expect(getGatherQueueBatch(queue)).toMatchObject({ recent: [], pages: 0 });
 
     for (let index = 2; index <= 8; index += 1) {
@@ -365,7 +365,7 @@ describe("Gather queue state", () => {
       pages: 7,
       saved: 14,
       skipped: 7,
-      failed: 0
+      failed: 0,
     });
 
     // Recording the last run again replaces it without counting it twice.
@@ -381,7 +381,7 @@ describe("Gather queue state", () => {
   it("keeps a retry in its batch and keeps retryable results past the cap", () => {
     let queue = finish(
       { ...EMPTY_GATHER_QUEUE, jobs: [waiting("run-1", 0), waiting("run-2", 0)] },
-      finished("run-1", 0, 10, 4, 2)
+      finished("run-1", 0, 10, 4, 2),
     );
 
     for (let index = 2; index <= 12; index += 1) {
@@ -393,16 +393,24 @@ describe("Gather queue state", () => {
     expect(getRetryableGatherQueueResult(queue)).toMatchObject({ id: "run-1", log: [] });
 
     // The queue is empty, so the batch is closed. Retrying run-1 opens it again.
-    const retried = getRetryableGatherQueueResult(queue)!;
+    const retried = getRetryableGatherQueueResult(queue);
+
+    if (!retried) throw new Error("run-1 should be retryable");
     queue = withdrawGatherQueueResult({ ...queue, jobs: [waiting("retry", 30)] }, retried);
     expect(getGatherQueueBatch(queue)).toMatchObject({ pages: 11, saved: 15, failed: 0 });
 
     queue = finish(queue, finished("retry", 30, 40, 2));
     expect(getGatherQueueBatch(queue)).toMatchObject({
-      recent: [{ id: "retry" }, { id: "run-12" }, { id: "run-11" }, { id: "run-10" }, { id: "run-9" }],
+      recent: [
+        { id: "retry" },
+        { id: "run-12" },
+        { id: "run-11" },
+        { id: "run-10" },
+        { id: "run-9" },
+      ],
       pages: 12,
       saved: 17,
-      failed: 0
+      failed: 0,
     });
   });
 
@@ -415,15 +423,15 @@ describe("Gather queue state", () => {
           fileName: "1.jpg",
           reason: "Blocked by the site's bot check (HTTP 403).",
           originalUrl: "https://i.pximg.net/img-original/1.jpg",
-          kind: "site-check" as const
+          kind: "site-check" as const,
         },
         {
           fileName: "2.jpg",
           reason: "network",
           originalUrl: "https://i.pximg.net/img-original/2.jpg",
-          kind: "error" as const
-        }
-      ]
+          kind: "error" as const,
+        },
+      ],
     };
 
     const queue = finish(EMPTY_GATHER_QUEUE, blocked);
@@ -434,8 +442,8 @@ describe("Gather queue state", () => {
         siteKey: "pixiv",
         folderSegments: [],
         fileName: "1.jpg",
-        originalUrl: "https://i.pximg.net/img-original/1.jpg"
-      }
+        originalUrl: "https://i.pximg.net/img-original/1.jpg",
+      },
     ]);
 
     const file = { runId: "run-1", fileName: "1.jpg", savedFileName: "1.jpg" };
@@ -446,7 +454,7 @@ describe("Gather queue state", () => {
       updatedAt: 200,
       progress: { saved: 2, failed: 1, message: "Complete. Saved 2, skipped 1, failed 1." },
       failedItems: [{ fileName: "2.jpg", kind: "error" }],
-      retryImages: []
+      retryImages: [],
     });
     expect(handedBack?.batch).toMatchObject({ pages: 1, saved: 2, failed: 1 });
     expect(handedBack && getGatherQueueHandBackItems(handedBack)).toEqual([]);

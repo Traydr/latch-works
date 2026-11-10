@@ -1,23 +1,27 @@
 import * as z from "zod/mini";
-import type { GatherRunState } from "./gather-run";
-import { GatherRunStateSchema, isTerminalGatherRunPhase } from "./gather-run";
+import { GATHER_QUEUE_STATE_KEY } from "./constants";
+import {
+  folderScope,
+  folderScopeCovers,
+  type GatherRunState,
+  GatherRunStateSchema,
+  isExecutingPhase,
+  isTerminalGatherRunPhase,
+  isWaitingPhase,
+  OUTPUT_PHASES,
+  type OutputGatherRunPhase,
+  RUN_CANCELLED_MESSAGE,
+} from "./gather-run";
 import {
   applyGatherRunEvent,
   applyHandedBackFile,
-  type HandedBackFile
+  type HandedBackFile,
 } from "./gather-run-reducer";
-import { DEFAULT_PROFILE_ID } from "./profiles";
-import { GatherBoxSettingsSchema, type GatherBoxSettings } from "./settings";
 import { lenientArrayOf } from "./lenient-array";
-import {
-  DownloadablePayloadSchema,
-  GeneratedStoryPayloadSchema,
-  type DownloadablePayload,
-  type GeneratedStoryPayload
-} from "./types";
-import type { SiteKey } from "./sites";
-
-export const GATHER_QUEUE_STATE_KEY = "gather-box-run-queue";
+import { DEFAULT_PROFILE_ID } from "./profiles";
+import { type GatherBoxSettings, GatherBoxSettingsSchema } from "./settings";
+import type { SiteKey } from "./source-catalog";
+import { type GatherOutput, GatherOutputSchema } from "./types";
 
 export const GATHER_QUEUE_SCHEMA_VERSION = 1;
 
@@ -27,12 +31,9 @@ export const MAX_GATHER_QUEUE_LENGTH = 100;
  * Finished runs kept in full. Older ones stay only while they have failed items to retry, and
  * the batch tally counts every run, however many fall off.
  */
-export const MAX_GATHER_QUEUE_RESULTS = 10;
+const MAX_GATHER_QUEUE_RESULTS = 10;
 
-/** Finished runs listed under the batch summary. */
-export const RECENT_BATCH_RUNS = 5;
-
-export type GatherOutput = DownloadablePayload | GeneratedStoryPayload;
+const RECENT_BATCH_RUNS = 5;
 
 export interface CollectingGatherQueueJob {
   kind: "collecting";
@@ -41,9 +42,7 @@ export interface CollectingGatherQueueJob {
 
 export interface OutputGatherQueueJob {
   kind: "output";
-  run: GatherRunState & {
-    phase: "queued" | "preparing" | "permission-required" | "writing" | "cancelling";
-  };
+  run: GatherRunState & { phase: OutputGatherRunPhase };
   payload: GatherOutput;
   settings: GatherBoxSettings;
   /**
@@ -58,10 +57,9 @@ export interface OutputGatherQueueJob {
 export type GatherQueueJob = CollectingGatherQueueJob | OutputGatherQueueJob;
 
 /** Running counts for the runs that went through the queue together. */
-export interface GatherQueueTally {
+interface GatherQueueTally {
   /** When the batch's first run finished; results finished since then belong to the batch. */
   startedAt: number;
-  /** When the batch's latest run finished. */
   endedAt: number;
   /** Set once the queue empties, so a page gathered after that starts a new batch. */
   closed: boolean;
@@ -82,7 +80,7 @@ export const EMPTY_GATHER_QUEUE: GatherQueueState = {
   schemaVersion: GATHER_QUEUE_SCHEMA_VERSION,
   jobs: [],
   results: [],
-  batch: null
+  batch: null,
 };
 
 const GatherQueueTallySchema = z.object({
@@ -92,12 +90,12 @@ const GatherQueueTallySchema = z.object({
   pages: z.number(),
   saved: z.number(),
   skipped: z.number(),
-  failed: z.number()
+  failed: z.number(),
 });
 
 const CollectingGatherQueueJobSchema = z.pipe(
   z.object({ run: z.extend(GatherRunStateSchema, { phase: z.literal("collecting") }) }),
-  z.transform((job): CollectingGatherQueueJob => ({ kind: "collecting", run: job.run }))
+  z.transform((job): CollectingGatherQueueJob => ({ kind: "collecting", run: job.run })),
 );
 
 /**
@@ -106,13 +104,11 @@ const CollectingGatherQueueJobSchema = z.pipe(
  */
 const OutputGatherQueueJobSchema = z.pipe(
   z.object({
-    run: z.extend(GatherRunStateSchema, {
-      phase: z.enum(["preparing", "permission-required", "queued", "writing", "cancelling"])
-    }),
-    payload: z.union([DownloadablePayloadSchema, GeneratedStoryPayloadSchema]),
+    run: z.extend(GatherRunStateSchema, { phase: z.enum(OUTPUT_PHASES) }),
+    payload: GatherOutputSchema,
     settings: GatherBoxSettingsSchema,
     destinationId: z.catch(z.nullable(z.string()), null),
-    profileId: z.catch(z.string(), DEFAULT_PROFILE_ID)
+    profileId: z.catch(z.string(), DEFAULT_PROFILE_ID),
   }),
   z.transform(
     (job): OutputGatherQueueJob => ({
@@ -121,16 +117,13 @@ const OutputGatherQueueJobSchema = z.pipe(
       payload: job.payload,
       settings: job.settings,
       destinationId: job.destinationId,
-      profileId: job.profileId
-    })
-  )
+      profileId: job.profileId,
+    }),
+  ),
 );
 
 /** A job's kind is re-derived from the run phase, so a stored `kind` field is ignored. */
-const GatherQueueJobSchema = z.union([
-  CollectingGatherQueueJobSchema,
-  OutputGatherQueueJobSchema
-]);
+const GatherQueueJobSchema = z.union([CollectingGatherQueueJobSchema, OutputGatherQueueJobSchema]);
 
 export const GatherQueueStateSchema = z.catch(
   z.pipe(
@@ -138,20 +131,20 @@ export const GatherQueueStateSchema = z.catch(
       schemaVersion: z.literal(GATHER_QUEUE_SCHEMA_VERSION),
       jobs: z.array(z.catch(z.nullable(GatherQueueJobSchema), null)),
       results: lenientArrayOf(GatherRunStateSchema),
-      batch: z.catch(z.nullable(GatherQueueTallySchema), null)
+      batch: z.catch(z.nullable(GatherQueueTallySchema), null),
     }),
     z.transform(
       (queue): GatherQueueState => ({
         schemaVersion: queue.schemaVersion,
         jobs: queue.jobs.filter((job) => job !== null).slice(0, MAX_GATHER_QUEUE_LENGTH),
         results: trimGatherQueueResults(
-          queue.results.filter((run) => isTerminalGatherRunPhase(run.phase))
+          queue.results.filter((run) => isTerminalGatherRunPhase(run.phase)),
         ),
-        batch: queue.batch
-      })
-    )
+        batch: queue.batch,
+      }),
+    ),
   ),
-  () => ({ ...EMPTY_GATHER_QUEUE, jobs: [], results: [] })
+  () => ({ ...EMPTY_GATHER_QUEUE, jobs: [], results: [] }),
 );
 
 export async function loadGatherQueue(): Promise<GatherQueueState> {
@@ -169,13 +162,7 @@ export function getLatestGatherQueueResult(queue: GatherQueueState): GatherRunSt
 }
 
 export function getRetryableGatherQueueResult(queue: GatherQueueState): GatherRunState | null {
-  for (let index = queue.results.length - 1; index >= 0; index -= 1) {
-    if (queue.results[index].retryImages.length > 0) {
-      return queue.results[index];
-    }
-  }
-
-  return null;
+  return queue.results.findLast((result) => result.retryImages.length > 0) ?? null;
 }
 
 /** A file a site check blocked, which you can download yourself and hand back to be saved. */
@@ -198,11 +185,11 @@ export function getGatherQueueHandBackItems(queue: GatherQueueState): HandBackIt
               siteKey: run.siteKey,
               folderSegments: run.folderSegments,
               fileName: item.fileName,
-              originalUrl: item.originalUrl
-            }
+              originalUrl: item.originalUrl,
+            },
           ]
-        : []
-    )
+        : [],
+    ),
   );
 }
 
@@ -212,12 +199,12 @@ export function getGatherQueueHandBackItems(queue: GatherQueueState): HandBackIt
  */
 export function recordHandedBackFile(
   queue: GatherQueueState,
-  file: HandedBackFile
+  file: HandedBackFile,
 ): GatherQueueState | null {
   const run = queue.results.find((result) => result.id === file.runId);
 
   const blocked = run?.failedItems.some(
-    (item) => item.kind === "site-check" && item.fileName === file.fileName
+    (item) => item.kind === "site-check" && item.fileName === file.fileName,
   );
 
   if (!run || !blocked) {
@@ -237,15 +224,15 @@ export function recordHandedBackFile(
       ? {
           ...batch,
           saved: batch.saved + updated.progress.saved - run.progress.saved,
-          failed: batch.failed + updated.progress.failed - run.progress.failed
+          failed: batch.failed + updated.progress.failed - run.progress.failed,
         }
-      : batch
+      : batch,
   };
 }
 
 export function recordGatherQueueResult(
   queue: GatherQueueState,
-  run: GatherRunState
+  run: GatherRunState,
 ): GatherQueueState {
   if (!isTerminalGatherRunPhase(run.phase)) {
     throw new Error(`Cannot record non-terminal Gather Run ${run.id}.`);
@@ -264,7 +251,7 @@ export function recordGatherQueueResult(
     pages: open?.pages ?? 0,
     saved: open?.saved ?? 0,
     skipped: open?.skipped ?? 0,
-    failed: open?.failed ?? 0
+    failed: open?.failed ?? 0,
   };
 
   // A run recorded again replaces its earlier result, so it is only counted once.
@@ -276,9 +263,9 @@ export function recordGatherQueueResult(
     ...queue,
     results: trimGatherQueueResults([
       ...queue.results.filter((result) => result.id !== run.id),
-      run
+      run,
     ]),
-    batch: tallyRun(batch, run, 1)
+    batch: tallyRun(batch, run, 1),
   };
 }
 
@@ -307,7 +294,7 @@ function trimGatherQueueResults(results: GatherRunState[]): GatherRunState[] {
  */
 export function withdrawGatherQueueResult(
   queue: GatherQueueState,
-  run: GatherRunState
+  run: GatherRunState,
 ): GatherQueueState {
   const batch = queue.batch;
 
@@ -322,9 +309,9 @@ export function withdrawGatherQueueResult(
           ...batch,
           closed: false,
           pages: batch.pages - 1,
-          failed: batch.failed - run.progress.failed
+          failed: batch.failed - run.progress.failed,
         }
-      : batch
+      : batch,
   };
 }
 
@@ -334,19 +321,15 @@ function tallyRun(batch: GatherQueueTally, run: GatherRunState, sign: 1 | -1): G
     pages: batch.pages + sign,
     saved: batch.saved + sign * run.progress.saved,
     skipped: batch.skipped + sign * run.progress.skipped,
-    failed: batch.failed + sign * run.progress.failed
+    failed: batch.failed + sign * run.progress.failed,
   };
 }
 
-export function getExecutingGatherJob(queue: GatherQueueState): OutputGatherQueueJob | null {
+function getExecutingGatherJob(queue: GatherQueueState): OutputGatherQueueJob | null {
   return (
     queue.jobs.find(
       (job): job is OutputGatherQueueJob =>
-        job.kind === "output" &&
-        (job.run.phase === "preparing" ||
-          job.run.phase === "writing" ||
-          job.run.phase === "cancelling" ||
-          job.run.phase === "permission-required")
+        job.kind === "output" && isExecutingPhase(job.run.phase),
     ) ?? null
   );
 }
@@ -368,7 +351,7 @@ export function getNextQueuedGatherJob(queue: GatherQueueState): OutputGatherQue
 export function getPermissionRequiredGatherJob(
   queue: GatherQueueState,
   siteKey: SiteKey,
-  profileId: string
+  profileId: string,
 ): OutputGatherQueueJob | null {
   return (
     queue.jobs.find(
@@ -376,7 +359,7 @@ export function getPermissionRequiredGatherJob(
         job.kind === "output" &&
         job.run.phase === "permission-required" &&
         job.profileId === profileId &&
-        (job.settings.useGlobalFolder || job.run.siteKey === siteKey)
+        folderScopeCovers(folderScope(job.run.siteKey, job.settings.useGlobalFolder), siteKey),
     ) ?? null
   );
 }
@@ -393,23 +376,20 @@ export interface GatherQueueRecovery {
 
 export function recoverStoppedGatherQueue(
   queue: GatherQueueState,
-  now = Date.now()
+  now = Date.now(),
 ): GatherQueueRecovery {
   const jobs: GatherQueueJob[] = [];
   const ended: GatherRunState[] = [];
 
   for (const job of queue.jobs) {
     if (job.kind === "collecting") {
-      ended.push({
-        ...job.run,
-        phase: "interrupted",
-        updatedAt: now,
-        error: "The browser stopped collection before the page metadata was captured.",
-        progress: {
-          ...job.run.progress,
-          message: "Collection was interrupted. Queue this page again."
-        }
-      });
+      ended.push(
+        interruptCollection(
+          job.run,
+          "The browser stopped collection before the page metadata was captured.",
+          now,
+        ),
+      );
       continue;
     }
 
@@ -417,7 +397,7 @@ export function recoverStoppedGatherQueue(
     // rather than replaying it.
     if (job.run.phase === "cancelling") {
       ended.push(
-        applyGatherRunEvent(job.run, { kind: "cancelled", message: "Gather Run cancelled." }, now)
+        applyGatherRunEvent(job.run, { kind: "cancelled", message: RUN_CANCELLED_MESSAGE }, now),
       );
       continue;
     }
@@ -433,11 +413,47 @@ export function recoverStoppedGatherQueue(
               progress: {
                 ...job.run.progress,
                 completed: 0,
-                message: "Recovered and queued after browser restart."
-              }
+                message: "Recovered and queued after browser restart.",
+              },
             }
-          : job.run
+          : job.run,
     });
+  }
+
+  return { queue: { ...queue, jobs }, ended };
+}
+
+/** How long a page capture may hold its place at the head of the queue. */
+export const COLLECTION_DEADLINE_MS = 120_000;
+
+function interruptCollection(run: GatherRunState, error: string, now: number): GatherRunState {
+  return {
+    ...run,
+    phase: "interrupted",
+    updatedAt: now,
+    error,
+    progress: { ...run.progress, message: "Collection was interrupted. Queue this page again." },
+  };
+}
+
+/**
+ * Ends page captures that outlived the collection deadline. One whose service worker was
+ * suspended mid-capture never reports back, and would otherwise hold the head of the queue.
+ */
+export function expireStaleCollections(
+  queue: GatherQueueState,
+  now = Date.now(),
+): GatherQueueRecovery {
+  const jobs: GatherQueueJob[] = [];
+  const ended: GatherRunState[] = [];
+
+  for (const job of queue.jobs) {
+    if (job.kind === "collecting" && now - job.run.createdAt > COLLECTION_DEADLINE_MS) {
+      ended.push(interruptCollection(job.run, "The page did not finish collecting in time.", now));
+      continue;
+    }
+
+    jobs.push(job);
   }
 
   return { queue: { ...queue, jobs }, ended };
@@ -454,19 +470,15 @@ export const PROFILE_DELETED_MESSAGE =
 export function endDeletedProfileJobs(
   queue: GatherQueueState,
   profileIds: ReadonlySet<string>,
-  now = Date.now()
+  now = Date.now(),
 ): GatherQueueRecovery {
   const jobs: GatherQueueJob[] = [];
   const ended: GatherRunState[] = [];
 
   for (const job of queue.jobs) {
-    if (
-      job.kind === "output" &&
-      (job.run.phase === "queued" || job.run.phase === "permission-required") &&
-      !profileIds.has(job.profileId)
-    ) {
+    if (job.kind === "output" && isWaitingPhase(job.run.phase) && !profileIds.has(job.profileId)) {
       ended.push(
-        applyGatherRunEvent(job.run, { kind: "failed", message: PROFILE_DELETED_MESSAGE }, now)
+        applyGatherRunEvent(job.run, { kind: "failed", message: PROFILE_DELETED_MESSAGE }, now),
       );
       continue;
     }
@@ -491,7 +503,7 @@ export function getGatherQueueDisplayRun(queue: GatherQueueState): GatherRunStat
   const queuedCount = queue.jobs.filter(
     (job) =>
       job.run.id !== displayed.run.id &&
-      (job.run.phase === "collecting" || job.run.phase === "queued")
+      (job.run.phase === "collecting" || job.run.phase === "queued"),
   ).length;
 
   return { ...displayed.run, queuedCount };
@@ -527,6 +539,6 @@ export function getGatherQueueBatch(queue: GatherQueueState): GatherQueueBatch {
     pages: tally.pages,
     saved: tally.saved,
     skipped: tally.skipped,
-    failed: tally.failed
+    failed: tally.failed,
   };
 }

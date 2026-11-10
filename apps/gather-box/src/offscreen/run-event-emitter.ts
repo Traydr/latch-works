@@ -1,4 +1,9 @@
-import { isTerminalGatherRunEvent, type GatherRunEvent } from "../shared/gather-run-messages";
+import {
+  type GatherRunEvent,
+  isTerminalGatherRunEvent,
+  releasesGatherQueue,
+} from "../shared/protocol/run-events";
+import { createSerialQueue } from "../shared/serial-queue";
 
 export interface GatherRunEventEmitter {
   /** Reports progress immediately; holds a report that hands the queue back until {@link flush}. */
@@ -24,22 +29,17 @@ export interface GatherRunEventEmitter {
  */
 export function createGatherRunEventEmitter(
   deliver: (event: GatherRunEvent) => Promise<boolean>,
-  wait: (milliseconds: number) => Promise<void> = delay
+  wait: (milliseconds: number) => Promise<void> = delay,
 ): GatherRunEventEmitter {
-  let queue: Promise<unknown> = Promise.resolve();
+  const enqueue = createSerialQueue();
   let held: GatherRunEvent | null = null;
   let stopped = false;
 
-  const send = (event: GatherRunEvent): Promise<boolean> => {
-    const delivery = queue.then(() => deliver(event));
-    queue = delivery.catch(() => undefined);
-
-    return delivery;
-  };
+  const send = (event: GatherRunEvent): Promise<boolean> => enqueue(() => deliver(event));
 
   return {
     emit(event) {
-      if (!releasesQueue(event)) {
+      if (!releasesGatherQueue(event)) {
         return send(event).then(() => undefined);
       }
 
@@ -60,7 +60,7 @@ export function createGatherRunEventEmitter(
     },
     stop() {
       stopped = true;
-    }
+    },
   };
 
   /**
@@ -76,17 +76,15 @@ export function createGatherRunEventEmitter(
         return;
       }
 
-      await wait(RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)]);
+      await wait(RETRY_DELAYS_MS[attempt] ?? MAX_RETRY_DELAY_MS);
     }
   }
 }
 
 /** Backs off to one attempt every 30 seconds, so a struggling background is not flooded. */
-const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
+const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
 
-function releasesQueue(event: GatherRunEvent): boolean {
-  return isTerminalGatherRunEvent(event) || event.kind === "permission-required";
-}
+const MAX_RETRY_DELAY_MS = 30_000;
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {

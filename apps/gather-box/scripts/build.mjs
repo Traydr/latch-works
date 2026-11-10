@@ -1,7 +1,21 @@
+import { access, copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, relative, resolve, sep } from "node:path";
 import { gzipSync } from "node:zlib";
-import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { rolldown } from "rolldown";
+import {
+  AVIF_CODEC_PATH,
+  AVIF_WORKER_PATH,
+  COMMANDS,
+  collectorScriptPath,
+  OFFSCREEN_DOCUMENT_PATH,
+  OPTIONS_PAGE_PATH,
+  STORY_FONT_PATHS,
+} from "../src/shared/constants.ts";
+import {
+  findCatalogProblems,
+  GATHER_SOURCES,
+  getPageMatches,
+} from "../src/shared/source-catalog.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -11,45 +25,70 @@ const reports = resolve(root, ".build-meta");
 
 const development = process.env.NODE_ENV === "development";
 
-const sourceCatalog = JSON.parse(await readFile(resolve(root, "source-catalog.json"), "utf8"));
-
 const bundlerWarnings = [];
+
+const manifestBase = JSON.parse(await readFile(resolve(root, "manifest.base.json"), "utf8"));
 
 const input = {
   cwd: root,
   platform: "browser",
-  transform: { target: "chrome145" },
+  // Workspace packages resolve through their `source` export, so the build never reads a stale
+  // or missing `dist/`. The rest are Rolldown's browser defaults for an import.
+  resolve: { conditionNames: ["source", "import", "browser", "default"] },
+  transform: { target: `chrome${manifestBase.minimum_chrome_version}` },
   onLog: (level, log) => {
     if (level === "warn") bundlerWarnings.push(`${log.code ?? "WARNING"}: ${log.message}`);
-  }
+  },
 };
 
 const output = {
   dir: dist,
   entryFileNames: "[name].js",
   minify: !development,
-  sourcemap: development ? "inline" : false
+  sourcemap: development ? "inline" : false,
 };
+
+const netRequestRules = GATHER_SOURCES.flatMap((source) => source.netRequestRules ?? []).sort(
+  (left, right) => left.id.localeCompare(right.id),
+);
 
 const packagedFiles = [
   "ui/gather-box.css",
   "sidepanel/sidepanel.html",
   "sidepanel/sidepanel.css",
-  "options/options.html",
+  OPTIONS_PAGE_PATH,
   "options/options.css",
-  "offscreen/offscreen.html",
-  "rules/pixiv-referer.json",
-  "rules/redgifs-api.json",
-  "assets/fonts/NotoSerif-Regular.ttf",
-  "assets/fonts/NotoSerif-Italic.ttf",
-  "assets/fonts/NotoSerif-Bold.ttf",
-  "assets/fonts/NotoSerif-BoldItalic.ttf",
+  OFFSCREEN_DOCUMENT_PATH,
+  ...netRequestRules.map((rule) => rule.path),
+  ...Object.values(STORY_FONT_PATHS),
   "assets/fonts/OFL.txt",
   "assets/icons/icon16.png",
   "assets/icons/icon32.png",
   "assets/icons/icon48.png",
-  "assets/icons/icon128.png"
+  "assets/icons/icon128.png",
 ];
+
+/**
+ * Each collector's content script is generated: it installs the collector module the catalog key
+ * names, so a source's key, collector and script path cannot drift apart.
+ */
+const COLLECTOR_ENTRY_PREFIX = "gather-box-collector:";
+
+const collectorEntries = {
+  name: "gather-box-collector-entries",
+  resolveId: (id) => (id.startsWith(COLLECTOR_ENTRY_PREFIX) ? `\0${id}` : null),
+  load: (id) => {
+    if (!id.startsWith(`\0${COLLECTOR_ENTRY_PREFIX}`)) return null;
+
+    const key = id.slice(COLLECTOR_ENTRY_PREFIX.length + 1);
+
+    return [
+      `import { installCollector } from ${JSON.stringify(resolve(root, "src/content/collector-entry.ts"))};`,
+      `import { collect } from ${JSON.stringify(resolve(root, collectorModulePath(key)))};`,
+      `installCollector(${JSON.stringify(key)}, collect);`,
+    ].join("\n");
+  },
+};
 
 await verifyVersionAgreement();
 
@@ -67,7 +106,7 @@ await mkdir(resolve(dist, "codecs"), { recursive: true });
 
 await copyFile(
   resolve(root, "node_modules/@jsquash/avif/codec/enc/avif_enc.wasm"),
-  resolve(dist, "codecs/avif_enc.wasm")
+  resolve(dist, AVIF_CODEC_PATH),
 );
 
 await writeFile(resolve(dist, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -77,14 +116,14 @@ const pages = await bundle(
     "sidepanel/sidepanel": "src/sidepanel/index.ts",
     "options/options": "src/options/index.ts",
     "offscreen/offscreen": "src/offscreen/index.ts",
-    "workers/avif-encoder": "src/gather/avif-encoder.worker.ts"
+    [AVIF_WORKER_PATH.replace(/\.js$/, "")]: "src/shared/media/avif-encoder.worker.ts",
   },
-  { chunkFileNames: "chunks/[name]-[hash].js", format: "esm" }
+  { chunkFileNames: "chunks/[name]-[hash].js", format: "esm" },
 );
 
 const background = await bundle(
   { "background/service-worker": "src/background/index.ts" },
-  { codeSplitting: false, format: "esm" }
+  { codeSplitting: false, format: "esm" },
 );
 
 // Rolldown rejects IIFE output for more than one entry, so every content script is its own build.
@@ -92,11 +131,13 @@ const content = (
   await Promise.all(
     [
       ["content/page-shortcuts", "src/content/page-shortcuts-entry.ts"],
-      ...sourceCatalog.map((source) => [
-        source.collectorEntry.replace(/\.js$/, ""),
-        `src/content/entries/${basename(source.collectorEntry, ".js")}.ts`
-      ])
-    ].map(([name, entry]) => bundle({ [name]: entry }, { codeSplitting: false, format: "iife" }))
+      ...GATHER_SOURCES.map((source) => [
+        collectorScriptPath(source.key).replace(/\.js$/, ""),
+        `${COLLECTOR_ENTRY_PREFIX}${source.key}`,
+      ]),
+    ].map(([name, entry]) =>
+      bundle({ [name]: entry }, { codeSplitting: false, format: "iife" }, [collectorEntries]),
+    ),
   )
 ).flat();
 
@@ -107,17 +148,20 @@ if (bundlerWarnings.length > 0) {
 const metafiles = {
   pages: describeChunks(pages),
   background: describeChunks(background),
-  content: describeChunks(content)
+  content: describeChunks(content),
 };
 
 await mkdir(reports, { recursive: true });
 
-await writeFile(resolve(reports, "permissions.json"), `${JSON.stringify(permissionReport, null, 2)}\n`);
+await writeFile(
+  resolve(reports, "permissions.json"),
+  `${JSON.stringify(permissionReport, null, 2)}\n`,
+);
 
 await Promise.all(
   Object.entries(metafiles).map(([name, metafile]) =>
-    writeFile(resolve(reports, `${name}.json`), `${JSON.stringify(metafile, null, 2)}\n`)
-  )
+    writeFile(resolve(reports, `${name}.json`), `${JSON.stringify(metafile, null, 2)}\n`),
+  ),
 );
 
 const report = await createArtifactReport(metafiles);
@@ -128,11 +172,13 @@ await writeFile(resolve(reports, "summary.json"), `${JSON.stringify(report, null
 if (!development) enforceBudgets(report, metafiles);
 
 for (const [name, measurement] of Object.entries(report.categories)) {
-  process.stdout.write(`${name.padEnd(24)} ${formatBytes(measurement.raw).padStart(9)} raw  ${formatBytes(measurement.gzip).padStart(9)} gzip\n`);
+  process.stdout.write(
+    `${name.padEnd(24)} ${formatBytes(measurement.raw).padStart(9)} raw  ${formatBytes(measurement.gzip).padStart(9)} gzip\n`,
+  );
 }
 
-async function bundle(entries, format) {
-  const build = await rolldown({ ...input, input: entries });
+async function bundle(entries, format, plugins = []) {
+  const build = await rolldown({ ...input, input: entries, plugins });
 
   try {
     const written = await build.write({ ...output, ...format });
@@ -144,19 +190,19 @@ async function bundle(entries, format) {
 }
 
 /**
- * The report, isolation and budget checks read the shape of an esbuild metafile: outputs keyed by
+ * This script's own build report, which the isolation and budget checks read: outputs keyed by
  * `dist/` path with their imports and source inputs. Paths use forward slashes on every platform.
  * Static and dynamic imports both count.
  */
 function describeChunks(chunks) {
   const sources = (chunk) =>
     Object.entries(chunk.modules).flatMap(([id, module]) =>
-      id.startsWith("\0") ? [] : [[relative(root, id).split(sep).join("/"), module.renderedLength]]
+      id.startsWith("\0") ? [] : [[relative(root, id).split(sep).join("/"), module.renderedLength]],
     );
 
   return {
     inputs: Object.fromEntries(
-      chunks.flatMap((chunk) => sources(chunk).map(([path, bytes]) => [path, { bytes }]))
+      chunks.flatMap((chunk) => sources(chunk).map(([path, bytes]) => [path, { bytes }])),
     ),
     outputs: Object.fromEntries(
       chunks.map((chunk) => [
@@ -164,13 +210,15 @@ function describeChunks(chunks) {
         {
           bytes: Buffer.byteLength(chunk.code),
           isEntry: chunk.isEntry,
-          imports: [...chunk.imports, ...chunk.dynamicImports].map((path) => ({ path: `dist/${path}` })),
+          imports: [...chunk.imports, ...chunk.dynamicImports].map((path) => ({
+            path: `dist/${path}`,
+          })),
           inputs: Object.fromEntries(
-            sources(chunk).map(([path, bytesInOutput]) => [path, { bytesInOutput }])
-          )
-        }
-      ])
-    )
+            sources(chunk).map(([path, bytesInOutput]) => [path, { bytesInOutput }]),
+          ),
+        },
+      ]),
+    ),
   };
 }
 
@@ -182,70 +230,77 @@ async function copyPackagedFile(relativePath) {
 
 async function verifyVersionAgreement() {
   const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
-  const manifest = JSON.parse(await readFile(resolve(root, "manifest.base.json"), "utf8"));
 
-  if (packageJson.version !== manifest.version) {
+  if (packageJson.version !== manifestBase.version) {
     throw new Error(
-      `Gather Box version mismatch: package.json=${packageJson.version}, manifest.json=${manifest.version}`
+      `Gather Box version mismatch: package.json=${packageJson.version}, manifest.json=${manifestBase.version}`,
+    );
+  }
+
+  const declared = Object.keys(manifestBase.commands).sort().join(", ");
+  const handled = Object.values(COMMANDS).sort().join(", ");
+
+  if (declared !== handled) {
+    throw new Error(
+      `Gather Box commands drifted: manifest declares ${declared}, code handles ${handled}`,
     );
   }
 }
 
+function collectorModulePath(siteKey) {
+  return `src/content/collectors/${siteKey}.ts`;
+}
+
 async function generateManifest() {
-  const base = JSON.parse(await readFile(resolve(root, "manifest.base.json"), "utf8"));
+  const problems = findCatalogProblems();
   const permissionOwners = new Map();
-  const pageMatches = new Set();
 
-  for (const source of sourceCatalog) {
-    for (const match of [...source.pageMatches, ...source.contextMenuMatches]) {
-      validateHttpsMatch(match, source.key);
-    }
-
-    for (const match of source.pageMatches) pageMatches.add(match);
-
+  for (const source of GATHER_SOURCES) {
     for (const permission of source.hostPermissions) {
-      validateHttpsMatch(permission.pattern, source.key);
       const owners = permissionOwners.get(permission.pattern) ?? [];
       owners.push({ source: source.key, reason: permission.reason });
       permissionOwners.set(permission.pattern, owners);
     }
 
-    if (!source.collectorEntry || source.outputKinds.length === 0 || !source.save) {
-      throw new Error(`Gather Source ${source.key} is missing collector, output, or save policy.`);
-    }
-
-    await access(resolve(root, source.collectorModule)).catch(() => {
-      throw new Error(`Gather Source ${source.key} selects missing collector ${source.collectorModule}.`);
+    await access(resolve(root, collectorModulePath(source.key))).catch(() => {
+      problems.push(
+        `Gather Source ${source.key} has no collector at ${collectorModulePath(source.key)}.`,
+      );
     });
+  }
+
+  if (problems.length > 0) {
+    throw new Error(problems.join("\n"));
   }
 
   const hostPermissions = [...permissionOwners.keys()].sort();
 
   const permissionReport = hostPermissions.map((pattern) => ({
     pattern,
-    owners: permissionOwners.get(pattern)
+    owners: permissionOwners.get(pattern),
   }));
 
   return {
     manifest: {
-      ...base,
+      ...manifestBase,
+      declarative_net_request: {
+        rule_resources: netRequestRules.map((rule) => ({
+          id: rule.id,
+          enabled: true,
+          path: rule.path,
+        })),
+      },
       host_permissions: hostPermissions,
       content_scripts: [
         {
-          matches: [...pageMatches].sort(),
+          matches: getPageMatches(),
           js: ["content/page-shortcuts.js"],
-          run_at: "document_start"
-        }
-      ]
+          run_at: "document_start",
+        },
+      ],
     },
-    permissionReport
+    permissionReport,
   };
-}
-
-function validateHttpsMatch(pattern, sourceKey) {
-  if (!pattern.startsWith("https://") || pattern.startsWith("https://*/*") || pattern === "<all_urls>") {
-    throw new Error(`Gather Source ${sourceKey} declares an unsafe Chrome match: ${pattern}`);
-  }
 }
 
 async function createArtifactReport(metafiles) {
@@ -253,7 +308,7 @@ async function createArtifactReport(metafiles) {
   const offscreenEntry = findOutput(metafiles.pages, "offscreen/offscreen.js");
 
   const storyChunk = Object.entries(metafiles.pages.outputs).find(([, output]) =>
-    Object.keys(output.inputs).some((input) => input.endsWith("src/gather/fanfiction-story.ts"))
+    Object.keys(output.inputs).some((input) => input.endsWith("src/offscreen/generated-story.ts")),
   )?.[0];
 
   if (!storyChunk) {
@@ -262,62 +317,74 @@ async function createArtifactReport(metafiles) {
 
   const mediaConversionChunk = Object.entries(metafiles.pages.outputs).find(([, output]) =>
     Object.keys(output.inputs).some((input) =>
-      input.endsWith("src/gather/archive-media-transformer.ts")
-    )
+      input.endsWith("src/shared/media/archive-media-transformer.ts"),
+    ),
   )?.[0];
 
   if (!mediaConversionChunk) {
     throw new Error("Media-conversion chunk was not emitted as an isolated local module.");
   }
 
-  const avifWorkerEntry = findOutput(metafiles.pages, "workers/avif-encoder.js");
+  const avifWorkerEntry = findOutput(metafiles.pages, AVIF_WORKER_PATH);
 
-  const mediaConversionOutputs = getOutputGraph(
-    metafiles.pages,
-    [mediaConversionChunk, avifWorkerEntry]
-  );
+  const mediaConversionOutputs = getOutputGraph(metafiles.pages, [
+    mediaConversionChunk,
+    avifWorkerEntry,
+  ]);
 
   const mediaConversionJs = await measureFiles(
-    [...mediaConversionOutputs].flatMap((path) => (path.endsWith(".js") ? [outputPath(path)] : []))
+    [...mediaConversionOutputs].flatMap((path) => (path.endsWith(".js") ? [outputPath(path)] : [])),
   );
 
-  const mediaConversionWasm = await measureFiles([resolve(dist, "codecs/avif_enc.wasm")]);
+  const mediaConversionWasm = await measureFiles([resolve(dist, AVIF_CODEC_PATH)]);
 
   verifyContentIsolation(metafiles.content);
 
   const collectorMeasurements = Object.fromEntries(
     await Promise.all(
-      sourceCatalog.map(async (source) => [
+      GATHER_SOURCES.map(async (source) => [
         `collector ${source.key} JS`,
-        await measureOutputGraph(metafiles.content, findOutput(metafiles.content, source.collectorEntry))
-      ])
-    )
+        await measureOutputGraph(
+          metafiles.content,
+          findOutput(metafiles.content, collectorScriptPath(source.key)),
+        ),
+      ]),
+    ),
   );
 
   const categories = {
-    "side panel eager JS": await measureOutputGraph(metafiles.pages, pageEntry),
+    // The side panel loads the media conversion only to convert a file you hand back.
+    "side panel eager JS": await measureOutputGraph(
+      metafiles.pages,
+      pageEntry,
+      new Set([mediaConversionChunk]),
+    ),
     "offscreen base JS": await measureOutputGraph(
       metafiles.pages,
       offscreenEntry,
-      new Set([storyChunk, mediaConversionChunk])
+      new Set([storyChunk, mediaConversionChunk]),
     ),
-    "generated-story JS": await measureOutputGraph(metafiles.pages, storyChunk),
+    "generated-story JS": await measureOutputGraph(
+      metafiles.pages,
+      storyChunk,
+      new Set([mediaConversionChunk]),
+    ),
     "media conversion JS": mediaConversionJs,
     "media conversion WASM": mediaConversionWasm,
     "media conversion assets": sumMeasurements(mediaConversionJs, mediaConversionWasm),
     "service worker JS": await measureOutputGraph(
       metafiles.background,
-      findOutput(metafiles.background, "background/service-worker.js")
+      findOutput(metafiles.background, "background/service-worker.js"),
     ),
     "page shortcuts JS": await measureOutputGraph(
       metafiles.content,
-      findOutput(metafiles.content, "content/page-shortcuts.js")
+      findOutput(metafiles.content, "content/page-shortcuts.js"),
     ),
     ...collectorMeasurements,
     fonts: await measureDirectory(resolve(dist, "assets/fonts"), (name) => name.endsWith(".ttf")),
     icons: await measureDirectory(resolve(dist, "assets/icons"), () => true),
     "total JS": await measureJsOutputs(metafiles),
-    "total dist": await measureDirectory(dist, () => true)
+    "total dist": await measureDirectory(dist, () => true),
   };
 
   return {
@@ -325,7 +392,7 @@ async function createArtifactReport(metafiles) {
     mode: development ? "development" : "release",
     storyChunk: storyChunk.replace(/^dist\//, ""),
     mediaConversionChunks: [...mediaConversionOutputs].map((path) => path.replace(/^dist\//, "")),
-    categories
+    categories,
   };
 }
 
@@ -337,14 +404,18 @@ function verifyContentIsolation(metafile) {
     throw new Error("The always-on page-shortcut entry imports Gather Source collector code.");
   }
 
-  for (const source of sourceCatalog) {
-    const output = metafile.outputs[findOutput(metafile, source.collectorEntry)];
-    const collectorInputs = Object.keys(output.inputs).filter((input) => input.includes("/collectors/"));
-    const expected = source.collectorModule.replace(/^src\//, "src/");
+  for (const source of GATHER_SOURCES) {
+    const output = metafile.outputs[findOutput(metafile, collectorScriptPath(source.key))];
+
+    const collectorInputs = Object.keys(output.inputs).filter((input) =>
+      input.includes("/collectors/"),
+    );
+
+    const expected = collectorModulePath(source.key);
 
     if (collectorInputs.length !== 1 || collectorInputs[0] !== expected) {
       throw new Error(
-        `Collector entry ${source.key} crossed source seams: ${collectorInputs.join(", ") || "none"}`
+        `Collector entry ${source.key} crossed source seams: ${collectorInputs.join(", ") || "none"}`,
       );
     }
   }
@@ -377,11 +448,7 @@ function getOutputGraph(metafile, entries, excluded = new Set()) {
     paths.add(path);
 
     for (const imported of metafile.outputs[path]?.imports ?? []) {
-      const resolved = imported.path.startsWith("dist/")
-        ? imported.path
-        : `dist/${imported.path.replace(/^\.\//, "")}`;
-
-      if (metafile.outputs[resolved]) visit(resolved);
+      if (metafile.outputs[imported.path]) visit(imported.path);
     }
   };
 
@@ -393,15 +460,15 @@ function getOutputGraph(metafile, entries, excluded = new Set()) {
 async function measureJsOutputs(metafiles) {
   const outputs = new Set(
     Object.values(metafiles).flatMap((metafile) =>
-      Object.keys(metafile.outputs).filter((path) => path.endsWith(".js"))
-    )
+      Object.keys(metafile.outputs).filter((path) => path.endsWith(".js")),
+    ),
   );
 
   return measureFiles([...outputs].map(outputPath));
 }
 
 function outputPath(path) {
-  return isAbsolute(path) ? path : resolve(root, path);
+  return resolve(root, path);
 }
 
 async function measureFiles(paths) {
@@ -421,9 +488,9 @@ function sumMeasurements(...measurements) {
   return measurements.reduce(
     (total, measurement) => ({
       raw: total.raw + measurement.raw,
-      gzip: total.gzip + measurement.gzip
+      gzip: total.gzip + measurement.gzip,
     }),
-    { raw: 0, gzip: 0 }
+    { raw: 0, gzip: 0 },
   );
 }
 
@@ -442,7 +509,7 @@ async function walk(directory) {
         const path = resolve(directory, entry.name);
 
         return entry.isDirectory() ? walk(path) : Promise.resolve([path]);
-      })
+      }),
     )
   ).flat();
 }
@@ -458,14 +525,14 @@ function enforceBudgets(report, metafiles) {
     "service worker JS": 150_000,
     "page shortcuts JS": 10_000,
     "total JS": 1_800_000,
-    "total dist": 8_000_000
+    "total dist": 8_000_000,
   };
 
   // Collectors parse their page and message inputs with zod/mini, which sets a ~35 kB floor.
-  for (const source of sourceCatalog) budgets[`collector ${source.key} JS`] = 48_000;
+  for (const source of GATHER_SOURCES) budgets[`collector ${source.key} JS`] = 48_000;
 
   const failures = Object.entries(budgets).filter(
-    ([name, budget]) => report.categories[name].raw > budget
+    ([name, budget]) => report.categories[name].raw > budget,
   );
 
   if (failures.length === 0) return;
@@ -480,13 +547,17 @@ function enforceBudgets(report, metafiles) {
   const message = failures
     .map(
       ([name, budget]) =>
-        `${name}: ${formatBytes(report.categories[name].raw)} exceeds ${formatBytes(budget)}`
+        `${name}: ${formatBytes(report.categories[name].raw)} exceeds ${formatBytes(budget)}`,
     )
     .join("\n");
 
-  throw new Error(`Gather Box artifact budget exceeded:\n${message}\nLargest source inputs:\n${largestInputs}`);
+  throw new Error(
+    `Gather Box artifact budget exceeded:\n${message}\nLargest source inputs:\n${largestInputs}`,
+  );
 }
 
 function formatBytes(bytes) {
-  return bytes < 1_000_000 ? `${(bytes / 1_000).toFixed(1)} kB` : `${(bytes / 1_000_000).toFixed(2)} MB`;
+  return bytes < 1_000_000
+    ? `${(bytes / 1_000).toFixed(1)} kB`
+    : `${(bytes / 1_000_000).toFixed(2)} MB`;
 }

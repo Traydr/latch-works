@@ -1,0 +1,115 @@
+import { describe, expect, it } from "vitest";
+import { createGatherRunState } from "./gather-run";
+import { applyGatherRunEvent } from "./gather-run-reducer";
+
+const run = createGatherRunState({
+  id: "run-1",
+  tabId: 7,
+  windowId: 2,
+  tabUrl: "https://www.pixiv.net/artworks/1",
+  siteKey: "pixiv",
+  phase: "preparing",
+  message: "Preparing Gather Run...",
+  now: 100,
+});
+
+describe("Gather Run transitions", () => {
+  it("moves through permission, writing, progress, and completion", () => {
+    const permission = applyGatherRunEvent(
+      run,
+      { kind: "permission-required", scope: "site" },
+      101,
+    );
+
+    expect(permission.phase).toBe("permission-required");
+
+    const writing = applyGatherRunEvent(
+      permission,
+      {
+        kind: "writing",
+        destinationPreview: "Archive/pixiv/1",
+        folderSegments: ["pixiv", "1"],
+        total: 2,
+      },
+      102,
+    );
+
+    expect(writing).toMatchObject({ phase: "writing", destinationPreview: "Archive/pixiv/1" });
+
+    const progress = applyGatherRunEvent(
+      writing,
+      { kind: "progress", completed: 1, total: 2, message: "Processed 1 of 2." },
+      103,
+    );
+
+    const complete = applyGatherRunEvent(
+      progress,
+      {
+        kind: "complete",
+        saved: 2,
+        skipped: 0,
+        failed: 0,
+        failedItems: [],
+        retryImages: [],
+      },
+      104,
+    );
+
+    expect(complete).toMatchObject({
+      phase: "complete",
+      updatedAt: 104,
+      progress: { saved: 2, skipped: 0, failed: 0 },
+    });
+  });
+
+  it("names the page that can confirm a paused job's folder", () => {
+    const siteScoped = applyGatherRunEvent(
+      run,
+      { kind: "permission-required", scope: "site" },
+      101,
+    );
+
+    expect(siteScoped.progress.message).toContain("a pixiv page");
+    expect(siteScoped.log.at(-1)?.message).toContain("a pixiv page");
+
+    const globalScoped = applyGatherRunEvent(
+      run,
+      { kind: "permission-required", scope: "global" },
+      101,
+    );
+
+    expect(globalScoped.progress.message).toContain("any supported page");
+  });
+
+  it("preserves retry input when an output finishes with failures", () => {
+    const image = {
+      originalUrl: "https://example.test/1.jpg",
+      fileName: "1.jpg",
+    };
+
+    const failed = applyGatherRunEvent(
+      run,
+      {
+        kind: "complete",
+        saved: 0,
+        skipped: 0,
+        failed: 1,
+        failedItems: [{ fileName: "1.jpg", reason: "network", kind: "error" }],
+        retryImages: [image],
+      },
+      105,
+    );
+
+    expect(failed.phase).toBe("failed");
+    expect(failed.retryImages).toEqual([image]);
+  });
+
+  it("maps cancel events to the cancelled phase", () => {
+    const cancelled = applyGatherRunEvent(run, { kind: "cancelled", message: "Stopped." }, 106);
+    expect(cancelled).toMatchObject({
+      phase: "cancelled",
+      error: "Stopped.",
+      progress: { message: "Gather Run cancelled." },
+    });
+  });
+});

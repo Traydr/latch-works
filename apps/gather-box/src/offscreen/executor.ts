@@ -1,24 +1,23 @@
-import { ensureDirectoryPermission, loadDirectoryDestination } from "../gather/directory-store";
-import {
-  downloadImages,
-  getOrCreateNestedDirectory,
-  type DownloadFailure,
-  type WritableDirectory
-} from "../gather/downloader";
-import { formatError, isAbortError, toError } from "../gather/errors";
-import { resolveCompatibleFolderSegments } from "../gather/folder-compatibility";
-import { shouldIncludeCredentials } from "../shared/credentials";
-import type { GatherRunEvent } from "../shared/gather-run-messages";
-import { buildFolderPreview, getFolderSegments } from "../shared/path";
+import { getOrCreateNestedDirectory, type WritableDirectory } from "../shared/archive-writer";
+import { requestCredentials } from "../shared/credentials";
+import { ensureDirectoryPermission, loadDirectoryDestination } from "../shared/directory-store";
+import { type DownloadFailure, folderScope, outputTotal } from "../shared/gather-run";
+import { loadMediaTransformer } from "../shared/media/media-transformer";
+import { buildFolderPreview, sanitizeFolderSegments } from "../shared/path";
+import type { GatherRunEvent } from "../shared/protocol/run-events";
 import type { GatherBoxSettings } from "../shared/settings";
+import { getGatherSource } from "../shared/source-catalog";
 import type {
+  DownloadableFile,
   DownloadablePayload,
+  GatherOutput,
   GeneratedStoryPayload,
-  GalleryImage
 } from "../shared/types";
+import { downloadImages } from "./downloader";
+import { resolveCompatibleFolderSegments } from "./folder-compatibility";
 
 export async function executeGatherOutput(input: {
-  payload: DownloadablePayload | GeneratedStoryPayload;
+  payload: GatherOutput;
   settings: GatherBoxSettings;
   /** The remembered folder the output was queued for; null writes to the current one. */
   destinationId: string | null;
@@ -29,11 +28,8 @@ export async function executeGatherOutput(input: {
 }): Promise<void> {
   const { payload, settings, destinationId, profileId, emit, signal } = input;
 
-  const destination = await loadDirectoryDestination(
-    payload.site,
-    settings.useGlobalFolder,
-    profileId
-  );
+  const scope = folderScope(payload.site, settings.useGlobalFolder);
+  const destination = await loadDirectoryDestination(scope, profileId);
 
   if (!destination) {
     await emit({ kind: "failed", message: "Choose a destination folder before gathering." });
@@ -52,51 +48,37 @@ export async function executeGatherOutput(input: {
   const permission = await ensureDirectoryPermission(directoryHandle, false);
 
   if (permission !== "granted") {
-    await emit({
-      kind: "permission-required",
-      scope: settings.useGlobalFolder ? "global" : "site"
-    });
+    await emit({ kind: "permission-required", scope: scope.kind });
 
     return;
   }
 
-  const standardFolderSegments = getFolderSegments(payload);
+  const standardFolderSegments = sanitizeFolderSegments(payload.folderSegments);
 
   const { segments: folderSegments, usedLegacyFolder } = await resolveCompatibleFolderSegments(
     directoryHandle,
     payload.site,
-    standardFolderSegments
+    standardFolderSegments,
   );
 
   if (usedLegacyFolder) {
     await emit({
       kind: "log",
-      message: `Using existing legacy artist folder "${folderSegments[0]}".`
+      message: `Using existing legacy artist folder "${folderSegments[0]}".`,
     });
   }
 
   const destinationPreview = buildFolderPreview(directoryHandle.name, folderSegments);
-  const total = payload.outputKind === "generated-story-pdf" ? payload.chapters.length : payload.images.length;
-  await emit({ kind: "writing", destinationPreview, folderSegments, total });
+  await emit({ kind: "writing", destinationPreview, folderSegments, total: outputTotal(payload) });
   const destinationDirectory = await getOrCreateNestedDirectory(directoryHandle, folderSegments);
 
-  try {
-    if (payload.outputKind === "generated-story-pdf") {
-      await executeStory(payload, destinationDirectory, settings, emit, signal);
+  if (payload.outputKind === "generated-story-pdf") {
+    await executeStory(payload, destinationDirectory, settings, emit, signal);
 
-      return;
-    }
-
-    await executeFiles(payload, destinationDirectory, settings, emit, signal);
-  } catch (error) {
-    if (isAbortError(toError(error)) || signal?.aborted) {
-      await emit({ kind: "cancelled", message: "Gather Run cancelled." });
-
-      return;
-    }
-
-    await emit({ kind: "failed", message: formatError(toError(error)) });
+    return;
   }
+
+  await executeFiles(payload, destinationDirectory, settings, emit, signal);
 }
 
 async function executeFiles(
@@ -104,27 +86,27 @@ async function executeFiles(
   destinationDirectory: WritableDirectory,
   settings: GatherBoxSettings,
   emit: (event: GatherRunEvent) => Promise<void>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
-  const mediaTransformer = settings.mediaCompatibilityMode
-    ? await import("../gather/archive-media-transformer").then(
-        ({ ARCHIVE_MEDIA_TRANSFORMER }) => ARCHIVE_MEDIA_TRANSFORMER
-      )
-    : undefined;
+  const mediaTransformer = await loadMediaTransformer(settings);
 
   await emit({
     kind: "log",
     message: `Found ${payload.images.length} item(s) in "${payload.title}".`,
-    tone: "success"
+    tone: "success",
   });
 
   const summary = await downloadImages(
     payload.images,
     destinationDirectory,
     {
-      onStart: () => undefined,
       onProgress: (completed, total) => {
-        void emit({ kind: "progress", completed, total, message: `Processed ${completed} of ${total}.` });
+        void emit({
+          kind: "progress",
+          completed,
+          total,
+          message: `Processed ${completed} of ${total}.`,
+        });
       },
       onSaved: (fileName) => {
         void emit({ kind: "log", message: `Saved ${fileName}`, tone: "success" });
@@ -133,25 +115,32 @@ async function executeFiles(
         void emit({ kind: "log", message: `Skipped existing ${fileName}`, tone: "success" });
       },
       onKeptOriginal: (fileName, reason) => {
-        void emit({ kind: "log", message: `Kept original ${fileName}: could not convert (${reason})` });
+        void emit({
+          kind: "log",
+          message: `Kept original ${fileName}: could not convert (${reason})`,
+        });
       },
       onVerbose: settings.verboseLogging
         ? (message) => {
             void emit({ kind: "log", message });
           }
-        : undefined
+        : undefined,
     },
     {
-      credentials: shouldIncludeCredentials(payload, settings) ? "include" : "omit",
+      credentials: requestCredentials(payload, settings),
       concurrency: settings.downloadConcurrency,
       mediaTransformer,
       site: payload.site,
-      signal
-    }
+      signal,
+    },
   );
 
   for (const failure of summary.failedItems) {
-    await emit({ kind: "log", message: `Failed ${failure.fileName}: ${failure.reason}`, tone: "error" });
+    await emit({
+      kind: "log",
+      message: `Failed ${failure.fileName}: ${failure.reason}`,
+      tone: "error",
+    });
   }
 
   await emit({
@@ -160,7 +149,7 @@ async function executeFiles(
     skipped: summary.skipped,
     failed: summary.failed,
     failedItems: summary.failedItems,
-    retryImages: buildRetryImages(summary.failedItems, payload.images)
+    retryImages: buildRetryImages(summary.failedItems, payload.images),
   });
 }
 
@@ -169,25 +158,31 @@ async function executeStory(
   destinationDirectory: WritableDirectory,
   settings: GatherBoxSettings,
   emit: (event: GatherRunEvent) => Promise<void>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
-  const { saveFanfictionStoryPdf } = await import("../gather/fanfiction-story");
+  const source = getGatherSource(payload.site);
+
+  if (source?.output.kind !== "generated-story-pdf") {
+    throw new Error(`${payload.site} does not generate stories.`);
+  }
+
+  const { saveGeneratedStoryPdf } = await import("./generated-story");
   await emit({
     kind: "log",
     message: `Found ${payload.chapters.length} chapter(s) in "${payload.title}".`,
-    tone: "success"
+    tone: "success",
   });
-  await saveFanfictionStoryPdf(
+  await saveGeneratedStoryPdf(
     payload,
+    source.output,
     destinationDirectory,
     {
-      onStart: () => undefined,
       onChapterFetched: (completed, total) => {
         void emit({
           kind: "progress",
           completed,
           total,
-          message: `Fetched chapter ${completed} of ${total}.`
+          message: `Fetched chapter ${completed} of ${total}.`,
         });
       },
       onGenerating: () => {
@@ -195,14 +190,14 @@ async function executeStory(
           kind: "progress",
           completed: payload.chapters.length,
           total: payload.chapters.length,
-          message: "Generating PDF..."
+          message: "Generating PDF...",
         });
       },
       onSaved: (fileName) => {
         void emit({ kind: "log", message: `Saved ${fileName}`, tone: "success" });
-      }
+      },
     },
-    { settings, signal }
+    { settings, signal },
   );
   await emit({
     kind: "complete",
@@ -210,7 +205,7 @@ async function executeStory(
     skipped: 0,
     failed: 0,
     failedItems: [],
-    retryImages: []
+    retryImages: [],
   });
 }
 
@@ -222,9 +217,7 @@ const DESTINATION_CHANGED =
  * retryable items instead, so Retry Failed sends them to the new folder only when asked; a story
  * has no per-item retry and needs gathering again.
  */
-function destinationChangedEvent(
-  payload: DownloadablePayload | GeneratedStoryPayload
-): GatherRunEvent {
+function destinationChangedEvent(payload: GatherOutput): GatherRunEvent {
   if (payload.outputKind === "generated-story-pdf") {
     return { kind: "failed", message: `${DESTINATION_CHANGED} Gather the story again.` };
   }
@@ -233,7 +226,7 @@ function destinationChangedEvent(
     fileName: image.fileName,
     reason: DESTINATION_CHANGED,
     originalUrl: image.originalUrl,
-    kind: "error" as const
+    kind: "error" as const,
   }));
 
   return {
@@ -242,11 +235,14 @@ function destinationChangedEvent(
     skipped: 0,
     failed: failedItems.length,
     failedItems,
-    retryImages: payload.images
+    retryImages: payload.images,
   };
 }
 
-function buildRetryImages(failedItems: DownloadFailure[], sourceImages: GalleryImage[]): GalleryImage[] {
+function buildRetryImages(
+  failedItems: DownloadFailure[],
+  sourceImages: DownloadableFile[],
+): DownloadableFile[] {
   const failedNames = new Set(failedItems.map((item) => item.fileName));
 
   return sourceImages.filter((image) => failedNames.has(image.fileName));

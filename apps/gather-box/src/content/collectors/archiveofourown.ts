@@ -1,6 +1,7 @@
-import type { PageLocation } from "../collector-entry";
 import { buildStoryPdfFileName } from "../../shared/path";
-import type { GalleryCollectResponse } from "../../shared/types";
+import type { CollectorResult } from "../../shared/types";
+import { getText } from "../collector-dom";
+import type { PageLocation, SourcePage } from "../collector-entry";
 
 const AO3_PDF_LINK_SELECTOR = 'li.download a[href*=".pdf"]';
 
@@ -10,25 +11,19 @@ const AO3_BYLINE_SELECTOR = "#workskin h3.byline.heading";
 
 const AO3_AUTHOR_SELECTOR = '#workskin h3.byline.heading a[rel="author"]';
 
-export function collectArchiveOfOurOwnData(
-  document: Document,
-  location: PageLocation
-): GalleryCollectResponse {
-  if (location.hostname !== "archiveofourown.org" || !location.pathname.startsWith("/works/")) {
-    return {
-      ok: false,
-      code: "UNSUPPORTED_SITE",
-      message: "This AO3 page is not a supported work URL."
-    };
+export function collect(document: Document, page: SourcePage): CollectorResult {
+  const { workId } = page.address;
+
+  if (!workId) {
+    return { ok: false, message: "This AO3 page is not a supported work URL." };
   }
 
-  const pdfUrl = getPdfUrl(document, location);
+  const pdfUrl = getPdfUrl(document, page.location);
 
   if (!pdfUrl) {
     return {
       ok: false,
-      code: "PDF_LINK_NOT_FOUND",
-      message: "Could not find the AO3 PDF download link on this page."
+      message: "Could not find the AO3 PDF download link on this page.",
     };
   }
 
@@ -37,8 +32,7 @@ export function collectArchiveOfOurOwnData(
   if (!title) {
     return {
       ok: false,
-      code: "TITLE_NOT_FOUND",
-      message: "Could not find the AO3 work title on this page."
+      message: "Could not find the AO3 work title on this page.",
     };
   }
 
@@ -47,28 +41,17 @@ export function collectArchiveOfOurOwnData(
   if (!author) {
     return {
       ok: false,
-      code: "AUTHOR_NOT_FOUND",
-      message: "Could not find the AO3 author name on this page."
+      message: "Could not find the AO3 author name on this page.",
     };
   }
 
   return {
     ok: true,
     outputKind: "downloadable-files",
-    site: "archiveofourown",
     title,
-    pageUrl: location.href,
-    galleryId: getWorkId(location),
+    galleryId: workId,
     folderSegments: [],
-    skippedCount: 0,
-    images: [
-      {
-        pageNumber: 1,
-        thumbnailUrl: null,
-        originalUrl: pdfUrl,
-        fileName: buildStoryPdfFileName(author, title)
-      }
-    ]
+    images: [{ originalUrl: pdfUrl, fileName: buildStoryPdfFileName(author, title) }],
   };
 }
 
@@ -102,14 +85,4 @@ function getAuthors(document: Document): string {
   }
 
   return getText(document.querySelector(AO3_BYLINE_SELECTOR));
-}
-
-function getWorkId(location: PageLocation): string | null {
-  const match = location.pathname.match(/^\/works\/([^/]+)/);
-
-  return match ? match[1] : null;
-}
-
-function getText(element: Element | null): string {
-  return element ? element.textContent?.trim() || "" : "";
 }

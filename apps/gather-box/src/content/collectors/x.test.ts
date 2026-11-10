@@ -1,9 +1,16 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
+import { matchGatherSource } from "../../shared/source-catalog";
 import type { ResolveXMediaResponse } from "../../shared/x-media";
-import { collectXData } from "./x";
+import type { SourcePage } from "../collector-entry";
+import { collect } from "./x";
 
-const location = new URL("https://x.com/artist/status/123");
+const POST_URL = "https://x.com/artist/status/123";
+
+const page: SourcePage = {
+  location: new URL(POST_URL),
+  address: matchGatherSource(POST_URL)?.address ?? {},
+};
 
 function postWithVisiblePhoto(format = "jpg"): Document {
   document.body.innerHTML = `
@@ -23,36 +30,30 @@ describe("X collector", () => {
         {
           type: "photo",
           originalUrl: "https://pbs.twimg.com/media/PHOTO.jpg?name=orig",
-          thumbnailUrl: "https://pbs.twimg.com/media/PHOTO.jpg",
-          fileName: "PHOTO.jpg"
+          fileName: "PHOTO.jpg",
         },
         {
           type: "video",
           originalUrl: "https://video.twimg.com/ext_tw_video/1/pu/vid/720x1280/clip.mp4",
-          thumbnailUrl: "https://pbs.twimg.com/ext_tw_video_thumb/1/pu/img/poster.jpg",
-          fileName: "clip.mp4"
-        }
-      ]
+          fileName: "clip.mp4",
+        },
+      ],
     };
 
     for (const format of ["jpg", "webp"]) {
-      const collected = await collectXData(
-        postWithVisiblePhoto(format),
-        location,
-        async () => resolved
-      );
+      const collected = await collect(postWithVisiblePhoto(format), page, async () => resolved);
 
       expect(collected).toMatchObject({
         ok: true,
-        images: [{ fileName: "PHOTO.jpg" }, { fileName: "clip.mp4" }]
+        images: [{ fileName: "PHOTO.jpg" }, { fileName: "clip.mp4" }],
       });
     }
   });
 
   it("falls back to visible photos when media resolution fails", async () => {
-    const collected = await collectXData(postWithVisiblePhoto(), location, async () => ({
+    const collected = await collect(postWithVisiblePhoto(), page, async () => ({
       ok: false,
-      message: "Syndication unavailable."
+      message: "Syndication unavailable.",
     }));
 
     expect(collected).toMatchObject({
@@ -60,9 +61,9 @@ describe("X collector", () => {
       images: [
         {
           fileName: "PHOTO.jpg",
-          originalUrl: "https://pbs.twimg.com/media/PHOTO?format=jpg&name=orig"
-        }
-      ]
+          originalUrl: "https://pbs.twimg.com/media/PHOTO?format=jpg&name=orig",
+        },
+      ],
     });
   });
 });

@@ -1,0 +1,83 @@
+import {
+  getExpectedArchiveTarget,
+  MediaEncodeError,
+  planArchiveMedia,
+} from "@latch-works/media-format";
+import { throwIfAborted } from "../errors";
+import { createSerialQueue, type SerialQueue } from "../serial-queue";
+import type { MediaTransformer, TransformedMedia } from "./media-transformer";
+
+export interface ArchiveMediaEncoders {
+  encodeStillAsAvif(blob: Blob, signal?: AbortSignal): Promise<ArrayBuffer>;
+  encodeGifAsMp4(blob: Blob, signal?: AbortSignal): Promise<ArrayBuffer>;
+}
+
+const DEFAULT_ARCHIVE_MEDIA_ENCODERS: ArchiveMediaEncoders = {
+  encodeStillAsAvif: (blob, signal) =>
+    import("./avif-encoder").then(({ encodeStillAsAvif }) => encodeStillAsAvif(blob, signal)),
+  encodeGifAsMp4: (blob, signal) =>
+    import("@latch-works/media-format/animation-mp4").then(({ encodeGifAsMp4 }) =>
+      encodeGifAsMp4(blob, signal),
+    ),
+};
+
+export function createArchiveMediaTransformer(
+  encoders: ArchiveMediaEncoders = DEFAULT_ARCHIVE_MEDIA_ENCODERS,
+): MediaTransformer {
+  const enqueueConversion = createSerialQueue();
+
+  return {
+    expectedTarget: getExpectedArchiveTarget,
+    transform: (blob, fileName, signal) =>
+      transformArchiveMedia(blob, fileName, encoders, enqueueConversion, signal),
+  };
+}
+
+export const ARCHIVE_MEDIA_TRANSFORMER = createArchiveMediaTransformer();
+
+async function transformArchiveMedia(
+  blob: Blob,
+  fileName: string,
+  encoders: ArchiveMediaEncoders,
+  enqueueConversion: SerialQueue,
+  signal?: AbortSignal,
+): Promise<TransformedMedia> {
+  throwIfAborted(signal);
+  const plan = planArchiveMedia(fileName, blob.type);
+
+  if (!plan) {
+    return { blob, fileName, converted: false };
+  }
+
+  if (plan.action === "rename-avif" || plan.action === "rename-mp4") {
+    return { blob, fileName: plan.fileName, converted: false };
+  }
+
+  let buffer: ArrayBuffer;
+
+  try {
+    buffer = await enqueueConversion(() =>
+      plan.action === "convert-mp4"
+        ? encoders.encodeGifAsMp4(blob, signal)
+        : encoders.encodeStillAsAvif(blob, signal),
+    );
+  } catch (error) {
+    if (!(error instanceof MediaEncodeError)) {
+      throw error;
+    }
+
+    // An original the encoder cannot handle is still worth archiving; losing the item is worse
+    // than one unconverted file.
+    return { blob, fileName, converted: false, conversionFailure: error.message };
+  }
+
+  throwIfAborted(signal);
+
+  return {
+    blob: new Blob([buffer], {
+      type: plan.action === "convert-mp4" ? "video/mp4" : "image/avif",
+    }),
+    fileName: plan.fileName,
+    converted: true,
+  };
+}

@@ -1,19 +1,22 @@
-import { requireElement } from "../gather/dom";
-import { formatError, toError } from "../gather/errors";
+import { PROFILES_KEY } from "../shared/constants";
+import { toError } from "../shared/errors";
 import {
   addProfile,
   DEFAULT_PROFILE_ID,
+  type GatherProfilesState,
   getProfileName,
   loadProfiles,
   MAX_PROFILE_NAME_LENGTH,
   MAX_PROFILES,
-  PROFILES_KEY,
   removeProfile,
   renameProfile,
   setActiveProfile,
   updateProfiles,
-  type GatherProfilesState
 } from "../shared/profiles";
+import { requireElement } from "../shared/require-element";
+
+/** How long a save confirmation stays on the settings page. */
+export const STATUS_MESSAGE_MS = 2500;
 
 interface ProfileEditorElements {
   rows: HTMLElement;
@@ -29,7 +32,7 @@ export async function initProfileEditor(document: Document): Promise<void> {
   const elements: ProfileEditorElements = {
     rows: requireElement(document, "profileRows", HTMLElement),
     addButton: requireElement(document, "addProfile", HTMLButtonElement),
-    status: requireElement(document, "profileStatus", HTMLElement)
+    status: requireElement(document, "profileStatus", HTMLElement),
   };
 
   let statusTimer: number | undefined;
@@ -46,12 +49,12 @@ export async function initProfileEditor(document: Document): Promise<void> {
     window.clearTimeout(statusTimer);
     statusTimer = window.setTimeout(() => {
       elements.status.textContent = "";
-    }, 2500);
+    }, STATUS_MESSAGE_MS);
   };
 
   const apply = async (
     change: (state: GatherProfilesState) => GatherProfilesState,
-    message: string
+    message: string,
   ): Promise<GatherProfilesState | null> => {
     try {
       const next = await updateProfiles(change);
@@ -60,7 +63,7 @@ export async function initProfileEditor(document: Document): Promise<void> {
 
       return next;
     } catch (error) {
-      report(`Could not save profiles: ${formatError(toError(error))}`);
+      report(`Could not save profiles: ${toError(error).message}`);
 
       return null;
     }
@@ -117,7 +120,7 @@ export async function initProfileEditor(document: Document): Promise<void> {
 
     const confirmed = window.confirm(
       `Delete "${name}"? Gather Box forgets the folders it remembers and drops pages still ` +
-        "queued for them. Files already saved stay on disk."
+        "queued for them. Files already saved stay on disk.",
     );
 
     if (confirmed) {

@@ -1,17 +1,24 @@
-import * as z from "zod/mini";
+import { isAbortError, toError } from "../shared/errors";
+import { RUN_CANCELLED_MESSAGE } from "../shared/gather-run";
 import {
-  CancelGatherRunMessageSchema,
-  ExecuteGatherRunMessageSchema,
-  GATHER_RUN_EVENT,
-  GetGatherExecutorStatusMessageSchema,
-  type GatherRunEvent
-} from "../shared/gather-run-messages";
-import { executeGatherOutput } from "./executor";
+  answerChannel,
+  type ChannelFailure,
+  failChannel,
+  isExtensionPageSender,
+  listenOnChannels,
+} from "../shared/messaging";
+import {
+  CANCEL_GATHER_RUN,
+  EXECUTE_GATHER_RUN,
+  type ExecuteGatherRunMessage,
+  type ExecutorRequest,
+  ExecutorRequestSchema,
+  type ExecutorResponses,
+  GET_GATHER_EXECUTOR_STATUS,
+} from "../shared/protocol/executor";
+import { sendGatherRunEvent } from "../shared/protocol/run-events";
 import { GatherExecutionSlot } from "./execution-slot";
-import {
-  OffscreenFilesystemProofMessageSchema,
-  proveOffscreenFilesystemAccess
-} from "./filesystem-proof";
+import { executeGatherOutput } from "./executor";
 import { createGatherRunEventEmitter, type GatherRunEventEmitter } from "./run-event-emitter";
 
 const executionSlot = new GatherExecutionSlot();
@@ -19,54 +26,28 @@ const executionSlot = new GatherExecutionSlot();
 /** Each run's reporter, kept until its held report is accepted so a re-run can take it over. */
 const runEmitters = new Map<string, GatherRunEventEmitter>();
 
-/** The background answers `accepted: false` when it could not persist the event. */
-const RunEventAcknowledgementSchema = z.object({ accepted: z.literal(true) });
+listenOnChannels(
+  answerChannel<ExecutorRequest, ExecutorResponses, ChannelFailure>({
+    schema: ExecutorRequestSchema,
+    refuse: (sender) =>
+      isExtensionPageSender(sender) ? null : "Only Gather Box may drive the executor.",
+    fail: failChannel,
+    handlers: {
+      [GET_GATHER_EXECUTOR_STATUS]: async () => ({ activeRunId: executionSlot.activeRunId }),
+      [CANCEL_GATHER_RUN]: async (request) => ({ aborted: executionSlot.abort(request.runId) }),
+      [EXECUTE_GATHER_RUN]: async (request) => startExecution(request),
+    },
+  }),
+);
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!isExtensionOriginSender(sender)) {
-    return false;
-  }
+function startExecution(
+  execute: ExecuteGatherRunMessage,
+): ExecutorResponses[typeof EXECUTE_GATHER_RUN] {
+  const emitter = createGatherRunEventEmitter(async (event) => {
+    const response = await sendGatherRunEvent(execute.runId, event);
 
-  const proofRequest = OffscreenFilesystemProofMessageSchema.safeParse(message);
-
-  if (proofRequest.success) {
-    void proveOffscreenFilesystemAccess({
-      siteKey: proofRequest.data.siteKey,
-      useGlobalFolder: proofRequest.data.useGlobalFolder,
-      profileId: proofRequest.data.profileId
-    }).then(sendResponse, (error) =>
-      sendResponse({
-        ok: false,
-        permission: "denied",
-        message: error instanceof Error ? error.message : "Offscreen filesystem proof failed."
-      })
-    );
-
-    return true;
-  }
-
-  if (GetGatherExecutorStatusMessageSchema.safeParse(message).success) {
-    sendResponse({ activeRunId: executionSlot.activeRunId });
-
-    return false;
-  }
-
-  const cancelRequest = CancelGatherRunMessageSchema.safeParse(message);
-
-  if (cancelRequest.success) {
-    sendResponse({ aborted: executionSlot.abort(cancelRequest.data.runId) });
-
-    return false;
-  }
-
-  const executeRequest = ExecuteGatherRunMessageSchema.safeParse(message);
-
-  if (!executeRequest.success) {
-    return false;
-  }
-
-  const execute = executeRequest.data;
-  const emitter = createGatherRunEventEmitter((event) => emitRunEvent(execute.runId, event));
+    return response.outcome === "accepted";
+  });
 
   const start = executionSlot.start(
     execute.runId,
@@ -78,23 +59,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           destinationId: execute.destinationId,
           profileId: execute.profileId,
           emit: emitter.emit,
-          signal
+          signal,
         });
       } catch (error) {
         await emitter.emit(
-          signal.aborted
-            ? { kind: "cancelled", message: "Gather Run cancelled." }
-            : {
-                kind: "failed",
-                message: error instanceof Error ? error.message : "Gather execution failed."
-              }
+          signal.aborted || isAbortError(toError(error))
+            ? { kind: "cancelled", message: RUN_CANCELLED_MESSAGE }
+            : { kind: "failed", message: toError(error).message },
         );
 
         return;
       }
 
       if (signal.aborted) {
-        await emitter.emit({ kind: "cancelled", message: "Gather Run cancelled." });
+        await emitter.emit({ kind: "cancelled", message: RUN_CANCELLED_MESSAGE });
       }
     },
     () =>
@@ -102,7 +80,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (runEmitters.get(execute.runId) === emitter) {
           runEmitters.delete(execute.runId);
         }
-      })
+      }),
   );
 
   if (start === "started") {
@@ -111,26 +89,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     runEmitters.set(execute.runId, emitter);
   }
 
-  sendResponse({
-    accepted: start !== "busy",
-    duplicate: start === "duplicate",
-    busy: start === "busy"
-  });
-
-  return false;
-});
-
-async function emitRunEvent(runId: string, event: GatherRunEvent): Promise<boolean> {
-  const response = await chrome.runtime.sendMessage({
-    type: GATHER_RUN_EVENT,
-    target: "background",
-    runId,
-    event
-  });
-
-  return RunEventAcknowledgementSchema.safeParse(response).success;
-}
-
-function isExtensionOriginSender(sender: chrome.runtime.MessageSender): boolean {
-  return !sender.tab && sender.id === chrome.runtime.id;
+  return start === "busy" ? { outcome: "busy" } : { outcome: "accepted" };
 }

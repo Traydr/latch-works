@@ -7,18 +7,10 @@ export type ToggleGatherBoxOutcome =
   | { outcome: "target-unavailable" }
   | { outcome: "failed"; message: string };
 
-interface SidePanelAdapter {
-  open(options: { windowId: number }): Promise<void>;
-  close(options: { windowId: number }): Promise<void>;
-}
-
 export class GatherCommands {
   private readonly openWindowIds = new Set<number>();
 
-  constructor(
-    private readonly runs: Pick<GatherRunCoordinator, "startForTab">,
-    private readonly sidePanel: SidePanelAdapter = chrome.sidePanel
-  ) {}
+  constructor(private readonly runs: Pick<GatherRunCoordinator, "startForTab">) {}
 
   panelOpened(windowId: number): void {
     this.openWindowIds.add(windowId);
@@ -35,20 +27,20 @@ export class GatherCommands {
 
     try {
       if (this.openWindowIds.has(tab.windowId)) {
-        await this.sidePanel.close({ windowId: tab.windowId });
+        await chrome.sidePanel.close({ windowId: tab.windowId });
         this.panelClosed(tab.windowId);
 
         return { outcome: "closed" };
       }
 
-      await this.sidePanel.open({ windowId: tab.windowId });
+      await chrome.sidePanel.open({ windowId: tab.windowId });
       this.panelOpened(tab.windowId);
 
       return { outcome: "opened" };
     } catch (error) {
       return {
         outcome: "failed",
-        message: error instanceof Error ? error.message : "Could not toggle Gather Box."
+        message: error instanceof Error ? error.message : "Could not toggle Gather Box.",
       };
     }
   }
@@ -59,7 +51,7 @@ export class GatherCommands {
     }
 
     // Opening begins synchronously in the command event turn so Chrome retains user activation.
-    const opening = this.sidePanel.open({ windowId: tab.windowId });
+    const opening = chrome.sidePanel.open({ windowId: tab.windowId });
     const starting = this.runs.startForTab(tab, profileId);
 
     return Promise.allSettled([opening, starting]).then(([, result]) =>
@@ -67,8 +59,11 @@ export class GatherCommands {
         ? result.value
         : {
             outcome: "failed" as const,
-            message: result.reason instanceof Error ? result.reason.message : "Could not start Gather Run."
-          }
+            message:
+              result.reason instanceof Error
+                ? result.reason.message
+                : "Could not start Gather Run.",
+          },
     );
   }
 }

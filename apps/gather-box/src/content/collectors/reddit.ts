@@ -1,14 +1,10 @@
-import type { PageLocation } from "../collector-entry";
+import { getUrlFileName, numberFileNames } from "../../shared/path";
 import {
   RESOLVE_REDGIFS_MEDIA_MESSAGE,
-  type ResolveRedgifsMediaMessage,
-  type ResolveRedgifsMediaResponse
-} from "../../shared/reddit-media";
-import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
-
-type RedgifsResolver = (
-  message: ResolveRedgifsMediaMessage
-) => Promise<ResolveRedgifsMediaResponse>;
+  sendCollectorRequest,
+} from "../../shared/protocol/collector";
+import type { CollectorResult, DownloadableFile } from "../../shared/types";
+import type { SourcePage } from "../collector-entry";
 
 interface RedditPost {
   id: string;
@@ -16,19 +12,11 @@ interface RedditPost {
   element: Element;
 }
 
-export async function collectRedditData(
-  document: Document,
-  location: PageLocation,
-  resolveRedgifs: RedgifsResolver = resolveRedgifsMedia
-): Promise<GalleryCollectResponse> {
-  const post = getRedditPost(document, location);
+export async function collect(document: Document, page: SourcePage): Promise<CollectorResult> {
+  const post = getRedditPost(document, page.address.postId);
 
   if (!post) {
-    return {
-      ok: false,
-      code: "UNSUPPORTED_SITE",
-      message: "This Reddit page is not a supported post URL."
-    };
+    return { ok: false, message: "This Reddit page is not a supported post URL." };
   }
 
   let images = collectGalleryImages(post.element);
@@ -38,25 +26,21 @@ export async function collectRedditData(
     const redditMedia = collectRedditGifVideo(post.element) ?? normalizeRedditMediaUrl(contentHref);
 
     if (redditMedia) {
-      images = [toGalleryImage(redditMedia, 1)];
+      images = [redditMedia];
     } else {
       const redgifsId = getRedgifsId(contentHref, post.element);
 
       if (redgifsId) {
-        const resolved = await resolveRedgifs({
+        const resolved = await sendCollectorRequest({
           type: RESOLVE_REDGIFS_MEDIA_MESSAGE,
-          redgifsId
+          redgifsId,
         });
 
         if (!resolved.ok) {
-          return {
-            ok: false,
-            code: "MEDIA_RESOLUTION_FAILED",
-            message: resolved.message
-          };
+          return { ok: false, message: resolved.message };
         }
 
-        images = [{ pageNumber: 1, ...resolved.media }];
+        images = [resolved.media];
       }
     }
   }
@@ -64,41 +48,28 @@ export async function collectRedditData(
   if (images.length === 0) {
     return {
       ok: false,
-      code: "NO_IMAGES_FOUND",
       message:
-        "No downloadable image, GIF, gallery, or RedGIFs video was found in this Reddit post."
+        "No downloadable image, GIF, gallery, or RedGIFs video was found in this Reddit post.",
     };
   }
 
-  const multipleMedia = images.length > 1;
-
-  if (multipleMedia) {
-    images = addOrderedFileNamePrefixes(images);
-  }
+  const gallery = images.length > 1;
 
   return {
     ok: true,
     outputKind: "downloadable-files",
-    site: "reddit",
     title: post.title,
-    pageUrl: location.href,
     galleryId: post.id,
-    folderSegments: multipleMedia ? [`${post.title}_${post.id}`] : [],
-    skippedCount: 0,
-    images
+    folderSegments: gallery ? [`${post.title}_${post.id}`] : [],
+    images: gallery ? numberFileNames(images) : images,
   };
 }
 
-function getRedditPost(document: Document, location: PageLocation): RedditPost | null {
-  const match = location.pathname.match(
-    /^\/(?:r|user)\/[^/]+\/comments\/([a-z0-9]+)(?:\/[^/?#]+)?\/?$/i
-  );
-
-  if (!match) {
+function getRedditPost(document: Document, id: string | undefined): RedditPost | null {
+  if (!id) {
     return null;
   }
 
-  const id = match[1];
   const element = document.querySelector(`shreddit-post[id="t3_${id}"][post-title]`);
 
   if (!element) {
@@ -108,16 +79,16 @@ function getRedditPost(document: Document, location: PageLocation): RedditPost |
   return {
     id,
     title: element.getAttribute("post-title")?.trim() || `Reddit post ${id}`,
-    element
+    element,
   };
 }
 
-function collectGalleryImages(post: Element): GalleryImage[] {
+function collectGalleryImages(post: Element): DownloadableFile[] {
   const items = Array.from(
-    post.querySelectorAll<HTMLElement>('gallery-carousel li[slot^="page-"]')
+    post.querySelectorAll<HTMLElement>('gallery-carousel li[slot^="page-"]'),
   ).sort((left, right) => getPageNumber(left) - getPageNumber(right));
 
-  const result: GalleryImage[] = [];
+  const result: DownloadableFile[] = [];
   const seen = new Set<string>();
 
   for (const item of items) {
@@ -130,15 +101,13 @@ function collectGalleryImages(post: Element): GalleryImage[] {
     }
 
     seen.add(media.originalUrl);
-    result.push(toGalleryImage(media, result.length + 1));
+    result.push(media);
   }
 
   return result;
 }
 
-function collectRedditGifVideo(
-  post: Element
-): { originalUrl: string; thumbnailUrl: string | null; fileName: string } | null {
+function collectRedditGifVideo(post: Element): DownloadableFile | null {
   if (post.getAttribute("post-type") !== "gif") {
     return null;
   }
@@ -154,7 +123,7 @@ function collectRedditGifVideo(
 
   try {
     const url = new URL(source);
-    const sourceFileName = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+    const sourceFileName = getUrlFileName(source);
 
     if (
       url.protocol !== "https:" ||
@@ -165,19 +134,13 @@ function collectRedditGifVideo(
       return null;
     }
 
-    return {
-      originalUrl: url.toString(),
-      thumbnailUrl: player?.getAttribute("poster") ?? null,
-      fileName: sourceFileName.replace(/\.gif$/i, ".mp4")
-    };
+    return { originalUrl: url.toString(), fileName: sourceFileName.replace(/\.gif$/i, ".mp4") };
   } catch {
     return null;
   }
 }
 
-function normalizeRedditMediaUrl(
-  value: string
-): { originalUrl: string; thumbnailUrl: string; fileName: string } | null {
+function normalizeRedditMediaUrl(value: string): DownloadableFile | null {
   try {
     const url = new URL(value);
 
@@ -185,13 +148,13 @@ function normalizeRedditMediaUrl(
       return null;
     }
 
-    const pathFileName = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+    const pathFileName = getUrlFileName(value);
 
     if (url.hostname === "i.redd.it" && isRedditMediaFileName(pathFileName)) {
       url.search = "";
       url.hash = "";
 
-      return { originalUrl: url.toString(), thumbnailUrl: value, fileName: pathFileName };
+      return { originalUrl: url.toString(), fileName: pathFileName };
     }
 
     if (url.hostname !== "preview.redd.it") {
@@ -204,11 +167,7 @@ function normalizeRedditMediaUrl(
       return null;
     }
 
-    return {
-      originalUrl: `https://i.redd.it/${originalFileName}`,
-      thumbnailUrl: value,
-      fileName: originalFileName
-    };
+    return { originalUrl: `https://i.redd.it/${originalFileName}`, fileName: originalFileName };
   } catch {
     return null;
   }
@@ -246,7 +205,7 @@ function getRedgifsId(contentHref: string, post: Element): string | null {
 
       const match = url.pathname.match(/^\/(?:watch|ifr)\/([a-z0-9]+)\/?$/i);
 
-      if (match) {
+      if (match?.[1]) {
         return match[1];
       }
     } catch {
@@ -263,31 +222,6 @@ function getRedgifsEmbedUrl(post: Element): string | null {
   return html.match(/src=["'](https:\/\/[^"']+)["']/i)?.[1] ?? null;
 }
 
-function addOrderedFileNamePrefixes(images: GalleryImage[]): GalleryImage[] {
-  const width = Math.max(2, String(images.length).length);
-
-  return images.map((image, index) => ({
-    ...image,
-    fileName: `${String(index + 1).padStart(width, "0")}_${image.fileName}`
-  }));
-}
-
-function toGalleryImage(
-  media: { originalUrl: string; thumbnailUrl: string | null; fileName: string },
-  pageNumber: number
-): GalleryImage {
-  return { pageNumber, ...media };
-}
-
 function getPageNumber(item: Element): number {
   return Number(item.getAttribute("slot")?.match(/^page-(\d+)$/)?.[1] ?? Number.MAX_SAFE_INTEGER);
-}
-
-async function resolveRedgifsMedia(
-  message: ResolveRedgifsMediaMessage
-): Promise<ResolveRedgifsMediaResponse> {
-  return chrome.runtime.sendMessage<
-    ResolveRedgifsMediaMessage,
-    ResolveRedgifsMediaResponse
-  >(message);
 }

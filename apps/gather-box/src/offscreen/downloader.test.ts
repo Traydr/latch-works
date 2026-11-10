@@ -1,0 +1,453 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  saveBlobWithoutClobbering,
+  type WritableDirectory,
+  type WritableFile,
+  type WritableFileStream,
+} from "../shared/archive-writer";
+import { IDENTITY_MEDIA_TRANSFORMER } from "../shared/media/media-transformer";
+import type { SiteKey } from "../shared/source-catalog";
+import { type DownloadOptions, downloadImages, runPool } from "./downloader";
+
+/**
+ * An in-memory folder with File System Access semantics: a write lands only when its stream
+ * closes, and a missing entry rejects with NotFoundError. Two switches stand in for a browser
+ * that stops mid-save, and a gate holds writes open to line up concurrent saves. A case-insensitive
+ * folder resolves names the way macOS APFS does by default, storing each file under its lowercase
+ * name.
+ */
+class MemoryDirectory implements WritableDirectory {
+  readonly files = new Map<string, Blob>();
+  /** Writes to this name open the file but never close, as when Chrome quits mid-write. */
+  interruptWritesTo: string | null = null;
+  /** Commit markers cannot be removed, as when Chrome quits right after a write lands. */
+  failMarkerRemoval = false;
+  /** Writes opened while this is set do not land until it settles. */
+  holdWrites: Promise<void> | null = null;
+  openedWrites = 0;
+
+  constructor(private readonly caseInsensitive = false) {}
+
+  private key(name: string): string {
+    return this.caseInsensitive ? name.toLowerCase() : name;
+  }
+
+  async getFileHandle(
+    requestedName: string,
+    options?: { create?: boolean },
+  ): Promise<WritableFile> {
+    const name = this.key(requestedName);
+
+    if (!this.files.has(name)) {
+      if (!options?.create) {
+        throw new DOMException(`${name} not found`, "NotFoundError");
+      }
+
+      this.files.set(name, new Blob([]));
+    }
+
+    return {
+      getFile: async () => new File([this.files.get(name) ?? new Blob([])], name),
+      createWritable: async (): Promise<WritableFileStream> => {
+        let pending = new Blob([]);
+        const held = this.holdWrites;
+        this.openedWrites += 1;
+
+        return {
+          write: async (data) => {
+            pending = data;
+          },
+          abort: async () => undefined,
+          close: async () => {
+            await held;
+
+            if (this.interruptWritesTo === name) {
+              throw new Error("browser stopped");
+            }
+
+            this.files.set(name, pending);
+          },
+        };
+      },
+    };
+  }
+
+  async removeEntry(requestedName: string): Promise<void> {
+    const name = this.key(requestedName);
+
+    if (this.failMarkerRemoval && isMarker(name)) {
+      throw new Error("browser stopped");
+    }
+
+    if (!this.files.delete(name)) {
+      throw new DOMException(`${name} not found`, "NotFoundError");
+    }
+  }
+
+  async text(name: string): Promise<string | undefined> {
+    return this.files.get(this.key(name))?.text();
+  }
+
+  mediaNames(): string[] {
+    return [...this.files.keys()].filter((name) => !isMarker(name)).sort();
+  }
+
+  markerNames(): string[] {
+    return [...this.files.keys()].filter(isMarker);
+  }
+}
+
+function isMarker(name: string): boolean {
+  return name.startsWith(".gather-box-commit-");
+}
+
+const blob = (text: string) => new Blob([text]);
+
+/**
+ * Starts the first save and holds its writes open, then starts the second while the first still
+ * owns its filename. The first write lands once the second has settled or had time to.
+ */
+async function raceSaves(
+  directory: MemoryDirectory,
+  first: [content: string, fileName: string],
+  second: [content: string, fileName: string],
+) {
+  let releaseFirst: () => void = () => undefined;
+
+  directory.holdWrites = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+
+  const firstSave = saveBlobWithoutClobbering(blob(first[0]), directory, first[1]);
+  await vi.waitFor(() => expect(directory.openedWrites).toBeGreaterThan(0));
+  directory.holdWrites = null;
+  const secondSave = saveBlobWithoutClobbering(blob(second[0]), directory, second[1]);
+  await Promise.race([secondSave, new Promise((resolve) => setTimeout(resolve, 50))]);
+  releaseFirst();
+
+  return Promise.all([firstSave, secondSave]);
+}
+
+describe("collision-safe saving", () => {
+  it("never replaces a finished original whose commit marker was left behind", async () => {
+    const directory = new MemoryDirectory();
+    directory.failMarkerRemoval = true;
+    await expect(
+      saveBlobWithoutClobbering(blob("original A"), directory, "same.jpg"),
+    ).rejects.toThrow("browser stopped");
+    directory.failMarkerRemoval = false;
+    expect(await directory.text("same.jpg")).toBe("original A");
+    expect(directory.markerNames()).toHaveLength(1);
+
+    const saved = await saveBlobWithoutClobbering(blob("different B"), directory, "same.jpg");
+
+    expect(saved).toMatchObject({ skipped: false });
+    expect(saved.fileName).not.toBe("same.jpg");
+    expect(await directory.text("same.jpg")).toBe("original A");
+    expect(await directory.text(saved.fileName)).toBe("different B");
+    expect(directory.markerNames()).toHaveLength(0);
+  });
+
+  it("never replaces an archive edit made after a commit marker was left behind", async () => {
+    const directory = new MemoryDirectory();
+    directory.failMarkerRemoval = true;
+    await expect(
+      saveBlobWithoutClobbering(blob("download A"), directory, "same.jpg"),
+    ).rejects.toThrow("browser stopped");
+    directory.failMarkerRemoval = false;
+    directory.files.set("same.jpg", blob("archive edit B"));
+
+    const replay = await saveBlobWithoutClobbering(blob("download A"), directory, "same.jpg");
+
+    expect(replay.fileName).not.toBe("same.jpg");
+    expect(await directory.text("same.jpg")).toBe("archive edit B");
+    expect(await directory.text(replay.fileName)).toBe("download A");
+    expect(directory.markerNames()).toHaveLength(0);
+  });
+
+  it("repairs an interrupted write when the same content is replayed", async () => {
+    const directory = new MemoryDirectory();
+    directory.interruptWritesTo = "page.jpg";
+    await expect(saveBlobWithoutClobbering(blob("page"), directory, "page.jpg")).rejects.toThrow(
+      "browser stopped",
+    );
+    directory.interruptWritesTo = null;
+    expect(await directory.text("page.jpg")).toBe("");
+
+    await expect(saveBlobWithoutClobbering(blob("page"), directory, "page.jpg")).resolves.toEqual({
+      fileName: "page.jpg",
+      skipped: false,
+    });
+    expect(await directory.text("page.jpg")).toBe("page");
+    expect(directory.mediaNames()).toEqual(["page.jpg"]);
+    expect(directory.markerNames()).toHaveLength(0);
+  });
+
+  it("leaves another item's interrupted write for that item to repair", async () => {
+    const directory = new MemoryDirectory();
+    directory.interruptWritesTo = "page.jpg";
+    await expect(saveBlobWithoutClobbering(blob("first"), directory, "page.jpg")).rejects.toThrow(
+      "browser stopped",
+    );
+    directory.interruptWritesTo = null;
+
+    const saved = await saveBlobWithoutClobbering(blob("second"), directory, "page.jpg");
+
+    expect(saved.fileName).not.toBe("page.jpg");
+    expect(await directory.text(saved.fileName)).toBe("second");
+
+    await expect(saveBlobWithoutClobbering(blob("first"), directory, "page.jpg")).resolves.toEqual({
+      fileName: "page.jpg",
+      skipped: false,
+    });
+    expect(await directory.text("page.jpg")).toBe("first");
+    expect(directory.markerNames()).toHaveLength(0);
+  });
+
+  it("skips a replayed collision instead of writing another suffixed copy", async () => {
+    const directory = new MemoryDirectory();
+    await saveBlobWithoutClobbering(blob("A"), directory, "same.jpg");
+
+    const first = await saveBlobWithoutClobbering(blob("B"), directory, "same.jpg");
+    const replay = await saveBlobWithoutClobbering(blob("B"), directory, "same.jpg");
+
+    expect(first).toMatchObject({ skipped: false });
+    expect(first.fileName).toMatch(/^same_[a-z0-9]{4}\.jpg$/);
+    expect(replay).toEqual({ fileName: first.fileName, skipped: true });
+    expect(directory.mediaNames()).toEqual(["same.jpg", first.fileName].sort());
+  });
+
+  it("moves past a suffixed name that holds other content, then reuses the new name", async () => {
+    const directory = new MemoryDirectory();
+    await saveBlobWithoutClobbering(blob("A"), directory, "same.jpg");
+
+    const { fileName: suffixed } = await saveBlobWithoutClobbering(
+      blob("B"),
+      directory,
+      "same.jpg",
+    );
+
+    directory.files.set(suffixed, blob("unrelated C"));
+
+    const moved = await saveBlobWithoutClobbering(blob("B"), directory, "same.jpg");
+    const replay = await saveBlobWithoutClobbering(blob("B"), directory, "same.jpg");
+
+    expect(moved.fileName).not.toBe(suffixed);
+    expect(await directory.text(suffixed)).toBe("unrelated C");
+    expect(await directory.text(moved.fileName)).toBe("B");
+    expect(replay).toEqual({ fileName: moved.fileName, skipped: true });
+  });
+
+  it("gives a concurrent save of different content its own name", async () => {
+    const directory = new MemoryDirectory();
+
+    const [first, second] = await raceSaves(directory, ["A", "same.jpg"], ["B", "same.jpg"]);
+
+    expect(first).toEqual({ fileName: "same.jpg", skipped: false });
+    expect(second).toMatchObject({ skipped: false });
+    expect(second.fileName).toMatch(/^same_[a-z0-9]{4}\.jpg$/);
+    expect(await directory.text("same.jpg")).toBe("A");
+    expect(await directory.text(second.fileName)).toBe("B");
+    expect(directory.markerNames()).toHaveLength(0);
+  });
+
+  it("treats names that differ only in case as one file on a case-insensitive folder", async () => {
+    const directory = new MemoryDirectory(true);
+
+    const [first, second] = await raceSaves(directory, ["A", "Photo.jpg"], ["B", "photo.jpg"]);
+
+    expect(first).toEqual({ fileName: "Photo.jpg", skipped: false });
+    expect(second.fileName).toMatch(/^photo_[a-z0-9]{4}\.jpg$/);
+    expect(await directory.text("photo.jpg")).toBe("A");
+    expect(await directory.text(second.fileName)).toBe("B");
+  });
+
+  it("skips a concurrent save of identical content", async () => {
+    const directory = new MemoryDirectory();
+
+    const [first, second] = await raceSaves(directory, ["A", "same.jpg"], ["A", "same.jpg"]);
+
+    expect(first).toEqual({ fileName: "same.jpg", skipped: false });
+    expect(second).toEqual({ fileName: "same.jpg", skipped: true });
+    expect(directory.mediaNames()).toEqual(["same.jpg"]);
+    expect(directory.markerNames()).toHaveLength(0);
+  });
+});
+
+describe("download worker pool", () => {
+  it("waits for every active worker to unwind before reporting a failure", async () => {
+    let releaseWrite: () => void = () => undefined;
+
+    const writing = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+
+    const started: number[] = [];
+    let writeFinished = false;
+
+    const pool = runPool([0, 1, 2, 3], 2, async (item) => {
+      started.push(item);
+
+      if (item === 0) {
+        await writing;
+        writeFinished = true;
+
+        return;
+      }
+
+      throw new DOMException("The operation was aborted.", "AbortError");
+    });
+
+    let settled = false;
+
+    void pool
+      .catch(() => undefined)
+      .finally(() => {
+        settled = true;
+      });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    releaseWrite();
+    await expect(pool).rejects.toThrow("aborted");
+    expect(writeFinished).toBe(true);
+    expect(started).toEqual([0, 1]);
+  });
+});
+
+describe("downloading", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const callbacks = { onProgress: () => undefined, onSaved: () => undefined };
+
+  const options = (site: SiteKey): DownloadOptions => ({
+    site,
+    credentials: "omit",
+    concurrency: 4,
+    mediaTransformer: IDENTITY_MEDIA_TRANSFORMER,
+  });
+
+  it("fails an item whose server answers with a web page instead of the file", async () => {
+    const directory = new MemoryDirectory();
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response("<!DOCTYPE html><html><body>Sign in</body></html>", {
+          status: 200,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        }),
+    );
+
+    const summary = await downloadImages(
+      [
+        {
+          originalUrl: "https://archiveofourown.org/downloads/1/Story.pdf",
+          fileName: "Author-Story.pdf",
+        },
+      ],
+      directory,
+      callbacks,
+      options("archiveofourown"),
+    );
+
+    expect(summary).toMatchObject({ saved: 0, failed: 1 });
+    expect(summary.failedItems[0]?.originalUrl).toBe(
+      "https://archiveofourown.org/downloads/1/Story.pdf",
+    );
+    expect(directory.mediaNames()).toEqual([]);
+  });
+
+  it("marks an item a bot challenge blocked apart from other refusals", async () => {
+    const directory = new MemoryDirectory();
+    vi.stubGlobal(
+      "fetch",
+      async (url: string) =>
+        new Response("<!DOCTYPE html><html><title>Just a moment...</title></html>", {
+          status: 403,
+          headers: url.includes("/1/")
+            ? { "Content-Type": "text/html; charset=UTF-8", "cf-mitigated": "challenge" }
+            : { "Content-Type": "text/html; charset=UTF-8" },
+        }),
+    );
+
+    const summary = await downloadImages(
+      [
+        {
+          originalUrl: "https://archiveofourown.org/downloads/1/Story.pdf",
+          fileName: "Author-Story.pdf",
+        },
+        {
+          originalUrl: "https://archiveofourown.org/downloads/2/Other.pdf",
+          fileName: "Author-Other.pdf",
+        },
+      ],
+      directory,
+      callbacks,
+      options("archiveofourown"),
+    );
+
+    expect(summary.failedItems).toEqual([
+      {
+        fileName: "Author-Story.pdf",
+        reason: "Blocked by the site's bot check (HTTP 403). Open it and add the file yourself.",
+        originalUrl: "https://archiveofourown.org/downloads/1/Story.pdf",
+        kind: "site-check",
+      },
+      {
+        fileName: "Author-Other.pdf",
+        reason: "HTTP 403",
+        originalUrl: "https://archiveofourown.org/downloads/2/Other.pdf",
+        kind: "error",
+      },
+    ]);
+  });
+
+  it("fails an empty body and a web page served with a generic type", async () => {
+    const directory = new MemoryDirectory();
+    vi.stubGlobal("fetch", async (url: string) =>
+      url.endsWith("empty.jpg")
+        ? new Response(new Blob([]), { status: 200 })
+        : new Response("\n  <html><head><title>Error</title></head></html>", {
+            status: 200,
+            headers: { "Content-Type": "application/octet-stream" },
+          }),
+    );
+
+    const summary = await downloadImages(
+      [
+        { originalUrl: "https://cdn.donmai.us/original/empty.jpg", fileName: "empty.jpg" },
+        { originalUrl: "https://cdn.donmai.us/original/page.png", fileName: "page.png" },
+      ],
+      directory,
+      callbacks,
+      options("danbooru"),
+    );
+
+    expect(summary).toMatchObject({ saved: 0, failed: 2 });
+    expect(directory.mediaNames()).toEqual([]);
+  });
+
+  it("saves a real file", async () => {
+    const directory = new MemoryDirectory();
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(new Blob(["%PDF-1.7"]), {
+          status: 200,
+          headers: { "Content-Type": "application/pdf" },
+        }),
+    );
+
+    const summary = await downloadImages(
+      [{ originalUrl: "https://archiveofourown.org/downloads/1/a.pdf", fileName: "a.pdf" }],
+      directory,
+      callbacks,
+      options("archiveofourown"),
+    );
+
+    expect(summary).toMatchObject({ saved: 1, failed: 0 });
+    expect(await directory.text("a.pdf")).toBe("%PDF-1.7");
+  });
+});
