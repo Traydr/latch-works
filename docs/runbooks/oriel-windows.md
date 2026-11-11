@@ -80,6 +80,12 @@ Setup.exe and the staged `oriel.exe`, which `install-windows.ps1` installs and c
 it did. Downloads are cached in `apps\oriel\target\vendor\downloads`, each checked against its
 SHA-256.
 
+**A release from GitHub.** The Oriel release workflow (`.github/workflows/oriel-release.yml`,
+Actions › Oriel release › Run workflow) runs `package windows` on `windows-latest` and attaches
+Setup.exe and the portable zip to a release tagged `oriel-v<version>`, the version in
+`apps/oriel/Cargo.toml`. It is a draft unless the run says otherwise. A tag or a release (a
+draft too) for that version stops it before the build, so bump the version first.
+
 The app answers Velopack's hooks first thing in `main` (`VelopackApp::build().run()`): Velopack's
 docs say the app must, and kill an app that has not exited within 15 to 30 seconds of a hook. It
 never checks for updates (decision 19). Uninstalling removes `%LocalAppData%\Oriel` and leaves
