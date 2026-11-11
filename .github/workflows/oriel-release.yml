@@ -3,7 +3,7 @@ name: Oriel release
 # Builds Oriel's Windows installer and attaches it to a GitHub release tagged
 # `oriel-v<version>`, the version in `apps/oriel/Cargo.toml`. Started by hand
 # (Actions › Oriel release › Run workflow) from the branch to release, usually main. Bump the
-# version first: a tag that already exists stops the run before the build.
+# version first: a tag or a release (a draft too) for that version stops the run before the build.
 #
 # The installer is unsigned (decision 19), so SmartScreen warns on it; the release notes say how
 # to get past that. macOS is not built here: a DMG without a Developer ID and notarization is
@@ -52,10 +52,12 @@ jobs:
           $vpk = [regex]::Match($lock, '(?m)^name = "velopack"\r?\nversion = "([^"]+)"').Groups[1].Value
           if (-not $vpk) { throw 'Cargo.lock has no velopack' }
           $tag = "oriel-v$version"
+          # --exit-code exits 2 when the tag is missing; anything else but 0 is a failed lookup.
           git ls-remote --exit-code --tags origin "refs/tags/$tag" | Out-Null
           if ($LASTEXITCODE -eq 0) {
             throw "The tag $tag already exists. Bump [workspace.package] version in apps/oriel/Cargo.toml."
           }
+          if ($LASTEXITCODE -ne 2) { throw "git ls-remote exited with $LASTEXITCODE" }
           # A draft has no tag until it is published, so look through the releases too.
           $releases = gh release list --limit 1000 --json tagName,isDraft | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw "gh release list exited with $LASTEXITCODE" }
@@ -74,7 +76,9 @@ jobs:
         run: rustup toolchain install
 
       - name: Install Velopack's vpk
-        run: dotnet tool install --global vpk --version ${{ steps.version.outputs.vpk }}
+        run: |
+          dotnet tool install --global vpk --version ${{ steps.version.outputs.vpk }}
+          "$env:USERPROFILE\.dotnet\tools" >> $env:GITHUB_PATH
 
       - uses: actions/cache@v6
         with:
