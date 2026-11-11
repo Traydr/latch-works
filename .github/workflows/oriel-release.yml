@@ -1,0 +1,114 @@
+name: Oriel release
+
+# Builds Oriel's Windows installer and attaches it to a GitHub release tagged
+# `oriel-v<version>`, the version in `apps/oriel/Cargo.toml`. Started by hand
+# (Actions › Oriel release › Run workflow) from the branch to release, usually main. Bump the
+# version first: a tag or a release (a draft too) for that version stops the run before the build.
+#
+# The installer is unsigned (decision 19), so SmartScreen warns on it; the release notes say how
+# to get past that. macOS is not built here: a DMG without a Developer ID and notarization is
+# refused by Gatekeeper on every Mac but the one that built it.
+on:
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: Create the release as a draft, to read it over before publishing
+        type: boolean
+        default: true
+      prerelease:
+        description: Mark the release as a pre-release
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oriel-release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: apps/oriel
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the version and check its tag is free
+        id: version
+        run: |
+          $toml = Get-Content -Raw Cargo.toml
+          $version = [regex]::Match($toml, '(?ms)^\[workspace\.package\].*?^version\s*=\s*"([^"]+)"').Groups[1].Value
+          if (-not $version) { throw 'Cargo.toml has no [workspace.package] version' }
+          $lock = Get-Content -Raw Cargo.lock
+          $vpk = [regex]::Match($lock, '(?m)^name = "velopack"\r?\nversion = "([^"]+)"').Groups[1].Value
+          if (-not $vpk) { throw 'Cargo.lock has no velopack' }
+          $tag = "oriel-v$version"
+          # --exit-code exits 2 when the tag is missing; anything else but 0 is a failed lookup.
+          git ls-remote --exit-code --tags origin "refs/tags/$tag" | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            throw "The tag $tag already exists. Bump [workspace.package] version in apps/oriel/Cargo.toml."
+          }
+          if ($LASTEXITCODE -ne 2) { throw "git ls-remote exited with $LASTEXITCODE" }
+          # A draft has no tag until it is published, so look through the releases too.
+          $releases = gh release list --limit 1000 --json tagName,isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "gh release list exited with $LASTEXITCODE" }
+          $existing = @($releases | Where-Object { $_.tagName -eq $tag })
+          if ($existing.Count -gt 0) {
+            $kind = if ($existing[0].isDraft) { 'A draft release' } else { 'A release' }
+            throw "$kind for $tag already exists. Publish or delete it, or bump the version."
+          }
+          $global:LASTEXITCODE = 0
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "vpk=$vpk" >> $env:GITHUB_OUTPUT
+          Write-Host "Releasing Oriel $version as $tag, packed with vpk $vpk"
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Install Velopack's vpk
+        run: |
+          dotnet tool install --global vpk --version ${{ steps.version.outputs.vpk }}
+          "$env:USERPROFILE\.dotnet\tools" >> $env:GITHUB_PATH
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/oriel/target/vendor/downloads
+          key: oriel-release-${{ runner.os }}-${{ hashFiles('apps/oriel/Cargo.lock', 'apps/oriel/crates/xtask/src/pins.rs', 'apps/oriel/crates/xtask/src/libavif_windows.rs') }}
+          restore-keys: oriel-release-${{ runner.os }}-
+
+      - name: Build Setup.exe (xtask package windows)
+        run: cargo run -p xtask -- package windows
+
+      - name: Create the release
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $tag = '${{ steps.version.outputs.tag }}'
+          $out = 'target/release/package/windows/velopack'
+          $files = @("$out/Oriel-$version-win-x64-Setup.exe", "$out/Oriel-$version-win-x64-Portable.zip")
+          foreach ($file in $files) { if (-not (Test-Path $file)) { throw "$file is missing" } }
+          $notes = @"
+          Oriel $version for Windows 11 x64.
+
+          - **Oriel-$version-win-x64-Setup.exe** installs to ``%LocalAppData%\Oriel`` for the current user, without administrator rights.
+          - **Oriel-$version-win-x64-Portable.zip** runs from wherever it is unzipped.
+
+          The installer is not code-signed, so Windows SmartScreen says it "protected your PC". Choose **More info**, then **Run anyway**. Oriel keeps its data in ``%USERPROFILE%\.latch-works\oriel``, which uninstalling leaves in place.
+          "@
+          $flags = @('--target', '${{ github.sha }}', '--title', "Oriel $version", '--notes', $notes)
+          if ('${{ inputs.draft }}' -eq 'true') { $flags += '--draft' }
+          if ('${{ inputs.prerelease }}' -eq 'true') { $flags += '--prerelease' }
+          gh release create $tag @files @flags
+          if ($LASTEXITCODE -ne 0) { throw "gh release create exited with $LASTEXITCODE" }
