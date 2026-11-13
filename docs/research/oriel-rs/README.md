@@ -91,8 +91,18 @@ medians of 3.
 ## Still open
 
 - **Retiring the Electron app**, once the owner has lived with Oriel RS on their own data.
-- **Exact seeks** stay 4 to 6 times slower than Electron's, unless a runtime option in mpv helps;
-  the owner wants no FFmpeg build of our own.
+- **Exact seeks** in hardware stay 4 to 6 times slower than Electron's: FFmpeg gives VideoToolbox
+  one frame at a time, and the owner wants no FFmpeg build of our own. A runtime option helps
+  where it is cheap: a player with a scrubber decodes H.264 and AV1 of at most 1080p60 in
+  software, which seeks about three times sooner ([the runbook](../../runbooks/oriel.md), "Video
+  through libmpv"). HEVC and larger pictures seek as before.
+  - The hardware is not the limit. On an M5 Pro, a VideoToolbox session given 1440p frames one
+    at a time, as FFmpeg's `videotoolbox.c` gives them, decodes 389 (H.264), 655 (HEVC) and 769
+    (AV1) frames a second; given them without a wait
+    (`kVTDecodeFrame_EnableAsynchronousDecompression`) it decodes 1,086, 1,602 and 1,539, more
+    than software does in every codec. Chromium, Firefox, WebKit and VLC decode that way.
+  - Getting that speed means a patch to FFmpeg's VideoToolbox decoding, or a VideoToolbox
+    decoder of Oriel's own for the seek's picture. Neither is done.
 - **"Glazier" in two planner warnings** is kept so the differential runs still match
   glazier-core.
 - **Windows (Phase 8)** builds and passes clippy for `x86_64-pc-windows-gnullvm`, but has not run.
