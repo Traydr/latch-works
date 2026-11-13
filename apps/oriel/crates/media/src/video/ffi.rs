@@ -42,6 +42,7 @@ pub(super) const EVENT_END_FILE: c_int = 7;
 pub(super) const EVENT_FILE_LOADED: c_int = 8;
 pub(super) const EVENT_PLAYBACK_RESTART: c_int = 21;
 pub(super) const EVENT_PROPERTY_CHANGE: c_int = 22;
+pub(super) const EVENT_HOOK: c_int = 25;
 
 // `mpv_end_file_reason`.
 pub(super) const END_FILE_REASON_ERROR: c_int = 4;
@@ -101,6 +102,13 @@ pub(super) struct EventEndFile {
     pub(super) playlist_entry_id: i64,
     pub(super) playlist_insert_id: i64,
     pub(super) playlist_insert_num_entries: c_int,
+}
+
+/// `mpv_event_hook`.
+#[repr(C)]
+pub(super) struct EventHook {
+    pub(super) name: *const c_char,
+    pub(super) id: u64,
 }
 
 /// `mpv_event_log_message`.
@@ -170,7 +178,6 @@ pub(super) type UpdateCallback = unsafe extern "C" fn(ctx: *mut c_void);
 pub(super) struct Libmpv {
     pub(super) client_api_version: unsafe extern "C" fn() -> c_ulong,
     pub(super) error_string: unsafe extern "C" fn(error: c_int) -> *const c_char,
-    #[cfg(any(test, feature = "measure"))]
     pub(super) free: unsafe extern "C" fn(data: *mut c_void),
     pub(super) create: unsafe extern "C" fn() -> *mut Handle,
     pub(super) initialize: unsafe extern "C" fn(ctx: *mut Handle) -> c_int,
@@ -192,9 +199,17 @@ pub(super) struct Libmpv {
         format: c_int,
         data: *mut c_void,
     ) -> c_int,
-    #[cfg(any(test, feature = "measure"))]
     pub(super) get_property_string:
         unsafe extern "C" fn(ctx: *mut Handle, name: *const c_char) -> *mut c_char,
+    pub(super) set_property_string:
+        unsafe extern "C" fn(ctx: *mut Handle, name: *const c_char, data: *const c_char) -> c_int,
+    pub(super) hook_add: unsafe extern "C" fn(
+        ctx: *mut Handle,
+        reply: u64,
+        name: *const c_char,
+        priority: c_int,
+    ) -> c_int,
+    pub(super) hook_continue: unsafe extern "C" fn(ctx: *mut Handle, id: u64) -> c_int,
     pub(super) observe_property: unsafe extern "C" fn(
         ctx: *mut Handle,
         reply: u64,
@@ -278,7 +293,6 @@ impl Libmpv {
             Libmpv {
                 client_api_version: symbol(&library, "mpv_client_api_version")?,
                 error_string: symbol(&library, "mpv_error_string")?,
-                #[cfg(any(test, feature = "measure"))]
                 free: symbol(&library, "mpv_free")?,
                 create: symbol(&library, "mpv_create")?,
                 initialize: symbol(&library, "mpv_initialize")?,
@@ -287,8 +301,10 @@ impl Libmpv {
                 command_async: symbol(&library, "mpv_command_async")?,
                 set_property_async: symbol(&library, "mpv_set_property_async")?,
                 get_property: symbol(&library, "mpv_get_property")?,
-                #[cfg(any(test, feature = "measure"))]
                 get_property_string: symbol(&library, "mpv_get_property_string")?,
+                set_property_string: symbol(&library, "mpv_set_property_string")?,
+                hook_add: symbol(&library, "mpv_hook_add")?,
+                hook_continue: symbol(&library, "mpv_hook_continue")?,
                 observe_property: symbol(&library, "mpv_observe_property")?,
                 request_log_messages: symbol(&library, "mpv_request_log_messages")?,
                 wait_event: symbol(&library, "mpv_wait_event")?,

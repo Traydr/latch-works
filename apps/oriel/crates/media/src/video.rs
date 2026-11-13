@@ -19,6 +19,10 @@
 //! goes gives its engine back, and the next player plays its file in it (`video/engine.rs`): a
 //! new engine's first frame costs its renderer its shaders, and a kept one has them built.
 //!
+//! A player with a scrubber ([`Player::open`]) has a light H.264 or AV1 picture decoded in
+//! software, which lands an exact seek about three times sooner than hardware does, for more
+//! CPU while it plays (`client::Decode`). Previews never seek, and stay in hardware.
+//!
 //! libmpv is loaded at run time and never linked, found by `oriel_core_paths::NativeSet::LIBMPV`.
 //! It is Oriel's own LGPL build (mpv `-Dgpl=false`, FFmpeg without `--enable-gpl`), made by
 //! `cargo run -p xtask -- libmpv`. Failing that, a development build falls back to IINA's
@@ -46,7 +50,7 @@ use gpui_kit::{
     Window, img,
 };
 
-use self::client::Core;
+use self::client::{Core, Decode};
 use self::engine::Engine;
 use self::render::{Picture, Rendered, Shared};
 
@@ -57,7 +61,7 @@ pub use engine::{EngineOptions, prewarm_with, prime_with};
 pub use engine::{load_libmpv, prewarm, prime};
 #[cfg(feature = "measure")]
 pub use measure::{FrameTiming, Meter, SeekTiming, Timings};
-pub use scrubber::{Scrub, Scrubber};
+pub use scrubber::{Moment, Scrub, Scrubber};
 
 /// How long a ready player may go without its first picture before it is called unplayable: the
 /// file opened, but its video track does not decode here.
@@ -156,6 +160,9 @@ pub struct Player {
     /// A pause state sent to mpv and not yet seen back, with when it was sent.
     pause_sent: Option<(bool, Instant)>,
     seek: Option<PendingSeek>,
+    /// Where the newest seek went, if it was an exact one: a scrub let go there has nothing
+    /// more to seek.
+    sought_exactly: Option<Duration>,
     awaiting_picture_since: Option<Instant>,
     /// Whether [`pump_frames`] has a poll waiting for the next display frame.
     pump_scheduled: bool,
@@ -177,17 +184,18 @@ struct PendingSeek {
 }
 
 impl Player {
-    /// Opens `path` paused at its start, with its sound. mpv reads the file in the background;
-    /// [`Self::status`] turns `Ready` or `Failed` on a later poll.
+    /// Opens `path` paused at its start, with its sound, for a view that seeks in it: a light
+    /// picture is decoded in software, so that its exact seeks are quick. mpv reads the file in
+    /// the background; [`Self::status`] turns `Ready` or `Failed` on a later poll.
     pub fn open(path: &Path) -> Result<Self, VideoError> {
-        Self::open_on(path, &EngineOptions::default(), true)
+        Self::open_on(path, &EngineOptions::default(), true, Decode::ForSeeking)
     }
 
     /// Opens `path` as a gallery tile's preview, with its sound: frames are drawn no larger than
     /// `max_side` pixels on their longer side, as the tile needs no more, and a 4K picture drawn
     /// at that size costs a sixtieth of the memory and the GPU time.
     pub fn open_preview(path: &Path, max_side: u32) -> Result<Self, VideoError> {
-        let player = Self::open(path)?;
+        let player = Self::open_on(path, &EngineOptions::default(), true, Decode::Hardware)?;
         player.shared.set_max_side(Some(max_side));
         Ok(player)
     }
@@ -196,22 +204,33 @@ impl Player {
     /// soundtrack is neither decoded nor sent to an audio device, so the first picture does not
     /// wait for the device to start, and playing costs less. [`Self::is_muted`] reads true.
     pub fn open_silent_preview(path: &Path, max_side: u32) -> Result<Self, VideoError> {
-        let player = Self::open_on(path, &EngineOptions::default(), false)?;
+        let player = Self::open_on(path, &EngineOptions::default(), false, Decode::Hardware)?;
         player.shared.set_max_side(Some(max_side));
         Ok(player)
     }
 
-    /// Opens `path` on an engine made as `options` say, with its sound or without it for good.
+    /// Opens `path` on an engine made as `options` say: with its sound, decoded as
+    /// [`Self::open`] decodes it, or without it for good, as a silent preview is.
     #[cfg(feature = "measure")]
     pub fn open_with(
         path: &Path,
         options: &EngineOptions,
         sound: bool,
     ) -> Result<Self, VideoError> {
-        Self::open_on(path, options, sound)
+        let decode = if sound {
+            Decode::ForSeeking
+        } else {
+            Decode::Hardware
+        };
+        Self::open_on(path, options, sound, decode)
     }
 
-    fn open_on(path: &Path, options: &EngineOptions, sound: bool) -> Result<Self, VideoError> {
+    fn open_on(
+        path: &Path,
+        options: &EngineOptions,
+        sound: bool,
+        decode: Decode,
+    ) -> Result<Self, VideoError> {
         if !path.is_file() {
             return Err(VideoError::Failed {
                 code: 0,
@@ -232,7 +251,7 @@ impl Player {
         #[cfg(feature = "measure")]
         let opened_at = Instant::now();
         let engine = Engine::take(options)?;
-        engine.load(file, sound);
+        engine.load(file, sound, decode);
         let mut player = Self {
             core: engine.core.clone(),
             shared: engine.shared.clone(),
@@ -244,6 +263,7 @@ impl Player {
             looping: false,
             pause_sent: None,
             seek: None,
+            sought_exactly: None,
             awaiting_picture_since: None,
             pump_scheduled: false,
             #[cfg(feature = "measure")]
@@ -317,6 +337,7 @@ impl Player {
         };
         self.core
             .command(0, &["seek", &format!("{:.6}", target.as_secs_f64()), flags]);
+        self.sought_exactly = (mode == SeekMode::Exact).then_some(target);
         self.seek = Some(PendingSeek {
             target,
             #[cfg(feature = "measure")]
@@ -325,6 +346,12 @@ impl Player {
             restarts: self.core.observed().restarts,
             taken: Vec::new(),
         });
+    }
+
+    /// Whether an exact seek lands about as soon as a keyframe one: the picture is decoded in
+    /// software for it.
+    fn seeks_exactly_at_once(&self) -> bool {
+        self.core.observed().software
     }
 
     /// Where playback is, or where the newest seek is going while it is under way.

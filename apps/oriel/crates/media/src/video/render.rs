@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::RenderImage;
 
-use super::client::{Core, SendPtr};
+use super::client::{Core, Decode, SendPtr};
 use super::ffi;
 
 /// The longest the thread sleeps toward a frame's time: past this the time is taken as wrong.
@@ -111,10 +111,10 @@ pub(super) struct Shared {
     generation: AtomicU64,
     /// [`Self::drawn`] when the current file began.
     drawn_before: AtomicU64,
-    /// A file to load and whether with its sound, for the render thread to hand mpv once its
-    /// render context exists (mpv's video output starts only with one), with the generation it
-    /// is for: a player gone before its file loaded leaves nothing to load.
-    load: Mutex<Option<(u64, String, bool)>>,
+    /// A file to load, whether with its sound and how decoded, for the render thread to hand
+    /// mpv once its render context exists (mpv's video output starts only with one), with the
+    /// generation it is for: a player gone before its file loaded leaves nothing to load.
+    load: Mutex<Option<(u64, String, bool, Decode)>>,
     /// Whether the render thread is to trim its backend ([`Backend::trim`]), and whether it
     /// has since the last request.
     trim: (AtomicBool, AtomicBool),
@@ -197,18 +197,18 @@ impl Shared {
         self.generation.load(Ordering::Acquire)
     }
 
-    /// Has the render thread load `path`, with its sound or without, once its render context
-    /// exists.
-    pub(super) fn request_load(&self, path: String, sound: bool) {
+    /// Has the render thread load `path`, with its sound or without and decoded as `decode`
+    /// says, once its render context exists.
+    pub(super) fn request_load(&self, path: String, sound: bool, decode: Decode) {
         *self.load.lock().unwrap_or_else(|p| p.into_inner()) =
-            Some((self.generation(), path, sound));
+            Some((self.generation(), path, sound, decode));
         self.notify();
     }
 
     /// The file to load, if one waits for the current generation.
-    fn take_load(&self) -> Option<(String, bool)> {
+    fn take_load(&self) -> Option<(String, bool, Decode)> {
         let load = self.load.lock().unwrap_or_else(|p| p.into_inner()).take()?;
-        (load.0 == self.generation()).then_some((load.1, load.2))
+        (load.0 == self.generation()).then_some((load.1, load.2, load.3))
     }
 
     /// Draws frames no larger than `max_side` on their longer side, or at the picture's own size
@@ -386,8 +386,8 @@ fn run(core: &Core, shared: &Shared, backend: &mut impl Backend, context: *mut f
             shared.progressed();
             continue;
         }
-        if let Some((path, sound)) = shared.take_load() {
-            core.load(&path, sound);
+        if let Some((path, sound, decode)) = shared.take_load() {
+            core.load(&path, sound, decode);
         }
         // SAFETY: a live context, on its render thread.
         let flags = unsafe { (api.render_context_update)(context) };

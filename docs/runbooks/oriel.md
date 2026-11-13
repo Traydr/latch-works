@@ -291,6 +291,18 @@ where no libmpv loads a video shows the reason over its poster. On macOS frames 
 OpenGL into an IOSurface; elsewhere in software. `mpv_spike` can measure the software path on
 macOS (`ORIEL_MPV_RENDER=sw`, below); the app has no switch for it.
 
+Decoding is in hardware, except where a player has a scrubber (View's viewer, Tidy's version
+player) and the video is H.264 or AV1 of at most 1080p at 60 fps: on macOS that one is decoded
+in software, because its exact seeks then land about three times sooner. FFmpeg gives
+VideoToolbox one frame at a time, so decoding from the keyframe before a seek's target is slower
+in hardware than on every core. On an M5 Pro, over videos of the owner's library, the median
+exact seek fell from 54 ms to 15 ms in H.264 and from 217 ms to 77 ms in AV1. Playing costs more
+CPU in turn: 21 % of a core, not 11 %, for 720p30 H.264, and 70 %, not 20 %, for 1080p60 AV1.
+HEVC seeks no sooner in software, and larger pictures cost too much, so both stay in hardware, as
+do previews, which never seek. The rule and its figures are in
+`crates/media/src/video/client.rs` (`seeks_sooner_in_software`). Where exact seeks are quick, a
+click on the scrubber lands on its frame at the press, without waiting to be let go.
+
 Oriel builds its own LGPL libmpv (decision 8) from pinned sources, in one command:
 
 ```sh
