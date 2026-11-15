@@ -18,6 +18,13 @@ export function lowercaseFirstAscii(value: string): string {
 /** Characters Windows or Chrome's File System Access refuse anywhere in a name. */
 const UNSAFE_NAME_CHARACTERS = /[<>:"/\\|?*\p{Cc}]/gu;
 
+/**
+ * Invisible characters Chrome also refuses anywhere in a name: format characters such as
+ * zero-width joiners, and Unicode non-characters. They are deleted rather than replaced, after
+ * whitespace (which includes U+FEFF) has become "_", so names Chrome already accepted keep theirs.
+ */
+const INVISIBLE_NAME_CHARACTERS = /[\p{Cf}\p{Noncharacter_Code_Point}]/gu;
+
 export function sanitizePathSegment(value: string): string {
   const raw = value.trim();
 
@@ -28,9 +35,12 @@ export function sanitizePathSegment(value: string): string {
   const sanitized = raw
     .replace(UNSAFE_NAME_CHARACTERS, " ")
     .replace(/\s+/g, "_")
-    // Chrome refuses names that start with "~" or end with "." or "~" ("Name is not allowed").
-    // Trailing underscores stay (X handles).
-    .replace(/^~+|[.~]+$/g, "")
+    .replace(INVISIBLE_NAME_CHARACTERS, "")
+    // Chrome sets aside one leading "." (".git" is allowed), then refuses a name that starts or
+    // ends with "." or "~" ("Name is not allowed"). Trailing underscores stay (X handles).
+    .replace(/^~+/, "")
+    .replace(/^\.[.~]+/, "")
+    .replace(/[.~]+$/, "")
     .trim();
 
   if (sanitized === "." || sanitized === "..") {
@@ -46,6 +56,7 @@ export function sanitizeFileName(value: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(UNSAFE_NAME_CHARACTERS, " ")
     .replace(/\s+/g, "_")
+    .replace(INVISIBLE_NAME_CHARACTERS, "")
     .replace(/_+/g, "_")
     .replace(/^[._~]+|[._~]+$/g, "")
     .trim();

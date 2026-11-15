@@ -457,6 +457,9 @@ export class PanelController {
     this.setStatus("collecting");
     this.syncPanelActions();
 
+    // Snapshot before the request: the queue update for a new job can land before the reply.
+    const queuedBefore = new Set(this.queue.jobs.map((job) => job.run.id));
+
     try {
       const response = await sendPanelRequest({
         type: START_GATHER_RUN_REQUEST,
@@ -470,7 +473,12 @@ export class PanelController {
         this.applyGatherRun(response.run);
 
         if (response.outcome === "queued") {
-          this.appendLog(`Added to queue at position ${response.position}.`, "success");
+          // A page already in the queue gets its existing job back, not a new place in line.
+          if (queuedBefore.has(response.queuedRunId)) {
+            this.appendLog(`Already in queue at position ${response.position}.`);
+          } else {
+            this.appendLog(`Added to queue at position ${response.position}.`, "success");
+          }
         }
       } else if (response.outcome === "unsupported-source") {
         this.appendLog("Active tab is not a supported Gather Source.", "error");
@@ -915,14 +923,19 @@ export class PanelController {
   }
 
   /**
-   * The finished run Copy errors describes: the one picked in the batch list, else the newest.
-   * Retry may still target an older run, but the report always matches the log you see.
+   * The finished run Copy errors describes: the one picked in the batch list, else the newest
+   * finished run, even while the log follows a job still running. A run you cancelled has nothing
+   * to report. Retry may target an older run than this one.
    */
   private getErrorReportRun(): GatherRunState | null {
     const viewed = this.queue.results.find((result) => result.id === this.viewedRunId);
     const run = viewed ?? getLatestGatherQueueResult(this.queue);
 
-    return run && (run.failedItems.length > 0 || run.error) ? run : null;
+    if (!run || run.phase === "cancelled") {
+      return null;
+    }
+
+    return run.failedItems.length > 0 || run.error ? run : null;
   }
 
   /** Picking the newest run, or the one already shown, returns the log to following the queue. */

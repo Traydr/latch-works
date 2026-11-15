@@ -29,6 +29,19 @@ describe("path sanitization", () => {
     expect(sanitizeFileName("~notes~.txt~")).toBe("notes~.txt");
   });
 
+  it("keeps one leading dot but drops a tilde or dot after it", () => {
+    expect(sanitizePathSegment(".hack")).toBe(".hack");
+    expect(sanitizePathSegment("~.hack")).toBe(".hack");
+    expect(sanitizePathSegment(".~draft")).toBe("draft");
+    expect(sanitizePathSegment("..draft")).toBe("draft");
+  });
+
+  it("deletes the invisible format and non-characters Chrome refuses in names", () => {
+    expect(sanitizePathSegment("a\u200Db\uFEFFc")).toBe("ab_c");
+    expect(sanitizePathSegment("a\uFDD0b\u{1FFFE}")).toBe("ab");
+    expect(sanitizeFileName("pic\u200B.jpg")).toBe("pic.jpg");
+  });
+
   it("preserves trailing underscores used by X usernames", () => {
     expect(sanitizePathSegment(lowercaseFirstAscii("ILIE_ILIE_"))).toBe("iLIE_ILIE_");
     expect(sanitizePathSegment("ILIE_ILIE_.")).toBe("ILIE_ILIE_");
