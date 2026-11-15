@@ -457,6 +457,9 @@ export class PanelController {
     this.setStatus("collecting");
     this.syncPanelActions();
 
+    // Snapshot before the request: the queue update for a new job can land before the reply.
+    const queuedBefore = new Set(this.queue.jobs.map((job) => job.run.id));
+
     try {
       const response = await sendPanelRequest({
         type: START_GATHER_RUN_REQUEST,
@@ -470,7 +473,12 @@ export class PanelController {
         this.applyGatherRun(response.run);
 
         if (response.outcome === "queued") {
-          this.appendLog(`Added to queue at position ${response.position}.`, "success");
+          // A page already in the queue gets its existing job back, not a new place in line.
+          if (queuedBefore.has(response.queuedRunId)) {
+            this.appendLog(`Already in queue at position ${response.position}.`);
+          } else {
+            this.appendLog(`Added to queue at position ${response.position}.`, "success");
+          }
         }
       } else if (response.outcome === "unsupported-source") {
         this.appendLog("Active tab is not a supported Gather Source.", "error");
