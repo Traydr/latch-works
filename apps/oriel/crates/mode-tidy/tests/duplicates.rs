@@ -173,3 +173,88 @@ async fn keep_all_is_listed_in_history_and_its_undo_brings_the_set_back(cx: &mut
     });
     assert!(back, "the set is in review again");
 }
+
+/// Folder priority's panel (plan 065): a click on a folder keeps its copy of each picture and the
+/// suggested copy of the picture it lacks, the tiles carry their folder's number, and ⌥1 goes back
+/// to the suggestion, folder 1's.
+#[gpui_kit::test]
+async fn a_folder_in_the_panel_keeps_its_copies_and_never_loses_a_picture(cx: &mut TestAppContext) {
+    let session = launch(cx, "folder-panel");
+    add_archive(cx, &session).await;
+    go(cx, &session, TidyPage::Duplicates);
+    settle(cx, &session).await;
+    let index = set_with(cx, &session, "900_p1.png");
+    click(cx, &session, ("set-row", index));
+    settle(cx, &session).await;
+    assert_eq!(
+        kept_names(cx, &session),
+        ["101_clean.png", "101_en.png", "101_jp.png"]
+    );
+    assert_eq!(
+        label(cx, &session, ("set-folder", 1usize)).as_deref(),
+        Some("Folder 2, pixiv")
+    );
+    let pixiv = file_id(cx, &session, "900_p0.jpg");
+    assert_eq!(
+        label(cx, &session, ("version-folder-badge", pixiv)).as_deref(),
+        Some("Folder 2")
+    );
+
+    click(cx, &session, ("set-folder", 1usize));
+    assert_eq!(
+        kept_names(cx, &session),
+        ["101_clean.png", "900_p0.jpg", "900_p1.png"]
+    );
+
+    press(cx, &session, "alt-1");
+    assert_eq!(
+        kept_names(cx, &session),
+        ["101_clean.png", "101_en.png", "101_jp.png"]
+    );
+}
+
+/// Settings › Folder priority (plan 065) lists the folders a resolution chose between, best first,
+/// and moving one there stores the owner's order, which the list shows at once.
+#[gpui_kit::test]
+async fn settings_list_resolved_folders_and_keep_an_order_set_there(cx: &mut TestAppContext) {
+    let session = launch(cx, "folder-order");
+    add_archive(cx, &session).await;
+    go(cx, &session, TidyPage::Duplicates);
+    settle(cx, &session).await;
+    let index = set_with(cx, &session, "900_p1.png");
+    click(cx, &session, ("set-row", index));
+    settle(cx, &session).await;
+    press(cx, &session, "enter");
+    wait_for_change(cx, &session).await;
+
+    session.harness.update(cx, |harness, cx| {
+        harness.settings = true;
+        cx.notify();
+    });
+    wait_until_drawn(cx, &session, "tidy-settings-priority-2:pages/fanbox-1");
+    assert_eq!(
+        label(cx, &session, "tidy-settings-priority-2:pages/fanbox-0").as_deref(),
+        Some("1. pages/fanbox")
+    );
+    assert_eq!(
+        label(cx, &session, "tidy-settings-priority-2:pages/fanbox-1").as_deref(),
+        Some("2. pages/pixiv")
+    );
+
+    click(cx, &session, "tidy-settings-priority-down-2:pages/fanbox-0");
+    assert_eq!(
+        label(cx, &session, "tidy-settings-priority-2:pages/fanbox-0").as_deref(),
+        Some("1. pages/pixiv")
+    );
+    let orders = cx.read(|cx| {
+        session
+            .state
+            .read(cx)
+            .settings()
+            .map(|settings| settings.folder_orders.clone())
+            .unwrap_or_default()
+    });
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].depth, 2);
+    assert_eq!(orders[0].folders, ["pages/pixiv", "pages/fanbox"]);
+}

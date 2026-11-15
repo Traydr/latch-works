@@ -1,7 +1,7 @@
-//! Tidy's section of Settings: how duplicates are chosen (preferred
-//! folders, similar versions, Spot variants) and converted (video quality, the tools found), and
-//! background analysis. Preferred folders belong to the folder being tidied, so they show only
-//! once there is one. A sandboxed run (`ORIEL_DATA_DIR` set) adds a line on the sandbox Tidy
+//! Tidy's section of Settings: how duplicates are chosen (preferred folders, folder priority,
+//! similar versions, Spot variants) and converted (video quality, the tools found), and background
+//! analysis. Preferred folders and folder priority belong to the folder being tidied, so they show
+//! only once there is one. A sandboxed run (`ORIEL_DATA_DIR` set) adds a line on the sandbox Tidy
 //! works in.
 
 use std::path::Path;
@@ -9,13 +9,15 @@ use std::path::Path;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::radio::{Radio, RadioGroup};
-use gpui_kit::component::{ActiveTheme as _, Icon};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon};
 use gpui_kit::{
-    AnyElement, App, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
-    Role, SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
-    div, px,
+    AnyElement, App, Context, Entity, FontWeight, InteractiveElement as _, IntoElement,
+    ParentElement as _, Role, SharedString, StatefulInteractiveElement as _, Styled as _, Task,
+    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
-use oriel_core_tidy::contract::{EncoderCapabilities, Settings, SimilarityLevel, VideoQuality};
+use oriel_core_tidy::contract::{
+    EncoderCapabilities, FolderGroup, FolderOrder, RootId, Settings, SimilarityLevel, VideoQuality,
+};
 use oriel_ui::TextRole as _;
 use oriel_ui::ToastExt as _;
 use oriel_ui::segmented::{Segmented, SegmentedItem};
@@ -237,10 +239,64 @@ fn encoder_rows(capabilities: &EncoderCapabilities, vips: bool) -> [(&'static st
     ]
 }
 
+/// What Folder priority's groups were read for: the root, the catalog's version, and the owner's
+/// orders then.
+type PriorityKey = (RootId, u64, Vec<FolderOrder>);
+
+/// The levels below the root folder priority compares folders at.
+const PRIORITY_LEVELS: [(u8, &str); 3] = [(1, "Level 1"), (2, "Level 2"), (3, "Level 3")];
+
+/// A group's key, which stays as its order changes: its depth and its first folder by name.
+fn group_key(group: &FolderGroup) -> String {
+    let first = group
+        .folders
+        .iter()
+        .map(|folder| folder.dir.as_str())
+        .min()
+        .unwrap_or_default();
+    format!("{}:{first}", group.depth)
+}
+
+/// The owner's orders with `group`'s replaced by `folders`, or dropped when `folders` is `None`:
+/// an order of the same root and depth that names any of the group's folders is the group's.
+fn with_group_order(
+    orders: &[FolderOrder],
+    root_id: RootId,
+    group: &FolderGroup,
+    folders: Option<Vec<String>>,
+) -> Vec<FolderOrder> {
+    let mut orders: Vec<FolderOrder> = orders
+        .iter()
+        .filter(|order| {
+            order.root_id != root_id
+                || order.depth != group.depth
+                || !order
+                    .folders
+                    .iter()
+                    .any(|dir| group.folders.iter().any(|folder| &folder.dir == dir))
+        })
+        .cloned()
+        .collect();
+    if let Some(folders) = folders {
+        orders.push(FolderOrder {
+            root_id,
+            depth: group.depth,
+            folders,
+        });
+    }
+    orders
+}
+
 pub struct SettingsSection {
     state: Entity<TidyState>,
     /// Whether the encoders are listed; until the owner says, only when one is missing.
     encoders_open: Option<bool>,
+    /// Folder priority's groups and what they were read for, the read under way and its key, the
+    /// level shown, and the group open at a level with several.
+    priority: Option<(PriorityKey, Vec<FolderGroup>)>,
+    priority_read: Option<(PriorityKey, Task<()>)>,
+    priority_level: u8,
+    priority_open: Option<String>,
 }
 
 impl SettingsSection {
@@ -248,7 +304,354 @@ impl SettingsSection {
         Self {
             state: state.clone(),
             encoders_open: None,
+            priority: None,
+            priority_read: None,
+            priority_level: 2,
+            priority_open: None,
         }
+    }
+
+    /// Reads Folder priority's groups again when the root, the catalog or the owner's orders
+    /// moved since they were read.
+    fn read_priority(&mut self, settings: &Settings, cx: &mut Context<Self>) {
+        let state = self.state.read(cx);
+        let (Some(engine), Some(root_id)) = (state.engine().cloned(), state.root_id()) else {
+            return;
+        };
+        let key: PriorityKey = (
+            root_id,
+            state.catalog_version(),
+            settings.folder_orders.clone(),
+        );
+        let current = self.priority.as_ref().is_some_and(|(read, _)| *read == key)
+            || self
+                .priority_read
+                .as_ref()
+                .is_some_and(|(reading, _)| *reading == key);
+        if current {
+            return;
+        }
+        let answer = engine.ask(move |engine| engine.folder_priority(root_id), cx);
+        let reading = key.clone();
+        let task = cx.spawn(async move |this, cx| {
+            let answer = answer.await;
+            this.update(cx, |this, cx| {
+                if this
+                    .priority_read
+                    .as_ref()
+                    .is_some_and(|(read, _)| *read == reading)
+                {
+                    this.priority_read = None;
+                }
+                if let Ok(groups) = answer {
+                    this.priority = Some((reading, groups));
+                }
+                cx.notify();
+            })
+            .ok();
+        });
+        self.priority_read = Some((key, task));
+    }
+
+    /// Moves a folder of a group to `to`, which makes the group's order the owner's. The list
+    /// shows it at once; the setting follows.
+    fn move_folder(
+        &mut self,
+        group: usize,
+        from: usize,
+        to: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(root_id) = self.state.read(cx).root_id() else {
+            return;
+        };
+        let Some((_, groups)) = self.priority.as_mut() else {
+            return;
+        };
+        let Some(entry) = groups.get_mut(group) else {
+            return;
+        };
+        if from >= entry.folders.len() || to >= entry.folders.len() {
+            return;
+        }
+        let before = entry.clone();
+        let folder = entry.folders.remove(from);
+        entry.folders.insert(to, folder);
+        entry.ordered = true;
+        let folders: Vec<String> = entry
+            .folders
+            .iter()
+            .map(|folder| folder.dir.clone())
+            .collect();
+        self.change(move |settings| {
+            settings.folder_orders = with_group_order(
+                &settings.folder_orders,
+                root_id,
+                &before,
+                Some(folders.clone()),
+            );
+        })(window, cx);
+        cx.notify();
+    }
+
+    /// Drops the owner's order of a group, so it goes back to what Tidy learned.
+    fn reset_group(&mut self, group: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root_id) = self.state.read(cx).root_id() else {
+            return;
+        };
+        let Some(entry) = self
+            .priority
+            .as_ref()
+            .and_then(|(_, groups)| groups.get(group))
+            .cloned()
+        else {
+            return;
+        };
+        self.change(move |settings| {
+            settings.folder_orders =
+                with_group_order(&settings.folder_orders, root_id, &entry, None);
+        })(window, cx);
+    }
+
+    /// Folder priority: a level picker, then each group of folders at that level best first,
+    /// with buttons to move a folder up or down and, for a group the owner ordered, Reset. A
+    /// level with several groups shows each as a row that opens it.
+    fn priority_group(&mut self, root_name: &str, cx: &mut Context<Self>) -> SettingsGroup {
+        let level = self.priority_level;
+        let groups: Vec<(usize, FolderGroup)> = self
+            .priority
+            .as_ref()
+            .map(|(_, groups)| {
+                groups
+                    .iter()
+                    .cloned()
+                    .enumerate()
+                    .filter(|(_, group)| group.depth == level)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let this = cx.entity().downgrade();
+        let picker = Segmented::new("tidy-settings-priority-level", "Folder level").items(
+            PRIORITY_LEVELS.map(|(depth, label)| {
+                let this = this.clone();
+                SegmentedItem::new(SharedString::from(format!("priority-level-{depth}")), label)
+                    .selected(level == depth)
+                    .on_click(move |_, _, cx| {
+                        this.update(cx, |section, cx| {
+                            section.priority_level = depth;
+                            section.priority_open = None;
+                            cx.notify();
+                        })
+                        .ok();
+                    })
+            }),
+        );
+        let mut group = SettingsGroup::new(format!("Folder priority · for {root_name}")).child(
+            SettingsRow::new("Folders compared")
+                .description(
+                    "Learned from the duplicates you resolve, one to three folders deep. Move a \
+                     folder up to keep its copies first; your order goes before what Tidy \
+                     learned, and preferred folders before both.",
+                )
+                .child(picker),
+        );
+        let theme = cx.theme();
+        let (muted, hover, primary) = (theme.muted_foreground, theme.list_hover, theme.primary);
+        if groups.is_empty() {
+            return group.child(
+                div()
+                    .id("tidy-settings-priority-empty")
+                    .test_support()
+                    .px_4()
+                    .py_3()
+                    .text_body()
+                    .text_color(muted)
+                    .child(if self.priority.is_some() {
+                        "No duplicates resolved between folders at this level yet"
+                    } else {
+                        "Reading what you resolved…"
+                    }),
+            );
+        }
+        let several = groups.len() > 1;
+        for (index, entry) in groups {
+            let key = group_key(&entry);
+            let open = !several || self.priority_open.as_deref() == Some(key.as_str());
+            if several {
+                let first = match entry.folders[0].dir.as_str() {
+                    "" => crate::labels::folder_capitalized("").to_string(),
+                    dir => dir.to_string(),
+                };
+                let more = entry.folders.len() - 1;
+                let this = this.clone();
+                let toggle_key = key.clone();
+                group = group.child(
+                    div()
+                        .id(SharedString::from(format!(
+                            "tidy-settings-priority-group-{key}"
+                        )))
+                        .test_support()
+                        .role(Role::Button)
+                        .aria_label(SharedString::from(format!("{first} and {more} more")))
+                        .aria_expanded(open)
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_3()
+                        .h(px(48.))
+                        .px_4()
+                        .cursor_pointer()
+                        .hover(|style| style.bg(hover))
+                        .on_click(move |_, _, cx| {
+                            let key = toggle_key.clone();
+                            this.update(cx, |section, cx| {
+                                section.priority_open =
+                                    (section.priority_open.as_deref() != Some(&key)).then_some(key);
+                                cx.notify();
+                            })
+                            .ok();
+                        })
+                        .child(
+                            Icon::new(if open {
+                                IconName::ChevronDown
+                            } else {
+                                IconName::ChevronRight
+                            })
+                            .size(px(16.))
+                            .text_color(muted),
+                        )
+                        .child(div().flex_1().min_w_0().truncate().text_body().child(first))
+                        .child(
+                            div()
+                                .text_caption()
+                                .text_color(muted)
+                                .child(format!("+{more}")),
+                        )
+                        .when(entry.ordered, |row| {
+                            row.child(div().text_caption().text_color(primary).child("Your order"))
+                        }),
+                );
+            }
+            if !open {
+                continue;
+            }
+            if entry.ordered {
+                let this = this.clone();
+                group = group.child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_3()
+                        .h(px(44.))
+                        .px_4()
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_caption()
+                                .text_color(muted)
+                                .child("You set this order"),
+                        )
+                        .child(
+                            Button::new(SharedString::from(format!(
+                                "tidy-settings-priority-reset-{key}"
+                            )))
+                            .row_size()
+                            .ghost()
+                            .label("Use learned order")
+                            .on_click(move |_, window, cx| {
+                                this.update(cx, |section, cx| {
+                                    section.reset_group(index, window, cx);
+                                })
+                                .ok();
+                            }),
+                        ),
+                );
+            }
+            let count = entry.folders.len();
+            for (row, folder) in entry.folders.iter().enumerate() {
+                let label = if folder.dir.is_empty() {
+                    crate::labels::folder_capitalized("").to_string()
+                } else {
+                    folder.dir.clone()
+                };
+                let mover = |to: usize, icon: IconName, name: &str, disabled: bool| {
+                    let this = this.clone();
+                    Button::new(SharedString::from(format!(
+                        "tidy-settings-priority-{name}-{key}-{row}"
+                    )))
+                    .row_size()
+                    .ghost()
+                    .icon(Icon::new(icon))
+                    .accessibility_label(SharedString::from(format!("Move {label} {name}")))
+                    .tooltip(if name == "up" {
+                        "Keep from it sooner"
+                    } else {
+                        "Keep from it later"
+                    })
+                    .disabled(disabled)
+                    .on_click(move |_, window, cx| {
+                        this.update(cx, |section, cx| {
+                            section.move_folder(index, row, to, window, cx);
+                        })
+                        .ok();
+                    })
+                };
+                group = group.child(
+                    div()
+                        .id(SharedString::from(format!(
+                            "tidy-settings-priority-{key}-{row}"
+                        )))
+                        .test_support()
+                        .aria_label(SharedString::from(format!("{}. {label}", row + 1)))
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_3()
+                        .h(px(48.))
+                        .pl_4()
+                        .pr(px(10.))
+                        .child(
+                            div()
+                                .w(px(24.))
+                                .flex_shrink_0()
+                                .text_caption()
+                                .text_color(muted)
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(format!("{}", row + 1)),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .text_body()
+                                .child(label.clone()),
+                        )
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .text_caption()
+                                .text_color(muted)
+                                .child(format!("won {} · lost {}", folder.won, folder.lost)),
+                        )
+                        .child(mover(
+                            row.saturating_sub(1),
+                            IconName::ChevronUp,
+                            "up",
+                            row == 0,
+                        ))
+                        .child(mover(
+                            (row + 1).min(count - 1),
+                            IconName::ChevronDown,
+                            "down",
+                            row + 1 == count,
+                        )),
+                );
+            }
+        }
+        group
     }
 
     /// Encoders as one summary row that lists them when clicked (`Encoders`). It opens by itself
@@ -476,6 +879,10 @@ impl SettingsSection {
         }
         let [similarity, spot] = matching_rows(&self.state, &settings, "tidy-settings");
         duplicates = duplicates.child(similarity).child(spot);
+        let priority = root.is_some().then(|| {
+            self.read_priority(&settings, cx);
+            self.priority_group(&root_name, cx)
+        });
 
         let quality = Segmented::new("tidy-settings-quality", "Video quality").items(
             VIDEO_QUALITIES.map(|(quality, label)| {
@@ -520,6 +927,7 @@ impl SettingsSection {
             .flex()
             .flex_col()
             .child(duplicates)
+            .children(priority)
             .child(convert)
             .child(analysis)
             .children(sandbox_group)

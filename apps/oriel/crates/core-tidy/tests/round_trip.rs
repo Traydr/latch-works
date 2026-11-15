@@ -25,10 +25,10 @@ use oriel_core_paths::DataRoot;
 use oriel_core_tidy::AnalysisKind;
 use oriel_core_tidy::contract::{
     DuplicateKind, DuplicateScope, DuplicateSet, DuplicateSetPage, DuplicateSetRequest, FileFilter,
-    FileFormat, FileId, FileQuery, FileSortColumn, HoldingItem, HoldingRequest, KeepReason,
-    OptimizeCategory, PlanId, PlanKind, PlanListRequest, PlanRequest, PlanStatus, PlanStepAction,
-    PlanStepsRequest, PlanSummary, Rename, ResolveGroup, Root, SimilarityLevel, StepStatus,
-    VideoCodecChoice, VideoQuality,
+    FileFormat, FileId, FileQuery, FileSortColumn, FolderOrder, FolderStanding, HoldingItem,
+    HoldingRequest, KeepReason, OptimizeCategory, PlanId, PlanKind, PlanListRequest, PlanRequest,
+    PlanStatus, PlanStepAction, PlanStepsRequest, PlanSummary, Rename, ResolveGroup, Root,
+    SimilarityLevel, StepStatus, VideoCodecChoice, VideoQuality,
 };
 use oriel_core_tidy::internals::sniff_file;
 use oriel_core_tidy::internals::{
@@ -718,6 +718,130 @@ fn a_duplicate_decision_holds_the_copies_and_undoes() {
     bench.undo_and_check(&[plan.id], "the decision");
     // The set is back in review.
     assert_eq!(bench.set_with("photos/forest.png").keep, forest.keep);
+}
+
+/// Folder priority: the folder whose copy the owner kept is the one the next set across the same
+/// folders suggests, an order set in Settings goes before that, and an Undo takes the lesson back.
+#[test]
+fn the_folder_kept_from_is_suggested_next_until_undone() {
+    let Some(media) = support::media() else {
+        return;
+    };
+    let scratch = Scratch::new("folder-priority");
+    let source = scratch.0.join("source");
+    oriel_test_archive::build_archive(&source);
+    let archive = scratch.0.join("archive");
+    for picture in ["forest.png", "sunset.png"] {
+        for folder in ["site-a/artist", "site-b/artist"] {
+            let to = archive.join(folder).join(picture);
+            fs::create_dir_all(to.parent().unwrap()).unwrap();
+            fs::copy(source.join("photos").join(picture), &to).unwrap();
+            set_mtime(&to, original_mtime());
+        }
+    }
+    let bench = Bench::over(scratch, archive, media, false);
+    let forest = bench.set_with("site-a/artist/forest.png");
+    let sunset = bench.set_with("site-a/artist/sunset.png");
+    assert_eq!(forest.keep, [bench.id("site-a/artist/forest.png")]);
+    assert_eq!(sunset.keep, [bench.id("site-a/artist/sunset.png")]);
+    assert_eq!(sunset.folders.len(), 2);
+    assert!(
+        sunset
+            .folders
+            .iter()
+            .all(|folder| folder.standing.is_none())
+    );
+
+    let keep = bench.id("site-b/artist/forest.png");
+    let remove = bench.id("site-a/artist/forest.png");
+    let plan = bench.perform(PlanRequest::ResolveDuplicates {
+        groups: vec![ResolveGroup::of_set(&forest, vec![keep], vec![remove])],
+    });
+
+    let sunset = bench.set_with("site-a/artist/sunset.png");
+    assert_eq!(sunset.keep, [bench.id("site-b/artist/sunset.png")]);
+    assert_eq!(sunset.keep_reason, KeepReason::FolderPriority);
+    let folders: Vec<(&str, Option<FolderStanding>)> = sunset
+        .folders
+        .iter()
+        .map(|folder| (folder.dir.as_str(), folder.standing))
+        .collect();
+    assert_eq!(
+        folders,
+        [
+            ("site-b/artist", None),
+            ("site-a/artist", Some(FolderStanding::Record(0, 1)))
+        ]
+    );
+    let groups = block_on(bench.engine.folder_priority(bench.root.id)).unwrap();
+    let sites: Vec<&str> = groups
+        .iter()
+        .find(|group| group.depth == 2)
+        .map(|group| {
+            group
+                .folders
+                .iter()
+                .map(|folder| folder.dir.as_str())
+                .collect()
+        })
+        .unwrap();
+    assert_eq!(sites, ["site-b/artist", "site-a/artist"]);
+
+    // The owner's order beats what they did.
+    let mut settings = block_on(bench.engine.settings()).unwrap();
+    settings.folder_orders = vec![FolderOrder {
+        root_id: bench.root.id,
+        depth: 2,
+        folders: vec!["site-a/artist".into(), "site-b/artist".into()],
+    }];
+    block_on(bench.engine.update_settings(settings.clone())).unwrap();
+    let sunset = bench.set_with("site-a/artist/sunset.png");
+    assert_eq!(sunset.keep, [bench.id("site-a/artist/sunset.png")]);
+    assert_eq!(sunset.keep_reason, KeepReason::FolderPriority);
+    assert_eq!(
+        sunset.folders[1].standing,
+        Some(FolderStanding::Ordered(false))
+    );
+    let groups = block_on(bench.engine.folder_priority(bench.root.id)).unwrap();
+    assert!(groups.iter().any(|group| group.depth == 2 && group.ordered));
+    settings.folder_orders.clear();
+    block_on(bench.engine.update_settings(settings)).unwrap();
+
+    bench.undo(&[plan.id]);
+    let sunset = bench.set_with("site-a/artist/sunset.png");
+    assert_eq!(sunset.keep, [bench.id("site-a/artist/sunset.png")]);
+    assert_ne!(sunset.keep_reason, KeepReason::FolderPriority);
+}
+
+/// Each copy a decision holds names the kept copy of its own picture, which folder priority
+/// learns from: keeping another site's copies of two pages names those, not the first kept file.
+#[test]
+fn a_held_copy_names_the_kept_copy_of_its_picture() {
+    let Some(bench) = Bench::open("kept-for") else {
+        return;
+    };
+    let pages = bench.set_with("pages/pixiv/900_p1.png");
+    let keep = vec![
+        bench.id("pages/fanbox/101_clean.png"),
+        bench.id("pages/pixiv/900_p0.jpg"),
+        bench.id("pages/pixiv/900_p1.png"),
+    ];
+    let remove = vec![
+        bench.id("pages/fanbox/101_jp.png"),
+        bench.id("pages/fanbox/101_en.png"),
+    ];
+    bench.perform(PlanRequest::ResolveDuplicates {
+        groups: vec![ResolveGroup::of_set(&pages, keep, remove)],
+    });
+    let held = bench.held_by_original();
+    assert_eq!(
+        held["pages/fanbox/101_jp.png"].1,
+        "Duplicate of pages/pixiv/900_p0.jpg"
+    );
+    assert_eq!(
+        held["pages/fanbox/101_en.png"].1,
+        "Duplicate of pages/pixiv/900_p1.png"
+    );
 }
 
 #[test]

@@ -99,11 +99,12 @@ async fn clicking_a_tile_to_close_a_popover_only_closes_it(cx: &mut TestAppConte
         return;
     }
     let session = launch(cx, "press-popover");
-    let (_, second) = on_a_set(cx, &session).await;
+    // The first tile: the popover drops from the top bar's right end, over the last tiles.
+    let (first, _) = on_a_set(cx, &session).await;
     let stage = stage_ids(cx, &session);
     click(cx, &session, "duplicates-matching");
     assert!(popup_open(cx), "the popover is open");
-    click(cx, &session, ("version", second));
+    click(cx, &session, ("version", first));
     settle(cx, &session).await;
     assert!(!popup_open(cx));
     nothing_decided(cx, &session, &stage);

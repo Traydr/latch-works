@@ -222,6 +222,19 @@ shrink like any other, and the sets can be resolved afterwards:
   bits on eleven kinds of synthetic picture, 8 on pure noise; Balanced allows 9, Strict 5).
 - Files keep their ids through a change and its Undo, so dismissals and choices made in a set
   stay. Set keys are `set:<lowest id>`.
+- **Folder priority** (plan 065). After a preferred folder and sound, the keeper rules prefer the
+  copy in the folder the owner usually keeps from, learned from duplicate resolutions still in
+  effect (`plan_steps` of `resolve-duplicates` plans, done and not undone): a hold reason names the
+  copy of the same picture kept, so each held file says one folder won over another. Folders are
+  told apart by up to three path parts below the root, falling back a level for a pair never
+  decided. An Undo takes its lesson back; nothing is stored apart from the history. Each hold step
+  also records the copies the set suggested (`suggested` in its spec), so overrides can be counted.
+  Duplicates numbers a set's folders in tile order, badges each tile with its folder, and lists the
+  folders on the right; a click there or ⌥1–9 keeps that folder's copy of each picture, and the
+  suggested copy of a picture it lacks. Settings › Folder priority lists the folders compared at
+  each level, best first; moving one stores that group's order in the settings (`folderOrders`),
+  which goes before every learned record, a deeper one too, and "Use learned order" drops it.
+  `--example folder_priority` measures it on a copy of a catalog.
 - When pixels, sound, length, home folder, format and extension tie, the keeper rules prefer the
   copy Tidy re-encoded to save space over the very bytes it was made from, while those wait in
   holding (`files.reencoded`, cleared when the bytes change, matched to the step's

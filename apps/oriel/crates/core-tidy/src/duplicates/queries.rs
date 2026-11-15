@@ -35,6 +35,7 @@ pub fn to_keeper_candidate(record: &FileRecord, settings: &Settings) -> KeeperCa
         mtime_ms: record.mtime_ms,
         is_preferred: is_preferred_path(settings, record),
         in_home_folder: false,
+        folder_score: 0,
         sha256: record.sha256.clone(),
         reencoded_from: None,
     }

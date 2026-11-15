@@ -45,6 +45,10 @@ pub enum StepSpec {
         /// Steps recorded before this was kept have none.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         keepers: Vec<Keeper>,
+        /// For a duplicate, the copies the set suggested keeping, by their paths in the root, so
+        /// how often the owner changed the suggestion can be counted. Older steps have none.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        suggested: Vec<String>,
     },
     Move,
     Rename,
@@ -301,6 +305,12 @@ fn draft_resolution(
                 sha256: record.sha256.clone(),
             })
             .collect();
+        let suggested: Vec<String> = group
+            .suggested
+            .iter()
+            .filter_map(|id| by_id.get(id))
+            .map(|record| record.rel_path.clone())
+            .collect();
         let mut changed = false;
         for record in removals_for(&members, &group.keep) {
             if removed.contains(&record.id) || kept.contains(&record.id) {
@@ -308,11 +318,19 @@ fn draft_resolution(
             }
             removed.insert(record.id);
             changed = true;
+            // The kept copy of the same picture, which the reason names.
+            let kept_instead = group
+                .kept_for
+                .iter()
+                .find(|(removed, _)| *removed == record.id)
+                .and_then(|(_, kept)| by_id.get(kept))
+                .unwrap_or(keeper);
             draft.steps.push(file_step(
                 record,
                 StepSpec::Hold {
-                    reason: duplicate_hold_reason(&keeper.rel_path),
+                    reason: duplicate_hold_reason(&kept_instead.rel_path),
                     keepers: keeper_states.clone(),
+                    suggested: suggested.clone(),
                 },
                 None,
             ));
@@ -401,6 +419,7 @@ fn junk_hold(record: &FileRecord) -> DraftStep {
         StepSpec::Hold {
             reason: "System junk".into(),
             keepers: Vec::new(),
+            suggested: Vec::new(),
         },
         None,
     )
@@ -442,6 +461,7 @@ pub fn draft_steps(
                     StepSpec::Hold {
                         reason: "Removed".into(),
                         keepers: Vec::new(),
+                        suggested: Vec::new(),
                     },
                     None,
                 ));
@@ -814,6 +834,7 @@ mod tests {
         let hold = StepSpec::Hold {
             reason: "System junk".into(),
             keepers: Vec::new(),
+            suggested: Vec::new(),
         };
         assert_eq!(
             serde_json::to_string(&hold).unwrap(),
@@ -840,6 +861,7 @@ mod tests {
             StepSpec::Hold {
                 reason: "Duplicate of a.png".into(),
                 keepers: Vec::new(),
+                suggested: Vec::new(),
             }
         );
     }
