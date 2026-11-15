@@ -591,7 +591,11 @@ gave back) and `ORIEL_SPIKE_REST=<seconds>` (the footprint after that rest). Thr
 engine differently from the app's: `ORIEL_MPV_RENDER=sw` (the software renderer),
 `ORIEL_MPV_LEAD_MS=<ms>` (how early frames are handed out) and `ORIEL_MPV_OPTIONS=name=value,…`
 (more mpv options). Run it with `cargo run --release -p oriel-mode-view --example mpv_spike --
-<single|tiles|sweep|errors|verify|colour|rest>`; `rest <seconds>` opens nothing and prints the
+<single|tiles|sweep|errors|verify|colour|rest|twice|drag>`; `twice <video> <gap ms>` and
+`drag <video> <gap ms>`, with `ORIEL_SPIKE_SEEKS=1`, watch the picture through two exact seeks
+that far apart and through a drag that far after a click, where a second core shows a seek's
+picture first: it must never go back to an older picture, and a drag must show its first
+keyframe as soon as it does without the switch; `rest <seconds>` opens nothing and prints the
 footprint every 5 s: with `ORIEL_SPIKE_PRIME=0`, what a primed engine holds while it waits and
 after it shuts down.
 

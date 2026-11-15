@@ -8,6 +8,7 @@
 //! core: to read where a seek landed, and to choose a file's decoder while mpv holds the file
 //! open for it.
 
+use std::collections::VecDeque;
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -39,6 +40,8 @@ const LOADFILE_REPLY: u64 = 1;
 /// The reply id of a core's first seek, which is that seek's number; each later seek's is one
 /// more ([`Core::seek`]).
 const FIRST_SEEK: u64 = 2;
+/// How many of the seeks mpv started last are kept, with when.
+const KEPT_STARTS: usize = 32;
 /// How many of mpv's error lines are kept to explain a failure.
 const KEPT_ERRORS: usize = 4;
 /// `MPV_ERROR_OPTION_NOT_FOUND`.
@@ -158,10 +161,8 @@ pub(super) struct Observed {
     /// The number of the newest seek that has landed, its first frame drawn: the seek mpv was
     /// making when the newest restart came ([`Core::seek`]).
     pub(super) landed: u64,
-    /// The number of the seek mpv started last, and when. Every frame it draws from then on
-    /// is of that seek or a later one, restart or no: in a run of seeks mpv draws each one's
-    /// frame and starts the next without a restart.
-    pub(super) started: Option<(u64, Instant)>,
+    /// The seeks mpv started last, by number, with when: see [`Self::started`].
+    starts: VecDeque<(u64, Instant)>,
     /// How the file's exact seeks are made quick, as chosen when it opened.
     pub(super) quick_seeks: QuickSeeks,
     /// Whether hardware decodes the video (`hwdec-current`), once mpv has a decoder for it:
@@ -194,6 +195,16 @@ impl Observed {
             && self.display_size == (None, None)
             && self.duration.is_none()
             && self.time_pos.is_none()
+    }
+
+    /// When mpv started seek `number`, or the first one after it that it started in its place.
+    /// Every new picture mpv draws from then on is of that seek or a later one, restart or no:
+    /// in a run of seeks mpv draws each one's frame and starts the next without a restart.
+    pub(super) fn started(&self, number: u64) -> Option<Instant> {
+        self.starts
+            .iter()
+            .find(|(started, _)| *started >= number)
+            .map(|(_, at)| *at)
     }
 
     pub(super) fn picture_size(&self) -> Option<(u32, u32)> {
@@ -503,7 +514,18 @@ impl Core {
                 }
                 ffi::EVENT_SEEK => {
                     under_way = queued;
-                    self.observed().started = Some((under_way, Instant::now()));
+                    let mut observed = self.observed();
+                    // Once a number: mpv seeks of its own accord too, to loop a file, say.
+                    if observed
+                        .starts
+                        .back()
+                        .is_none_or(|(last, _)| *last != under_way)
+                    {
+                        if observed.starts.len() == KEPT_STARTS {
+                            observed.starts.pop_front();
+                        }
+                        observed.starts.push_back((under_way, Instant::now()));
+                    }
                 }
                 ffi::EVENT_PLAYBACK_RESTART => {
                     // Timed before the read, which waits on mpv's core. The position is read

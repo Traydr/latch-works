@@ -583,12 +583,11 @@ impl Player {
             not(feature = "measure"),
             expect(unused_variables, reason = "for timings")
         )]
-        let (paused, landed, started, restart_pos, restarted_at, avsync, time_pos, has_size) = {
+        let (paused, landed, restart_pos, restarted_at, avsync, time_pos, has_size) = {
             let observed = self.core.observed();
             (
                 observed.paused,
                 observed.landed,
-                observed.started,
                 observed.restart_pos,
                 observed.restarted_at,
                 observed.avsync,
@@ -690,12 +689,12 @@ impl Player {
             landed_aside,
             self.seek.is_some(),
             |stand_in| {
-                // The player's own core has started that seek or a later one, and the window
-                // has taken a frame it drew since. Not judged by what has landed: a drag's
-                // seeks draw their frames with no restart between them.
+                // The player's own core has started that seek, or a later one in its place,
+                // and the window has taken a new picture it drew since. Not judged by what
+                // has landed: a drag's seeks draw their frames with no restart between them.
+                let started = self.core.observed().started(*stand_in);
                 started
-                    .filter(|(number, _)| number >= stand_in)
-                    .and_then(|(_, at)| self.shared.begun_after(at))
+                    .and_then(|at| self.shared.new_after(at))
                     .zip(self.frame.as_ref())
                     .is_some_and(|(first, frame)| frame.number >= first)
             },
