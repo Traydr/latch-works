@@ -408,14 +408,17 @@ impl DuplicatesPage {
         Some(if self.looking {
             format!("Keep {}", self.focus_row() + 1)
         } else {
-            decision_label(&rows_of(set), &self.kept(), self.keep_list_longest())
+            decision_label(&rows_of(set), &self.kept(), self.keep_list_longest(set))
         })
     }
 
-    /// The most characters the Keep button's list of versions takes on this stage.
-    fn keep_list_longest(&self) -> usize {
+    /// The most characters the Keep button's list of versions takes on this stage. Identical
+    /// copies show no count of versions out of sight beside it, and leave the stage unmeasured.
+    fn keep_list_longest(&self, set: &DuplicateSet) -> usize {
         let width = self.stage_size.0;
-        if width < NARROW_STAGE * self.rem {
+        if set.kind == DuplicateKind::Exact {
+            model::NAMED_LONGEST
+        } else if width < NARROW_STAGE * self.rem {
             KEEP_LIST_LONGEST_NARROW
         } else if width < ROOMY_OUT_OF_SIGHT * self.rem {
             KEEP_LIST_LONGEST
