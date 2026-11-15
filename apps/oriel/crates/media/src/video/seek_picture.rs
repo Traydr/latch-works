@@ -10,7 +10,10 @@
 //! The second core holds the file's decoders a second time, which is memory and no CPU while
 //! it waits: 100 to 250 MB up to 1080p, and 800 to 950 MB at 4K. Seeks come in runs, so the
 //! player opens it at a seek, and a thread of its own closes it [`KEEP`] after the last,
-//! whether or not the window draws meanwhile. Its engine is its own, started for it and shut
+//! whether or not the window draws meanwhile. Closing gives back about half of that at once,
+//! the part the renderer held on the GPU. The decoders' part goes back to the allocator, and
+//! stays in the process's footprint until macOS takes it back or the next open uses it again:
+//! over 14 opens and closes of one file the footprint did not grow. Its engine is its own, started for it and shut
 //! down with it, and never one of the idle ones: those wait for the next video with the shaders
 //! hardware frames need, and this one's are for software frames.
 
