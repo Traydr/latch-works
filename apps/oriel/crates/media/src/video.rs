@@ -823,18 +823,24 @@ pub fn pump_frames<V: 'static>(
 /// Lets go of a frame the window showed, where it is the window's to release: a software
 /// frame is a texture in GPUI's sprite atlas.
 fn release(frame: Rendered, window: &mut Window) {
-    if let Picture::Image(image) = frame.picture {
-        window.drop_image(image).ok();
+    match frame.picture {
+        Picture::Image(image) => {
+            window.drop_image(image).ok();
+        }
+        #[cfg(target_os = "macos")]
+        Picture::Buffer(_) => {}
     }
 }
 
 /// Lets go of a frame with no window at hand: the next poll releases it ([`RETIRED`]).
 fn retire(frame: Rendered) {
-    if let Picture::Image(image) = frame.picture {
-        RETIRED
+    match frame.picture {
+        Picture::Image(image) => RETIRED
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .push(image);
+            .push(image),
+        #[cfg(target_os = "macos")]
+        Picture::Buffer(_) => {}
     }
 }
 
