@@ -95,7 +95,9 @@ medians of 3.
   one frame at a time, and the owner wants no FFmpeg build of our own. A runtime option helps
   where it is cheap: a player with a scrubber decodes H.264 and AV1 of at most 1080p60 in
   software, which seeks about three times sooner ([the runbook](../../runbooks/oriel.md), "Video
-  through libmpv"). HEVC and larger pictures seek as before.
+  through libmpv"). HEVC and larger pictures seek as before. Windows has the same rule: its
+  hardware path is slower for another reason, the copy of each frame back to memory, and
+  software seeks about twice as soon there in H.264.
   - The hardware is not the limit. On an M5 Pro, a VideoToolbox session given 1440p frames one
     at a time, as FFmpeg's `videotoolbox.c` gives them, decodes 389 (H.264), 655 (HEVC) and 769
     (AV1) frames a second; given them without a wait

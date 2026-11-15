@@ -61,22 +61,31 @@ pub(super) enum Decode {
 /// Whether a video of `codec`, with `pixels` a frame and `rate` frames a second, is worth
 /// decoding in software for its exact seeks.
 ///
-/// An exact seek decodes every frame from the keyframe before its target. FFmpeg hands the
-/// hardware decoder one frame at a time and waits for it, which at 1440p comes to 260 to 390
-/// frames a second in any codec, while its own H.264 decoder and dav1d decode on every core.
-/// The hardware is not what is slow: VideoToolbox handed the same frames without a wait
-/// decodes 1,100 to 1,600 of them a second, but neither FFmpeg nor mpv can drive it so. On an
-/// M5 Pro, over the videos of a library in use, the median exact seek fell from 52 ms to 16 ms
-/// in H.264 (720p, a keyframe every 3 s) and from 267 ms to 78 ms in AV1 (Shrink's, a keyframe
-/// every 5 s), and the slowest from 155 ms to 32 ms and from 845 ms to 290 ms. HEVC seeks no
-/// sooner in software, so it stays in hardware.
+/// An exact seek decodes every frame from the keyframe before its target, and in H.264 and AV1
+/// FFmpeg's own decoder and dav1d, on every core, get there sooner than the hardware path does.
 ///
-/// Playing costs more CPU in software: 720p30 H.264 takes 21 % of a core, where hardware takes
-/// 11 %, and 1080p60 AV1 takes 70 %, where hardware takes 20 %. Above 1080p60 that grows past
-/// what a sooner seek is worth. All this was measured on macOS alone, so elsewhere every
-/// picture stays in hardware.
+/// On macOS that is because FFmpeg hands the hardware decoder one frame at a time and waits for
+/// it, which at 1440p comes to 260 to 390 frames a second in any codec. The hardware is not
+/// what is slow: VideoToolbox handed the same frames without a wait decodes 1,100 to 1,600 of
+/// them a second, but neither FFmpeg nor mpv can drive it so. On an M5 Pro, over the videos of
+/// a library in use, the median exact seek fell from 54 ms to 15 ms in H.264 (720p, a keyframe
+/// every 3 s) and from 217 ms to 77 ms in AV1 (Shrink's, a keyframe every 5 s), and the slowest
+/// from 124 ms to 34 ms and from 776 ms to 304 ms. Playing costs more CPU in software there:
+/// 720p30 H.264 takes 21 % of a core, where hardware takes 11 %, and 1080p60 AV1 takes 70 %,
+/// where hardware takes 20 %. Above 1080p60 that grows past what a sooner seek is worth.
+///
+/// On Windows the software renderer has each hardware frame copied back to memory
+/// (`d3d11va-copy`), which halves the hardware's rate, and in H.264 the hardware is the slower
+/// decoder even before the copy. On a Ryzen 5 5600H with an RTX 3060, over clips with a keyframe
+/// every 5 s, the median exact seek fell from 69 ms to 33 ms in 720p30 H.264, from 203 ms to
+/// 87 ms in 1080p60 H.264 and from 266 ms to 194 ms in 1080p60 AV1; 720p AV1 seeks the same
+/// either way. Playing costs the same CPU either way there, as near as it was measured, since
+/// the copy costs about what decoding does.
+///
+/// HEVC seeks later in software on both, so it stays in hardware. Linux is not measured, so
+/// there every picture does.
 fn seeks_sooner_in_software(codec: &str, pixels: f64, rate: f64) -> bool {
-    cfg!(target_os = "macos")
+    cfg!(any(target_os = "macos", target_os = "windows"))
         && matches!(codec, "h264" | "av1")
         && pixels * rate <= SOFTWARE_PIXEL_RATE
 }

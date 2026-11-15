@@ -20,8 +20,8 @@
 //! new engine's first frame costs its renderer its shaders, and a kept one has them built.
 //!
 //! A player with a scrubber ([`Player::open`]) has a light H.264 or AV1 picture decoded in
-//! software, which lands an exact seek about three times sooner than hardware does, for more
-//! CPU while it plays (`client::Decode`). Previews never seek, and stay in hardware.
+//! software, which lands an exact seek two to three times sooner than hardware does, for more
+//! CPU while it plays on macOS (`client::Decode`). Previews never seek, and stay in hardware.
 //!
 //! libmpv is loaded at run time and never linked, found by `oriel_core_paths::NativeSet::LIBMPV`.
 //! It is Oriel's own LGPL build (mpv `-Dgpl=false`, FFmpeg without `--enable-gpl`), made by
