@@ -207,6 +207,13 @@ impl Observed {
             .map(|(_, at)| *at)
     }
 
+    /// Whether mpv has started a seek since `at`.
+    pub(super) fn has_sought_since(&self, at: Instant) -> bool {
+        self.starts
+            .back()
+            .is_some_and(|(_, started)| *started >= at)
+    }
+
     pub(super) fn picture_size(&self) -> Option<(u32, u32)> {
         match self.display_size {
             (Some(width), Some(height)) if width > 0 && height > 0 => {

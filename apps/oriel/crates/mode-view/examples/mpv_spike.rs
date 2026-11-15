@@ -7,7 +7,7 @@
 //! cargo run --release -p oriel-mode-view --example mpv_spike -- errors <video> [<video> ...]
 //! cargo run --release -p oriel-mode-view --example mpv_spike -- verify <video> <seconds>...
 //! cargo run --release -p oriel-mode-view --example mpv_spike -- colour <video> <rrggbb>
-//! cargo run --release -p oriel-mode-view --example mpv_spike -- twice <video> <gap ms>
+//! cargo run --release -p oriel-mode-view --example mpv_spike -- twice <video> <gap ms> [playing]
 //! cargo run --release -p oriel-mode-view --example mpv_spike -- drag <video> <gap ms>
 //! cargo run --release -p oriel-mode-view --example mpv_spike -- rest <seconds>
 //! ```
@@ -29,7 +29,9 @@
 //! of seeks, for a player whose second core shows a seek's picture first
 //! (`ORIEL_SPIKE_SEEKS=1`): `twice` sends a paused video an exact seek and a second one the gap
 //! later, and prints which picture was on screen when, which must go from the one before to the
-//! first seek's to the second's and never back; `drag` sends an exact seek and, the gap later,
+//! first seek's to the second's and never back (with `playing` the video plays throughout, and
+//! the pictures are told apart by which of the three places' stills each is nearest, so the
+//! video must look different at a fifth, at 55 % and at 85 % of its length); `drag` sends an exact seek and, the gap later,
 //! a keyframe seek every 8 ms for 1.2 s, and prints how soon the picture first changed in the
 //! drag, which must be about what it is without `ORIEL_SPIKE_SEEKS`. `rest` opens nothing and prints the footprint every
 //! 5 s for that many seconds. With `ORIEL_SPIKE_HOLD=<seconds>` the window stays for a
@@ -84,7 +86,8 @@ fn main() {
     if rest.is_empty() || !modes.contains(&mode.as_str()) {
         eprintln!("usage: mpv_spike single|tiles|sweep|errors|verify|colour <file> [...]");
         eprintln!("       mpv_spike rest <seconds>");
-        eprintln!("       mpv_spike twice|drag <file> <gap ms>");
+        eprintln!("       mpv_spike twice <file> <gap ms> [playing]");
+        eprintln!("       mpv_spike drag <file> <gap ms>");
         std::process::exit(2);
     }
     gpui_kit::application()
@@ -1229,12 +1232,35 @@ async fn run_twice(cx: &mut AsyncApp, root: &Entity<Spike>) {
         wait(cx, Duration::from_millis(1200)).await;
         known.push((name, glimpse(cx, &tile)));
     }
+    let playing = cx.update(|cx| {
+        root.read(cx)
+            .args
+            .get(2)
+            .is_some_and(|arg| arg == "playing")
+    });
+    // Paused, a picture is one of the three stills or none of them. Playing, it moves on from
+    // each place, and is taken for the still it is nearest.
     let name = |glimpse: &[u8]| {
-        known
-            .iter()
-            .find(|(_, known)| alike(known, glimpse))
-            .map_or("another", |(name, _)| *name)
+        if playing {
+            known
+                .iter()
+                .filter(|(_, known)| known.len() == glimpse.len())
+                .min_by(|a, b| {
+                    mean_abs_difference(&a.1, glimpse)
+                        .total_cmp(&mean_abs_difference(&b.1, glimpse))
+                })
+                .map_or("another", |(name, _)| *name)
+        } else {
+            known
+                .iter()
+                .find(|(_, known)| alike(known, glimpse))
+                .map_or("another", |(name, _)| *name)
+        }
     };
+    if playing {
+        with_tile(cx, &tile, |video| video.play());
+        wait(cx, Duration::from_millis(500)).await;
+    }
     for round in 0..3 {
         let started = Instant::now();
         seek_to(cx, &tile, first, SeekMode::Exact);

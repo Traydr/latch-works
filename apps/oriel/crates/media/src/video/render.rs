@@ -27,6 +27,9 @@ const MAX_WAIT: Duration = Duration::from_millis(250);
 const WAKE_SLACK_NS: i64 = 1_000_000;
 /// How many drawn frames wait for the window at most; past that the oldest goes unseen.
 const QUEUED: usize = 3;
+/// How long before the render thread first sees a frame a seek may have started for the frame
+/// to count as one mpv handed over before the seek: the two are timed on different threads.
+const HANDOVER_SLACK: Duration = Duration::from_millis(2);
 /// How many frames' draw starts are kept to find a seek's first frame.
 const BEGUN_KEPT: usize = 32;
 /// The weight of each new draw time in the running average the lead is worked out from.
@@ -102,8 +105,9 @@ pub(super) struct Shared {
     lead_override_ns: i64,
     /// Frames drawn so far, taken or not.
     drawn: AtomicU64,
-    /// When the newest frames' draws began, by number, and whether each is a new picture and
-    /// not mpv's last one drawn again: mpv takes a frame then.
+    /// When the newest frames' draws began, by number, and whether each is a new picture: not
+    /// mpv's last one drawn again, and not one that waited to be drawn while a seek started.
+    /// mpv takes a frame then.
     begun: Mutex<VecDeque<(u64, Instant, bool)>>,
     /// The longest side frames are drawn at, in pixels, or 0 for the picture's own size: a
     /// gallery tile's preview needs no more than the tile shows.
@@ -269,8 +273,10 @@ impl Shared {
     }
 
     /// The first new picture, of the frames whose draw starts are kept, whose draw began at or
-    /// after `at`. A frame drawn again does not count: a tenth of a second into a seek that
-    /// has not landed, mpv redraws the frame from before it.
+    /// after `at`. Two kinds of frame drawn after a seek starts are of the picture before it,
+    /// and do not count. A tenth of a second into a seek that has not landed, mpv redraws the
+    /// frame from before it. And a playing core hands each frame over ahead of its time, so
+    /// one may be waiting to be drawn when the seek starts, and mpv keeps it.
     pub(super) fn new_after(&self, at: Instant) -> Option<u64> {
         self.begun
             .lock()
@@ -421,6 +427,7 @@ fn run(core: &Core, shared: &Shared, backend: &mut impl Backend, context: *mut f
             continue;
         }
         current = true;
+        let seen = Instant::now();
         let mut info = ffi::RenderFrameInfo::default();
         // SAFETY: a live context and the struct the parameter names.
         unsafe {
@@ -463,9 +470,14 @@ fn run(core: &Core, shared: &Shared, backend: &mut impl Backend, context: *mut f
             });
         // A seek during the sleep drops the frame; drawing now would redraw the old picture
         // and pass it off as the seek's.
-        let Some(new) = pending_frame(core, context) else {
+        let Some(fresh) = pending_frame(core, context) else {
             continue;
         };
+        // A frame that waited here while a seek started is of the picture before the seek.
+        let new = fresh
+            && !core
+                .observed()
+                .has_sought_since(seen.checked_sub(HANDOVER_SLACK).unwrap_or(seen));
         if let Some(took) = draw(core, shared, backend, context, size, &timing, due, new) {
             drawn_size = Some(size);
             draw_ns += (took.as_nanos() as f64 - draw_ns) * DRAW_WEIGHT;
