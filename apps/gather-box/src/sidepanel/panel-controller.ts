@@ -19,6 +19,7 @@ import {
   getGatherQueueBatch,
   getGatherQueueDisplayRun,
   getGatherQueueHandBackItems,
+  getGatherQueuePageStatus,
   getLatestGatherQueueResult,
   getRetryableGatherQueueResult,
   type HandBackItem,
@@ -803,7 +804,25 @@ export class PanelController {
       (this.state.actionResult?.failedItems.length ?? 0) > 0,
       hasActiveJob,
     );
-    this.elements.downloadButton.textContent = runInFlight ? "Add to Queue" : "Download Content";
+    // A page that finished quickly leaves the queue count unchanged, so the button itself says
+    // whether this page is already queued or saved.
+    const pageStatus = getGatherQueuePageStatus(this.queue, this.state.activeTab?.url);
+
+    this.elements.downloadButton.textContent =
+      pageStatus === "queued"
+        ? "Already in Queue"
+        : pageStatus === "gathered"
+          ? "Already Downloaded"
+          : runInFlight
+            ? "Add to Queue"
+            : "Download Content";
+
+    if (pageStatus) {
+      this.elements.downloadButton.dataset.pageStatus = pageStatus;
+    } else {
+      delete this.elements.downloadButton.dataset.pageStatus;
+    }
+
     renderProfiles(this.elements, this.state.profiles, this.state.running);
     setSaveBehavior(
       this.elements,

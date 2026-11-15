@@ -161,6 +161,29 @@ export function getLatestGatherQueueResult(queue: GatherQueueState): GatherRunSt
   return queue.results.at(-1) ?? null;
 }
 
+/**
+ * Where a page stands in the queue: `queued` while any job holds it, `gathered` when its newest
+ * kept result completed. Pages match on their exact URL, as the background's duplicate check does.
+ */
+export type GatherQueuePageStatus = "queued" | "gathered" | null;
+
+export function getGatherQueuePageStatus(
+  queue: GatherQueueState,
+  url: string | undefined,
+): GatherQueuePageStatus {
+  if (!url) {
+    return null;
+  }
+
+  if (queue.jobs.some((job) => job.run.tabUrl === url)) {
+    return "queued";
+  }
+
+  const latest = queue.results.filter((result) => result.tabUrl === url).at(-1);
+
+  return latest?.phase === "complete" ? "gathered" : null;
+}
+
 export function getRetryableGatherQueueResult(queue: GatherQueueState): GatherRunState | null {
   return queue.results.findLast((result) => result.retryImages.length > 0) ?? null;
 }
