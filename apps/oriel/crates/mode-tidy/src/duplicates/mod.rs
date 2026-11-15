@@ -135,6 +135,13 @@ const REASON_CHARACTER: f32 = 7.6;
 const FACT_LABEL: f32 = 88.;
 /// A facts line's height, at 13 px text.
 const FACT_LINE: f32 = 18.;
+/// The most characters the Keep button's list of versions takes, so Keep stays inside the bar
+/// with room beside it for a toast: on a stage from `ROOMY_OUT_OF_SIGHT` to `WIDE_OUT_OF_SIGHT`,
+/// from `NARROW_STAGE` to `ROOMY_OUT_OF_SIGHT`, and narrower. A wider one takes
+/// `model::NAMED_LONGEST`.
+const KEEP_LIST_LONGEST_ROOMY: usize = 14;
+const KEEP_LIST_LONGEST: usize = 10;
+const KEEP_LIST_LONGEST_NARROW: usize = 7;
 /// The least the Keep button takes, in rem, and with a narrow bar's closer padding.
 const DECIDE_LEAST: f32 = 8.;
 const DECIDE_LEAST_NARROW: f32 = 7.;
@@ -401,8 +408,22 @@ impl DuplicatesPage {
         Some(if self.looking {
             format!("Keep {}", self.focus_row() + 1)
         } else {
-            decision_label(&rows_of(set), &self.kept())
+            decision_label(&rows_of(set), &self.kept(), self.keep_list_longest())
         })
+    }
+
+    /// The most characters the Keep button's list of versions takes on this stage.
+    fn keep_list_longest(&self) -> usize {
+        let width = self.stage_size.0;
+        if width < NARROW_STAGE * self.rem {
+            KEEP_LIST_LONGEST_NARROW
+        } else if width < ROOMY_OUT_OF_SIGHT * self.rem {
+            KEEP_LIST_LONGEST
+        } else if width < WIDE_OUT_OF_SIGHT * self.rem {
+            KEEP_LIST_LONGEST_ROOMY
+        } else {
+            model::NAMED_LONGEST
+        }
     }
 
     fn focus_row(&self) -> usize {
@@ -1991,18 +2012,20 @@ impl DuplicatesPage {
             (true, true) => format!("{} more", hidden.count),
             (false, _) => format!("{} above", hidden.count),
         };
-        // A narrow bar names one version kept out of sight by its number alone, and more than one
-        // by the colour alone, Keep's own label beside it naming them, so its room stays free for
-        // a toast.
-        // Too many to name, it counts them instead.
-        let label = match (hidden.kept.as_slice(), narrow) {
-            ([], _) => words,
-            (kept, false) => match model::short_version_numbers(kept) {
-                Some(numbers) => format!("{words} · keeping {numbers}"),
-                None => format!("{words} · {} kept", kept.len()),
-            },
-            ([_], true) => format!("{words} · {}", model::version_numbers(&hidden.kept)),
-            (_, true) => words,
+        // A wide bar names the versions kept out of sight while that is short, and counts them
+        // otherwise, as a middling one does more than one. A narrow bar names one by its number
+        // and more than one by the colour alone, Keep's own label beside it naming them, so its
+        // room stays free for a toast.
+        let named = (!tight)
+            .then(|| model::short_version_numbers(&hidden.kept, model::NAMED_LONGEST))
+            .flatten();
+        let label = match (hidden.kept.as_slice(), named, narrow) {
+            ([], _, _) => words,
+            (_, Some(numbers), _) => format!("{words} · keeping {numbers}"),
+            ([only], None, false) => format!("{words} · keeping {only}"),
+            ([only], None, true) => format!("{words} · {only}"),
+            (kept, None, false) => format!("{words} · {} kept", kept.len()),
+            (_, None, true) => words,
         };
         let primary = cx.theme().primary;
         let go_to = hidden.go_to;

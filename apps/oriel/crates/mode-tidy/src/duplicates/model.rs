@@ -358,9 +358,9 @@ pub fn facts_of(file: &FileRow, keeper: &FileRow, video: bool) -> Vec<Lane> {
     lanes
 }
 
-/// The most characters a list of version numbers takes on the decision bar before a count stands
-/// in for it, so a set of dozens never pushes Keep out of the bar.
-const NAMED_LONGEST: usize = 16;
+/// The most characters a list of versions takes where the stage is wide, and on the decision
+/// line, which has a row of its own.
+pub const NAMED_LONGEST: usize = 16;
 
 /// "1", "1 and 3", "1, 2 and 4", with runs of three or more as ranges: "1–15", "1–3, 5 and 9–12".
 pub fn version_numbers(numbers: &[usize]) -> String {
@@ -385,22 +385,21 @@ pub fn version_numbers(numbers: &[usize]) -> String {
     }
 }
 
-/// The versions kept, as the bar can say them: by number ("1–15") while that is short, else by
+/// The versions kept, in at most `longest` characters where it can: by number ("1–15"), else by
 /// those left out ("all but 3, 9 and 12"), else by count ("8 of 16").
-pub fn kept_versions(numbers: &[usize], total: usize) -> String {
-    if let Some(named) = short_version_numbers(numbers) {
+pub fn kept_versions(numbers: &[usize], total: usize, longest: usize) -> String {
+    if let Some(named) = short_version_numbers(numbers, longest) {
         return named;
     }
     let left_out: Vec<usize> = (1..=total).filter(|n| !numbers.contains(n)).collect();
-    match short_version_numbers(&left_out) {
-        Some(left_out) if !left_out.is_empty() => format!("all but {left_out}"),
-        _ => format!("{} of {total}", numbers.len()),
-    }
+    Some(format!("all but {}", version_numbers(&left_out)))
+        .filter(|all_but| !left_out.is_empty() && all_but.chars().count() <= longest)
+        .unwrap_or_else(|| format!("{} of {total}", numbers.len()))
 }
 
-/// The numbers as `version_numbers` says them, when that is short enough for the bar.
-pub fn short_version_numbers(numbers: &[usize]) -> Option<String> {
-    Some(version_numbers(numbers)).filter(|named| named.chars().count() <= NAMED_LONGEST)
+/// The numbers as `version_numbers` says them, when that takes at most `longest` characters.
+pub fn short_version_numbers(numbers: &[usize], longest: usize) -> Option<String> {
+    Some(version_numbers(numbers)).filter(|named| named.chars().count() <= longest)
 }
 
 /// What keeping every version is called, for either kind: "Keep both", or "Keep all". The set
@@ -413,8 +412,9 @@ pub fn keep_every_label(rows: &[SetRow]) -> String {
     }
 }
 
-/// The primary button's label: the versions it keeps, by number.
-pub fn decision_label(rows: &[SetRow], kept: &[FileId]) -> String {
+/// The primary button's label: the versions it keeps, in at most `longest` characters after
+/// "Keep " where it can (see [`kept_versions`]).
+pub fn decision_label(rows: &[SetRow], kept: &[FileId], longest: usize) -> String {
     let numbers: Vec<usize> = rows
         .iter()
         .enumerate()
@@ -424,7 +424,7 @@ pub fn decision_label(rows: &[SetRow], kept: &[FileId]) -> String {
     if numbers.len() == rows.len() {
         return keep_every_label(rows);
     }
-    format!("Keep {}", kept_versions(&numbers, rows.len()))
+    format!("Keep {}", kept_versions(&numbers, rows.len(), longest))
 }
 
 /// Why the suggested version is the one to keep, naming the value that decided it.
@@ -447,7 +447,10 @@ pub fn reason_of(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId], overridde
             text: if numbers.len() == rows.len() {
                 "You are keeping every version".into()
             } else {
-                format!("Your pick: keep {}", kept_versions(&numbers, rows.len()))
+                format!(
+                    "Your pick: keep {}",
+                    kept_versions(&numbers, rows.len(), NAMED_LONGEST)
+                )
             },
             close_call: false,
         };
@@ -563,12 +566,17 @@ mod tests {
             "1–3, 5 and 9–12"
         );
         let first: Vec<usize> = (1..=15).collect();
-        assert_eq!(kept_versions(&first, 16), "1–15");
+        assert_eq!(kept_versions(&first, 16, 7), "1–15");
         let all_but: Vec<usize> = (1..=16).filter(|n| ![3, 9, 12].contains(n)).collect();
-        assert_eq!(kept_versions(&all_but, 16), "all but 3, 9 and 12");
+        assert_eq!(kept_versions(&all_but, 16, 20), "all but 3, 9 and 12");
+        assert_eq!(kept_versions(&all_but, 16, 16), "13 of 16");
         let odd: Vec<usize> = (1..=16).step_by(2).collect();
-        assert_eq!(kept_versions(&odd, 16), "8 of 16");
-        assert_eq!(kept_versions(&[1, 3], 3), "1 and 3");
+        assert_eq!(kept_versions(&odd, 16, 16), "8 of 16");
+        assert_eq!(kept_versions(&[1, 3], 3, 7), "1 and 3");
+        assert_eq!(
+            kept_versions(&[1, 2, 3, 5, 9, 10, 11, 12], 16, 12),
+            "8 of 16"
+        );
         assert_eq!(
             ratio_label(0.25, "pixels").as_deref(),
             Some("1/4 the pixels")
