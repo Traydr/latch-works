@@ -186,13 +186,8 @@ pub struct Player {
     timings: Option<Box<dyn Timings>>,
 }
 
-/// A seek the second core landed first.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct StandIn {
-    /// The seek's number in the player's own core.
-    number: u64,
-    requested_at: Instant,
-}
+/// A seek the second core landed first, by its number in the player's own core.
+type StandIn = u64;
 
 /// The seek whose picture the seek picture stands in with after a poll, if any.
 ///
@@ -588,11 +583,12 @@ impl Player {
             not(feature = "measure"),
             expect(unused_variables, reason = "for timings")
         )]
-        let (paused, landed, restart_pos, restarted_at, avsync, time_pos, has_size) = {
+        let (paused, landed, started, restart_pos, restarted_at, avsync, time_pos, has_size) = {
             let observed = self.core.observed();
             (
                 observed.paused,
                 observed.landed,
+                observed.started,
                 observed.restart_pos,
                 observed.restarted_at,
                 observed.avsync,
@@ -688,29 +684,27 @@ impl Player {
                         .as_ref()
                         .is_some_and(SeekPicture::has_landed)
             })
-            .map(|seek| StandIn {
-                number: seek.number,
-                requested_at: seek.requested_at,
-            });
+            .map(|seek| seek.number);
         let stand_in = stand_in_after(
             self.stand_in,
             landed_aside,
             self.seek.is_some(),
             |stand_in| {
-                // The player's own core has drawn a frame of that seek or a later one, and
-                // the window has taken it.
-                landed >= stand_in.number
-                    && restarted_at
-                        .and_then(|at| self.shared.begun_by(stand_in.requested_at, at))
-                        .zip(self.frame.as_ref())
-                        .is_some_and(|(first, frame)| frame.number >= first)
+                // The player's own core has started that seek or a later one, and the window
+                // has taken a frame it drew since. Not judged by what has landed: a drag's
+                // seeks draw their frames with no restart between them.
+                started
+                    .filter(|(number, _)| number >= stand_in)
+                    .and_then(|(_, at)| self.shared.begun_after(at))
+                    .zip(self.frame.as_ref())
+                    .is_some_and(|(first, frame)| frame.number >= first)
             },
         );
         changed |= stand_in != self.stand_in || (stand_in.is_some() && aside_changed);
         self.stand_in = stand_in;
         #[cfg(feature = "measure")]
         if let Some(seek) = &mut self.seek
-            && stand_in.is_some_and(|stand_in| stand_in.number == seek.number)
+            && stand_in == Some(seek.number)
         {
             seek.stood_in_after
                 .get_or_insert_with(|| seek.requested_at.elapsed());
@@ -867,37 +861,27 @@ mod tests {
     /// before a run of seeks never comes back between two of them.
     #[test]
     fn a_seek_picture_stands_in_until_either_core_has_a_newer_one() {
-        let at = Instant::now();
-        let seek = |number| StandIn {
-            number,
-            requested_at: at,
-        };
-        // Whether the player's own core has shown a frame of seek `shown`.
-        let own_core_at = |shown: u64| move |stand_in: &StandIn| shown >= stand_in.number;
+        // Whether the player's own core has shown a frame of seek `shown`, or of a later one.
+        let own_core_at = |shown: u64| move |stand_in: &StandIn| shown >= *stand_in;
 
         // The second core lands seek 5 first, and its picture stands in.
-        let held = stand_in_after(None, Some(seek(5)), true, own_core_at(4));
-        assert_eq!(held, Some(seek(5)));
+        let held = stand_in_after(None, Some(5), true, own_core_at(4));
+        assert_eq!(held, Some(5));
         // Seek 6 is sent, and neither core has landed it: seek 5's picture stays.
         let held = stand_in_after(held, None, true, own_core_at(4));
-        assert_eq!(held, Some(seek(5)));
-        // The player's own core lands seek 5 late, with 6 still to come: the same picture.
+        assert_eq!(held, Some(5));
+        // The player's own core shows seek 5 late, with 6 still to come: the same picture.
         assert_eq!(stand_in_after(held, None, true, own_core_at(5)), None);
         // The second core lands seek 6 before that: its picture takes over.
-        let held = stand_in_after(held, Some(seek(6)), true, own_core_at(4));
-        assert_eq!(held, Some(seek(6)));
+        let held = stand_in_after(held, Some(6), true, own_core_at(4));
+        assert_eq!(held, Some(6));
         // The player's own core lands seek 6, and no seek is pending: its own frame shows.
         assert_eq!(stand_in_after(held, None, false, own_core_at(6)), None);
 
-        // A drag follows a click: the own core's keyframe seek 7 is newer than seek 5.
-        assert_eq!(
-            stand_in_after(Some(seek(5)), None, true, own_core_at(7)),
-            None
-        );
+        // A drag follows a click: the own core draws keyframe seek 7, which is newer than
+        // seek 5, with more of the drag's seeks pending.
+        assert_eq!(stand_in_after(Some(5), None, true, own_core_at(7)), None);
         // A seek that never landed stops being pending, and its stand-in goes with it.
-        assert_eq!(
-            stand_in_after(Some(seek(5)), None, false, own_core_at(4)),
-            None
-        );
+        assert_eq!(stand_in_after(Some(5), None, false, own_core_at(4)), None);
     }
 }

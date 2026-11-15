@@ -158,6 +158,10 @@ pub(super) struct Observed {
     /// The number of the newest seek that has landed, its first frame drawn: the seek mpv was
     /// making when the newest restart came ([`Core::seek`]).
     pub(super) landed: u64,
+    /// The number of the seek mpv started last, and when. Every frame it draws from then on
+    /// is of that seek or a later one, restart or no: in a run of seeks mpv draws each one's
+    /// frame and starts the next without a restart.
+    pub(super) started: Option<(u64, Instant)>,
     /// How the file's exact seeks are made quick, as chosen when it opened.
     pub(super) quick_seeks: QuickSeeks,
     /// Whether hardware decodes the video (`hwdec-current`), once mpv has a decoder for it:
@@ -497,7 +501,10 @@ impl Core {
                         queued = event.reply_userdata;
                     }
                 }
-                ffi::EVENT_SEEK => under_way = queued,
+                ffi::EVENT_SEEK => {
+                    under_way = queued;
+                    self.observed().started = Some((under_way, Instant::now()));
+                }
                 ffi::EVENT_PLAYBACK_RESTART => {
                     // Timed before the read, which waits on mpv's core. The position is read
                     // now, while the first frame after the seek is the one shown.

@@ -267,6 +267,16 @@ impl Shared {
             .map(|(number, _)| *number)
     }
 
+    /// The first frame, of those whose draw starts are kept, whose draw began at or after `at`.
+    pub(super) fn begun_after(&self, at: Instant) -> Option<u64> {
+        self.begun
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .iter()
+            .find(|(_, began)| *began >= at)
+            .map(|(number, _)| *number)
+    }
+
     pub(super) fn failure(&self) -> Option<String> {
         self.failed
             .lock()
