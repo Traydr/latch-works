@@ -923,14 +923,19 @@ export class PanelController {
   }
 
   /**
-   * The finished run Copy errors describes: the one picked in the batch list, else the newest.
-   * Retry may still target an older run, but the report always matches the log you see.
+   * The finished run Copy errors describes: the one picked in the batch list, else the newest
+   * finished run, even while the log follows a job still running. A run you cancelled has nothing
+   * to report. Retry may target an older run than this one.
    */
   private getErrorReportRun(): GatherRunState | null {
     const viewed = this.queue.results.find((result) => result.id === this.viewedRunId);
     const run = viewed ?? getLatestGatherQueueResult(this.queue);
 
-    return run && (run.failedItems.length > 0 || run.error) ? run : null;
+    if (!run || run.phase === "cancelled") {
+      return null;
+    }
+
+    return run.failedItems.length > 0 || run.error ? run : null;
   }
 
   /** Picking the newest run, or the one already shown, returns the log to following the queue. */
