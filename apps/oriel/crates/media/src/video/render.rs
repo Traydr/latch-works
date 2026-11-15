@@ -27,6 +27,9 @@ const MAX_WAIT: Duration = Duration::from_millis(250);
 const WAKE_SLACK_NS: i64 = 1_000_000;
 /// How many drawn frames wait for the window at most; past that the oldest goes unseen.
 const QUEUED: usize = 3;
+/// How long before the render thread first sees a frame a seek may have started for the frame
+/// to count as one mpv handed over before the seek: the two are timed on different threads.
+const HANDOVER_SLACK: Duration = Duration::from_millis(2);
 /// How many frames' draw starts are kept to find a seek's first frame.
 const BEGUN_KEPT: usize = 32;
 /// The weight of each new draw time in the running average the lead is worked out from.
@@ -102,8 +105,10 @@ pub(super) struct Shared {
     lead_override_ns: i64,
     /// Frames drawn so far, taken or not.
     drawn: AtomicU64,
-    /// When the newest frames' draws began, by number: mpv takes a frame then.
-    begun: Mutex<VecDeque<(u64, Instant)>>,
+    /// When the newest frames' draws began, by number, and whether each is a new picture: not
+    /// mpv's last one drawn again, and not one that waited to be drawn while a seek started.
+    /// mpv takes a frame then.
+    begun: Mutex<VecDeque<(u64, Instant, bool)>>,
     /// The longest side frames are drawn at, in pixels, or 0 for the picture's own size: a
     /// gallery tile's preview needs no more than the tile shows.
     max_side: AtomicU32,
@@ -262,9 +267,23 @@ impl Shared {
             .unwrap_or_else(|p| p.into_inner())
             .iter()
             .rev()
-            .find(|(_, began)| *began <= at)
-            .filter(|(_, began)| *began >= since)
-            .map(|(number, _)| *number)
+            .find(|(_, began, _)| *began <= at)
+            .filter(|(_, began, _)| *began >= since)
+            .map(|(number, _, _)| *number)
+    }
+
+    /// The first new picture, of the frames whose draw starts are kept, whose draw began at or
+    /// after `at`. Two kinds of frame drawn after a seek starts are of the picture before it,
+    /// and do not count. A tenth of a second into a seek that has not landed, mpv redraws the
+    /// frame from before it. And a playing core hands each frame over ahead of its time, so
+    /// one may be waiting to be drawn when the seek starts, and mpv keeps it.
+    pub(super) fn new_after(&self, at: Instant) -> Option<u64> {
+        self.begun
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .iter()
+            .find(|(_, began, new)| *new && *began >= at)
+            .map(|(number, _, _)| *number)
     }
 
     pub(super) fn failure(&self) -> Option<String> {
@@ -401,13 +420,14 @@ fn run(core: &Core, shared: &Shared, backend: &mut impl Backend, context: *mut f
             // it reaches mpv before its size reaches the event thread.
             if current
                 && let Some(size) = size.filter(|size| drawn_size != Some(*size))
-                && draw(core, shared, backend, context, size, &timing, None).is_some()
+                && draw(core, shared, backend, context, size, &timing, None, false).is_some()
             {
                 drawn_size = Some(size);
             }
             continue;
         }
         current = true;
+        let seen = Instant::now();
         let mut info = ffi::RenderFrameInfo::default();
         // SAFETY: a live context and the struct the parameter names.
         unsafe {
@@ -450,18 +470,24 @@ fn run(core: &Core, shared: &Shared, backend: &mut impl Backend, context: *mut f
             });
         // A seek during the sleep drops the frame; drawing now would redraw the old picture
         // and pass it off as the seek's.
-        if !frame_pending(core, context) {
+        let Some(fresh) = pending_frame(core, context) else {
             continue;
-        }
-        if let Some(took) = draw(core, shared, backend, context, size, &timing, due) {
+        };
+        // A frame that waited here while a seek started is of the picture before the seek.
+        let new = fresh
+            && !core
+                .observed()
+                .has_sought_since(seen.checked_sub(HANDOVER_SLACK).unwrap_or(seen));
+        if let Some(took) = draw(core, shared, backend, context, size, &timing, due, new) {
             drawn_size = Some(size);
             draw_ns += (took.as_nanos() as f64 - draw_ns) * DRAW_WEIGHT;
         }
     }
 }
 
-/// Whether mpv has a frame waiting to be drawn.
-fn frame_pending(core: &Core, context: *mut ffi::RenderContext) -> bool {
+/// Whether the frame mpv has waiting to be drawn is a new picture, and not its last one to
+/// draw again; `None` if none waits.
+fn pending_frame(core: &Core, context: *mut ffi::RenderContext) -> Option<bool> {
     let mut info = ffi::RenderFrameInfo::default();
     // SAFETY: a live context and the struct the parameter names.
     unsafe {
@@ -470,11 +496,17 @@ fn frame_pending(core: &Core, context: *mut ffi::RenderContext) -> bool {
             ffi::RenderParam::new(ffi::RENDER_PARAM_NEXT_FRAME_INFO, &raw mut info),
         )
     };
-    info.flags & ffi::RENDER_FRAME_INFO_PRESENT != 0
+    (info.flags & ffi::RENDER_FRAME_INFO_PRESENT != 0)
+        .then_some(info.flags & ffi::RENDER_FRAME_INFO_REDRAW == 0)
 }
 
 /// Draws mpv's frame (the next one, or the current one again when none is pending) and leaves
-/// it for the UI, as a frame of the file begun last. Returns how long the draw took, if it drew.
+/// it for the UI, as a frame of the file begun last. `new` says it is a picture not drawn
+/// before. Returns how long the draw took, if it drew.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the render loop's state, passed as it is"
+)]
 fn draw(
     core: &Core,
     shared: &Shared,
@@ -483,6 +515,7 @@ fn draw(
     size: (u32, u32),
     timing: &[ffi::RenderParam],
     due: Option<Instant>,
+    new: bool,
 ) -> Option<Duration> {
     let generation = shared.generation();
     let started = Instant::now();
@@ -492,7 +525,7 @@ fn draw(
         if begun.len() == BEGUN_KEPT {
             begun.pop_front();
         }
-        begun.push_back((number, started));
+        begun.push_back((number, started, new));
     }
     match backend.draw(core, context, size, timing) {
         Ok(picture) => {

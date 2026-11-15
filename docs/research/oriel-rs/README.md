@@ -92,20 +92,22 @@ medians of 3.
 
 - **Retiring the Electron app**, once the owner has lived with Oriel RS on their own data.
 - **Exact seeks** in hardware stay 4 to 6 times slower than Electron's: FFmpeg gives VideoToolbox
-  one frame at a time, and the owner wants no FFmpeg build of our own. A runtime option helps
-  where it is cheap: a player with a scrubber decodes H.264 and AV1 of no more pixels a second
-  than 1080p60 in software, which seeks about three times sooner
-  ([the runbook](../../runbooks/oriel.md), "Video through libmpv"). HEVC and heavier pictures
-  seek as before. Windows has the same rule: its
-  hardware path is slower for another reason, the copy of each frame back to memory, and
-  software seeks about twice as soon there in H.264.
+  one frame at a time, and the owner wants no FFmpeg build of our own. Software decoding gets to
+  a seek's target sooner in H.264 and AV1, so a player with a scrubber uses it for those
+  ([the runbook](../../runbooks/oriel.md), "Video through libmpv"). On macOS the file plays in
+  hardware and a second core in software shows each exact seek's picture first, about three
+  times sooner in H.264 and twice in AV1. On Windows, where the hardware path is slower for
+  another reason (the copy of each frame back to memory) and playing in software costs no more,
+  software decodes the file up to the pixels a second of 1080p60, which seeks about twice as
+  soon in H.264. HEVC, and
+  AV1 above 1080p, seek as before.
   - The hardware is not the limit. On an M5 Pro, a VideoToolbox session given 1440p frames one
     at a time, as FFmpeg's `videotoolbox.c` gives them, decodes 389 (H.264), 655 (HEVC) and 769
     (AV1) frames a second; given them without a wait
     (`kVTDecodeFrame_EnableAsynchronousDecompression`) it decodes 1,086, 1,602 and 1,539, more
     than software does in every codec. Chromium, Firefox, WebKit and VLC decode that way.
-  - Getting that speed means a patch to FFmpeg's VideoToolbox decoding, or a VideoToolbox
-    decoder of Oriel's own for the seek's picture. Neither is done.
+  - Getting that speed, which would also help HEVC, means a patch to FFmpeg's VideoToolbox
+    decoding, or a VideoToolbox decoder of Oriel's own for the seek's picture. Neither is done.
 - **"Glazier" in two planner warnings** is kept so the differential runs still match
   glazier-core.
 - **Windows (Phase 8)** builds and passes clippy for `x86_64-pc-windows-gnullvm`, but has not run.

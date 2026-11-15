@@ -7,6 +7,8 @@
 //! cargo run --release -p oriel-mode-view --example mpv_spike -- errors <video> [<video> ...]
 //! cargo run --release -p oriel-mode-view --example mpv_spike -- verify <video> <seconds>...
 //! cargo run --release -p oriel-mode-view --example mpv_spike -- colour <video> <rrggbb>
+//! cargo run --release -p oriel-mode-view --example mpv_spike -- twice <video> <gap ms> [playing]
+//! cargo run --release -p oriel-mode-view --example mpv_spike -- drag <video> <gap ms>
 //! cargo run --release -p oriel-mode-view --example mpv_spike -- rest <seconds>
 //! ```
 //!
@@ -23,7 +25,15 @@
 //! player exactly to each time and compares the picture GPUI would draw with the frames
 //! Homebrew's ffmpeg decodes around it, to show which frame it landed on. `colour` shows a
 //! flat-colour clip beside a GPUI swatch of the colour it was made from and prints the
-//! picture's mean colour as GPUI draws it; `rest` opens nothing and prints the footprint every
+//! picture's mean colour as GPUI draws it. `twice` and `drag` watch the picture through a run
+//! of seeks, for a player whose second core shows a seek's picture first
+//! (`ORIEL_SPIKE_SEEKS=1`): `twice` sends a paused video an exact seek and a second one the gap
+//! later, and prints which picture was on screen when, which must go from the one before to the
+//! first seek's to the second's and never back (with `playing` the video plays throughout, and
+//! the pictures are told apart by which of the three places' stills each is nearest, so the
+//! video must look different at a fifth, at 55 % and at 85 % of its length); `drag` sends an exact seek and, the gap later,
+//! a keyframe seek every 8 ms for 1.2 s, and prints how soon the picture first changed in the
+//! drag, which must be about what it is without `ORIEL_SPIKE_SEEKS`. `rest` opens nothing and prints the footprint every
 //! 5 s for that many seconds. With `ORIEL_SPIKE_HOLD=<seconds>` the window stays for a
 //! screenshot, with the capsule's volume or speed panel open under
 //! `ORIEL_SPIKE_PANEL=volume|speed`.
@@ -71,11 +81,13 @@ fn main() {
     let mode = args.next().unwrap_or_default();
     let rest: Vec<String> = args.collect();
     let modes = [
-        "single", "tiles", "sweep", "errors", "verify", "colour", "rest",
+        "single", "tiles", "sweep", "errors", "verify", "colour", "rest", "twice", "drag",
     ];
     if rest.is_empty() || !modes.contains(&mode.as_str()) {
         eprintln!("usage: mpv_spike single|tiles|sweep|errors|verify|colour <file> [...]");
         eprintln!("       mpv_spike rest <seconds>");
+        eprintln!("       mpv_spike twice <file> <gap ms> [playing]");
+        eprintln!("       mpv_spike drag <file> <gap ms>");
         std::process::exit(2);
     }
     gpui_kit::application()
@@ -118,6 +130,8 @@ fn main() {
                     "errors" => run_errors(cx, &root).await,
                     "verify" => run_verify(cx, &root).await,
                     "colour" => run_colour(cx, &root).await,
+                    "twice" => run_twice(cx, &root).await,
+                    "drag" => run_drag(cx, &root).await,
                     "rest" => run_rest(cx, &root).await,
                     _ => {}
                 }
@@ -1157,6 +1171,164 @@ fn ffmpeg_frame(path: &Path, time: f64, width: u32, height: u32) -> Option<Vec<u
         .output()
         .ok()?;
     (output.stdout.len() == (width * height * 3) as usize).then_some(output.stdout)
+}
+
+/// A paused, silent tile on the first argument, once it shows a picture, with the video's
+/// length in seconds and the second argument as a gap in milliseconds.
+async fn seeking_tile(
+    cx: &mut AsyncApp,
+    root: &Entity<Spike>,
+) -> Option<(Entity<Tile>, f64, Duration)> {
+    let args = cx.update(|cx| root.read(cx).args.clone());
+    let path = PathBuf::from(&args[0]);
+    let gap = Duration::from_millis(args.get(1)?.parse().ok()?);
+    let tile = cx.new(|_| Tile::new(&path, false, false));
+    cx.update(|cx| {
+        root.update(cx, |root, cx| {
+            root.tiles = vec![tile.clone()];
+            cx.notify();
+        })
+    });
+    picture_after(cx, &tile, |v| {
+        v.samples().and_then(|s| s.first_frame_after())
+    })
+    .await?;
+    let duration = with_tile(cx, &tile, |v| v.duration()).flatten()?;
+    Some((tile, duration.as_secs_f64(), gap))
+}
+
+/// A sample of the picture on screen: every 4,099th byte of it as RGB.
+fn glimpse(cx: &mut AsyncApp, tile: &Entity<Tile>) -> Vec<u8> {
+    with_tile(cx, tile, |v| v.picture_rgb())
+        .flatten()
+        .map(|(_, _, rgb)| rgb.into_iter().step_by(4099).collect())
+        .unwrap_or_default()
+}
+
+/// Whether two glimpses are of one picture: the two cores' frames of it differ by a level or
+/// two in places.
+fn alike(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && mean_abs_difference(a, b) < 2.
+}
+
+fn seek_to(cx: &mut AsyncApp, tile: &Entity<Tile>, seconds: f64, mode: SeekMode) {
+    with_tile(cx, tile, |video| {
+        video.seek(Duration::from_secs_f64(seconds), mode);
+    });
+}
+
+/// An exact seek, and a second one the gap later, with the picture on screen read every few
+/// milliseconds: it must never go back to an older one.
+async fn run_twice(cx: &mut AsyncApp, root: &Entity<Spike>) {
+    let Some((tile, duration, gap)) = seeking_tile(cx, root).await else {
+        println!("twice: no picture, or no gap given");
+        return;
+    };
+    let (before, first, second) = (0.2 * duration, 0.55 * duration, 0.85 * duration);
+    // Each place's picture, landed and settled; the last of these also opens the second core.
+    let mut known = Vec::new();
+    for (name, at) in [("first", first), ("second", second), ("before", before)] {
+        seek_to(cx, &tile, at, SeekMode::Exact);
+        wait(cx, Duration::from_millis(1200)).await;
+        known.push((name, glimpse(cx, &tile)));
+    }
+    let playing = cx.update(|cx| {
+        root.read(cx)
+            .args
+            .get(2)
+            .is_some_and(|arg| arg == "playing")
+    });
+    // Paused, a picture is one of the three stills or none of them. Playing, it moves on from
+    // each place, and is taken for the still it is nearest.
+    let name = |glimpse: &[u8]| {
+        if playing {
+            known
+                .iter()
+                .filter(|(_, known)| known.len() == glimpse.len())
+                .min_by(|a, b| {
+                    mean_abs_difference(&a.1, glimpse)
+                        .total_cmp(&mean_abs_difference(&b.1, glimpse))
+                })
+                .map_or("another", |(name, _)| *name)
+        } else {
+            known
+                .iter()
+                .find(|(_, known)| alike(known, glimpse))
+                .map_or("another", |(name, _)| *name)
+        }
+    };
+    if playing {
+        with_tile(cx, &tile, |video| video.play());
+        wait(cx, Duration::from_millis(500)).await;
+    }
+    for round in 0..3 {
+        let started = Instant::now();
+        seek_to(cx, &tile, first, SeekMode::Exact);
+        let mut sent = false;
+        let mut shown = "before";
+        let mut seen = vec!["before at 0 ms".to_owned()];
+        while started.elapsed() < AFTER_SEEK {
+            if !sent && started.elapsed() >= gap {
+                seek_to(cx, &tile, second, SeekMode::Exact);
+                sent = true;
+                seen.push(format!(
+                    "(second seek at {} ms)",
+                    started.elapsed().as_millis()
+                ));
+            }
+            let now = name(&glimpse(cx, &tile));
+            if now != shown {
+                shown = now;
+                seen.push(format!("{now} at {} ms", started.elapsed().as_millis()));
+            }
+            wait(cx, Duration::from_millis(2)).await;
+        }
+        println!("twice, round {round}: {}", seen.join(", "));
+        seek_to(cx, &tile, before, SeekMode::Exact);
+        wait(cx, Duration::from_millis(1200)).await;
+    }
+}
+
+/// An exact seek, as a press on the scrubber makes, and the gap later a keyframe seek every
+/// 8 ms for 1.2 s, as a drag that never rests: how soon the picture first changes in the drag.
+async fn run_drag(cx: &mut AsyncApp, root: &Entity<Spike>) {
+    const DRAG: Duration = Duration::from_millis(1200);
+    let Some((tile, duration, gap)) = seeking_tile(cx, root).await else {
+        println!("drag: no picture, or no gap given");
+        return;
+    };
+    // Opens the second core, where the file has one.
+    seek_to(cx, &tile, 0.2 * duration, SeekMode::Exact);
+    wait(cx, Duration::from_millis(1200)).await;
+    for round in 0..3 {
+        seek_to(cx, &tile, 0.55 * duration, SeekMode::Exact);
+        wait(cx, gap).await;
+        let started = Instant::now();
+        let mut shown = glimpse(cx, &tile);
+        let (mut sent, mut changes, mut first) = (0, 0, None);
+        while started.elapsed() < DRAG {
+            if started.elapsed() >= Duration::from_millis(8) * sent {
+                let along = started.elapsed().as_secs_f64() / DRAG.as_secs_f64();
+                seek_to(cx, &tile, (0.1 + 0.8 * along) * duration, SeekMode::Fast);
+                sent += 1;
+            }
+            let now = glimpse(cx, &tile);
+            if !alike(&now, &shown) {
+                changes += 1;
+                first.get_or_insert(started.elapsed());
+                shown = now;
+            }
+            wait(cx, Duration::from_millis(1)).await;
+        }
+        println!(
+            "drag, round {round}: {sent} seeks sent, the picture changed {changes} times, first \
+             after {}",
+            ms(first)
+        );
+        wait(cx, Duration::from_secs(1)).await;
+        seek_to(cx, &tile, 0.2 * duration, SeekMode::Exact);
+        wait(cx, Duration::from_millis(1200)).await;
+    }
 }
 
 fn mean_abs_difference(a: &[u8], b: &[u8]) -> f64 {
