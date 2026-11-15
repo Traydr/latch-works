@@ -82,7 +82,8 @@ file gives one (kept folder, removed folder) pair.
   copies, every copy), numbered by first appearance in tile order. Folder 1 holds the suggestion.
 - **Panel.** On the right of the stage, beside the versions and above the decision bar, which keeps
   the stage's whole width for its commands and a toast; it shows for every set so the grid keeps its
-  width, and only in windows 1,120 px wide or more, where the stage keeps room for its tiles. Each row: the number badge, the part of
+  width, and only in windows 1,280 px wide or more: narrower, the sidebar and queue leave the stage
+  too little room for it. Each row: the number badge, the part of
   the path that tells the folders apart, how many versions it holds, and the record against folder 1
   ("1 won 23–0"). The row that matches what is kept is marked. A click, or ⌥ and its number, keeps
   that folder's copy of each picture and the suggested copy of any picture it lacks, without deciding.

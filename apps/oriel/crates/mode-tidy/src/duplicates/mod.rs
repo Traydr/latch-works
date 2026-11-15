@@ -82,7 +82,7 @@ const PAGE: usize = 100;
 /// The folder panel's width, and the narrowest window it shows in; below that the badges and ⌥1–9
 /// still pick a folder.
 const FOLDERS_WIDTH: f32 = 15.;
-const FOLDERS_LEAST_WINDOW: f32 = 1120.;
+const FOLDERS_LEAST_WINDOW: f32 = 1280.;
 
 /// The least height of a version's picture, in rems: a stage too short to give every tile that
 /// much over its facts scrolls, rather than letting the facts cover the picture.

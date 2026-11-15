@@ -29,7 +29,7 @@ fn copy_catalog(catalog: &str, folder: &Path, forget_history: bool) -> PathBuf {
         .execute_batch(&format!("VACUUM INTO '{}'", copy.display()))
         .unwrap();
     let connection = Connection::open(&copy).unwrap();
-    // Opened, the engine recovers a change that was under way, which the owner's app may be running.
+    // Opened, the engine recovers a change under way, which the owner's app may be running.
     connection
         .execute(
             "UPDATE plans SET status = 'cancelled' WHERE status = 'applying'",

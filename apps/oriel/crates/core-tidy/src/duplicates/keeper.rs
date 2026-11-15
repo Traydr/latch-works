@@ -152,13 +152,13 @@ fn by<T: PartialOrd>(left: T, right: T) -> Ordering {
 
 /// The keeper rules, in order: anything in a preferred folder; for video, the copy you can hear;
 /// the folder the owner usually keeps from; more pixels; a longer video (to half a second, so a
-/// trimmed re-upload loses); with Spot variants, the copy in the set's home folder; the archive format; the extension the format is
-/// named with; the copy Tidy already re-encoded, since the owner asked for it and its original is
-/// in holding, where more bytes would only undo the saving; more bytes, which at equal pixels is
-/// otherwise more detail; the name without a copy suffix; the oldest file; the shortest path; and
-/// finally natural name order, so the choice never depends on scan order. `Greater` means `left`
-/// is the better copy to keep.
-/// One keeper rule: `Greater` when the first copy is the better one to keep.
+/// trimmed re-upload loses); with Spot variants, the copy in the set's home folder; the archive
+/// format; the extension the format is named with; the copy Tidy already re-encoded, since the
+/// owner asked for it and its original is in holding, where more bytes would only undo the saving;
+/// more bytes, which at equal pixels is otherwise more detail; the name without a copy suffix; the
+/// oldest file; the shortest path; and finally natural name order, so the choice never depends on
+/// scan order. `Greater` means `left` is the better copy to keep. One keeper rule: `Greater` when
+/// the first copy is the better one to keep.
 type KeeperRule = fn(&KeeperCandidate, &KeeperCandidate) -> Ordering;
 
 const KEEPER_RULES: [(KeepReason, KeeperRule); 14] = [

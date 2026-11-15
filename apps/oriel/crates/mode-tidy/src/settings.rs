@@ -1,7 +1,7 @@
 //! Tidy's section of Settings: how duplicates are chosen (preferred folders, folder priority,
-//! similar versions, Spot variants) and converted (video quality, the tools found), and
-//! background analysis. Preferred folders and folder priority belong to the folder being tidied,
-//! so they show only once there is one. A sandboxed run (`ORIEL_DATA_DIR` set) adds a line on the sandbox Tidy
+//! similar versions, Spot variants) and converted (video quality, the tools found), and background
+//! analysis. Preferred folders and folder priority belong to the folder being tidied, so they show
+//! only once there is one. A sandboxed run (`ORIEL_DATA_DIR` set) adds a line on the sandbox Tidy
 //! works in.
 
 use std::path::Path;
@@ -479,7 +479,10 @@ impl SettingsSection {
             let key = group_key(&entry);
             let open = !several || self.priority_open.as_deref() == Some(key.as_str());
             if several {
-                let first = entry.folders[0].dir.clone();
+                let first = match entry.folders[0].dir.as_str() {
+                    "" => crate::labels::folder_capitalized("").to_string(),
+                    dir => dir.to_string(),
+                };
                 let more = entry.folders.len() - 1;
                 let this = this.clone();
                 let toggle_key = key.clone();
