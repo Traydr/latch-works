@@ -209,15 +209,17 @@ impl Player {
         Ok(player)
     }
 
-    /// Opens `path` on an engine made as `options` say: with its sound, decoded as
-    /// [`Self::open`] decodes it, or without it for good, as a silent preview is.
+    /// Opens `path` on an engine made as `options` say: with its sound or without it for good,
+    /// and decoded as a player with a scrubber's is ([`Self::open`]) if it `seeks`, else as a
+    /// preview's.
     #[cfg(feature = "measure")]
     pub fn open_with(
         path: &Path,
         options: &EngineOptions,
         sound: bool,
+        seeks: bool,
     ) -> Result<Self, VideoError> {
-        let decode = if sound {
+        let decode = if seeks {
             Decode::ForSeeking
         } else {
             Decode::Hardware

@@ -47,6 +47,8 @@ pub fn run(turn: &Turn<'_>, settings: &Settings) -> Result<Outcome> {
         })?;
         env.push((set.variable.to_owned(), found.path.into_os_string()));
     }
+    // The seeks timed are the viewer's, so each file is decoded as a player with a scrubber's.
+    env.push(("ORIEL_SPIKE_SEEKS".to_owned(), OsString::from("1")));
     env.extend(settings.env.iter().cloned());
     let log = turn.folder.join("video.log");
     let mut args = vec![OsString::from("sweep")];

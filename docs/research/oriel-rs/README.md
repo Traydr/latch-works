@@ -93,9 +93,10 @@ medians of 3.
 - **Retiring the Electron app**, once the owner has lived with Oriel RS on their own data.
 - **Exact seeks** in hardware stay 4 to 6 times slower than Electron's: FFmpeg gives VideoToolbox
   one frame at a time, and the owner wants no FFmpeg build of our own. A runtime option helps
-  where it is cheap: a player with a scrubber decodes H.264 and AV1 of at most 1080p60 in
-  software, which seeks about three times sooner ([the runbook](../../runbooks/oriel.md), "Video
-  through libmpv"). HEVC and larger pictures seek as before. Windows has the same rule: its
+  where it is cheap: a player with a scrubber decodes H.264 and AV1 of no more pixels a second
+  than 1080p60 in software, which seeks about three times sooner
+  ([the runbook](../../runbooks/oriel.md), "Video through libmpv"). HEVC and heavier pictures
+  seek as before. Windows has the same rule: its
   hardware path is slower for another reason, the copy of each frame back to memory, and
   software seeks about twice as soon there in H.264.
   - The hardware is not the limit. On an M5 Pro, a VideoToolbox session given 1440p frames one

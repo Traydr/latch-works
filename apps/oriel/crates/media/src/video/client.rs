@@ -2,9 +2,11 @@
 //! events into [`Observed`], so the UI thread never waits on mpv. A core plays one file at a
 //! time, and may play many in turn (`video/engine.rs` keeps idle ones for the next player).
 //!
-//! mpv's handle is thread-safe. Commands and property writes go out with mpv's asynchronous
-//! calls, which return at once; the UI reads only [`Observed`], which the event thread keeps
-//! current from the properties it observes.
+//! mpv's handle is thread-safe. The player's commands and property writes go out with mpv's
+//! asynchronous calls, which return at once; the UI reads only [`Observed`], which the event
+//! thread keeps current from the properties it observes. Only the event thread waits on mpv's
+//! core: to read where a seek landed, and to choose a file's decoder while mpv holds the file
+//! open for it.
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::ptr::NonNull;
@@ -65,14 +67,15 @@ pub(super) enum Decode {
 /// FFmpeg's own decoder and dav1d, on every core, get there sooner than the hardware path does.
 ///
 /// On macOS that is because FFmpeg hands the hardware decoder one frame at a time and waits for
-/// it, which at 1440p comes to 260 to 390 frames a second in any codec. The hardware is not
-/// what is slow: VideoToolbox handed the same frames without a wait decodes 1,100 to 1,600 of
-/// them a second, but neither FFmpeg nor mpv can drive it so. On an M5 Pro, over the videos of
+/// it, which at 1440p comes to 390 to 770 frames a second by codec. The hardware is not what
+/// is slow: VideoToolbox handed the same frames without a wait decodes 1,100 to 1,600 of them
+/// a second, but neither FFmpeg nor mpv can drive it so. On an M5 Pro, over the videos of
 /// a library in use, the median exact seek fell from 54 ms to 15 ms in H.264 (720p, a keyframe
 /// every 3 s) and from 217 ms to 77 ms in AV1 (Shrink's, a keyframe every 5 s), and the slowest
 /// from 124 ms to 34 ms and from 776 ms to 304 ms. Playing costs more CPU in software there:
 /// 720p30 H.264 takes 21 % of a core, where hardware takes 11 %, and 1080p60 AV1 takes 70 %,
-/// where hardware takes 20 %. Above 1080p60 that grows past what a sooner seek is worth.
+/// where hardware takes 20 %. Past the pixels a second of 1080p60 that grows beyond what a
+/// sooner seek is worth; 1440p at 30 frames a second is within it, and seeks sooner too.
 ///
 /// On Windows the software renderer has each hardware frame copied back to memory
 /// (`d3d11va-copy`), which halves the hardware's rate, and in H.264 the hardware is the slower
@@ -480,24 +483,32 @@ impl Core {
         self.observed().software = software && status >= 0;
     }
 
-    /// The codec, pixels a frame and frames a second of the video track mpv plays: the first
-    /// that is not cover art.
+    /// The codec, pixels a frame and frames a second of the video track mpv will play, which
+    /// it has not yet selected: of those that are neither cover art nor a still image, the one
+    /// the file marks as its default, else the first, as mpv chooses.
     fn video_track(&self) -> Option<(String, f64, f64)> {
         let count = self.get_double(c"track-list/count")? as usize;
-        (0..count).find_map(|index| {
-            let of = |field: &str| c_string(&format!("track-list/{index}/{field}"));
-            if self.get_string(&of("type"))? != "video"
-                || self.get_string(&of("albumart")).as_deref() == Some("yes")
-            {
-                return None;
-            }
-            let pixels = self.get_double(&of("demux-w"))? * self.get_double(&of("demux-h"))?;
-            let rate = self
-                .get_double(&of("demux-fps"))
-                .filter(|rate| *rate > 0.)
-                .unwrap_or(UNSTATED_RATE);
-            Some((self.get_string(&of("codec"))?, pixels, rate))
-        })
+        let of = |index: usize, field: &str| c_string(&format!("track-list/{index}/{field}"));
+        let says = |index: usize, field: &str| {
+            self.get_string(&of(index, field)).as_deref() == Some("yes")
+        };
+        let mut pictures = (0..count).filter(|index| {
+            self.get_string(&of(*index, "type")).as_deref() == Some("video")
+                && !says(*index, "albumart")
+                && !says(*index, "image")
+        });
+        let first = pictures.next()?;
+        let index = std::iter::once(first)
+            .chain(pictures)
+            .find(|index| says(*index, "default"))
+            .unwrap_or(first);
+        let pixels =
+            self.get_double(&of(index, "demux-w"))? * self.get_double(&of(index, "demux-h"))?;
+        let rate = self
+            .get_double(&of(index, "demux-fps"))
+            .filter(|rate| *rate > 0.)
+            .unwrap_or(UNSTATED_RATE);
+        Some((self.get_string(&of(index, "codec"))?, pixels, rate))
     }
 
     fn property_changed(&self, id: u64, property: &ffi::EventProperty) {
