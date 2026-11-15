@@ -157,9 +157,16 @@ pub fn parse_settings(text: &str) -> Settings {
         preferred_folders: folders("preferredFolders")
             .or_else(|| folders("protectedFolders"))
             .unwrap_or_default(),
+        // One order that does not read leaves the others.
         folder_orders: stored
             .get("folderOrders")
-            .and_then(|orders| serde_json::from_value(orders.clone()).ok())
+            .and_then(Value::as_array)
+            .map(|orders| {
+                orders
+                    .iter()
+                    .filter_map(|order| serde_json::from_value(order.clone()).ok())
+                    .collect()
+            })
             .unwrap_or_default(),
         similarity: text_field("similarity")
             .and_then(SimilarityLevel::parse)

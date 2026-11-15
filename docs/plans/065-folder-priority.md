@@ -68,17 +68,21 @@ file gives one (kept folder, removed folder) pair.
   home folder, and the rest as before.
 - **The owner's order.** Settings › Folder priority lists, per level (1 to 3 parts below the root),
   each group of folders linked by decisions, best first (more folders beaten, then more copies kept
-  than lost). Moving a folder up or down stores that group's whole order as a `FolderOrder`; at a
-  depth where an order holds both folders it decides before the record does, and a level with no
-  order falls back to the record. "Use learned order" drops it. Folders learned later join an
-  ordered group after its ordered folders. Preferred folders (P) stay the pin above every order.
+  than lost). Moving a folder up or down stores that group's whole order as a `FolderOrder`. An
+  order that holds both folders, at any depth, decides before any record does (a site order beats a
+  record between artist folders a level deeper); without one, the deepest record decides. "Use
+  learned order" drops it. Folders learned later join an ordered group after its ordered folders.
+  Preferred folders (P) stay the pin above every order.
+- **What a resolution teaches.** Each held copy's reason names the kept copy of its own picture
+  (`ResolveGroup.kept_for`), not the set's first keeper, so keeping another folder's copies of some
+  pictures teaches that folder. This closes plan 061's "names the set's first keeper" gap.
 - **Pictures.** Folder priority ranks copies, and each picture still keeps its best copy, so a
   picture that only another folder holds keeps that copy.
 - **Folders in a set** are the distinct folders of its tiles (a version's first file; for identical
   copies, every copy), numbered by first appearance in tile order. Folder 1 holds the suggestion.
 - **Panel.** On the right of the stage, beside the versions and above the decision bar, which keeps
   the stage's whole width for its commands and a toast; it shows for every set so the grid keeps its
-  width, and only in windows 960 px wide or more. Each row: the number badge, the part of
+  width, and only in windows 1,120 px wide or more, where the stage keeps room for its tiles. Each row: the number badge, the part of
   the path that tells the folders apart, how many versions it holds, and the record against folder 1
   ("1 won 23–0"). The row that matches what is kept is marked. A click, or ⌥ and its number, keeps
   that folder's copy of each picture and the suggested copy of any picture it lacks, without deciding.

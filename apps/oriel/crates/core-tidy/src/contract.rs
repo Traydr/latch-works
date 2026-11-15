@@ -810,6 +810,9 @@ pub struct ResolveGroup {
     pub seen: Vec<SeenFile>,
     /// What the set suggested keeping, so a change from it can be counted later.
     pub suggested: Vec<FileId>,
+    /// Each removed file with the kept file that shows its picture, which its hold reason names:
+    /// folder priority learns from that pair. A removed file not listed names the first kept.
+    pub kept_for: Vec<(FileId, FileId)>,
 }
 
 impl ResolveGroup {
@@ -828,11 +831,29 @@ impl ResolveGroup {
                 sha256: file.sha256.clone(),
             })
             .collect();
+        // With Spot variants each version shows a picture; without, the set is one picture.
+        let picture_of = |id: FileId| -> i64 {
+            set.versions
+                .iter()
+                .position(|version| version.files.iter().any(|file| file.id == id))
+                .and_then(|index| set.pictures.as_ref()?.get(index).copied())
+                .unwrap_or(0)
+        };
+        let kept_for = remove
+            .iter()
+            .filter_map(|&removed| {
+                let picture = picture_of(removed);
+                keep.iter()
+                    .find(|&&kept| picture_of(kept) == picture)
+                    .map(|&kept| (removed, kept))
+            })
+            .collect();
         Self {
             keep,
             remove,
             seen,
             suggested: set.keep.clone(),
+            kept_for,
         }
     }
 }

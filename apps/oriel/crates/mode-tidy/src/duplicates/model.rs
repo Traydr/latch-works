@@ -123,6 +123,18 @@ pub fn keep_from_folder(set: &DuplicateSet, folder: usize) -> Vec<FileId> {
     }
     let tiles: BTreeSet<FileId> = rows.iter().map(|row| row.file.id).collect();
     keep.extend(set.keep.iter().filter(|id| !tiles.contains(id)));
+    // Identical copies are all tiles: those kept beside the first are copies the owner said are
+    // not duplicates, which a pick keeps too.
+    if set.kind == DuplicateKind::Exact {
+        let apart: Vec<FileId> = set
+            .keep
+            .iter()
+            .skip(1)
+            .filter(|id| !keep.contains(id))
+            .copied()
+            .collect();
+        keep.extend(apart);
+    }
     keep
 }
 
@@ -628,14 +640,16 @@ pub fn reason_of(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId], overridde
                 .and_then(|folder| set.folders.get(folder))
                 .and_then(|folder| folder.standing)
                 .filter(|_| number == 1);
+            // With three folders or more, the runner-up's folder may stand above folder 1 alone
+            // while folder 1 wins on the whole: only a standing that favours folder 1 is named.
             match standing {
-                Some(FolderStanding::Ordered(_)) => {
+                Some(FolderStanding::Ordered(false)) => {
                     format!("Keeping {n}: folder {number} comes first in your order")
                 }
-                Some(FolderStanding::Record(won, lost)) => format!(
+                Some(FolderStanding::Record(won, lost)) if lost > won => format!(
                     "Keeping {n}: you usually keep folder {number}'s copy ({lost}\u{2013}{won})"
                 ),
-                None => format!("Keeping {n}: you usually keep folder {number}'s copy"),
+                _ => format!("Keeping {n}: you usually keep folder {number}'s copy"),
             }
         }
         KeepReason::MorePixels => format!(

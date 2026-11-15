@@ -83,7 +83,7 @@ Shrink" in `docs/runbooks/oriel.md`.
 - Animations, and videos that differ in size or length: comparing their frames needs aligning by
   content, not by position.
 - A resolution's hold reason still names the set's first keeper, not the picture each copy
-  matched.
+  matched. Later: plan 065 names the kept copy of each held copy's own picture.
 
 ## Second measurement (2026-11-04)
 

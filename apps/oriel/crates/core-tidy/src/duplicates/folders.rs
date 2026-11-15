@@ -109,25 +109,30 @@ impl FolderHistory {
             })
     }
 
-    /// How `left` stands against `right`, at the deepest depth where the two differ and either
-    /// the owner's order holds both or they have decided between them: the order first. `None`
-    /// when neither, or the folders are one at [`FOLDER_DEPTH`].
+    /// How `left` stands against `right`. The owner's order goes first: the deepest depth where
+    /// an order holds both folders decides, whatever Tidy learned at any depth. Without one, the
+    /// deepest depth where the owner decided between them does. `None` when neither, or the
+    /// folders are one at [`FOLDER_DEPTH`].
     pub fn standing_between(
         &self,
         left: (RootId, &str),
         right: (RootId, &str),
     ) -> Option<FolderStanding> {
-        for depth in (1..=FOLDER_DEPTH).rev() {
-            let one = truncated(left.1, depth);
-            let other = truncated(right.1, depth);
-            if left.0 == right.0 && one == other {
-                return None;
+        // The depths where the two differ, deepest first: once one at a depth, they are one at
+        // every shallower depth too.
+        let depths: Vec<(usize, String, String)> = (1..=FOLDER_DEPTH)
+            .rev()
+            .map(|depth| (depth, truncated(left.1, depth), truncated(right.1, depth)))
+            .take_while(|(_, one, other)| left.0 != right.0 || one != other)
+            .collect();
+        if left.0 == right.0 {
+            for (depth, one, other) in &depths {
+                if let Some(first) = self.ordered(*depth, left.0, one, other) {
+                    return Some(FolderStanding::Ordered(first));
+                }
             }
-            if left.0 == right.0
-                && let Some(first) = self.ordered(depth, left.0, &one, &other)
-            {
-                return Some(FolderStanding::Ordered(first));
-            }
+        }
+        for (depth, one, other) in depths {
             let (one, other) = ((depth, left.0, one), (depth, right.0, other));
             let won = self
                 .wins
@@ -373,6 +378,12 @@ mod tests {
         );
         assert_eq!(
             history.standing_between((1, "nsfw/danbooru/x"), (1, "nsfw/patreon/y")),
+            Some(FolderStanding::Ordered(true))
+        );
+        // A site order beats a record between artist folders a level deeper.
+        history.record(1, "nsfw/patreon/c", "nsfw/danbooru/c");
+        assert_eq!(
+            history.standing_between((1, "nsfw/danbooru/c"), (1, "nsfw/patreon/c")),
             Some(FolderStanding::Ordered(true))
         );
         // Folders the order leaves out still go by what the owner did.

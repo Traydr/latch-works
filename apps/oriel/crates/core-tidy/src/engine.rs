@@ -45,12 +45,11 @@ use crate::catalog::roots::{
 use crate::catalog::state::{CatalogState, ScratchWrites, print_generation, prints_changed};
 use crate::catalog::tidy::catalog_tidy;
 use crate::catalog::{Catalog, now_ms};
-use crate::contract::FolderGroup;
 use crate::contract::{
     CleanupCounts, DuplicateDismissal, DuplicateKind, DuplicateScope, DuplicateSetPage,
     DuplicateSetRequest, DuplicateTotalsByKind, FileFacets, FileFilter, FileFlag, FileId,
-    FileIdList, FilePage, FileQuery, FileRow, OptimizeSummary, Root, RootId, SelectionSummary,
-    Settings, ShrinkSummary, SimilarityLevel, Tidy,
+    FileIdList, FilePage, FileQuery, FileRow, FolderGroup, OptimizeSummary, Root, RootId,
+    SelectionSummary, Settings, ShrinkSummary, SimilarityLevel, Tidy,
 };
 use crate::duplicates::folders::FolderHistory;
 use crate::duplicates::{

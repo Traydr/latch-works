@@ -813,6 +813,37 @@ fn the_folder_kept_from_is_suggested_next_until_undone() {
     assert_ne!(sunset.keep_reason, KeepReason::FolderPriority);
 }
 
+/// Each copy a decision holds names the kept copy of its own picture, which folder priority
+/// learns from: keeping another site's copies of two pages names those, not the first kept file.
+#[test]
+fn a_held_copy_names_the_kept_copy_of_its_picture() {
+    let Some(bench) = Bench::open("kept-for") else {
+        return;
+    };
+    let pages = bench.set_with("pages/pixiv/900_p1.png");
+    let keep = vec![
+        bench.id("pages/fanbox/101_clean.png"),
+        bench.id("pages/pixiv/900_p0.jpg"),
+        bench.id("pages/pixiv/900_p1.png"),
+    ];
+    let remove = vec![
+        bench.id("pages/fanbox/101_jp.png"),
+        bench.id("pages/fanbox/101_en.png"),
+    ];
+    bench.perform(PlanRequest::ResolveDuplicates {
+        groups: vec![ResolveGroup::of_set(&pages, keep, remove)],
+    });
+    let held = bench.held_by_original();
+    assert_eq!(
+        held["pages/fanbox/101_jp.png"].1,
+        "Duplicate of pages/pixiv/900_p0.jpg"
+    );
+    assert_eq!(
+        held["pages/fanbox/101_en.png"].1,
+        "Duplicate of pages/pixiv/900_p1.png"
+    );
+}
+
 #[test]
 fn keeping_several_versions_remembers_them_until_undone() {
     let Some(bench) = Bench::open("variants") else {

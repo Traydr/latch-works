@@ -1,7 +1,7 @@
-//! Tidy's section of Settings: how duplicates are chosen (preferred
-//! folders, folder priority, similar versions, Spot variants) and converted (video quality, the
-//! tools found), and background analysis. Preferred folders belong to the folder being tidied, so they show only
-//! once there is one. A sandboxed run (`ORIEL_DATA_DIR` set) adds a line on the sandbox Tidy
+//! Tidy's section of Settings: how duplicates are chosen (preferred folders, folder priority,
+//! similar versions, Spot variants) and converted (video quality, the tools found), and
+//! background analysis. Preferred folders and folder priority belong to the folder being tidied,
+//! so they show only once there is one. A sandboxed run (`ORIEL_DATA_DIR` set) adds a line on the sandbox Tidy
 //! works in.
 
 use std::path::Path;
@@ -568,7 +568,11 @@ impl SettingsSection {
             }
             let count = entry.folders.len();
             for (row, folder) in entry.folders.iter().enumerate() {
-                let label = folder.dir.clone();
+                let label = if folder.dir.is_empty() {
+                    crate::labels::folder_capitalized("").to_string()
+                } else {
+                    folder.dir.clone()
+                };
                 let mover = |to: usize, icon: IconName, name: &str, disabled: bool| {
                     let this = this.clone();
                     Button::new(SharedString::from(format!(

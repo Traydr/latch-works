@@ -82,7 +82,7 @@ const PAGE: usize = 100;
 /// The folder panel's width, and the narrowest window it shows in; below that the badges and ⌥1–9
 /// still pick a folder.
 const FOLDERS_WIDTH: f32 = 15.;
-const FOLDERS_LEAST_WINDOW: f32 = 960.;
+const FOLDERS_LEAST_WINDOW: f32 = 1120.;
 
 /// The least height of a version's picture, in rems: a stage too short to give every tile that
 /// much over its facts scrolls, rather than letting the facts cover the picture.
@@ -963,7 +963,7 @@ impl DuplicatesPage {
         if folder >= set.folders.len() {
             return;
         }
-        let mut next = keep_from_folder(&set, folder);
+        let next = keep_from_folder(&set, folder);
         let mut suggested = kept_ids(&set, None);
         let mut same = next.clone();
         same.sort_unstable();
@@ -971,7 +971,6 @@ impl DuplicatesPage {
         if same == suggested {
             self.overrides.remove(&set.key);
         } else {
-            next.dedup();
             self.overrides.insert(set.key, next);
         }
         cx.notify();
@@ -4349,7 +4348,7 @@ impl DuplicatesPage {
             div()
                 .id(("set-folder", index))
                 .test_support()
-                .role(Role::Button)
+                .when(several, |row| row.role(Role::Button))
                 .aria_label(SharedString::from(format!(
                     "Folder {number}, {}",
                     labels[index]

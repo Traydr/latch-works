@@ -318,10 +318,17 @@ fn draft_resolution(
             }
             removed.insert(record.id);
             changed = true;
+            // The kept copy of the same picture, which the reason names.
+            let kept_instead = group
+                .kept_for
+                .iter()
+                .find(|(removed, _)| *removed == record.id)
+                .and_then(|(_, kept)| by_id.get(kept))
+                .unwrap_or(keeper);
             draft.steps.push(file_step(
                 record,
                 StepSpec::Hold {
-                    reason: duplicate_hold_reason(&keeper.rel_path),
+                    reason: duplicate_hold_reason(&kept_instead.rel_path),
                     keepers: keeper_states.clone(),
                     suggested: suggested.clone(),
                 },
