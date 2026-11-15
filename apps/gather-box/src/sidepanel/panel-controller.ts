@@ -19,6 +19,7 @@ import {
   getGatherQueueBatch,
   getGatherQueueDisplayRun,
   getGatherQueueHandBackItems,
+  getGatherQueuePageStatus,
   getLatestGatherQueueResult,
   getRetryableGatherQueueResult,
   type HandBackItem,
@@ -108,8 +109,6 @@ interface PanelState {
   activeRunId: string | null;
   settings: GatherBoxSettings;
   profiles: GatherProfilesState;
-  /** The run Retry and Copy errors act on: the latest retryable one, else the latest one. */
-  actionResult: GatherRunState | null;
 }
 
 interface DirectoryPickerWindow extends Window {
@@ -135,7 +134,6 @@ export class PanelController {
     activeRunId: null,
     settings: { ...DEFAULT_SETTINGS },
     profiles: DEFAULT_PROFILES,
-    actionResult: null,
   };
 
   private elements!: PanelElements;
@@ -567,13 +565,13 @@ export class PanelController {
   }
 
   private async handleCopyErrors(): Promise<void> {
-    const result = this.state.actionResult;
+    const run = this.getErrorReportRun();
 
-    if (!result || result.failedItems.length === 0) {
+    if (!run) {
       return;
     }
 
-    const report = buildErrorReport(result);
+    const report = buildErrorReport(run);
 
     try {
       await navigator.clipboard.writeText(report);
@@ -800,10 +798,28 @@ export class PanelController {
       this.state.running,
       Boolean(this.state.directoryHandle),
       this.retryTarget !== null,
-      (this.state.actionResult?.failedItems.length ?? 0) > 0,
+      this.getErrorReportRun() !== null,
       hasActiveJob,
     );
-    this.elements.downloadButton.textContent = runInFlight ? "Add to Queue" : "Download Content";
+    // A page that finished quickly leaves the queue count unchanged, so the button itself says
+    // whether this page is already queued or saved.
+    const pageStatus = getGatherQueuePageStatus(this.queue, this.state.activeTab?.url);
+
+    this.elements.downloadButton.textContent =
+      pageStatus === "queued"
+        ? "Already in Queue"
+        : pageStatus === "gathered"
+          ? "Already Downloaded"
+          : runInFlight
+            ? "Add to Queue"
+            : "Download Content";
+
+    if (pageStatus) {
+      this.elements.downloadButton.dataset.pageStatus = pageStatus;
+    } else {
+      delete this.elements.downloadButton.dataset.pageStatus;
+    }
+
     renderProfiles(this.elements, this.state.profiles, this.state.running);
     setSaveBehavior(
       this.elements,
@@ -893,10 +909,20 @@ export class PanelController {
       this.pendingHandBack = null;
     }
 
-    this.state.actionResult = retryable ?? latest;
     this.retryTarget = retryable ? { runId: retryable.id, siteKey: retryable.siteKey } : null;
 
     this.syncPanelActions();
+  }
+
+  /**
+   * The finished run Copy errors describes: the one picked in the batch list, else the newest.
+   * Retry may still target an older run, but the report always matches the log you see.
+   */
+  private getErrorReportRun(): GatherRunState | null {
+    const viewed = this.queue.results.find((result) => result.id === this.viewedRunId);
+    const run = viewed ?? getLatestGatherQueueResult(this.queue);
+
+    return run && (run.failedItems.length > 0 || run.error) ? run : null;
   }
 
   /** Picking the newest run, or the one already shown, returns the log to following the queue. */
@@ -927,9 +953,11 @@ function buildErrorReport(run: GatherRunState): string {
   const lines = [
     "Gather Box error report",
     `Generated: ${new Date().toISOString()}`,
+    `Run finished: ${new Date(run.updatedAt).toISOString()}`,
     `Site: ${run.siteKey}`,
     `Page: ${run.tabUrl}`,
     `Destination: ${run.destinationPreview ?? "unknown"}`,
+    ...(run.error ? [`Error: ${run.error}`] : []),
     "",
     ...run.failedItems.map((item) => {
       const url = item.originalUrl ? `\n  URL: ${item.originalUrl}` : "";

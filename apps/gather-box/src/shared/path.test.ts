@@ -22,6 +22,13 @@ describe("path sanitization", () => {
     expect(sanitizeFileName("../../evil name?.jpg")).toBe("evil_name_.jpg");
   });
 
+  it("drops the edge tildes and control characters Chrome refuses in names", () => {
+    expect(sanitizePathSegment("How about we get it on?~")).toBe("How_about_we_get_it_on_");
+    expect(sanitizePathSegment("~draft~.")).toBe("draft");
+    expect(sanitizePathSegment("a\u0007b")).toBe("a_b");
+    expect(sanitizeFileName("~notes~.txt~")).toBe("notes~.txt");
+  });
+
   it("preserves trailing underscores used by X usernames", () => {
     expect(sanitizePathSegment(lowercaseFirstAscii("ILIE_ILIE_"))).toBe("iLIE_ILIE_");
     expect(sanitizePathSegment("ILIE_ILIE_.")).toBe("ILIE_ILIE_");

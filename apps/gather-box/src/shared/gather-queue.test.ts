@@ -8,6 +8,7 @@ import {
   getGatherQueueBatch,
   getGatherQueueDisplayRun,
   getGatherQueueHandBackItems,
+  getGatherQueuePageStatus,
   getLatestGatherQueueResult,
   getNextQueuedGatherJob,
   getPermissionRequiredGatherJob,
@@ -459,5 +460,26 @@ describe("Gather queue state", () => {
     expect(handedBack?.batch).toMatchObject({ pages: 1, saved: 2, failed: 1 });
     expect(handedBack && getGatherQueueHandBackItems(handedBack)).toEqual([]);
     expect(handedBack && recordHandedBackFile(handedBack, file)).toBeNull();
+  });
+
+  it("reports a page as queued while a job holds it, then as gathered once it completes", () => {
+    const url = (id: string) => `https://www.pixiv.net/artworks/${id}`;
+    const queued: GatherQueueState = { ...EMPTY_GATHER_QUEUE, jobs: [waiting("a", 1)] };
+
+    expect(getGatherQueuePageStatus(queued, url("a"))).toBe("queued");
+    expect(getGatherQueuePageStatus(queued, url("b"))).toBeNull();
+    expect(getGatherQueuePageStatus(queued, undefined)).toBeNull();
+
+    const done = finish(queued, finished("a", 1, 2, 1));
+
+    expect(getGatherQueuePageStatus(done, url("a"))).toBe("gathered");
+
+    const failedAgain = finish(done, {
+      ...finished("a2", 3, 4, 0),
+      tabUrl: url("a"),
+      phase: "failed",
+    });
+
+    expect(getGatherQueuePageStatus(failedAgain, url("a"))).toBeNull();
   });
 });

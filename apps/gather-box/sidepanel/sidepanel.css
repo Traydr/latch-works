@@ -38,6 +38,17 @@ body {
   filter: brightness(1.1);
 }
 
+/* The page in the active tab is already queued or saved; clicking again is still allowed. */
+.download-action[data-page-status="queued"] {
+  background: linear-gradient(180deg, #f59e0b, #b45309);
+  color: #fffbeb;
+}
+
+.download-action[data-page-status="gathered"] {
+  background: linear-gradient(180deg, #10b981, #047857);
+  color: #ecfdf5;
+}
+
 .download-action:disabled {
   background: #18181b;
   color: #52525b;
@@ -66,9 +77,8 @@ body {
     box-shadow: 0 0 18px 4px rgba(16, 185, 129, 0.45);
   }
 
+  /* Ends on the button's own colours, which differ once the page counts as already downloaded. */
   100% {
-    background: linear-gradient(180deg, #8b5cf6, #6d28d9);
-    color: #f5f3ff;
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
   }
 }

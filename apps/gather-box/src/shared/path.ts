@@ -15,6 +15,9 @@ export function lowercaseFirstAscii(value: string): string {
   return first >= "A" && first <= "Z" ? `${first.toLowerCase()}${value.slice(1)}` : value;
 }
 
+/** Characters Windows or Chrome's File System Access refuse anywhere in a name. */
+const UNSAFE_NAME_CHARACTERS = /[<>:"/\\|?*\p{Cc}]/gu;
+
 export function sanitizePathSegment(value: string): string {
   const raw = value.trim();
 
@@ -23,10 +26,11 @@ export function sanitizePathSegment(value: string): string {
   }
 
   const sanitized = raw
-    .replace(/[<>:"/\\|?*]/g, " ")
+    .replace(UNSAFE_NAME_CHARACTERS, " ")
     .replace(/\s+/g, "_")
-    // Trailing dots are Windows-invalid; keep trailing underscores (X handles).
-    .replace(/\.+$/g, "")
+    // Chrome refuses names that start with "~" or end with "." or "~" ("Name is not allowed").
+    // Trailing underscores stay (X handles).
+    .replace(/^~+|[.~]+$/g, "")
     .trim();
 
   if (sanitized === "." || sanitized === "..") {
@@ -40,10 +44,10 @@ export function sanitizeFileName(value: string): string {
   const sanitized = value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[<>:"/\\|?*]/g, " ")
+    .replace(UNSAFE_NAME_CHARACTERS, " ")
     .replace(/\s+/g, "_")
     .replace(/_+/g, "_")
-    .replace(/^[._]+|[._]+$/g, "")
+    .replace(/^[._~]+|[._~]+$/g, "")
     .trim();
 
   return sanitized || "";
