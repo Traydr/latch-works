@@ -75,10 +75,6 @@ const FIRST_PICTURE_TIMEOUT: Duration = Duration::from_secs(5);
 const SEEK_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long a pause or play sent to mpv may go unconfirmed before mpv's word is taken.
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(1);
-/// How long the second core that shows a seek's picture stays open after the last seek. Seeks
-/// come in runs, and between runs it would hold the file's decoders a second time for nothing:
-/// 100 to 250 MB up to 1080p, and 800 to 950 MB at 4K.
-const SEEK_PICTURE_KEEP: Duration = Duration::from_secs(15);
 /// The refresh assumed when the window cannot say (it is between displays).
 const DEFAULT_REFRESH: Duration = Duration::from_micros(16_667);
 
@@ -175,12 +171,12 @@ pub struct Player {
     /// The file, in a player that seeks, for the second core that shows a seek's picture to
     /// open, if the file is to have one.
     seek_picture_file: Option<String>,
-    /// The second core that shows an exact seek's picture first: open from a seek until
-    /// [`SEEK_PICTURE_KEEP`] after the last.
+    /// The second core that shows an exact seek's picture first: open from a seek until a
+    /// while after the last.
     seek_picture: Option<SeekPicture>,
-    /// Whether the picture shown is the seek picture's: it has landed the newest exact seek,
-    /// and the player's own core has not yet.
-    standing_in: bool,
+    /// The seek whose picture the seek picture's frame is, while that frame is the one shown:
+    /// the second core has landed it, and the player's own core has shown nothing as new.
+    stand_in: Option<StandIn>,
     awaiting_picture_since: Option<Instant>,
     /// Whether [`pump_frames`] has a poll waiting for the next display frame.
     pump_scheduled: bool,
@@ -188,6 +184,32 @@ pub struct Player {
     opened_at: Instant,
     #[cfg(feature = "measure")]
     timings: Option<Box<dyn Timings>>,
+}
+
+/// A seek the second core landed first.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct StandIn {
+    /// The seek's number in the player's own core.
+    number: u64,
+    requested_at: Instant,
+}
+
+/// The seek whose picture the seek picture stands in with after a poll, if any.
+///
+/// `held` is the one it stood in with before, and `landed_aside` the newest exact seek if the
+/// second core has landed it by now. The newest landed wins, and stands in for as long as a
+/// seek is `pending` and the player's own core has not `caught_up` with it: shown a frame of
+/// that seek or of a later one. So a seek sent while a picture stands in leaves that picture
+/// up until either core has a newer one, and the picture before the seeks never comes back.
+fn stand_in_after(
+    held: Option<StandIn>,
+    landed_aside: Option<StandIn>,
+    pending: bool,
+    caught_up: impl FnOnce(&StandIn) -> bool,
+) -> Option<StandIn> {
+    landed_aside
+        .or(held)
+        .filter(|stand_in| pending && !caught_up(stand_in))
 }
 
 struct PendingSeek {
@@ -291,7 +313,7 @@ impl Player {
             sought_exactly: None,
             seek_picture_file: (decode == Decode::ForSeeking).then_some(file),
             seek_picture: None,
-            standing_in: false,
+            stand_in: None,
             awaiting_picture_since: None,
             pump_scheduled: false,
             #[cfg(feature = "measure")]
@@ -361,6 +383,8 @@ impl Player {
         };
         let exact = mode == SeekMode::Exact;
         let seconds = target.as_secs_f64();
+        // Before either core is sent it: each frame drawn for the seek began after this.
+        let requested_at = Instant::now();
         let number = self.core.seek(seconds, exact);
         // Any seek opens the second core, as more may follow: a click's press has it ready
         // for the release. A drag's keyframe seeks are quick in the player's own core, and
@@ -375,7 +399,7 @@ impl Player {
             target,
             #[cfg(feature = "measure")]
             mode,
-            requested_at: Instant::now(),
+            requested_at,
             number,
             pictured_aside,
             #[cfg(feature = "measure")]
@@ -385,20 +409,43 @@ impl Player {
     }
 
     /// Whether an exact seek shows its picture about as soon as a keyframe one: software
-    /// decodes the file, or a second core does for the seek's picture.
+    /// decodes the file, by the rule or because the hardware did not take it, or a second core
+    /// does for the seek's picture.
     fn seeks_exactly_at_once(&self) -> bool {
-        self.core.observed().quick_seeks == QuickSeeks::InSoftware
-            || self
-                .seek_picture
-                .as_ref()
-                .is_some_and(SeekPicture::is_ready)
+        let (quick_seeks, hardware) = {
+            let observed = self.core.observed();
+            (observed.quick_seeks, observed.hardware)
+        };
+        match quick_seeks {
+            QuickSeeks::No => false,
+            QuickSeeks::InSoftware => true,
+            QuickSeeks::BySeekPicture => {
+                hardware == Some(false)
+                    || self
+                        .seek_picture
+                        .as_ref()
+                        .is_some_and(SeekPicture::is_ready)
+            }
+        }
     }
 
-    /// The second core for a seek's picture, opened now if the file is to have one and it is
-    /// not open, and kept open from now.
+    /// The second core for a seek's picture, opened now if the file is to have one and none is
+    /// open, and kept open from now. A file the hardware did not take has none: mpv decodes it
+    /// in software in the player's own core, which a second one would only race.
     fn wanted_seek_picture(&mut self) -> Option<&mut SeekPicture> {
+        if self
+            .seek_picture
+            .as_ref()
+            .is_some_and(SeekPicture::is_closed)
+        {
+            self.seek_picture = None;
+        }
+        let wanted = {
+            let observed = self.core.observed();
+            observed.quick_seeks == QuickSeeks::BySeekPicture && observed.hardware == Some(true)
+        };
         if self.seek_picture.is_none()
-            && self.core.observed().quick_seeks == QuickSeeks::BySeekPicture
+            && wanted
             && let (Some(file), Some(engine)) = (&self.seek_picture_file, &self.engine)
         {
             match SeekPicture::open(file.clone(), engine.options()) {
@@ -419,7 +466,7 @@ impl Player {
     fn shown(&self) -> Option<&Rendered> {
         self.seek_picture
             .as_ref()
-            .filter(|_| self.standing_in)
+            .filter(|_| self.stand_in.is_some())
             .and_then(SeekPicture::frame)
             .or(self.frame.as_ref())
     }
@@ -520,8 +567,6 @@ impl Player {
                     || self.seek.is_some()
                     || self.awaiting_picture_since.is_some()
                     || self.pause_sent.is_some()
-                    // Polled until its time is up, to close it then.
-                    || self.seek_picture.is_some()
             }
         }
     }
@@ -633,25 +678,48 @@ impl Player {
             }
         }
 
-        // The seek picture stands in from when it has landed the newest exact seek until the
-        // player's own core has, which is when that seek stops being pending.
-        let stands_in = self.seek.as_ref().is_some_and(|seek| seek.pictured_aside)
-            && self
-                .seek_picture
-                .as_ref()
-                .is_some_and(SeekPicture::has_landed);
-        changed |= stands_in != self.standing_in || (stands_in && aside_changed);
-        self.standing_in = stands_in;
+        let landed_aside = self
+            .seek
+            .as_ref()
+            .filter(|seek| {
+                seek.pictured_aside
+                    && self
+                        .seek_picture
+                        .as_ref()
+                        .is_some_and(SeekPicture::has_landed)
+            })
+            .map(|seek| StandIn {
+                number: seek.number,
+                requested_at: seek.requested_at,
+            });
+        let stand_in = stand_in_after(
+            self.stand_in,
+            landed_aside,
+            self.seek.is_some(),
+            |stand_in| {
+                // The player's own core has drawn a frame of that seek or a later one, and
+                // the window has taken it.
+                landed >= stand_in.number
+                    && restarted_at
+                        .and_then(|at| self.shared.begun_by(stand_in.requested_at, at))
+                        .zip(self.frame.as_ref())
+                        .is_some_and(|(first, frame)| frame.number >= first)
+            },
+        );
+        changed |= stand_in != self.stand_in || (stand_in.is_some() && aside_changed);
+        self.stand_in = stand_in;
         #[cfg(feature = "measure")]
-        if let Some(seek) = self.seek.as_mut().filter(|_| stands_in) {
+        if let Some(seek) = &mut self.seek
+            && stand_in.is_some_and(|stand_in| stand_in.number == seek.number)
+        {
             seek.stood_in_after
                 .get_or_insert_with(|| seek.requested_at.elapsed());
         }
-        if self.seek.is_none()
+        if self.stand_in.is_none()
             && self
                 .seek_picture
                 .as_ref()
-                .is_some_and(|picture| picture.unwanted_for() > SEEK_PICTURE_KEEP)
+                .is_some_and(SeekPicture::is_closed)
         {
             self.seek_picture = None;
         }
@@ -782,5 +850,48 @@ fn signed_seconds(a: Instant, b: Instant) -> f64 {
     match a.checked_duration_since(b) {
         Some(after) => after.as_secs_f64(),
         None => -b.duration_since(a).as_secs_f64(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A seek picture stays up until either core has a newer picture, so that the frame from
+    /// before a run of seeks never comes back between two of them.
+    #[test]
+    fn a_seek_picture_stands_in_until_either_core_has_a_newer_one() {
+        let at = Instant::now();
+        let seek = |number| StandIn {
+            number,
+            requested_at: at,
+        };
+        // Whether the player's own core has shown a frame of seek `shown`.
+        let own_core_at = |shown: u64| move |stand_in: &StandIn| shown >= stand_in.number;
+
+        // The second core lands seek 5 first, and its picture stands in.
+        let held = stand_in_after(None, Some(seek(5)), true, own_core_at(4));
+        assert_eq!(held, Some(seek(5)));
+        // Seek 6 is sent, and neither core has landed it: seek 5's picture stays.
+        let held = stand_in_after(held, None, true, own_core_at(4));
+        assert_eq!(held, Some(seek(5)));
+        // The player's own core lands seek 5 late, with 6 still to come: the same picture.
+        assert_eq!(stand_in_after(held, None, true, own_core_at(5)), None);
+        // The second core lands seek 6 before that: its picture takes over.
+        let held = stand_in_after(held, Some(seek(6)), true, own_core_at(4));
+        assert_eq!(held, Some(seek(6)));
+        // The player's own core lands seek 6, and no seek is pending: its own frame shows.
+        assert_eq!(stand_in_after(held, None, false, own_core_at(6)), None);
+
+        // A drag follows a click: the own core's keyframe seek 7 is newer than seek 5.
+        assert_eq!(
+            stand_in_after(Some(seek(5)), None, true, own_core_at(7)),
+            None
+        );
+        // A seek that never landed stops being pending, and its stand-in goes with it.
+        assert_eq!(
+            stand_in_after(Some(seek(5)), None, false, own_core_at(4)),
+            None
+        );
     }
 }

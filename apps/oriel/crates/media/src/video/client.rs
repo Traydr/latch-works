@@ -19,7 +19,7 @@ use super::VideoError;
 use super::ffi::{self, Libmpv};
 
 /// The properties the event thread observes, by the reply id mpv echoes back.
-const OBSERVED: [(u64, &CStr, c_int); 11] = [
+const OBSERVED: [(u64, &CStr, c_int); 12] = [
     (1, c"duration", ffi::FORMAT_DOUBLE),
     (2, c"time-pos", ffi::FORMAT_DOUBLE),
     (3, c"pause", ffi::FORMAT_FLAG),
@@ -31,6 +31,7 @@ const OBSERVED: [(u64, &CStr, c_int); 11] = [
     (9, c"avsync", ffi::FORMAT_DOUBLE),
     (11, c"speed", ffi::FORMAT_DOUBLE),
     (12, c"idle-active", ffi::FORMAT_FLAG),
+    (13, c"hwdec-current", ffi::FORMAT_STRING),
 ];
 
 /// The reply id of the `loadfile` command, so its failure is told from others'.
@@ -78,7 +79,8 @@ pub(super) enum QuickSeeks {
     /// The file is decoded in software, which also plays it.
     InSoftware,
     /// The file plays in hardware, and a second core decodes it in software to show an exact
-    /// seek's picture first (`video/seek_picture.rs`).
+    /// seek's picture first (`video/seek_picture.rs`). Where the hardware does not take the
+    /// file ([`Observed::hardware`]) mpv decodes it in software in the one core, with no second.
     BySeekPicture,
 }
 
@@ -158,6 +160,9 @@ pub(super) struct Observed {
     pub(super) landed: u64,
     /// How the file's exact seeks are made quick, as chosen when it opened.
     pub(super) quick_seeks: QuickSeeks,
+    /// Whether hardware decodes the video (`hwdec-current`), once mpv has a decoder for it:
+    /// mpv falls back to software where the hardware does not take a file.
+    pub(super) hardware: Option<bool>,
     errors: Vec<String>,
 }
 
@@ -595,13 +600,17 @@ impl Core {
 
     fn property_changed(&self, id: u64, property: &ffi::EventProperty) {
         // SAFETY: mpv's data matches the format it states, and NONE means unavailable.
-        let (double, flag, int) = unsafe {
+        let (double, flag, int, string) = unsafe {
             let data = property.data;
             match property.format {
-                ffi::FORMAT_DOUBLE => (Some(*data.cast::<f64>()), None, None),
-                ffi::FORMAT_FLAG => (None, Some(*data.cast::<c_int>() != 0), None),
-                ffi::FORMAT_INT64 => (None, None, Some(*data.cast::<i64>())),
-                _ => (None, None, None),
+                ffi::FORMAT_DOUBLE => (Some(*data.cast::<f64>()), None, None, None),
+                ffi::FORMAT_FLAG => (None, Some(*data.cast::<c_int>() != 0), None, None),
+                ffi::FORMAT_INT64 => (None, None, Some(*data.cast::<i64>()), None),
+                ffi::FORMAT_STRING => {
+                    let text = CStr::from_ptr(*data.cast::<*const c_char>());
+                    (None, None, None, Some(text.to_string_lossy().into_owned()))
+                }
+                _ => (None, None, None, None),
             }
         };
         let mut observed = self.observed();
@@ -617,6 +626,7 @@ impl Core {
             9 => observed.avsync = double,
             11 => observed.speed = double.unwrap_or(1.),
             12 => observed.idle = flag.unwrap_or(false),
+            13 => observed.hardware = string.map(|decoder| decoder != "no"),
             _ => {}
         }
         drop(observed);

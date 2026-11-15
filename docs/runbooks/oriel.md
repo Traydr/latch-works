@@ -303,9 +303,10 @@ hardware path does, for a different reason on each system.
   core lands a moment later and plays on from there. On an M5 Pro, over videos of the owner's
   library, the picture of an exact seek comes in a median of 18 ms in H.264, where the player's
   own core lands in 50 ms, and in 80 ms, not 152 ms, in AV1. H.264 has a second core at every
-  size, and AV1 up to 1080p. The second core opens at a seek and closes 15 s after the last
-  one. While open it holds the file's decoders a second time: 100 to 250 MB up to 1080p, and
-  800 to 950 MB at 4K.
+  size, and AV1 up to 1080p. A file the hardware does not take has none: mpv decodes it in
+  software in the player's own core, which seeks as soon. The second core opens at a seek and
+  closes 15 s after the last one. While open it holds the file's decoders a second time: 100
+  to 250 MB up to 1080p, and 800 to 950 MB at 4K.
 - **Windows:** the software renderer has every hardware frame copied back to memory, and H.264
   decodes slower in hardware than in software even before that. Playing costs about the same
   CPU either way, so software decodes the file, with no second core, where it has no more pixels

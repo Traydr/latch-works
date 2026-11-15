@@ -29,6 +29,7 @@ pub(super) type RenderContext = c_void;
 pub(super) const CLIENT_API_VERSION: c_ulong = (2 << 16) | 5;
 
 // `mpv_format`.
+pub(super) const FORMAT_STRING: c_int = 1;
 pub(super) const FORMAT_FLAG: c_int = 3;
 pub(super) const FORMAT_INT64: c_int = 4;
 pub(super) const FORMAT_DOUBLE: c_int = 5;
