@@ -1994,9 +1994,13 @@ impl DuplicatesPage {
         // A narrow bar names one version kept out of sight by its number alone, and more than one
         // by the colour alone, Keep's own label beside it naming them, so its room stays free for
         // a toast.
+        // Too many to name, it counts them instead.
         let label = match (hidden.kept.as_slice(), narrow) {
             ([], _) => words,
-            (_, false) => format!("{words} · keeping {}", model::version_numbers(&hidden.kept)),
+            (kept, false) => match model::short_version_numbers(kept) {
+                Some(numbers) => format!("{words} · keeping {numbers}"),
+                None => format!("{words} · {} kept", kept.len()),
+            },
             ([_], true) => format!("{words} · {}", model::version_numbers(&hidden.kept)),
             (_, true) => words,
         };
