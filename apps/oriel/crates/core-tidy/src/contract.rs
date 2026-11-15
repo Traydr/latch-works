@@ -150,6 +150,7 @@ string_enum! {
     KeepReason {
         PreferredFolder = "preferred-folder",
         HasSound = "has-sound",
+        FolderPriority = "folder-priority",
         MorePixels = "more-pixels",
         Longer = "longer",
         HomeFolder = "home-folder",
@@ -390,6 +391,56 @@ pub struct DuplicateSet {
     pub distance: Option<u32>,
     /// Set when the owner said these files are not duplicates; such sets are hidden by default.
     pub dismissal_id: Option<i64>,
+    /// The folders the set's tiles are in (a version's first file; every copy of identical
+    /// ones), in tile order, so the first holds the suggestion.
+    pub folders: Vec<SetFolder>,
+}
+
+/// A folder a duplicate set's tiles are in, and how it stands against the set's first folder.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SetFolder {
+    pub root_id: RootId,
+    pub dir: String,
+    /// `None` for the first folder, and for one neither ordered nor decided against it.
+    pub standing: Option<FolderStanding>,
+}
+
+/// How one folder stands against another, at the deepest depth that says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FolderStanding {
+    /// The owner's order in Settings holds both: whether this one comes first.
+    Ordered(bool),
+    /// How often the owner kept this folder's copy over the other's, and the other's over this.
+    Record(i64, i64),
+}
+
+/// An order of folders the owner set in Settings › Folder priority, first kept first. Its folders
+/// are one depth below the root (1 to 3 path parts) and go before what Tidy learned.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderOrder {
+    pub root_id: RootId,
+    pub depth: u8,
+    pub folders: Vec<String>,
+}
+
+/// Folders at one depth that the owner's decisions or order link, best first, as Settings lists
+/// them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FolderGroup {
+    pub depth: u8,
+    pub folders: Vec<RankedFolder>,
+    /// The owner set this group's order.
+    pub ordered: bool,
+}
+
+/// A folder in a [`FolderGroup`]: how often its copy was kept over another folder's of the group,
+/// and another's over it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RankedFolder {
+    pub dir: String,
+    pub won: i64,
+    pub lost: i64,
 }
 
 /// The versions the keep reason compares, by position: the kept one and the runner-up it beat.
@@ -676,6 +727,9 @@ pub struct PreferredFolder {
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub preferred_folders: Vec<PreferredFolder>,
+    /// The owner's orders in Settings › Folder priority, which go before what Tidy learned.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folder_orders: Vec<FolderOrder>,
     pub similarity: SimilarityLevel,
     /// Treat similar stills that differ in one area (a face, an outfit, a caption's language) as
     /// pictures of their own: keep each, and pick among the copies of each picture by sound,
@@ -691,6 +745,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             preferred_folders: Vec::new(),
+            folder_orders: Vec::new(),
             similarity: SimilarityLevel::Balanced,
             spot_variants: true,
             reencode_quality: VideoQuality::High,
@@ -753,6 +808,8 @@ pub struct ResolveGroup {
     /// Those files as the owner saw them when they decided. One that differs now was not what they
     /// decided about, so the decision is not carried out.
     pub seen: Vec<SeenFile>,
+    /// What the set suggested keeping, so a change from it can be counted later.
+    pub suggested: Vec<FileId>,
 }
 
 impl ResolveGroup {
@@ -771,7 +828,12 @@ impl ResolveGroup {
                 sha256: file.sha256.clone(),
             })
             .collect();
-        Self { keep, remove, seen }
+        Self {
+            keep,
+            remove,
+            seen,
+            suggested: set.keep.clone(),
+        }
     }
 }
 
@@ -1052,10 +1114,15 @@ pub fn duplicate_hold_reason(kept_rel_path: &str) -> String {
     format!("{DUPLICATE_OF}{kept_rel_path}")
 }
 
+/// The copy kept instead that a duplicate hold reason names, by its path in the root.
+pub fn kept_rel_path_of(reason: &str) -> Option<&str> {
+    reason.strip_prefix(DUPLICATE_OF)
+}
+
 impl HoldingItem {
     /// The copy a duplicate decision kept instead of this one, by its path in the root.
     pub fn kept_rel_path(&self) -> Option<&str> {
-        self.reason.strip_prefix(DUPLICATE_OF)
+        kept_rel_path_of(&self.reason)
     }
 }
 

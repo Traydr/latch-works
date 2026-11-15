@@ -36,6 +36,10 @@ pub struct KeeperCandidate {
     /// With Spot variants, inside the folder that holds the most of the set's pictures, so a
     /// picture's copies stay together with the rest of the set.
     pub in_home_folder: bool,
+    /// How the owner's past resolutions rank this copy's folder among the set's: higher is the
+    /// folder they usually keep from (see [`super::folders::FolderHistory::scores`]).
+    #[serde(default)]
+    pub folder_score: i64,
     pub sha256: Option<String>,
     /// The hash of the original of a re-encode Tidy made to save space, while that original is
     /// still in holding.
@@ -147,7 +151,7 @@ fn by<T: PartialOrd>(left: T, right: T) -> Ordering {
 }
 
 /// The keeper rules, in order: anything in a preferred folder; for video, the copy you can hear;
-/// more pixels; a longer video (to half a second, so a trimmed re-upload loses); with Spot
+/// the folder the owner usually keeps from; more pixels; a longer video (to half a second, so a trimmed re-upload loses); with Spot
 /// variants, the copy in the set's home folder; the archive format; the extension the format is
 /// named with; the copy Tidy already re-encoded, since the owner asked for it and its original is
 /// in holding, where more bytes would only undo the saving; more bytes, which at equal pixels is
@@ -157,12 +161,15 @@ fn by<T: PartialOrd>(left: T, right: T) -> Ordering {
 /// One keeper rule: `Greater` when the first copy is the better one to keep.
 type KeeperRule = fn(&KeeperCandidate, &KeeperCandidate) -> Ordering;
 
-const KEEPER_RULES: [(KeepReason, KeeperRule); 13] = [
+const KEEPER_RULES: [(KeepReason, KeeperRule); 14] = [
     (KeepReason::PreferredFolder, |left, right| {
         by(left.is_preferred, right.is_preferred)
     }),
     (KeepReason::HasSound, |left, right| {
         by(audio_rank(left.audio_state), audio_rank(right.audio_state))
+    }),
+    (KeepReason::FolderPriority, |left, right| {
+        by(left.folder_score, right.folder_score)
     }),
     (KeepReason::MorePixels, |left, right| {
         by(pixels(left), pixels(right))
@@ -301,6 +308,7 @@ mod tests {
             mtime_ms: 1_700_000_000_000.0,
             is_preferred: false,
             in_home_folder: false,
+            folder_score: 0,
             sha256: None,
             reencoded_from: None,
         }

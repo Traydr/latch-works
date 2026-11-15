@@ -32,6 +32,7 @@ once their outcome is recorded below; recover full text with `git log --diff-fil
 | [062](062-tidy-on-windows.md) | Tidy on Windows: pin a current ffmpeg with SVT-AV1 for win32-x64, measure Shrink there, and check open files, drives, long paths, hard links and sync on a throwaway archive | P2 | M | 060, 061 | TODO |
 | [063](063-oriel-rs.md) | Oriel RS, an experiment: Oriel's three modes and their engines ported to Rust on GPUI with GPUI Kit, no Node process, its own data folder and a Tidy sandbox, kept honest by conformance vectors and differential Tidy runs, ending in a scorecard against Electron Oriel | P3 | XL (Phase 0 gate: L) | none | IN PROGRESS (`agent/063-0-spike`; D1 settled: A; Phases 0 and 1 done 2026-10-28, [reports](../research/oriel-rs/README.md); Phase 2 next) |
 | [064](064-oriel-windows.md) | Oriel 1.0.0 on the owner's Windows machine: the install script builds Setup.exe and replaces Electron Oriel, then an agent checks the MSVC build, the 1080p60 video gate, AVIF, Tidy's plan 062 behaviours, the shell and the installer | P2 | L | 063 | IN REVIEW (2026-11-01): installed, video gate passed; C runtime and HEIC for the owner |
+| [065](065-folder-priority.md) | Folder priority: duplicate suggestions keep the copy from the folder the owner keeps, learned from past resolutions; a folder panel beside the set, numbered folder badges on its tiles, and an order to set by hand in Settings | P2 | M | 061 | IN REVIEW (`feat/folder-priority`, 2026-11-15) |
 
 Recommended order (2026-08-17 review):
 

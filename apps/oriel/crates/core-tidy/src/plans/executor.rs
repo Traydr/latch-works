@@ -938,7 +938,9 @@ fn execute_step(
 
     match &step.spec {
         StepSpec::RemoveFolder => unreachable!("handled above"),
-        StepSpec::Hold { reason, keepers } => {
+        StepSpec::Hold {
+            reason, keepers, ..
+        } => {
             check_keepers(deps, keepers)?;
             let holding_id = hold_file(
                 deps.store(),

@@ -16,6 +16,10 @@
 //! line of versions and Page Up back to the first; Space or C looks closer, Z shows actual size, M
 //! turns sound on or off, P prefers the version's folder, ⌘Y shows it in Quick Look and ⇧⌘R in
 //! Finder. Each decision says what it did in a toast with its own Undo.
+//!
+//! Folder priority (plan 065): each tile carries its folder's number in the set, folder 1 holding
+//! the suggestion, and the folder panel on the right lists the set's folders; a click on one, or ⌥
+//! and its number, keeps that folder's copy of each picture without deciding.
 
 mod checking;
 mod grid;
@@ -67,13 +71,18 @@ use oriel_core_tidy::contract::{PlanRequest, ResolveGroup};
 use grid::{GridInput, GridPlan, in_view};
 pub use model::SetRow;
 use model::{
-    Lane, Standing, copy_of_number, decision_label, facts_of, files_of, freed_bytes, has_video,
-    keep_every_label, keeper_of, kept_ids, reason_of, removal_of, rows_of,
+    Lane, Standing, chosen_folder, copy_of_number, decision_label, facts_of, files_of,
+    folder_index, folder_labels, folder_note, freed_bytes, has_video, keep_every_label,
+    keep_from_folder, keeper_of, kept_ids, reason_of, removal_of, rows_of,
 };
 use video::TileVideo;
 
 /// Sets read at once, and how many more as the queue nears its end.
 const PAGE: usize = 100;
+/// The folder panel's width, and the narrowest window it shows in; below that the badges and ⌥1–9
+/// still pick a folder.
+const FOLDERS_WIDTH: f32 = 15.;
+const FOLDERS_LEAST_WINDOW: f32 = 960.;
 
 /// The least height of a version's picture, in rems: a stage too short to give every tile that
 /// much over its facts scrolls, rather than letting the facts cover the picture.
@@ -936,6 +945,38 @@ impl DuplicatesPage {
         cx.notify();
     }
 
+    /// The width the folder panel takes from the stage: none in a window too narrow for it.
+    fn folders_width(&self, window: &Window) -> f32 {
+        if f32::from(window.viewport_size().width) >= FOLDERS_LEAST_WINDOW {
+            FOLDERS_WIDTH * f32::from(window.rem_size())
+        } else {
+            0.
+        }
+    }
+
+    /// A folder in the panel, or ⌥ and its number: keeps that folder's copy of each picture, and
+    /// the suggested copy of any picture it lacks, without deciding.
+    pub fn pick_folder(&mut self, folder: usize, cx: &mut Context<Self>) {
+        let Some(set) = self.active().cloned() else {
+            return;
+        };
+        if folder >= set.folders.len() {
+            return;
+        }
+        let mut next = keep_from_folder(&set, folder);
+        let mut suggested = kept_ids(&set, None);
+        let mut same = next.clone();
+        same.sort_unstable();
+        suggested.sort_unstable();
+        if same == suggested {
+            self.overrides.remove(&set.key);
+        } else {
+            next.dedup();
+            self.overrides.insert(set.key, next);
+        }
+        cx.notify();
+    }
+
     fn move_by(&mut self, delta: isize, cx: &mut Context<Self>) {
         let count = self.sets().len() as isize;
         if count == 0 {
@@ -1292,6 +1333,15 @@ impl DuplicatesPage {
             cx.stop_propagation();
             return;
         }
+        if modifiers.alt
+            && !modifiers.platform
+            && !modifiers.control
+            && let Some(oriel_ui::keys::DigitKey { digit, .. }) = digit
+        {
+            self.pick_folder(digit - 1, cx);
+            cx.stop_propagation();
+            return;
+        }
         if modifiers.platform || modifiers.control || modifiers.alt {
             return;
         }
@@ -1579,6 +1629,9 @@ impl DuplicatesPage {
         let bar = self.render_decision_bar(&set, &rows, &kept, cx);
         let loupe = (self.looking && set.kind == DuplicateKind::Similar)
             .then(|| self.render_loupe(&set, &rows, &kept, &reason, cx));
+        let folders = (self.folders_width(window) > 0.)
+            .then(|| self.render_folders(cx))
+            .flatten();
         self.decode_next_set_ahead(cx);
         div()
             .id(SharedString::from(format!("set-{}", set.key)))
@@ -1590,16 +1643,27 @@ impl DuplicatesPage {
             .min_w_0()
             .min_h_0()
             .child(
-                // The loupe covers the decision line and the versions, never the bar.
+                // The folder panel stands beside the versions, above the bar, which keeps the
+                // stage's whole width for its commands and a toast.
                 div()
-                    .relative()
                     .flex()
-                    .flex_col()
+                    .flex_row()
                     .flex_1()
                     .min_h_0()
-                    .children(line)
-                    .child(body)
-                    .children(loupe),
+                    .child(
+                        // The loupe covers the decision line and the versions, never the bar.
+                        div()
+                            .relative()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .min_h_0()
+                            .children(line)
+                            .child(body)
+                            .children(loupe),
+                    )
+                    .children(folders),
             )
             .child(bar)
             .into_any_element()
@@ -1626,7 +1690,7 @@ impl DuplicatesPage {
         let width = if self.stage_size.0 > 0. {
             self.stage_size.0
         } else {
-            f32::from(window.viewport_size().width) - 32. * rem
+            f32::from(window.viewport_size().width) - 32. * rem - self.folders_width(window)
         };
         let wanted = reason.text.chars().count() as f32 * REASON_CHARACTER
             + common.chars().count() as f32 * FACT_CHARACTER
@@ -1683,7 +1747,7 @@ impl DuplicatesPage {
         } else {
             let viewport = window.viewport_size();
             (
-                f32::from(viewport.width) - 32. * rem,
+                f32::from(viewport.width) - 32. * rem - self.folders_width(window),
                 f32::from(viewport.height) - 11. * rem,
             )
         };
@@ -2095,6 +2159,11 @@ impl DuplicatesPage {
         let suggested = reason.close_call && is_kept && !self.overrides.contains_key(&set.key);
         let lanes = facts_of(&file, keeper, layout.video);
         let copy_of = copy_of_number(set, index);
+        // Its folder's number in the set, when the set spans more than one.
+        let folder_number = (set.folders.len() > 1)
+            .then(|| folder_index(set, &file))
+            .flatten()
+            .map(|folder| folder + 1);
         let notes = tile_notes(set, row, index);
         // A video plays over its thumbnail, which shows until its first frame does.
         let video = file.kind == FileKind::Video && file.probe_error.is_none();
@@ -2318,7 +2387,18 @@ impl DuplicatesPage {
                                     })),
                             )
                             .child(number.to_string()),
-                    ),
+                    )
+                    .when_some(folder_number, |this, folder| {
+                        this.child(
+                            folder_badge(folder, true, cx)
+                                .id(("version-folder-badge", file.id as u64))
+                                .test_support()
+                                .aria_label(SharedString::from(format!("Folder {folder}")))
+                                .absolute()
+                                .right(px(corner.0))
+                                .top(px(corner.1 + 4.)),
+                        )
+                    }),
             )
             .child(
                 div()
@@ -2527,7 +2607,11 @@ impl DuplicatesPage {
         } else {
             SIDEBAR_WIDTH
         };
-        let stage = f32::from(viewport.width) - sidebar - queue * rem - 2.5 * rem;
+        let stage = f32::from(viewport.width)
+            - sidebar
+            - queue * rem
+            - self.folders_width(window)
+            - 2.5 * rem;
         let stage_height = (f32::from(viewport.height) - 13.5 * rem).max(12. * rem);
         let (side_width, side_height) = grid::fitted(stage * 0.5, stage_height, aspect);
         let list_width = stage - side_width - 1.5 * rem;
@@ -4212,7 +4296,157 @@ fn render_queue_row(
         .into_any_element()
 }
 
+/// A folder's number in its set, with a folder icon: on a tile's picture, white on a dark chip as
+/// the keep chip is; in the folder panel, on the panel's own ground.
+fn folder_badge(number: usize, on_picture: bool, cx: &App) -> gpui_kit::Div {
+    let theme = cx.theme();
+    div()
+        .flex()
+        .flex_row()
+        .flex_shrink_0()
+        .items_center()
+        .gap_1()
+        .h_6()
+        .px_1p5()
+        .rounded(theme.radius)
+        .text_sm()
+        .font_weight(FontWeight::MEDIUM)
+        .when(on_picture, |this| {
+            this.bg(gpui_kit::black().opacity(0.55))
+                .text_color(gpui_kit::white())
+        })
+        .when(!on_picture, |this| {
+            this.bg(theme.muted).text_color(theme.foreground)
+        })
+        .child(Icon::new(IconName::Folder).size_3p5())
+        .child(number.to_string())
+}
+
 impl DuplicatesPage {
+    /// The folder panel: the set's folders by their number, the part of the path that tells them
+    /// apart, what each holds and how the owner chose between it and folder 1 before. The folder
+    /// whose pick matches what is kept is marked. It shows for every set, so the grid keeps its
+    /// width from set to set.
+    fn render_folders(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let set = self.active()?.clone();
+        let kept = self.kept();
+        let theme = cx.theme();
+        let (border, muted, selected, hover, radius, primary) = (
+            theme.border,
+            theme.muted_foreground,
+            theme.list_active,
+            theme.list_hover,
+            theme.radius,
+            theme.primary,
+        );
+        let labels = folder_labels(&set);
+        let chosen = chosen_folder(&set, &kept);
+        let several = set.folders.len() > 1;
+        let rows = set.folders.iter().enumerate().map(|(index, folder)| {
+            let current = several && chosen == Some(index);
+            let number = index + 1;
+            let note = folder_note(&set, index);
+            div()
+                .id(("set-folder", index))
+                .test_support()
+                .role(Role::Button)
+                .aria_label(SharedString::from(format!(
+                    "Folder {number}, {}",
+                    labels[index]
+                )))
+                .aria_description(SharedString::from(folder.dir.clone()))
+                .aria_selected(current)
+                .flex()
+                .flex_row()
+                .items_start()
+                .gap_2()
+                .w_full()
+                .px_2()
+                .py_2()
+                .rounded(radius)
+                .when(several, |this| {
+                    this.cursor_pointer()
+                        .when(current, |this| this.bg(selected))
+                        .when(!current, |this| this.hover(|style| style.bg(hover)))
+                        .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                            this.take_keys_back(event, window, cx);
+                            this.pick_folder(index, cx);
+                        }))
+                })
+                .child(folder_badge(number, false, cx).when(current, |this| {
+                    this.bg(primary).text_color(cx.theme().primary_foreground)
+                }))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .child(
+                            div()
+                                .text_body()
+                                .font_weight(FontWeight::MEDIUM)
+                                .line_clamp(2)
+                                .child(labels[index].clone()),
+                        )
+                        .child(
+                            div()
+                                .truncate()
+                                .text_caption()
+                                .text_color(muted)
+                                .child(note),
+                        ),
+                )
+        });
+        let hint = if several {
+            oriel_ui::keys::labelled("Keep from a folder", "alt-1–9")
+        } else {
+            "Every version is in one folder".into()
+        };
+        Some(
+            div()
+                .id("duplicates-folders")
+                .test_support()
+                .role(Role::Region)
+                .aria_label("Folders")
+                .flex()
+                .flex_col()
+                .w(rems(FOLDERS_WIDTH))
+                .flex_shrink_0()
+                .h_full()
+                .border_l_1()
+                .border_color(border)
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .px_4()
+                        .pt_3()
+                        .pb_2()
+                        .child(
+                            div()
+                                .text_body()
+                                .font_weight(FontWeight::MEDIUM)
+                                .child("Folders"),
+                        )
+                        .child(widgets::caption(hint, cx)),
+                )
+                .child(
+                    div()
+                        .id("duplicates-folder-list")
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .px_2()
+                        .pb_3()
+                        .children(rows),
+                )
+                .into_any_element(),
+        )
+    }
+
     /// The queue could not be read: what failed, why, and a way to try again.
     fn render_error(&self, error: SharedString, cx: &mut Context<Self>) -> AnyElement {
         widgets::empty_state(

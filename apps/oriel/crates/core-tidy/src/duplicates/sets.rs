@@ -7,6 +7,7 @@ use indexmap::IndexMap;
 use rusqlite::Connection;
 
 use super::dismissals::Dismissals;
+use super::folders::FolderHistory;
 use super::keeper::{KeeperCandidate, keep_reason, rank_keepers};
 use super::queries::{exact_group_sql, to_keeper_candidate};
 use crate::catalog::details::{
@@ -17,7 +18,7 @@ use crate::catalog::rows::FileRecord;
 use crate::collation::js_string_order;
 use crate::contract::{
     DuplicateCounts, DuplicateKind, DuplicateScope, DuplicateSet, DuplicateSetPage,
-    DuplicateTotals, DuplicateVersion, FileFormat, FileId, KeepReason, RootId, Settings,
+    DuplicateTotals, DuplicateVersion, FileFormat, FileId, KeepReason, RootId, SetFolder, Settings,
     deciding_versions,
 };
 use crate::similarity::{
@@ -116,6 +117,7 @@ pub fn build_duplicate_sets(
         records.iter().map(|record| (record.id, record)).collect();
     let held_sources = held_sources(connection)?;
     let dismissals = Dismissals::load(connection)?;
+    let history = FolderHistory::load(connection, &settings.folder_orders)?;
     let stills: Vec<FileId> = records
         .iter()
         .filter(|record| is_still(record))
@@ -149,6 +151,7 @@ pub fn build_duplicate_sets(
                 &held_sources,
                 comparing,
                 &dismissals,
+                &history,
             )
         })
         .collect();
@@ -701,12 +704,18 @@ fn build_set(
     held_sources: &HeldSources,
     comparing: Comparing<'_>,
     dismissals: &Dismissals,
+    history: &FolderHistory,
 ) -> Option<ComputedSet> {
+    let folder_scores = folder_scores(files, history);
     let candidates: Vec<Ranked> = files
         .iter()
         .enumerate()
         .map(|(index, record)| {
             let mut candidate = to_keeper_candidate(record, settings);
+            candidate.folder_score = folder_scores
+                .get(&(record.root_id, record.dir.as_str()))
+                .copied()
+                .unwrap_or(0);
             if record.reencoded
                 && let Some((size, source)) =
                     held_sources.get(record.abs_path().to_string_lossy().as_ref())
@@ -801,6 +810,7 @@ fn build_set(
         })
         .collect();
     let keep_reason = deciding_reason(&versions, &set_versions, pictures.as_deref());
+    let folders = set_folders(&set_versions, exact, history);
     let set = DuplicateSet {
         key: format!("set:{}", file_ids.iter().min().copied().unwrap_or_default()),
         kind: if exact {
@@ -820,6 +830,7 @@ fn build_set(
             .collect(),
         distance: (!exact).then_some(distance),
         dismissal_id: None,
+        folders,
     };
     Some(ComputedSet {
         set,
@@ -832,6 +843,55 @@ fn build_set(
         awaiting,
         checking,
     })
+}
+
+/// Each folder of the set's files and its score among them, from the owner's past resolutions.
+fn folder_scores<'a>(
+    files: &'a [FileRecord],
+    history: &FolderHistory,
+) -> HashMap<(RootId, &'a str), i64> {
+    if history.is_empty() {
+        return HashMap::new();
+    }
+    let mut folders: Vec<(RootId, &str)> = Vec::new();
+    for record in files {
+        let folder = (record.root_id, record.dir.as_str());
+        if !folders.contains(&folder) {
+            folders.push(folder);
+        }
+    }
+    let scores = history.scores(&folders);
+    folders.into_iter().zip(scores).collect()
+}
+
+/// The folders of the set's tiles in tile order, each with how it stands against the first.
+fn set_folders(
+    versions: &[DuplicateVersion],
+    exact: bool,
+    history: &FolderHistory,
+) -> Vec<SetFolder> {
+    let tiles = versions.iter().flat_map(|version| {
+        let shown = if exact { version.files.len() } else { 1 };
+        version.files.iter().take(shown)
+    });
+    let mut folders: Vec<SetFolder> = Vec::new();
+    for file in tiles {
+        if folders
+            .iter()
+            .any(|folder| folder.root_id == file.root_id && folder.dir == file.dir)
+        {
+            continue;
+        }
+        let standing = folders.first().and_then(|first| {
+            history.standing_between((file.root_id, &file.dir), (first.root_id, &first.dir))
+        });
+        folders.push(SetFolder {
+            root_id: file.root_id,
+            dir: file.dir.clone(),
+            standing,
+        });
+    }
+    folders
 }
 
 /// The rule that kept the deciding version over its runner-up (see [`deciding_versions`]).

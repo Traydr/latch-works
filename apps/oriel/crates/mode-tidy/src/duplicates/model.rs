@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use oriel_core_domain::format;
 use oriel_core_tidy::contract::{
-    AudioState, DuplicateKind, DuplicateSet, FileId, FileKind, FileRow, KeepReason,
+    AudioState, DuplicateKind, DuplicateSet, FileId, FileKind, FileRow, FolderStanding, KeepReason,
     deciding_versions, is_close_call,
 };
 
@@ -66,6 +66,127 @@ pub fn kept_ids(set: &DuplicateSet, overridden: Option<&[FileId]>) -> Vec<FileId
         }
         _ => set.keep.clone(),
     }
+}
+
+/// The index in the set's folders of the folder a file is in.
+pub fn folder_index(set: &DuplicateSet, file: &FileRow) -> Option<usize> {
+    set.folders
+        .iter()
+        .position(|folder| folder.root_id == file.root_id && folder.dir == file.dir)
+}
+
+/// What keeping from a folder keeps: that folder's copy of each picture, and the suggested copy of
+/// any picture the folder lacks, so no picture is lost. Among a picture's versions in the folder,
+/// the best ranked. Files kept for another reason that are not tiles (copies the owner said are
+/// not duplicates) stay kept.
+pub fn keep_from_folder(set: &DuplicateSet, folder: usize) -> Vec<FileId> {
+    if folder >= set.folders.len() {
+        return set.keep.clone();
+    }
+    let rows = rows_of(set);
+    let picture_of = |index: usize| match set.kind {
+        DuplicateKind::Exact => 0,
+        DuplicateKind::Similar => set
+            .pictures
+            .as_ref()
+            .and_then(|pictures| pictures.get(index).copied())
+            .unwrap_or(0),
+    };
+    let mut pictures: Vec<i64> = Vec::new();
+    for index in 0..rows.len() {
+        if !pictures.contains(&picture_of(index)) {
+            pictures.push(picture_of(index));
+        }
+    }
+    let mut keep: Vec<FileId> = Vec::new();
+    for picture in pictures {
+        let members: Vec<&SetRow> = (0..rows.len())
+            .filter(|index| picture_of(*index) == picture)
+            .map(|index| &rows[index])
+            .collect();
+        if let Some(row) = members
+            .iter()
+            .find(|row| folder_index(set, &row.file) == Some(folder))
+        {
+            keep.push(row.file.id);
+            continue;
+        }
+        let suggested: Vec<FileId> = members
+            .iter()
+            .map(|row| row.file.id)
+            .filter(|id| set.keep.contains(id))
+            .collect();
+        match suggested.is_empty() {
+            true => keep.extend(members.first().map(|row| row.file.id)),
+            false => keep.extend(suggested),
+        }
+    }
+    let tiles: BTreeSet<FileId> = rows.iter().map(|row| row.file.id).collect();
+    keep.extend(set.keep.iter().filter(|id| !tiles.contains(id)));
+    keep
+}
+
+/// The folder whose pick keeps exactly `kept`, if one does.
+pub fn chosen_folder(set: &DuplicateSet, kept: &[FileId]) -> Option<usize> {
+    let kept: BTreeSet<FileId> = kept.iter().copied().collect();
+    (0..set.folders.len()).find(|folder| {
+        keep_from_folder(set, *folder)
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            == kept
+    })
+}
+
+/// Each folder as the folder panel names it: the part of its path that tells it from the set's
+/// other folders, the path parts they all start with left out.
+pub fn folder_labels(set: &DuplicateSet) -> Vec<String> {
+    let parts: Vec<Vec<&str>> = set
+        .folders
+        .iter()
+        .map(|folder| {
+            folder
+                .dir
+                .split('/')
+                .filter(|part| !part.is_empty())
+                .collect()
+        })
+        .collect();
+    let shortest = parts.iter().map(Vec::len).min().unwrap_or(0);
+    let shared = (0..shortest)
+        .take_while(|at| parts.iter().all(|folder| folder[*at] == parts[0][*at]))
+        .count();
+    let shared = if set.folders.len() < 2 { 0 } else { shared };
+    parts
+        .iter()
+        .map(|folder| match &folder[shared..] {
+            [] if shared == 0 => labels::folder_capitalized("").to_string(),
+            [] => folder[shared - 1].to_string(),
+            rest => rest.join("/"),
+        })
+        .collect()
+}
+
+/// What the folder panel says under a folder: how many tiles it holds, and how the owner chose
+/// between it and the first folder before.
+pub fn folder_note(set: &DuplicateSet, folder: usize) -> String {
+    let rows = rows_of(set);
+    let held = rows
+        .iter()
+        .filter(|row| folder_index(set, &row.file) == Some(folder))
+        .count() as i64;
+    let noun = if set.kind == DuplicateKind::Exact {
+        format::plural_as(held, "copy", "copies")
+    } else {
+        format::plural(held, "version")
+    };
+    let record = match set.folders.get(folder).and_then(|folder| folder.standing) {
+        _ if folder == 0 => "suggested".to_string(),
+        Some(FolderStanding::Ordered(false)) => "after 1 in your order".to_string(),
+        Some(FolderStanding::Ordered(true)) => "before 1 in your order".to_string(),
+        Some(FolderStanding::Record(won, lost)) => format!("1 won {lost}\u{2013}{won}"),
+        None => "never compared".to_string(),
+    };
+    format!("{noun} \u{b7} {record}")
 }
 
 pub fn removal_of<'a>(set: &'a DuplicateSet, kept: &[FileId]) -> Vec<&'a FileRow> {
@@ -499,6 +620,24 @@ pub fn reason_of(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId], overridde
     let text = match set.keep_reason {
         KeepReason::PreferredFolder => format!("Keeping {n}: {folder} is a preferred folder"),
         KeepReason::HasSound => format!("Keeping {n}: it has sound, {m} does not"),
+        KeepReason::FolderPriority => {
+            let number = folder_index(set, keeper).map_or(1, |folder| folder + 1);
+            // Standings are against the first folder, which holds the keeper.
+            let standing = runner
+                .and_then(|runner| folder_index(set, runner))
+                .and_then(|folder| set.folders.get(folder))
+                .and_then(|folder| folder.standing)
+                .filter(|_| number == 1);
+            match standing {
+                Some(FolderStanding::Ordered(_)) => {
+                    format!("Keeping {n}: folder {number} comes first in your order")
+                }
+                Some(FolderStanding::Record(won, lost)) => format!(
+                    "Keeping {n}: you usually keep folder {number}'s copy ({lost}\u{2013}{won})"
+                ),
+                None => format!("Keeping {n}: you usually keep folder {number}'s copy"),
+            }
+        }
         KeepReason::MorePixels => format!(
             "Keeping {n}: most pixels ({} against {})",
             labels::dimensions(keeper).unwrap_or_default(),
@@ -554,6 +693,109 @@ pub fn reason_of(set: &DuplicateSet, rows: &[SetRow], kept: &[FileId], overridde
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oriel_core_tidy::contract::{DuplicateVersion, SetFolder};
+
+    fn file(id: FileId, dir: &str) -> FileRow {
+        FileRow {
+            id,
+            root_id: 1,
+            rel_path: format!("{dir}/{id}.avif"),
+            abs_path: format!("/r/{dir}/{id}.avif"),
+            name: format!("{id}.avif"),
+            dir: dir.into(),
+            ext: "avif".into(),
+            size: 1,
+            mtime_ms: 0.,
+            ctime_ms: 0.,
+            kind: FileKind::Image,
+            format: None,
+            extension_mismatch: false,
+            width: None,
+            height: None,
+            frames: None,
+            duration_ms: None,
+            video_codec: None,
+            audio_codec: None,
+            audio_state: None,
+            bitrate: None,
+            probe_error: None,
+            sha256: None,
+        }
+    }
+
+    /// Versions (id, folder, picture) in tile order, keeping `keep`.
+    fn similar(versions: &[(FileId, &str, i64)], keep: &[FileId]) -> DuplicateSet {
+        let mut folders: Vec<SetFolder> = Vec::new();
+        for (_, dir, _) in versions {
+            if !folders.iter().any(|folder| folder.dir == *dir) {
+                folders.push(SetFolder {
+                    root_id: 1,
+                    dir: (*dir).into(),
+                    standing: None,
+                });
+            }
+        }
+        DuplicateSet {
+            key: "set:1".into(),
+            kind: DuplicateKind::Similar,
+            versions: versions
+                .iter()
+                .map(|(id, dir, _)| DuplicateVersion {
+                    files: vec![file(*id, dir)],
+                })
+                .collect(),
+            pictures: Some(versions.iter().map(|(_, _, picture)| *picture).collect()),
+            keep: keep.to_vec(),
+            keep_reason: KeepReason::FolderPriority,
+            reclaimable_bytes: 0,
+            hard_linked_ids: Vec::new(),
+            distance: Some(0),
+            dismissal_id: None,
+            folders,
+        }
+    }
+
+    #[test]
+    fn keeping_from_a_folder_never_drops_a_picture_it_lacks() {
+        // Pictures 0 and 1 are in both folders; picture 2 only in the first.
+        let set = similar(
+            &[
+                (1, "patreon/a", 0),
+                (2, "twitter/a", 0),
+                (3, "patreon/a", 1),
+                (4, "twitter/a", 1),
+                (5, "patreon/a", 2),
+            ],
+            &[1, 3, 5],
+        );
+        assert_eq!(keep_from_folder(&set, 1), vec![2, 4, 5]);
+        assert_eq!(keep_from_folder(&set, 0), vec![1, 3, 5]);
+        assert_eq!(chosen_folder(&set, &[5, 4, 2]), Some(1));
+        assert_eq!(chosen_folder(&set, &[1, 4, 5]), None);
+    }
+
+    #[test]
+    fn a_folder_with_two_copies_of_one_picture_keeps_the_best_ranked() {
+        let set = similar(&[(1, "a", 0), (2, "b", 0), (3, "b", 0)], &[1]);
+        assert_eq!(keep_from_folder(&set, 1), vec![2]);
+    }
+
+    #[test]
+    fn folder_labels_leave_out_what_every_folder_starts_with() {
+        let set = similar(
+            &[
+                (1, "nsfw/patreon/croove/2024", 0),
+                (2, "nsfw/twitter/croove", 0),
+            ],
+            &[1],
+        );
+        assert_eq!(
+            folder_labels(&set),
+            ["patreon/croove/2024", "twitter/croove"]
+        );
+        let nested = similar(&[(1, "nsfw/a", 0), (2, "nsfw/a/b", 0)], &[1]);
+        assert_eq!(folder_labels(&nested), ["a", "b"]);
+    }
 
     #[test]
     fn names_versions_as_the_renderer_does() {

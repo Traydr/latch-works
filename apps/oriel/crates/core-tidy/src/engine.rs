@@ -45,12 +45,14 @@ use crate::catalog::roots::{
 use crate::catalog::state::{CatalogState, ScratchWrites, print_generation, prints_changed};
 use crate::catalog::tidy::catalog_tidy;
 use crate::catalog::{Catalog, now_ms};
+use crate::contract::FolderGroup;
 use crate::contract::{
     CleanupCounts, DuplicateDismissal, DuplicateKind, DuplicateScope, DuplicateSetPage,
     DuplicateSetRequest, DuplicateTotalsByKind, FileFacets, FileFilter, FileFlag, FileId,
     FileIdList, FilePage, FileQuery, FileRow, OptimizeSummary, Root, RootId, SelectionSummary,
     Settings, ShrinkSummary, SimilarityLevel, Tidy,
 };
+use crate::duplicates::folders::FolderHistory;
 use crate::duplicates::{
     ComputedSet, Dismissals, PageRequest, add_dismissal, build_duplicate_sets, checking_sets,
     compute_similar_clusters, duplicate_totals, fingerprint_coverage, list_dismissals, open_sets,
@@ -551,6 +553,18 @@ impl TidyEngine {
         limit: usize,
     ) -> impl Future<Output = anyhow::Result<Vec<DuplicateDismissal>>> + Send + use<> {
         self.query(move |_, connection| list_dismissals(connection, root_id, limit))
+    }
+
+    /// The folders under a root the owner has chosen between, in groups by depth, best first, for
+    /// Settings › Folder priority.
+    pub fn folder_priority(
+        &self,
+        root_id: RootId,
+    ) -> impl Future<Output = anyhow::Result<Vec<FolderGroup>>> + Send + use<> {
+        self.query(move |_, connection| {
+            let settings = read_settings(connection)?;
+            Ok(FolderHistory::load(connection, &settings.folder_orders)?.groups(root_id))
+        })
     }
 
     /// What Convert would change under a root.

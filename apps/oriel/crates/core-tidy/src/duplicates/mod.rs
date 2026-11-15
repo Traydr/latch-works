@@ -1,6 +1,7 @@
 //! Duplicate sets and the copy each keeps.
 
 pub mod dismissals;
+pub mod folders;
 pub mod keeper;
 pub mod queries;
 pub mod sets;

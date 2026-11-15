@@ -19,6 +19,11 @@ const DUPLICATES: ShortcutGroup = (
         ("Keep the suggestion", "enter", None),
         ("Keep only this one", "1–9", Some("(or click it)")),
         ("Keep this one as well", "shift-1–9", None),
+        (
+            "Keep from a folder",
+            "alt-1–9",
+            Some("(or click it in Folders)"),
+        ),
         ("Keep all", "n", None),
         ("Skip", "s", None),
         ("Previous", "k", None),
