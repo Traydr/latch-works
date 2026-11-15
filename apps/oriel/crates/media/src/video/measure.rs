@@ -46,7 +46,8 @@ pub struct SeekTiming {
     pub target: Duration,
     /// mpv's `time-pos` when it finished the seek: the time of its first frame.
     pub landed: Option<Duration>,
-    /// From the request to the seek's first picture handed to the window.
+    /// From the request to the seek's first picture handed to the window, whichever core drew
+    /// it: the seek picture's where that stood in.
     pub took: Duration,
     /// From the request to mpv's `MPV_EVENT_PLAYBACK_RESTART`.
     pub finished: Duration,
@@ -80,7 +81,7 @@ impl Player {
     /// The picture on screen as 8-bit RGB, width, height and rows, as GPUI's renderer turns it
     /// into colours: for measuring which frame a seek landed on and how true its colours are.
     pub fn picture_rgb(&self) -> Option<(u32, u32, Vec<u8>)> {
-        self.frame.as_ref()?.picture.rgb()
+        self.shown()?.picture.rgb()
     }
 }
 

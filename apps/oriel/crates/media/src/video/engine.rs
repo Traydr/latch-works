@@ -128,14 +128,20 @@ impl Engine {
         Ok(engine)
     }
 
+    /// How it was made, for another made the same way.
+    pub(super) fn options(&self) -> &EngineOptions {
+        &self.options
+    }
+
     #[cfg(feature = "measure")]
     pub(super) fn render(&self) -> Render {
         self.options.render
     }
 
     /// Makes a new core with the player's options and those `engine` adds, and starts its
-    /// threads.
-    fn start(engine: &EngineOptions) -> Result<Self, VideoError> {
+    /// threads. For an engine that is never one of the idle ones: it ends with
+    /// [`Self::shut_down`].
+    pub(super) fn start(engine: &EngineOptions) -> Result<Self, VideoError> {
         let mut options = vec![
             // Frames go to this process's render context, never a window of mpv's.
             ("vo", "libmpv"),
@@ -464,6 +470,7 @@ fn start_ahead(options: EngineOptions, clip: Option<Clip>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::video::seek_picture::SeekPicture;
 
     /// Holds the engine tests to one at a time: an engine has real-time limits to prime and to
     /// come to rest (`PRIME_TIMEOUT`, `REST_TIMEOUT`), which several engines decoding at once on
@@ -613,5 +620,63 @@ mod tests {
         assert_eq!(engine.core.get_string(c"mute").as_deref(), Some("no"));
         engine.shut_down();
         std::fs::remove_dir_all(viewer.parent().unwrap()).ok();
+    }
+
+    /// A core numbers its seeks and says which has landed. Of two sent one after the other, the
+    /// second is the one whose frame is drawn when its number comes: mpv drops the first, or
+    /// lands it first, and either way the core is where the second went.
+    #[test]
+    fn a_core_says_which_seek_has_landed() {
+        let _one = one_engine_at_a_time();
+        let Some([clip, _]) = clips("landed", ["clip.mp4", "unused.mp4"]) else {
+            return;
+        };
+        let engine = Engine::start(&EngineOptions::default()).expect("an engine starts");
+        play(&engine, &clip);
+        let first = engine.core.seek(1., true);
+        let second = engine.core.seek(2., true);
+        assert!(second > first);
+        wait_until("the second seek lands", || {
+            engine.core.observed().landed >= second
+        });
+        let observed = engine.core.observed();
+        assert_eq!(observed.landed, second);
+        assert_eq!(observed.restart_pos, Some(2.));
+        drop(observed);
+        engine.shut_down();
+        std::fs::remove_dir_all(clip.parent().unwrap()).ok();
+    }
+
+    /// A seek picture decodes its file in software whatever the file, keeps a seek that comes
+    /// before the file is open until it is, and has landed a seek once the frame it took is
+    /// that seek's.
+    #[test]
+    fn a_seek_picture_lands_its_seek_with_the_frame() {
+        let _one = one_engine_at_a_time();
+        let Some([clip, _]) = clips("seek-picture", ["clip.mp4", "unused.mp4"]) else {
+            return;
+        };
+        let mut picture =
+            SeekPicture::open(clip.to_str().unwrap().to_owned(), &EngineOptions::default())
+                .expect("a seek picture opens");
+        assert!(!picture.has_landed(), "nothing was sought yet");
+        // Before the file can be open: the seek waits for it.
+        picture.seek(1.52);
+        let lands = |picture: &mut SeekPicture| {
+            wait_until("the seek lands with its frame", || {
+                picture.take(Instant::now(), drop);
+                picture.has_landed()
+            });
+        };
+        lands(&mut picture);
+        assert_eq!(picture.landed_at(), Some(1.52));
+        picture.seek(2.);
+        assert!(!picture.has_landed(), "the newer seek has yet to land");
+        lands(&mut picture);
+        assert_eq!(picture.landed_at(), Some(2.));
+        assert!(picture.frame().is_some());
+        assert_eq!(picture.decoder().as_deref(), Some("no"));
+        drop(picture);
+        std::fs::remove_dir_all(clip.parent().unwrap()).ok();
     }
 }

@@ -40,6 +40,7 @@ pub(super) const EVENT_LOG_MESSAGE: c_int = 2;
 pub(super) const EVENT_COMMAND_REPLY: c_int = 5;
 pub(super) const EVENT_END_FILE: c_int = 7;
 pub(super) const EVENT_FILE_LOADED: c_int = 8;
+pub(super) const EVENT_SEEK: c_int = 20;
 pub(super) const EVENT_PLAYBACK_RESTART: c_int = 21;
 pub(super) const EVENT_PROPERTY_CHANGE: c_int = 22;
 pub(super) const EVENT_HOOK: c_int = 25;

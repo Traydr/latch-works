@@ -292,26 +292,31 @@ OpenGL into an IOSurface; elsewhere in software. `mpv_spike` can measure the sof
 macOS (`ORIEL_MPV_RENDER=sw`, below); the app has no switch for it.
 
 Decoding is in hardware, except where a player has a scrubber (View's viewer, Tidy's version
-player) and the video is H.264 or AV1 of no more pixels a second than 1080p at 60 fps, which
-takes in 1440p at 30 fps: on macOS and Windows that one is decoded in software, because its
-exact seeks then land up to three times sooner. Decoding from the keyframe before a seek's
-target is slower through the hardware path than on every core, for a different reason on each
-system.
+player) and the video is H.264 or AV1: its exact seeks are then made quick by decoding in
+software, which gets from the keyframe before a seek's target two to three times sooner than the
+hardware path does, for a different reason on each system.
 
-- **macOS:** FFmpeg gives VideoToolbox one frame at a time. On an M5 Pro, over videos of the
-  owner's library, the median exact seek fell from 54 ms to 15 ms in H.264 and from 217 ms to
-  77 ms in AV1. Playing costs more CPU in turn: 21 % of a core, not 11 %, for 720p30 H.264, and
-  70 %, not 20 %, for 1080p60 AV1.
+- **macOS:** FFmpeg gives VideoToolbox one frame at a time, but hardware still plays for less CPU
+  (11 % of a core, not 21 %, for 720p30 H.264, and 20 %, not 70 %, for 1080p60 AV1). So the file
+  plays in hardware, and a second mpv core, paused and silent, decodes it in software and shows
+  each exact seek's picture first (`crates/media/src/video/seek_picture.rs`). The player's own
+  core lands a moment later and plays on from there. On an M5 Pro, over videos of the owner's
+  library, the picture of an exact seek comes in a median of 18 ms in H.264, where the player's
+  own core lands in 50 ms, and in 80 ms, not 152 ms, in AV1. H.264 has a second core at every
+  size, and AV1 up to 1080p. The second core opens at a seek and closes 15 s after the last
+  one. While open it holds the file's decoders a second time: 100 to 250 MB up to 1080p, and
+  800 to 950 MB at 4K.
 - **Windows:** the software renderer has every hardware frame copied back to memory, and H.264
-  decodes slower in hardware than in software even before that. On a Ryzen 5 5600H with an RTX
+  decodes slower in hardware than in software even before that. Playing costs about the same
+  CPU either way, so software decodes the file, with no second core, where it has no more pixels
+  a second than 1080p at 60 fps (which takes in 1440p at 30 fps). On a Ryzen 5 5600H with an RTX
   3060, over made clips, the median exact seek fell from 203 ms to 87 ms in 1080p60 H.264 and
-  from 266 ms to 194 ms in 1080p60 AV1. Playing costs about the same CPU either way.
+  from 266 ms to 194 ms in 1080p60 AV1.
 
-HEVC seeks no sooner in software, and more pixels a second cost too much to play, so both stay in
-hardware, as do previews, which never seek. Linux is not measured, and stays in hardware. The rule and its
-figures are in `crates/media/src/video/client.rs` (`seeks_sooner_in_software`). Where exact
-seeks are quick, a click on the scrubber lands on its frame at the press, without waiting to be
-let go.
+HEVC seeks no sooner in software, so it stays in hardware alone, as do previews, which never
+seek. Linux is not measured, and stays in hardware. The rule and its figures are in
+`crates/media/src/video/client.rs` (`quick_seeks`). Where an exact seek's picture comes this
+soon, a click on the scrubber lands on its frame at the press, without waiting to be let go.
 
 Oriel builds its own LGPL libmpv (decision 8) from pinned sources, in one command:
 
@@ -573,7 +578,8 @@ The spikes' variables, for a run by hand, are documented at the top of each spik
 - the shell's in `crates/app/src/spike.rs`: `ORIEL_SPIKE_SHELL=<log>` rests, then times each
   mode switch and Settings at each section.
 
-`mpv_spike`'s own switches mirror the gallery: `ORIEL_SPIKE_SILENT=1` (a preview with sound off),
+`mpv_spike`'s own switches mirror the app: `ORIEL_SPIKE_SILENT=1` (a preview with sound off),
+`ORIEL_SPIKE_SEEKS=1` (the sweep's tiles decoded as the viewer's video is, to time its seeks),
 `ORIEL_SPIKE_PREWARM=<ms>` (an engine started that long before the first open, as hovering a video
 tile does), `ORIEL_SPIKE_PRIME=<ms>` (an engine started and primed that long before, as View
 showing a folder with videos does; it plays nothing, and makes its clip once with the pinned

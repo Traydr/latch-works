@@ -19,9 +19,12 @@
 //! goes gives its engine back, and the next player plays its file in it (`video/engine.rs`): a
 //! new engine's first frame costs its renderer its shaders, and a kept one has them built.
 //!
-//! A player with a scrubber ([`Player::open`]) has a light H.264 or AV1 picture decoded in
-//! software, which lands an exact seek two to three times sooner than hardware does, for more
-//! CPU while it plays on macOS (`client::Decode`). Previews never seek, and stay in hardware.
+//! A player with a scrubber ([`Player::open`]) has its exact seeks in H.264 and AV1 made quick
+//! by software decoding, which gets from a keyframe to a seek's target two to three times
+//! sooner than the hardware path does (`client::QuickSeeks`). On Windows software decodes the
+//! file. On macOS, where hardware plays for less CPU, a second core decodes it in software
+//! and shows each seek's picture first (`video/seek_picture.rs`). Previews never seek, and
+//! stay in hardware.
 //!
 //! libmpv is loaded at run time and never linked, found by `oriel_core_paths::NativeSet::LIBMPV`.
 //! It is Oriel's own LGPL build (mpv `-Dgpl=false`, FFmpeg without `--enable-gpl`), made by
@@ -38,6 +41,7 @@ mod measure;
 mod opengl;
 mod render;
 mod scrubber;
+mod seek_picture;
 mod software;
 
 use std::fmt;
@@ -50,9 +54,10 @@ use gpui_kit::{
     Window, img,
 };
 
-use self::client::{Core, Decode};
+use self::client::{Core, Decode, QuickSeeks};
 use self::engine::Engine;
 use self::render::{Picture, Rendered, Shared};
+use self::seek_picture::SeekPicture;
 
 #[cfg(not(feature = "measure"))]
 use engine::EngineOptions;
@@ -70,6 +75,10 @@ const FIRST_PICTURE_TIMEOUT: Duration = Duration::from_secs(5);
 const SEEK_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long a pause or play sent to mpv may go unconfirmed before mpv's word is taken.
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(1);
+/// How long the second core that shows a seek's picture stays open after the last seek. Seeks
+/// come in runs, and between runs it would hold the file's decoders a second time for nothing:
+/// 100 to 250 MB up to 1080p, and 800 to 950 MB at 4K.
+const SEEK_PICTURE_KEEP: Duration = Duration::from_secs(15);
 /// The refresh assumed when the window cannot say (it is between displays).
 const DEFAULT_REFRESH: Duration = Duration::from_micros(16_667);
 
@@ -163,6 +172,15 @@ pub struct Player {
     /// Where the newest seek went, if it was an exact one: a scrub let go there has nothing
     /// more to seek.
     sought_exactly: Option<Duration>,
+    /// The file, in a player that seeks, for the second core that shows a seek's picture to
+    /// open, if the file is to have one.
+    seek_picture_file: Option<String>,
+    /// The second core that shows an exact seek's picture first: open from a seek until
+    /// [`SEEK_PICTURE_KEEP`] after the last.
+    seek_picture: Option<SeekPicture>,
+    /// Whether the picture shown is the seek picture's: it has landed the newest exact seek,
+    /// and the player's own core has not yet.
+    standing_in: bool,
     awaiting_picture_since: Option<Instant>,
     /// Whether [`pump_frames`] has a poll waiting for the next display frame.
     pump_scheduled: bool,
@@ -177,16 +195,21 @@ struct PendingSeek {
     #[cfg(feature = "measure")]
     mode: SeekMode,
     requested_at: Instant,
-    /// mpv's count of finished seeks when this one was asked for.
-    restarts: u64,
+    /// The seek's number in the player's core ([`Core::seek`]).
+    number: u64,
+    /// Whether it went to the seek picture as well.
+    pictured_aside: bool,
+    /// How long after the request the seek picture's frame was first the one shown.
+    #[cfg(feature = "measure")]
+    stood_in_after: Option<Duration>,
     /// The frames the window took since the request, by number, with when from the request.
     taken: Vec<(u64, Duration)>,
 }
 
 impl Player {
-    /// Opens `path` paused at its start, with its sound, for a view that seeks in it: a light
-    /// picture is decoded in software, so that its exact seeks are quick. mpv reads the file in
-    /// the background; [`Self::status`] turns `Ready` or `Failed` on a later poll.
+    /// Opens `path` paused at its start, with its sound, for a view that seeks in it: its
+    /// exact seeks are made quick where software decoding can (`client::QuickSeeks`). mpv reads
+    /// the file in the background; [`Self::status`] turns `Ready` or `Failed` on a later poll.
     pub fn open(path: &Path) -> Result<Self, VideoError> {
         Self::open_on(path, &EngineOptions::default(), true, Decode::ForSeeking)
     }
@@ -253,7 +276,7 @@ impl Player {
         #[cfg(feature = "measure")]
         let opened_at = Instant::now();
         let engine = Engine::take(options)?;
-        engine.load(file, sound, decode);
+        engine.load(file.clone(), sound, decode);
         let mut player = Self {
             core: engine.core.clone(),
             shared: engine.shared.clone(),
@@ -266,6 +289,9 @@ impl Player {
             pause_sent: None,
             seek: None,
             sought_exactly: None,
+            seek_picture_file: (decode == Decode::ForSeeking).then_some(file),
+            seek_picture: None,
+            standing_in: false,
             awaiting_picture_since: None,
             pump_scheduled: false,
             #[cfg(feature = "measure")]
@@ -333,27 +359,69 @@ impl Player {
             Some(duration) => target.min(duration),
             None => target,
         };
-        let flags = match mode {
-            SeekMode::Exact => "absolute+exact",
-            SeekMode::Fast => "absolute+keyframes",
-        };
-        self.core
-            .command(0, &["seek", &format!("{:.6}", target.as_secs_f64()), flags]);
-        self.sought_exactly = (mode == SeekMode::Exact).then_some(target);
+        let exact = mode == SeekMode::Exact;
+        let seconds = target.as_secs_f64();
+        let number = self.core.seek(seconds, exact);
+        // Any seek opens the second core, as more may follow: a click's press has it ready
+        // for the release. A drag's keyframe seeks are quick in the player's own core, and
+        // stay there.
+        let seek_picture = self.wanted_seek_picture().filter(|_| exact);
+        let pictured_aside = seek_picture.is_some();
+        if let Some(picture) = seek_picture {
+            picture.seek(seconds);
+        }
+        self.sought_exactly = exact.then_some(target);
         self.seek = Some(PendingSeek {
             target,
             #[cfg(feature = "measure")]
             mode,
             requested_at: Instant::now(),
-            restarts: self.core.observed().restarts,
+            number,
+            pictured_aside,
+            #[cfg(feature = "measure")]
+            stood_in_after: None,
             taken: Vec::new(),
         });
     }
 
-    /// Whether an exact seek lands about as soon as a keyframe one: the picture is decoded in
-    /// software for it.
+    /// Whether an exact seek shows its picture about as soon as a keyframe one: software
+    /// decodes the file, or a second core does for the seek's picture.
     fn seeks_exactly_at_once(&self) -> bool {
-        self.core.observed().software
+        self.core.observed().quick_seeks == QuickSeeks::InSoftware
+            || self
+                .seek_picture
+                .as_ref()
+                .is_some_and(SeekPicture::is_ready)
+    }
+
+    /// The second core for a seek's picture, opened now if the file is to have one and it is
+    /// not open, and kept open from now.
+    fn wanted_seek_picture(&mut self) -> Option<&mut SeekPicture> {
+        if self.seek_picture.is_none()
+            && self.core.observed().quick_seeks == QuickSeeks::BySeekPicture
+            && let (Some(file), Some(engine)) = (&self.seek_picture_file, &self.engine)
+        {
+            match SeekPicture::open(file.clone(), engine.options()) {
+                Ok(picture) => self.seek_picture = Some(picture),
+                Err(error) => {
+                    log::warn!("no second core for a seek's picture: {error}");
+                    self.seek_picture_file = None;
+                }
+            }
+        }
+        let picture = self.seek_picture.as_mut()?;
+        picture.keep();
+        Some(picture)
+    }
+
+    /// The frame on screen: the player's own newest, or the seek picture's while that stands
+    /// in for it.
+    fn shown(&self) -> Option<&Rendered> {
+        self.seek_picture
+            .as_ref()
+            .filter(|_| self.standing_in)
+            .and_then(SeekPicture::frame)
+            .or(self.frame.as_ref())
     }
 
     /// Where playback is, or where the newest seek is going while it is under way.
@@ -425,7 +493,7 @@ impl Player {
     /// The picture on screen, filling its bounds as `fit` says: `Cover` crops it to a gallery
     /// tile, as the tile's thumbnail is.
     pub fn picture_fitted(&self, fit: ObjectFit) -> Option<AnyElement> {
-        match &self.frame.as_ref()?.picture {
+        match &self.shown()?.picture {
             Picture::Image(image) => Some(
                 img(image.clone())
                     .object_fit(fit)
@@ -452,6 +520,8 @@ impl Player {
                     || self.seek.is_some()
                     || self.awaiting_picture_since.is_some()
                     || self.pause_sent.is_some()
+                    // Polled until its time is up, to close it then.
+                    || self.seek_picture.is_some()
             }
         }
     }
@@ -473,11 +543,11 @@ impl Player {
             not(feature = "measure"),
             expect(unused_variables, reason = "for timings")
         )]
-        let (paused, restarts, restart_pos, restarted_at, avsync, time_pos, has_size) = {
+        let (paused, landed, restart_pos, restarted_at, avsync, time_pos, has_size) = {
             let observed = self.core.observed();
             (
                 observed.paused,
-                observed.restarts,
+                observed.landed,
                 observed.restart_pos,
                 observed.restarted_at,
                 observed.avsync,
@@ -511,19 +581,19 @@ impl Player {
                 seek.taken
                     .push((rendered.number, seek.requested_at.elapsed()));
             }
-            if let Some(Rendered {
-                picture: Picture::Image(old),
-                ..
-            }) = self.frame.replace(rendered)
-            {
-                window.drop_image(old).ok();
+            if let Some(old) = self.frame.replace(rendered) {
+                release(old, window);
             }
             self.awaiting_picture_since = None;
             changed = true;
         }
+        let aside_changed = self
+            .seek_picture
+            .as_mut()
+            .is_some_and(|picture| picture.take(shown, |old| release(old, window)));
 
         if let Some(seek) = &self.seek {
-            let restarted = restarts > seek.restarts;
+            let restarted = landed >= seek.number;
             // The seek's picture is the frame mpv took last before the restart, or the first
             // after it the window took, if a newer one replaced it before the window's refresh.
             let landing = restarted_at
@@ -551,7 +621,7 @@ impl Player {
                         mode: seek.mode,
                         target: seek.target,
                         landed: seconds(restart_pos),
-                        took: landing.unwrap_or(finished),
+                        took: seek.stood_in_after.or(landing).unwrap_or(finished),
                         finished,
                     });
                 }
@@ -561,6 +631,29 @@ impl Player {
                 self.seek = None;
                 changed = true;
             }
+        }
+
+        // The seek picture stands in from when it has landed the newest exact seek until the
+        // player's own core has, which is when that seek stops being pending.
+        let stands_in = self.seek.as_ref().is_some_and(|seek| seek.pictured_aside)
+            && self
+                .seek_picture
+                .as_ref()
+                .is_some_and(SeekPicture::has_landed);
+        changed |= stands_in != self.standing_in || (stands_in && aside_changed);
+        self.standing_in = stands_in;
+        #[cfg(feature = "measure")]
+        if let Some(seek) = self.seek.as_mut().filter(|_| stands_in) {
+            seek.stood_in_after
+                .get_or_insert_with(|| seek.requested_at.elapsed());
+        }
+        if self.seek.is_none()
+            && self
+                .seek_picture
+                .as_ref()
+                .is_some_and(|picture| picture.unwanted_for() > SEEK_PICTURE_KEEP)
+        {
+            self.seek_picture = None;
         }
 
         if let Some(since) = self.awaiting_picture_since
@@ -620,15 +713,8 @@ impl Drop for Player {
     fn drop(&mut self) {
         // Silent at once; the file may take a moment longer to stop.
         self.core.set_flag(c"pause", true);
-        if let Some(Rendered {
-            picture: Picture::Image(image),
-            ..
-        }) = self.frame.take()
-        {
-            RETIRED
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .push(image);
+        if let Some(frame) = self.frame.take() {
+            retire(frame);
         }
         if let Some(engine) = self.engine.take() {
             engine.give_back(self.sound);
@@ -664,6 +750,24 @@ pub fn pump_frames<V: 'static>(
         })
         .ok();
     });
+}
+
+/// Lets go of a frame the window showed, where it is the window's to release: a software
+/// frame is a texture in GPUI's sprite atlas.
+fn release(frame: Rendered, window: &mut Window) {
+    if let Picture::Image(image) = frame.picture {
+        window.drop_image(image).ok();
+    }
+}
+
+/// Lets go of a frame with no window at hand: the next poll releases it ([`RETIRED`]).
+fn retire(frame: Rendered) {
+    if let Picture::Image(image) = frame.picture {
+        RETIRED
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push(image);
+    }
 }
 
 fn seconds(value: Option<f64>) -> Option<Duration> {
