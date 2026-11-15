@@ -24,7 +24,7 @@ use std::sync::{Arc, Condvar, Mutex, Once};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use super::client::{self, Core};
+use super::client::{self, Core, Decode};
 use super::render::{self, Shared};
 use super::{DEFAULT_REFRESH, Render, VideoError};
 
@@ -199,10 +199,10 @@ impl Engine {
         })
     }
 
-    /// Plays `path`, with its sound or without: the render thread hands it to mpv once its
-    /// render context exists.
-    pub(super) fn load(&self, path: String, sound: bool) {
-        self.shared.request_load(path, sound);
+    /// Plays `path`, with its sound or without, its video decoded as `decode` says: the render
+    /// thread hands it to mpv once its render context exists.
+    pub(super) fn load(&self, path: String, sound: bool, decode: Decode) {
+        self.shared.request_load(path, sound, decode);
     }
 
     /// Gives the engine back for the next player, off the caller's thread: it waits once the
@@ -244,7 +244,7 @@ impl Engine {
         let restarts = self.core.observed().restarts;
         // Paused, as a player opens: the first frame is decoded and drawn, and the audio
         // output opened, which is what costs; the device is never started, so nothing plays.
-        self.load(path.to_owned(), true);
+        self.load(path.to_owned(), true, Decode::Hardware);
         let first = drawn_past(0);
         let drawn = self.shared.drawn();
         self.shared.set_max_side(Some(32));
@@ -506,7 +506,7 @@ mod tests {
     }
 
     fn play(engine: &Engine, path: &Path) {
-        engine.load(path.to_str().unwrap().to_owned(), true);
+        engine.load(path.to_str().unwrap().to_owned(), true, Decode::Hardware);
         wait_until("the clip loads", || {
             let observed = engine.core.observed();
             observed.file_loaded && observed.picture_size().is_some()
@@ -591,7 +591,11 @@ mod tests {
             )
         };
         let engine = Engine::start(&EngineOptions::default()).expect("an engine starts");
-        engine.load(preview.to_str().unwrap().to_owned(), false);
+        engine.load(
+            preview.to_str().unwrap().to_owned(),
+            false,
+            Decode::Hardware,
+        );
         wait_until("the preview loads", || {
             engine.core.observed().picture_size().is_some()
         });

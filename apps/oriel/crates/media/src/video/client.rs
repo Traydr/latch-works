@@ -2,12 +2,15 @@
 //! events into [`Observed`], so the UI thread never waits on mpv. A core plays one file at a
 //! time, and may play many in turn (`video/engine.rs` keeps idle ones for the next player).
 //!
-//! mpv's handle is thread-safe. Commands and property writes go out with mpv's asynchronous
-//! calls, which return at once; the UI reads only [`Observed`], which the event thread keeps
-//! current from the properties it observes.
+//! mpv's handle is thread-safe. The player's commands and property writes go out with mpv's
+//! asynchronous calls, which return at once; the UI reads only [`Observed`], which the event
+//! thread keeps current from the properties it observes. Only the event thread waits on mpv's
+//! core: to read where a seek landed, and to choose a file's decoder while mpv holds the file
+//! open for it.
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -41,6 +44,55 @@ const ERROR_OPTION_NOT_FOUND: c_int = -5;
 /// build has none of those, so mpv does not know these options, which is the same as off.
 const OFF_WHEN_ABSENT: [&str; 2] = ["load-scripts", "ytdl"];
 
+/// The most pixels a second a picture may have to be decoded in software: 1080p at 60 frames a
+/// second, and a little over for a rate that is not quite even.
+const SOFTWARE_PIXEL_RATE: f64 = 1920. * 1080. * 62.;
+/// The frames a second a video track is taken to have when its file does not say.
+const UNSTATED_RATE: f64 = 60.;
+
+/// How a file's video is decoded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Decode {
+    /// In hardware, whatever the picture: the least CPU, for a preview, which never seeks.
+    Hardware,
+    /// In software where that seeks sooner at a cost worth paying
+    /// ([`seeks_sooner_in_software`]), else in hardware: for a player with a scrubber.
+    ForSeeking,
+}
+
+/// Whether a video of `codec`, with `pixels` a frame and `rate` frames a second, is worth
+/// decoding in software for its exact seeks.
+///
+/// An exact seek decodes every frame from the keyframe before its target, and in H.264 and AV1
+/// FFmpeg's own decoder and dav1d, on every core, get there sooner than the hardware path does.
+///
+/// On macOS that is because FFmpeg hands the hardware decoder one frame at a time and waits for
+/// it, which at 1440p comes to 390 to 770 frames a second by codec. The hardware is not what
+/// is slow: VideoToolbox handed the same frames without a wait decodes 1,100 to 1,600 of them
+/// a second, but neither FFmpeg nor mpv can drive it so. On an M5 Pro, over the videos of
+/// a library in use, the median exact seek fell from 54 ms to 15 ms in H.264 (720p, a keyframe
+/// every 3 s) and from 217 ms to 77 ms in AV1 (Shrink's, a keyframe every 5 s), and the slowest
+/// from 124 ms to 34 ms and from 776 ms to 304 ms. Playing costs more CPU in software there:
+/// 720p30 H.264 takes 21 % of a core, where hardware takes 11 %, and 1080p60 AV1 takes 70 %,
+/// where hardware takes 20 %. Past the pixels a second of 1080p60 that grows beyond what a
+/// sooner seek is worth; 1440p at 30 frames a second is within it, and seeks sooner too.
+///
+/// On Windows the software renderer has each hardware frame copied back to memory
+/// (`d3d11va-copy`), which halves the hardware's rate, and in H.264 the hardware is the slower
+/// decoder even before the copy. On a Ryzen 5 5600H with an RTX 3060, over clips with a keyframe
+/// every 5 s, the median exact seek fell from 69 ms to 33 ms in 720p30 H.264, from 203 ms to
+/// 87 ms in 1080p60 H.264 and from 266 ms to 194 ms in 1080p60 AV1; 720p AV1 seeks the same
+/// either way. Playing costs the same CPU either way there, as near as it was measured, since
+/// the copy costs about what decoding does.
+///
+/// HEVC seeks later in software on both, so it stays in hardware. Linux is not measured, so
+/// there every picture does.
+fn seeks_sooner_in_software(codec: &str, pixels: f64, rate: f64) -> bool {
+    cfg!(any(target_os = "macos", target_os = "windows"))
+        && matches!(codec, "h264" | "av1")
+        && pixels * rate <= SOFTWARE_PIXEL_RATE
+}
+
 /// What the player reads of mpv's state, as of the newest event.
 #[derive(Default)]
 pub(super) struct Observed {
@@ -65,6 +117,9 @@ pub(super) struct Observed {
     pub(super) restarted_at: Option<Instant>,
     /// Whether the core has no file (`idle-active`): stopped, or never given one.
     pub(super) idle: bool,
+    /// Whether the file's video is decoded in software, so that its exact seeks are quick
+    /// ([`Decode::ForSeeking`]).
+    pub(super) software: bool,
     errors: Vec<String>,
 }
 
@@ -74,6 +129,7 @@ impl Observed {
     /// event thread's copy is already the core's.
     pub(super) fn forget_file(&mut self) {
         self.file_loaded = false;
+        self.software = false;
         self.failed = None;
         self.errors.clear();
     }
@@ -112,6 +168,10 @@ pub(super) struct Core {
     changed: Condvar,
     /// Called on the event thread when the picture's size changes.
     size_listener: Mutex<Option<Box<dyn Fn() + Send>>>,
+    /// The `hwdec` the core was started with: how it decodes in hardware.
+    hardware: CString,
+    /// Whether the file loaded last may be decoded in software ([`Decode::ForSeeking`]).
+    for_seeking: AtomicBool,
 }
 
 // SAFETY: mpv's client API is thread-safe for one handle ("all functions are thread-safe unless
@@ -143,6 +203,14 @@ impl Core {
             }),
             changed: Condvar::new(),
             size_listener: Mutex::new(None),
+            hardware: c_string(
+                options
+                    .iter()
+                    .rev()
+                    .find(|(name, _)| *name == "hwdec")
+                    .map_or("no", |(_, value)| value),
+            ),
+            for_seeking: AtomicBool::new(false),
         };
         for (name, value) in options {
             let (name_c, value_c) = (c_string(name), c_string(value));
@@ -165,6 +233,16 @@ impl Core {
         for (id, name, format) in OBSERVED {
             // SAFETY: a live handle, a NUL-terminated name and one of mpv's formats.
             unsafe { (api.observe_property)(handle.as_ptr(), id, name.as_ptr(), format) };
+        }
+        // mpv waits here on each file it opens, with its tracks known and no decoder made
+        // yet, for the event thread to choose how the video is decoded.
+        // SAFETY: a live handle and a NUL-terminated name.
+        let status = unsafe { (api.hook_add)(handle.as_ptr(), 0, c"on_preloaded".as_ptr(), 0) };
+        if status < 0 {
+            log::warn!(
+                "mpv refused the hook that chooses a decoder: {}",
+                api.describe(status)
+            );
         }
         Ok(Arc::new(core))
     }
@@ -229,10 +307,12 @@ impl Core {
         }
     }
 
-    /// Loads the file. Called once a render context exists, so the video output can start.
-    /// Without `sound` the soundtrack is never selected, for this file only: nothing decodes it
-    /// and no audio device opens.
-    pub(super) fn load(&self, path: &str, sound: bool) {
+    /// Loads the file, its video decoded as `decode` says. Called once a render context exists,
+    /// so the video output can start. Without `sound` the soundtrack is never selected, for
+    /// this file only: nothing decodes it and no audio device opens.
+    pub(super) fn load(&self, path: &str, sound: bool, decode: Decode) {
+        self.for_seeking
+            .store(decode == Decode::ForSeeking, Ordering::Release);
         if sound {
             self.command(LOADFILE_REPLY, &["loadfile", path]);
         } else {
@@ -300,7 +380,6 @@ impl Core {
     }
 
     /// A property as mpv's string, waiting for the core, as `get_double`.
-    #[cfg(any(test, feature = "measure"))]
     pub(super) fn get_string(&self, name: &CStr) -> Option<String> {
         // SAFETY: a live handle and a NUL-terminated name; the result is mpv's to free.
         unsafe {
@@ -337,6 +416,13 @@ impl Core {
                     self.property_changed(event.reply_userdata, property);
                 }
                 ffi::EVENT_FILE_LOADED => self.observed().file_loaded = true,
+                ffi::EVENT_HOOK => {
+                    // SAFETY: mpv gives a hook an `mpv_event_hook`.
+                    let id = unsafe { &*event.data.cast::<ffi::EventHook>() }.id;
+                    self.choose_decoder();
+                    // SAFETY: a live handle and the hook mpv waits on, which it goes on from.
+                    unsafe { (self.api.hook_continue)(self.handle(), id) };
+                }
                 ffi::EVENT_PLAYBACK_RESTART => {
                     // Timed before the read, which waits on mpv's core. The position is read
                     // now, while the first frame after the seek is the one shown.
@@ -376,6 +462,53 @@ impl Core {
             }
             self.changed.notify_all();
         }
+    }
+
+    /// Sets how the file mpv has just opened is decoded, before mpv makes its decoders: in
+    /// software if the player seeks and the picture is worth it, else as the core was started.
+    /// Every file sets it, as the core keeps the last file's.
+    fn choose_decoder(&self) {
+        let software = self.for_seeking.load(Ordering::Acquire)
+            && self.video_track().is_some_and(|(codec, pixels, rate)| {
+                seeks_sooner_in_software(&codec, pixels, rate)
+            });
+        let hwdec = if software { c"no" } else { &*self.hardware };
+        // SAFETY: a live handle and NUL-terminated strings, which mpv copies before returning.
+        let status = unsafe {
+            (self.api.set_property_string)(self.handle(), c"hwdec".as_ptr(), hwdec.as_ptr())
+        };
+        if status < 0 {
+            log::warn!("mpv refused hwdec={hwdec:?}: {}", self.api.describe(status));
+        }
+        self.observed().software = software && status >= 0;
+    }
+
+    /// The codec, pixels a frame and frames a second of the video track mpv will play, which
+    /// it has not yet selected: of those that are neither cover art nor a still image, the one
+    /// the file marks as its default, else the first, as mpv chooses.
+    fn video_track(&self) -> Option<(String, f64, f64)> {
+        let count = self.get_double(c"track-list/count")? as usize;
+        let of = |index: usize, field: &str| c_string(&format!("track-list/{index}/{field}"));
+        let says = |index: usize, field: &str| {
+            self.get_string(&of(index, field)).as_deref() == Some("yes")
+        };
+        let mut pictures = (0..count).filter(|index| {
+            self.get_string(&of(*index, "type")).as_deref() == Some("video")
+                && !says(*index, "albumart")
+                && !says(*index, "image")
+        });
+        let first = pictures.next()?;
+        let index = std::iter::once(first)
+            .chain(pictures)
+            .find(|index| says(*index, "default"))
+            .unwrap_or(first);
+        let pixels =
+            self.get_double(&of(index, "demux-w"))? * self.get_double(&of(index, "demux-h"))?;
+        let rate = self
+            .get_double(&of(index, "demux-fps"))
+            .filter(|rate| *rate > 0.)
+            .unwrap_or(UNSTATED_RATE);
+        Some((self.get_string(&of(index, "codec"))?, pixels, rate))
     }
 
     fn property_changed(&self, id: u64, property: &ffi::EventProperty) {

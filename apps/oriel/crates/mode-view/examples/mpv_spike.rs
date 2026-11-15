@@ -28,8 +28,10 @@
 //! screenshot, with the capsule's volume or speed panel open under
 //! `ORIEL_SPIKE_PANEL=volume|speed`.
 //!
-//! Five switches mirror the gallery: `ORIEL_SPIKE_SILENT=1` opens the sweep's tiles without
-//! sound, as a hover preview with sound off plays; `ORIEL_SPIKE_PREWARM=<ms>` starts an engine
+//! Six switches mirror the app: `ORIEL_SPIKE_SILENT=1` opens the sweep's tiles without
+//! sound, as a hover preview with sound off plays; `ORIEL_SPIKE_SEEKS=1` opens them decoded as
+//! a player with a scrubber's video is, not as a preview's, to time the viewer's seeks;
+//! `ORIEL_SPIKE_PREWARM=<ms>` starts an engine
 //! that long before the first open, as hovering a video tile does; `ORIEL_SPIKE_PRIME=<ms>`
 //! starts and primes one that long before, as View showing a folder with videos does, with a
 //! clip made once in the temp folder by the pinned ffmpeg;
@@ -318,7 +320,7 @@ struct Capsule {
 
 impl Capsule {
     fn open(path: PathBuf, options: PlayerOptions, window: &mut Window, cx: &mut App) -> Self {
-        let mut video = Player::open_with(&path, engine_options(), true);
+        let mut video = Player::open_with(&path, engine_options(), true, true);
         let measured = Rc::new(match &mut video {
             Ok(video) => Measured::of(video),
             Err(error) => panic!("{} does not open: {error}", path.display()),
@@ -466,7 +468,8 @@ impl Played {
 impl Tile {
     fn new(path: &Path, sound: bool, play: bool) -> Self {
         let silent = std::env::var_os("ORIEL_SPIKE_SILENT").is_some();
-        match Player::open_with(path, engine_options(), !silent) {
+        let seeks = std::env::var_os("ORIEL_SPIKE_SEEKS").is_some();
+        match Player::open_with(path, engine_options(), !silent, seeks) {
             Ok(mut player) => {
                 let measured = Measured::of(&mut player);
                 player.set_muted(!sound);
