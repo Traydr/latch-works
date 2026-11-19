@@ -135,13 +135,13 @@ What used to have a variable of its own is a script now, for example:
 | The shortcut sheet | `key ?` |
 | Tidy's folder picker | `idle; key cmd-o` |
 | A Tidy page | `idle; key alt-cmd-<n>`, ⌥⌘1–5 in the sidebar's order |
-| Tidy's changes running, the second queued behind the first | `idle; key alt-cmd-3; key cmd-enter; key alt-cmd-4; wait 1000; key cmd-enter` (Convert, then Clean up: it changes files, so point it only at a copy) |
+| Tidy's change running, with Undo queued behind it | `idle; key alt-cmd-1; key cmd-enter; wait 1000; key cmd-z` (Tidy up, then its Undo: it changes files, so point it only at a copy) |
 | Duplicates' Matching popover, a video playing in the loupe | `idle; key alt-cmd-2; click <x>,<y>` on the button or the picture |
 | Duplicates on a later set, with another version kept, in the loupe | `idle; key alt-cmd-2; key s` (each `s` skips a set); `key shift-<n>` keeps version n as well; `key space` opens the loupe; `scroll` or `key pagedown` moves down its versions |
-| The Library's first files selected, with the selection bar | `idle; key alt-cmd-5; key down; key shift-down; key shift-down` |
+| The Library's first files selected, with the selection bar | `idle; key alt-cmd-3; key down; key shift-down; key shift-down` |
 | The Library's inspector, or the other view | `key i`, or `click` the view switch |
 | Quick Look, the folder picker a Move to… opens | In the Library, `key down; key space`, or `key down; key cmd-shift-m` |
-| Holding's files selected, History's newest entry open | `idle; key alt-cmd-7; key cmd-a`, or `idle; key alt-cmd-6; key down; key right` |
+| Holding's files selected, History's newest entry open | `idle; key alt-cmd-5; key cmd-a`, or `idle; key alt-cmd-4; key down; key right` |
 | The sheet that asks whether to forget a folder | `click` the location switcher, then its `Forget “…”…` |
 | View's viewer on its third tile | `idle; key right; key right; key enter` |
 | View's grid scrolled | `idle; scroll 700,400,-1200` |

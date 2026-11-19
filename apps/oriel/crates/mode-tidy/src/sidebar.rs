@@ -1,7 +1,6 @@
-//! Tidy's sidebar: the folder on screen with its menu, the pages in
-//! order, Tidy and Duplicates first and then "Archive", with their counts, and Holding at the
-//! foot. What runs shows
-//! in the shell's activity panel, at the window's bottom right.
+//! Tidy's sidebar: the folder on screen with its menu, the pages in order, Tidy and Duplicates
+//! first and then "Archive", with their counts, and Holding at the foot. What runs shows in the
+//! shell's activity panel, at the window's bottom right.
 
 use std::path::Path;
 

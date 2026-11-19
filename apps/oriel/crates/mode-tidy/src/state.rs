@@ -79,42 +79,11 @@ impl ConvertGroup {
         }
     }
 
-    pub fn label(self) -> &'static str {
-        match self {
-            ConvertGroup::Pictures => "Pictures → AVIF",
-            ConvertGroup::Animations => "Animations → MP4",
-            ConvertGroup::Videos => "Videos → MP4",
-        }
-    }
-
     pub fn categories(self) -> &'static [OptimizeCategory] {
         match self {
             ConvertGroup::Pictures => &[OptimizeCategory::StillToAvif],
             ConvertGroup::Animations => &[OptimizeCategory::AnimationToMp4],
             ConvertGroup::Videos => &[OptimizeCategory::VideoRemux, OptimizeCategory::VideoConvert],
-        }
-    }
-
-    pub fn nouns(self) -> (&'static str, &'static str) {
-        match self {
-            ConvertGroup::Pictures => ("picture", "pictures"),
-            ConvertGroup::Animations => ("animation", "animations"),
-            ConvertGroup::Videos => ("video", "videos"),
-        }
-    }
-
-    /// The kind of file the group converts, which its "and N more" opens in the Library.
-    pub fn kind(self) -> FileKind {
-        match self {
-            ConvertGroup::Videos => FileKind::Video,
-            _ => FileKind::Image,
-        }
-    }
-
-    pub fn target(self) -> &'static str {
-        match self {
-            ConvertGroup::Pictures => "AVIF",
-            _ => "MP4",
         }
     }
 
@@ -1351,12 +1320,6 @@ impl TidyState {
     /// unknown.
     pub fn estimate(&self, categories: &[OptimizeCategory]) -> Estimate {
         self.estimate_of(categories, |entry| entry.bytes)
-    }
-
-    /// [`Self::estimate`] for what stays once the open duplicate sets' suggestions are taken: the
-    /// difference is what converting would save on copies those sets would remove.
-    pub fn estimate_beside_duplicates(&self, categories: &[OptimizeCategory]) -> Estimate {
-        self.estimate_of(categories, |entry| entry.bytes - entry.duplicate_bytes)
     }
 
     fn estimate_of(

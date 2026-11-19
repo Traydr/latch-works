@@ -675,11 +675,11 @@ impl TidyEngine {
 
     /// Tidy up as one change, each step there is work for, run as [`Self::perform_steps`] runs
     /// them: Clean up, then the silent soundtracks, then Convert in the choices' categories. With
-    /// AV1 on, pictures and animations go first, then the AV1 re-encode, the longest step, and
-    /// then the video categories for the videos it left: a MOV it shrinks is encoded once,
-    /// straight to AV1 MP4, and is no longer there for Convert to copy into MP4 first.
-    /// Duplicates are not a step: which copy to keep depends on where each one is, so the owner
-    /// decides every set.
+    /// AV1 on, pictures go first, then the AV1 re-encode, the longest step, and then animations
+    /// and the video categories for the videos it left: a MOV it shrinks is encoded once,
+    /// straight to AV1 MP4, and an animation becomes MP4 after it, so AV1 does not encode that
+    /// MP4 again. Duplicates are not a step: which copy to keep depends on where each one is, so
+    /// the owner decides every set.
     pub fn tidy_up(&self, root_id: RootId, choices: TidyUpChoices) -> Queued<TidiedUp> {
         let ticket = self
             .inner
@@ -942,26 +942,31 @@ fn tidy_up_steps(root_id: RootId, tidy: &Tidy, choices: TidyUpChoices) -> Vec<Ti
             file_ids: None,
         }))
     };
-    let (videos, others): (Vec<_>, Vec<_>) = choices.categories.into_iter().partition(|category| {
-        matches!(
-            category,
-            OptimizeCategory::VideoRemux | OptimizeCategory::VideoConvert
-        )
-    });
+    // Animations become MP4 videos that AV1 would take next, so with AV1 on they go after it,
+    // with the videos, to be encoded once.
+    let (after_av1, pictures): (Vec<_>, Vec<_>) =
+        choices.categories.into_iter().partition(|category| {
+            matches!(
+                category,
+                OptimizeCategory::VideoRemux
+                    | OptimizeCategory::VideoConvert
+                    | OptimizeCategory::AnimationToMp4
+            )
+        });
     let mut steps = vec![
         (choices.clean_up && tidy.cleanup.count() > 0)
             .then_some(TidyStep::Plan(PlanRequest::Cleanup { root_id })),
         (choices.silent && tidy.silent_tracks.files > 0).then_some(TidyStep::SilentVideos(root_id)),
     ];
     if choices.av1 && tidy.shrink.files > 0 {
-        steps.push(optimize(others));
+        steps.push(optimize(pictures));
         steps.push(Some(TidyStep::Plan(PlanRequest::ShrinkVideos {
             root_id,
             limit_bytes: None,
         })));
-        steps.push(optimize(videos));
+        steps.push(optimize(after_av1));
     } else {
-        steps.push(optimize(others.into_iter().chain(videos).collect()));
+        steps.push(optimize(pictures.into_iter().chain(after_av1).collect()));
     }
     steps.into_iter().flatten().collect()
 }

@@ -496,7 +496,7 @@ impl OverviewPage {
         let heading = if tidying {
             "Tidying up"
         } else if files == 0 {
-            "Nothing switched on"
+            "Nothing to do with the switches as they are"
         } else if saved > 0. {
             "Tidying up saves about"
         } else if pending {

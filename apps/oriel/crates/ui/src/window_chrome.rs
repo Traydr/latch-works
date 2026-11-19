@@ -293,10 +293,6 @@ impl MenuBar {
         })
     }
 
-    pub fn is_shown(&self) -> bool {
-        self.shown
-    }
-
     /// Follows the modifiers as the window's root sees them change: Alt let go on its own shows
     /// or hides the row.
     pub fn on_modifiers_changed(

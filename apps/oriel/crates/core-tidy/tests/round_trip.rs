@@ -1804,6 +1804,42 @@ fn tidy_up_with_av1_encodes_a_mov_once_straight_to_av1_mp4() {
     bench.undo_and_check(&tidied.undoable(), "Tidy up with AV1");
 }
 
+/// With AV1 on, an animation becomes MP4 after the AV1 step, so AV1 does not encode the MP4 that
+/// Tidy up has just made: the GIF is held once, and nothing in between.
+#[test]
+fn tidy_up_with_av1_converts_an_animation_once() {
+    let Some(bench) = Bench::open("tidy-up-av1-animation") else {
+        return;
+    };
+    if !bench.videos {
+        return;
+    }
+    let tidied = bench
+        .engine
+        .tidy_up(
+            bench.root.id,
+            TidyUpChoices {
+                categories: CONVERT.to_vec(),
+                clean_up: false,
+                silent: false,
+                av1: true,
+            },
+        )
+        .run(&bench.quiet())
+        .unwrap();
+    bench.follow_up(&tidied.follow_up);
+    assert!(tidied.notes.is_empty(), "{:?}", tidied.notes);
+    assert!(
+        Tree::of(&bench.archive)
+            .files
+            .contains_key("clips/loop.mp4")
+    );
+    let held = bench.held_by_original();
+    assert!(held.contains_key("clips/loop.gif"), "{held:?}");
+    assert!(!held.contains_key("clips/loop.mp4"), "{held:?}");
+    bench.assert_holding_agrees();
+}
+
 /// Emptying holding takes its batch folders away (into the sandboxed run's own trash), and what
 /// went cannot come back.
 #[test]
