@@ -220,7 +220,7 @@ fn badge(state: &TidyState, page: TidyPage) -> Option<String> {
                 ),
             )
         }
-        // The files Tidy up would touch with its switches as they are.
+        // The changes Tidy up would make with its switches as they are.
         TidyPage::Overview => {
             let tidy = state.overview()?;
             counted(crate::plan::totals(&crate::plan::rows(state, tidy)).0)

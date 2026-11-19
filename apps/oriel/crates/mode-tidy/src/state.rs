@@ -99,7 +99,8 @@ impl ConvertGroup {
     }
 }
 
-/// Tidy up's switches beside Convert's groups: the work that rewrites nothing.
+/// Tidy up's switches beside Convert's groups: silent soundtracks, and Clean up's junk, empty
+/// folders and extensions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CleanPart {
     /// Junk to holding, empty folders removed, wrong extensions fixed.

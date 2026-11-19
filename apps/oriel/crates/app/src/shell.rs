@@ -152,7 +152,7 @@ impl Shell {
                 if window.is_window_active() {
                     this.quit.update(cx, |quit, cx| quit.cancel(cx));
                 } else if let Some(bar) = &this.menu_bar {
-                    bar.update(cx, |bar, _| bar.interrupt());
+                    bar.update(cx, |bar, _| bar.window_deactivated());
                 }
             }),
             cx.on_app_quit(|this, _| {

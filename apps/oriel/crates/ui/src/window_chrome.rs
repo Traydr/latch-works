@@ -7,9 +7,9 @@
 //! which Windows hit-tests itself, so it presses them and closes the window as its own buttons
 //! would. Snap Layouts does not show over maximize yet: `gpui-fast-windows` marks the mouse moves
 //! over these areas as handled, so Windows' default handling, which shows the flyout, never
-//! sees them (`docs/runbooks/oriel-windows.md`, "Known risks"). They must not sit inside a [`DragStrip`]: GPUI
-//! answers a hit test with the first control area under the pointer in paint order, which would be
-//! the strip's.
+//! sees them (`docs/runbooks/oriel-windows.md`, "Known risks"). They must not sit inside a
+//! [`DragStrip`]: GPUI answers a hit test with the first control area under the pointer in paint
+//! order, which would be the strip's.
 //!
 //! [`DragStrip`]: crate::drag::DragStrip
 
@@ -265,8 +265,7 @@ impl RenderOnce for CaptionButton {
 /// are when it shows (`cx.get_menus()`), so it follows the mode on screen.
 pub struct MenuBar {
     shown: bool,
-    /// Alt went down with nothing pressed since: letting it go shows or hides the row.
-    alt_alone: bool,
+    alt: AltGesture,
     menus: Vec<OwnedMenu>,
     /// The menu the row's ring rests on, and the one whose popup is open.
     current: usize,
@@ -279,13 +278,42 @@ pub struct MenuBar {
 /// The row's height.
 const MENU_BAR_HEIGHT: f32 = 32.;
 
+/// Alt pressed and let go on its own, as Windows reads it for its menus: Alt goes down with no
+/// other modifier held, and comes up with no key, press or other modifier in between. Letting go
+/// of Ctrl first in Ctrl+Alt+1, or of Shift in Alt+Shift, leaves Alt held alone, but that Alt was
+/// a shortcut's.
+#[derive(Default)]
+struct AltGesture {
+    armed: bool,
+    last: Modifiers,
+}
+
+impl AltGesture {
+    /// Takes the modifiers held now, and says whether the change ends an Alt on its own.
+    fn modifiers_changed(&mut self, now: Modifiers) -> bool {
+        let alt_only = now.alt && !now.control && !now.shift && !now.platform && !now.function;
+        let ended = self.armed && !now.modified();
+        if alt_only && !self.last.modified() {
+            self.armed = true;
+        } else if !alt_only {
+            self.armed = false;
+        }
+        self.last = now;
+        ended
+    }
+
+    fn interrupt(&mut self) {
+        self.armed = false;
+    }
+}
+
 impl MenuBar {
     /// The menu bar, or none on macOS, where the menus are in the system's menu bar.
     pub fn for_window(cx: &mut App) -> Option<Entity<Self>> {
         DRAWS_OWN_CHROME.then(|| {
             cx.new(|cx| Self {
                 shown: false,
-                alt_alone: false,
+                alt: AltGesture::default(),
                 menus: Vec::new(),
                 current: 0,
                 open: None,
@@ -303,28 +331,24 @@ impl MenuBar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let alt_only = modifiers.alt
-            && !modifiers.control
-            && !modifiers.shift
-            && !modifiers.platform
-            && !modifiers.function;
-        if alt_only {
-            self.alt_alone = true;
-        } else if self.alt_alone && !modifiers.modified() {
-            self.alt_alone = false;
-            if self.shown {
-                self.hide(window, cx);
-            } else {
-                self.show(window, cx);
-            }
+        if !self.alt.modifiers_changed(*modifiers) {
+            return;
+        }
+        if self.shown {
+            self.hide(window, cx);
         } else {
-            self.alt_alone = false;
+            self.show(window, cx);
         }
     }
 
     /// A key or a press while Alt is down makes it a shortcut's Alt, not the menu bar's.
     pub fn interrupt(&mut self) {
-        self.alt_alone = false;
+        self.alt.interrupt();
+    }
+
+    /// The window lost focus: the modifiers are let go elsewhere, so nothing held is known.
+    pub fn window_deactivated(&mut self) {
+        self.alt = AltGesture::default();
     }
 
     fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -537,4 +561,78 @@ fn with_items(
         }
         OwnedMenuItem::SystemMenu(_) => menu,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AltGesture;
+    use gpui_kit::Modifiers;
+
+    const NONE: Modifiers = Modifiers {
+        control: false,
+        alt: false,
+        shift: false,
+        platform: false,
+        function: false,
+    };
+    const ALT: Modifiers = Modifiers { alt: true, ..NONE };
+    const CTRL: Modifiers = Modifiers {
+        control: true,
+        ..NONE
+    };
+    const CTRL_ALT: Modifiers = Modifiers {
+        control: true,
+        alt: true,
+        ..NONE
+    };
+    const ALT_SHIFT: Modifiers = Modifiers {
+        alt: true,
+        shift: true,
+        ..NONE
+    };
+
+    /// Whether the modifiers held in turn end with an Alt on its own.
+    fn ends_alone(held: &[Modifiers]) -> bool {
+        let mut gesture = AltGesture::default();
+        held.iter()
+            .map(|now| gesture.modifiers_changed(*now))
+            .last()
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn alt_pressed_and_let_go_on_its_own_counts() {
+        assert!(ends_alone(&[ALT, NONE]));
+    }
+
+    #[test]
+    fn a_chord_whose_other_modifier_goes_first_does_not() {
+        // Ctrl+Alt+1 with Ctrl let go first, and Windows' Alt+Shift with Shift let go first.
+        assert!(!ends_alone(&[CTRL, CTRL_ALT, ALT, NONE]));
+        assert!(!ends_alone(&[ALT, ALT_SHIFT, ALT, NONE]));
+    }
+
+    #[test]
+    fn a_key_or_a_press_while_alt_is_down_does_not() {
+        let mut gesture = AltGesture::default();
+        assert!(!gesture.modifiers_changed(ALT));
+        gesture.interrupt();
+        assert!(!gesture.modifiers_changed(NONE));
+    }
+
+    #[test]
+    fn alt_after_the_window_comes_back_counts() {
+        // Alt+Tab away: the window saw Alt go down, and forgets it as it loses focus.
+        let mut gesture = AltGesture::default();
+        gesture.modifiers_changed(ALT);
+        gesture = AltGesture::default();
+        assert!(!gesture.modifiers_changed(NONE));
+        assert!(!gesture.modifiers_changed(ALT));
+        assert!(gesture.modifiers_changed(NONE));
+    }
+
+    #[test]
+    fn alt_after_another_modifier_was_let_go_counts_again() {
+        assert!(ends_alone(&[CTRL, NONE, ALT, NONE]));
+    }
 }

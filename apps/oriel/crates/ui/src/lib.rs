@@ -2,8 +2,8 @@
 //! made of (the sidebar with the mode switcher and Settings, the top bar, the strips that move the
 //! window, and off macOS the window's caption buttons and the app's menus), with what the shell
 //! and the modes agree on: the interface every mode offers the shell ([`Mode`]), toasts, the
-//! store of preferences, Settings' groups and rows, the folders the modes offer each other, the jobs they run, which the shell shows in one place, and what the
-//! measurements read.
+//! store of preferences, Settings' groups and rows, the folders the modes offer each other, the
+//! jobs they run, which the shell shows in one place, and what the measurements read.
 
 pub mod activity;
 pub mod app_mark;
