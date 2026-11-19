@@ -20,6 +20,7 @@ use gpui_kit::{
     Subscription, TestSupportExt as _, Window, canvas, div, img, linear_color_stop,
     linear_gradient, prelude::FluentBuilder as _, px,
 };
+use oriel_ui::CaptionButtons;
 use oriel_ui::ControlSize as _;
 use oriel_ui::TextRole as _;
 
@@ -262,7 +263,8 @@ impl Render for ComicReader {
             .when(self.chrome.is_visible(), |this| {
                 this.child(
                     // macOS draws the window buttons over the top left, so the title starts to their
-                    // right, as the reader pads it.
+                    // right, as the reader pads it. Elsewhere the caption buttons are in the top
+                    // right, and the controls stop short of them.
                     div()
                         .absolute()
                         .top_0()
@@ -274,8 +276,8 @@ impl Render for ComicReader {
                         .gap_3()
                         .pt_4()
                         .pb_10()
-                        .pr_3()
-                        .pl(px(88.))
+                        .pr(px(12. + CaptionButtons::stage_room(window)))
+                        .pl(px(if cfg!(target_os = "macos") { 88. } else { 12. }))
                         // Black held behind both lines of text, so they read over a white page,
                         // and only then fading out.
                         .bg(linear_gradient(
@@ -336,6 +338,7 @@ impl Render for ComicReader {
                                 .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
                         ),
                 )
+                .children(CaptionButtons::over_stage())
             })
     }
 }

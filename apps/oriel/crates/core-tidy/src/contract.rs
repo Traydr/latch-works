@@ -571,14 +571,6 @@ pub struct CategoryCount {
     pub estimate: Option<OptimizeEstimate>,
 }
 
-/// A file whose extension Clean up would fix, and the name it would give it: AVIF and MP4 under
-/// their own extension, anything else under its format's when the one it has is wrong.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ExtensionFix {
-    pub file: FileRow,
-    pub name: String,
-}
-
 /// How many files one reason left out of Convert or Shrink.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SkipCount {
@@ -665,6 +657,40 @@ pub struct ShrinkTotals {
     /// Of the bytes expected to go, those on copies the open duplicate sets' suggestions would
     /// remove anyway, which their own totals already count.
     pub duplicate_saving: i64,
+    /// Roughly how long the encodes take, in milliseconds.
+    pub encode_ms: i64,
+    /// Of these videos, the ones Convert would otherwise copy into MP4 (`VideoRemux`) or
+    /// re-encode into MP4 (`VideoConvert`), and their bytes: with AV1 on, Tidy up encodes them
+    /// once, straight to AV1 MP4, instead.
+    pub from_remux: i64,
+    pub from_reencode: i64,
+    pub convert_bytes: i64,
+}
+
+/// What one Tidy up runs. Convert's `categories` run as they are, except that with `av1` on the
+/// videos AV1 would shrink are re-encoded once, straight to AV1 MP4, and only the videos it leaves
+/// are copied or re-encoded into MP4 by the video categories.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TidyUpChoices {
+    pub categories: Vec<OptimizeCategory>,
+    /// Junk to holding, empty folders removed and extensions fixed.
+    pub clean_up: bool,
+    /// Silent soundtracks stripped.
+    pub silent: bool,
+    /// Videos re-encoded to AV1.
+    pub av1: bool,
+}
+
+impl TidyUpChoices {
+    /// Clean up, the silent soundtracks and Convert in `categories`, without AV1.
+    pub fn convert(categories: Vec<OptimizeCategory>) -> Self {
+        Self {
+            categories,
+            clean_up: true,
+            silent: true,
+            av1: false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -1,7 +1,8 @@
 //! The menu bar, rebuilt around the mode on screen: the shell's own items, with the mode's
 //! commands woven into File, Edit and View, a check mark on the mode, and the shortcut sheet in
 //! Help. An item whose action nothing on screen handles is greyed out by GPUI, so a mode's items
-//! light up once the mode handles their commands.
+//! light up once the mode handles their commands. Off macOS the row Alt shows across the window's
+//! top has these menus, read afresh each time it shows (`oriel_ui::window_chrome::MenuBar`).
 
 use gpui_kit::{Action, App, Menu, MenuItem, OsAction, SystemMenuType};
 use oriel_ui::shortcuts::ShowShortcuts;
@@ -176,8 +177,6 @@ fn menus_for(mode: ModeId, commands: &[Command], mac: bool) -> Vec<Menu> {
 /// its shortcuts from the keymap as it is built.
 pub fn set(mode: ModeId, commands: &[Command], cx: &mut App) {
     cx.set_menus(menus(mode, commands));
-    #[cfg(windows)]
-    crate::windows_frame::reload_menus(cx);
 }
 
 /// AppKit adds an Enter Full Screen item of its own to a menu named View, which would sit beside

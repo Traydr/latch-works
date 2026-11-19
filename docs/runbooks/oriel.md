@@ -134,14 +134,14 @@ What used to have a variable of its own is a script now, for example:
 | Settings at the mode's section | `key cmd-,` (then `click` the section in Settings' sidebar for another) |
 | The shortcut sheet | `key ?` |
 | Tidy's folder picker | `idle; key cmd-o` |
-| A Tidy page | `idle; key alt-cmd-<n>`, ⌥⌘1–7 in the sidebar's order (Shrink has none: `click` it) |
-| Tidy's changes running, the second queued behind the first | `idle; key alt-cmd-3; key cmd-enter; key alt-cmd-4; wait 1000; key cmd-enter` (Convert, then Clean up: it changes files, so point it only at a copy) |
+| A Tidy page | `idle; key alt-cmd-<n>`, ⌥⌘1–5 in the sidebar's order |
+| Tidy's change running, with Undo queued behind it | `idle; key alt-cmd-1; key cmd-enter; wait 1000; key cmd-z` (Tidy up, then its Undo: it changes files, so point it only at a copy) |
 | Duplicates' Matching popover, a video playing in the loupe | `idle; key alt-cmd-2; click <x>,<y>` on the button or the picture |
 | Duplicates on a later set, with another version kept, in the loupe | `idle; key alt-cmd-2; key s` (each `s` skips a set); `key shift-<n>` keeps version n as well; `key space` opens the loupe; `scroll` or `key pagedown` moves down its versions |
-| The Library's first files selected, with the selection bar | `idle; key alt-cmd-5; key down; key shift-down; key shift-down` |
+| The Library's first files selected, with the selection bar | `idle; key alt-cmd-3; key down; key shift-down; key shift-down` |
 | The Library's inspector, or the other view | `key i`, or `click` the view switch |
 | Quick Look, the folder picker a Move to… opens | In the Library, `key down; key space`, or `key down; key cmd-shift-m` |
-| Holding's files selected, History's newest entry open | `idle; key alt-cmd-7; key cmd-a`, or `idle; key alt-cmd-6; key down; key right` |
+| Holding's files selected, History's newest entry open | `idle; key alt-cmd-5; key cmd-a`, or `idle; key alt-cmd-4; key down; key right` |
 | The sheet that asks whether to forget a folder | `click` the location switcher, then its `Forget “…”…` |
 | View's viewer on its third tile | `idle; key right; key right; key enter` |
 | View's grid scrolled | `idle; scroll 700,400,-1200` |
@@ -241,10 +241,10 @@ shrink like any other, and the sets can be resolved afterwards:
   `source_sha256`): the owner asked for that encode. A larger file that is not its source still
   wins. The reason says so and names the size difference, and the owner can keep the larger copy.
   Whichever goes waits in holding.
-- Shrink's totals count one encode for a set of copies and a hard-linked file's bytes once, and a
-  run's batch never cuts a set of copies in two. Overview's savings leave out copies its duplicate
-  totals would remove, so the two figures add up. Convert and Shrink's own pages count every file
-  they would change.
+- AV1's totals count one encode for a set of copies and a hard-linked file's bytes once, and a
+  Tidy up with AV1 takes a set of copies whole. The Tidy page's saving counts every file it would
+  change, copies included, and says under the figure how much of it is on copies that Duplicates'
+  totals would remove, so the two can be read together.
 
 After every scan and change, background analysis fingerprints every still (a 64-bit perceptual
 hash) and every video and animation (frames at 10, 30, 50, 70 and 90% of its length), and

@@ -11,6 +11,7 @@ icon_assets!(
         ArrowRightLeft,
         ArrowUpDown,
         BookOpen,
+        Clapperboard,
         Clock,
         Copy,
         Download,

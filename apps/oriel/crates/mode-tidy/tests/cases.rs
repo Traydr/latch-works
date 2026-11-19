@@ -14,6 +14,7 @@ use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AppContext as _, TestAppContext};
 use oriel_core_tidy::contract::{FileFilter, FileQuery, FileSortColumn};
 use oriel_mode_tidy::TidyPage;
+use oriel_mode_tidy::state::{CleanPart, ConvertGroup};
 use oriel_ui::ModeId;
 use oriel_ui::toast::last_toast;
 
@@ -86,14 +87,14 @@ async fn a_new_folder_is_scanned_and_overview_lists_what_to_do_with_it(cx: &mut 
         similar.starts_with("3 sets of similar versions"),
         "{similar}"
     );
-    let silent = label(cx, &session, "overview-step-silent").unwrap();
+    let silent = label(cx, &session, "overview-row-silent").unwrap();
     assert!(silent.contains("1 video"), "{silent}");
-    let cleanup = label(cx, &session, "overview-step-cleanup").unwrap();
+    let cleanup = label(cx, &session, "overview-row-cleanup").unwrap();
     for part in ["1 junk file", "1 empty folder", "1 wrong extension"] {
         assert!(cleanup.contains(part), "{cleanup}");
     }
     assert_eq!(
-        description(cx, &session, "overview-step-convert").as_deref(),
+        description(cx, &session, "overview-row-pictures").as_deref(),
         Some("todo")
     );
     // The sidebar counts what each page holds.
@@ -101,9 +102,11 @@ async fn a_new_folder_is_scanned_and_overview_lists_what_to_do_with_it(cx: &mut 
         label(cx, &session, "tidy-badge-duplicates").as_deref(),
         Some("4")
     );
+    // Tidy's counts the files Tidy up would touch, as its button does.
+    let badge = label(cx, &session, "tidy-badge-overview").unwrap();
     assert_eq!(
-        label(cx, &session, "tidy-badge-cleanup").as_deref(),
-        Some("4")
+        label(cx, &session, "overview-tidy-up").as_deref(),
+        Some(format!("Tidy up {badge}").as_str())
     );
 }
 
@@ -393,14 +396,13 @@ async fn return_keeps_the_suggested_copy_and_moves_on_and_undo_brings_the_set_ba
 }
 
 #[gpui_kit::test]
-async fn convert_turns_stills_into_avif_and_video_into_mp4_keeping_dates(cx: &mut TestAppContext) {
+async fn tidy_up_turns_stills_into_avif_and_video_into_mp4_keeping_dates(cx: &mut TestAppContext) {
     let session = launch(cx, "convert");
     add_archive(cx, &session).await;
-    go(cx, &session, TidyPage::Convert);
-    settle(cx, &session).await;
-    click(cx, &session, "convert-run");
+    tidy_only(cx, &session, &ConvertGroup::ALL, &[], false);
+    click(cx, &session, "overview-tidy-up");
     wait_for_change(cx, &session).await;
-    assert!(cx.read(last_toast).unwrap().starts_with("Converted"));
+    assert!(cx.read(last_toast).unwrap().starts_with("Tidied up"));
     for converted in [
         "clips/talk.mp4",
         "clips/scene.mp4",
@@ -413,8 +415,8 @@ async fn convert_turns_stills_into_avif_and_video_into_mp4_keeping_dates(cx: &mu
     assert!(session.archive.join("photos/sunset.avif").is_file());
     assert!(session.archive.join("photos/forest copy.avif").is_file());
     assert_eq!(
-        label(cx, &session, "convert-empty").as_deref(),
-        Some("Nothing left to convert")
+        description(cx, &session, "overview-row-pictures").as_deref(),
+        Some("done")
     );
 }
 
@@ -439,9 +441,10 @@ async fn a_set_open_in_duplicates_follows_a_change_and_keeps_what_the_owner_chos
     assert_eq!(kept.len(), suggested + 1, "the owner keeps another version");
 
     // The change runs with the set on screen.
-    go(cx, &session, TidyPage::Convert);
+    go(cx, &session, TidyPage::Overview);
     settle(cx, &session).await;
-    click(cx, &session, "convert-run");
+    tidy_only(cx, &session, &ConvertGroup::ALL, &[], false);
+    click(cx, &session, "overview-tidy-up");
     go(cx, &session, TidyPage::Duplicates);
     wait_for_change(cx, &session).await;
     settle(cx, &session).await;
@@ -474,11 +477,10 @@ async fn clean_up_fixes_the_extension_holds_the_junk_and_removes_the_empty_folde
 ) {
     let session = launch(cx, "cleanup");
     add_archive(cx, &session).await;
-    go(cx, &session, TidyPage::CleanUp);
-    settle(cx, &session).await;
-    click(cx, &session, "cleanup-run-all");
+    tidy_only(cx, &session, &[], &[CleanPart::CleanUp], false);
+    click(cx, &session, "overview-tidy-up");
     wait_for_change(cx, &session).await;
-    assert!(cx.read(last_toast).unwrap().starts_with("Cleaned up"));
+    assert!(cx.read(last_toast).unwrap().starts_with("Tidied up"));
     assert!(session.archive.join("photos/cover.avif").is_file());
     assert!(!session.archive.join("empty").exists());
     assert!(
@@ -487,8 +489,8 @@ async fn clean_up_fixes_the_extension_holds_the_junk_and_removes_the_empty_folde
             .any(|held| held.ends_with("._sunset.png"))
     );
     assert_eq!(
-        label(cx, &session, "cleanup-empty").as_deref(),
-        Some("Nothing to clean up")
+        description(cx, &session, "overview-row-cleanup").as_deref(),
+        Some("done")
     );
 }
 
@@ -520,15 +522,14 @@ async fn tidy_up_runs_every_step_but_duplicates_as_one_change_and_one_undo_takes
 }
 
 #[gpui_kit::test]
-async fn shrink_re_encodes_a_busy_video_to_av1_and_undo_restores_it(cx: &mut TestAppContext) {
+async fn tidy_up_with_av1_re_encodes_the_videos_and_undo_restores_them(cx: &mut TestAppContext) {
     let session = launch(cx, "shrink");
     add_archive(cx, &session).await;
-    go(cx, &session, TidyPage::Shrink);
-    settle(cx, &session).await;
-    click(cx, &session, "shrink-batch-all");
-    click(cx, &session, "shrink-run");
+    tidy_only(cx, &session, &[ConvertGroup::Videos], &[], true);
+    click(cx, &session, "overview-tidy-up");
     wait_for_change(cx, &session).await;
-    assert!(cx.read(last_toast).unwrap().starts_with("Shrank"));
+    assert!(cx.read(last_toast).unwrap().starts_with("Tidied up"));
+    assert!(!held_files(&session).is_empty());
     undo(cx, &session);
     wait_for_change(cx, &session).await;
     assert!(cx.read(last_toast).unwrap().starts_with("Undid"));
@@ -573,12 +574,10 @@ async fn undo_with_a_file_grown(cx: &mut TestAppContext, session: &Session, rel:
 async fn an_undo_that_does_not_finish_still_rescans(cx: &mut TestAppContext) {
     let session = launch(cx, "partial-undo");
     add_archive(cx, &session).await;
-    go(cx, &session, TidyPage::Shrink);
-    settle(cx, &session).await;
-    click(cx, &session, "shrink-batch-all");
-    click(cx, &session, "shrink-run");
+    tidy_only(cx, &session, &[ConvertGroup::Videos], &[], true);
+    click(cx, &session, "overview-tidy-up");
     wait_for_change(cx, &session).await;
-    assert!(cx.read(last_toast).unwrap().starts_with("Shrank"));
+    assert!(cx.read(last_toast).unwrap().starts_with("Tidied up"));
     let held = held_files(&session);
     let name = held[0].rsplit('/').next().unwrap();
     let (stem, _) = name.rsplit_once('.').unwrap();

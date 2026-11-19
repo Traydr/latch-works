@@ -158,10 +158,16 @@ gnullvm (1 GB with debug info; a release build needs `fxc.exe`), and `package wi
   the data folder>`; a second launch writes its paths into the pipe of the same name and exits, and
   the first opens them in View, or comes to the front when there are none
   (`crates/app/src/single_instance.rs`).
-- **The title bar**: the window draws its own, as on macOS: GPUI Kit's `TitleBar`, with the app's
-  menus in it through GPUI Kit's `AppMenuBar` and the caption buttons Windows hit-tests itself
-  (`windows_frame.rs`). The menus follow Electron Oriel's Windows template: no app menu; File ends
-  with Settings… and Exit; Window has Minimize and Close; Help has About.
+- **The title bar**: there is no separate row; the window draws its top itself, as on macOS
+  (`appears_transparent`). The sidebar's top strip has the app's name. The menus are hidden until
+  Alt, pressed and let go on its own, shows them in a row across the window's top, read from
+  `cx.get_menus()` each time; ← → move along it, ↓, Return or Space opens a menu, and Escape,
+  a second Alt, a command or a press elsewhere hides it again. Each page's top bar (and
+  Settings' header, the viewer and the comic reader) ends with the caption buttons, which Windows
+  hit-tests itself through `WindowControlArea` (`crates/ui/src/window_chrome.rs`). The empty parts
+  of the top bar and the strip drag the window. The menus follow Electron Oriel's Windows
+  template: no app menu; File ends with Settings… and Exit; Window has Minimize and Close; Help
+  has About.
 - **Progress**: the taskbar button's (`ITaskbarList3`) while a push or a Tidy change runs.
 - **Video**: libmpv's software renderer (`hwdec=d3d11va-copy`), each frame a BGRA image GPUI
   draws with `img()`: GPUI's `surface()` is macOS only.
@@ -241,12 +247,19 @@ the detail and the numbers:
       brings the first to the front; a check's run with its own data folder starts beside it.
 - [x] **Setup.exe** (and an upgrade to a local 1.0.1): installs silently (`--silent`) to `%LocalAppData%\Oriel\current`, starts,
       shows About's licences, uninstalls cleanly, and leaves the data folder.
-- [ ] The title bar: double-click to maximize, snap layouts on the maximize button and the menus
-      by mouse work; **the menus by Alt do not** (GPUI Kit's menu bar has no Alt); dragging and the
-      taskbar progress during a push not checked.
+- [x] The window's top since the title row went (2026-11-19, Windows 11): dragging and
+      double-click on the top bar and the sidebar strip, minimize, maximize, restore and close
+      (Settings and the viewer too), and the menu bar Alt shows: ← → move along it, ↓, Return or
+      Space open a menu, a command reaches the page, Escape or a second Alt hides it, Alt chords
+      and Alt+Tab do not show it, and no key is swallowed. **Snap Layouts does not show** (see
+      Known risks). The taskbar progress during a push is not checked.
 
 ## Known risks
 
+- **Snap Layouts.** Hovering Oriel's maximize button shows no Snap Layouts flyout, though the
+  window answers the hit test with the maximize button (`HTMAXBUTTON`). `gpui-fast-windows`
+  0.1.12 marks `WM_NCMOUSEMOVE` over a caption button as handled, so `DefWindowProc`, which shows
+  the flyout, never sees it. The fix is in that crate: pass those moves on to `DefWindowProc`.
 - **Video speed.** Every frame is converted to BGRA on the CPU, copied back from the GPU's decoder,
   and uploaded to a new texture: twice the copies of the macOS path. 1080p60 is likely, 4K is
   not. If it falls short, mpv's D3D11 render API into a shared texture is the next step, which

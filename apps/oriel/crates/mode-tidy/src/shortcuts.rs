@@ -6,10 +6,12 @@ use oriel_ui::shortcuts::{Sheet, ShortcutGroup};
 use crate::quick_look::QUICK_LOOK_LABEL;
 
 const OVERVIEW: ShortcutGroup = (
-    "Overview",
+    "Tidy",
     &[
         ("Move between rows", "up down", None),
-        ("Open a row", "enter", None),
+        ("Open a row", "right", Some("(or enter)")),
+        ("Close a row", "left", None),
+        ("Switch a row on or off", "space", None),
     ],
 );
 

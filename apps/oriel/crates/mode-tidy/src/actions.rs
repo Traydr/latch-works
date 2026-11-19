@@ -15,7 +15,7 @@ use futures::channel::oneshot;
 use gpui_kit::{App, Context, Entity, SharedString, Subscription, Window};
 use oriel_core_domain::format;
 use oriel_core_tidy::contract::{
-    OptimizeCategory, PlanId, PlanKind, PlanListRequest, PlanRequest, PlanStatus, PlanSummary,
+    PlanId, PlanKind, PlanListRequest, PlanRequest, PlanStatus, PlanSummary, TidyUpChoices,
 };
 use oriel_core_tidy::{
     Performed, PlanFailed, PlanRequestError, Queued, TidiedUp, TidyStep, Undone,
@@ -655,11 +655,11 @@ impl TidyState {
         }
     }
 
-    /// Tidy up from Overview: Clean up, then silent soundtracks, then Convert in `categories`, as
-    /// one change with one Undo, remembered for Overview to go on saying what it saved.
+    /// Tidy up: the work `choices` switch on, as one change with one Undo, remembered for the
+    /// Tidy page to go on saying what it saved.
     pub fn tidy_up(
         &mut self,
-        categories: Vec<OptimizeCategory>,
+        choices: TidyUpChoices,
         title: String,
         source: &'static str,
         window: &mut Window,
@@ -668,7 +668,7 @@ impl TidyState {
         let (Some(engine), Some(root_id)) = (self.engine().cloned(), self.root_id()) else {
             return;
         };
-        let work = engine.queue(|engine| engine.tidy_up(root_id, categories));
+        let work = engine.queue(|engine| engine.tidy_up(root_id, choices));
         self.run_steps("Tidy up", work, title, source, true, window, cx);
     }
 

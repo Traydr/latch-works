@@ -32,7 +32,7 @@ use gpui_kit::{
 };
 use oriel_core_domain::format;
 use oriel_ui::TextRole as _;
-use oriel_ui::{ControlSize as _, LocalStorage};
+use oriel_ui::{CaptionButtons, ControlSize as _, LocalStorage};
 
 use crate::CapsulePlayer;
 use crate::chrome::{self, ChromeFade, Fading};
@@ -606,7 +606,8 @@ impl Render for Viewer {
             .when(self.chrome.is_visible(), |this| {
                 this.child(
                     // macOS draws the window buttons over the top left, so the title starts to
-                    // their right; full screen has none.
+                    // their right; full screen has none. Elsewhere the caption buttons are in the
+                    // top right, and the controls stop short of them.
                     div()
                         .absolute()
                         .top_0()
@@ -618,8 +619,12 @@ impl Render for Viewer {
                         .gap_3()
                         .pt_4()
                         .pb_10()
-                        .pr_3()
-                        .pl(px(if fullscreen { 12. } else { 88. }))
+                        .pr(px(12. + CaptionButtons::stage_room(window)))
+                        .pl(px(if fullscreen || !cfg!(target_os = "macos") {
+                            12.
+                        } else {
+                            88.
+                        }))
                         // Black held behind both lines of text, so they read over a white page,
                         // and only then fading out.
                         .bg(linear_gradient(
@@ -706,6 +711,7 @@ impl Render for Viewer {
                                 .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
                         ),
                 )
+                .children(CaptionButtons::over_stage())
                 .child(step_button(
                     "viewer-previous",
                     IconName::ChevronLeft,

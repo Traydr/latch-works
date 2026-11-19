@@ -28,7 +28,7 @@ use oriel_core_tidy::contract::{
     FileFormat, FileId, FileQuery, FileSortColumn, FolderOrder, FolderStanding, HoldingItem,
     HoldingRequest, KeepReason, OptimizeCategory, PlanId, PlanKind, PlanListRequest, PlanRequest,
     PlanStatus, PlanStepAction, PlanStepsRequest, PlanSummary, Rename, ResolveGroup, Root,
-    SimilarityLevel, StepStatus, VideoCodecChoice, VideoQuality,
+    SimilarityLevel, StepStatus, TidyUpChoices, VideoCodecChoice, VideoQuality,
 };
 use oriel_core_tidy::internals::sniff_file;
 use oriel_core_tidy::internals::{
@@ -1593,7 +1593,7 @@ fn tidy_up_runs_every_step_but_duplicates_and_one_undo_takes_it_back() {
     };
     let tidied = bench
         .engine
-        .tidy_up(bench.root.id, CONVERT.to_vec())
+        .tidy_up(bench.root.id, TidyUpChoices::convert(CONVERT.to_vec()))
         .run(&bench.quiet())
         .unwrap();
     bench.follow_up(&tidied.follow_up);
@@ -1746,6 +1746,98 @@ fn shrink_re_encodes_a_busy_video_to_av1_and_undoes() {
         bench.probe("clips/busy.mp4").video_codec.as_deref(),
         Some("h264")
     );
+}
+
+/// With AV1 on, Tidy up encodes a MOV that AV1 shrinks once, straight to AV1 MP4: Convert does
+/// not copy it into MP4 first, so one original is held and no MP4 between the two.
+#[test]
+fn tidy_up_with_av1_encodes_a_mov_once_straight_to_av1_mp4() {
+    let (Some(media), Some(_), Some(ffmpeg)) = (
+        support::media(),
+        oriel_test_archive::media_tools(),
+        oriel_test_archive::ffmpeg(),
+    ) else {
+        return;
+    };
+    let scratch = Scratch::new("tidy-up-av1");
+    let archive = scratch.0.join("shrink-archive");
+    assert!(oriel_test_archive::build_shrink_archive(&archive));
+    let clips = archive.join("clips");
+    let remuxed = std::process::Command::new(ffmpeg)
+        .args(["-y", "-loglevel", "error", "-i"])
+        .arg(clips.join("busy.mp4"))
+        .args(["-c", "copy"])
+        .arg(clips.join("busy.mov"))
+        .status()
+        .unwrap();
+    assert!(remuxed.success());
+    fs::remove_file(clips.join("busy.mp4")).unwrap();
+    let bench = Bench::over(scratch, archive, media, true);
+    let tidied = bench
+        .engine
+        .tidy_up(
+            bench.root.id,
+            TidyUpChoices {
+                categories: CONVERT.to_vec(),
+                clean_up: false,
+                silent: false,
+                av1: true,
+            },
+        )
+        .run(&bench.quiet())
+        .unwrap();
+    bench.follow_up(&tidied.follow_up);
+    assert!(tidied.notes.is_empty(), "{:?}", tidied.notes);
+    let kinds: Vec<PlanKind> = tidied.plans.iter().map(|plan| plan.kind).collect();
+    assert_eq!(kinds.first(), Some(&PlanKind::ShrinkVideos), "{kinds:?}");
+    let now = Tree::of(&bench.archive);
+    assert!(!now.files.contains_key("clips/busy.mov"));
+    assert_eq!(
+        bench.probe("clips/busy.mp4").video_codec.as_deref(),
+        Some("av1")
+    );
+    let held = bench.held_by_original();
+    assert!(held.contains_key("clips/busy.mov"), "{held:?}");
+    assert!(!held.contains_key("clips/busy.mp4"), "{held:?}");
+    bench.assert_holding_agrees();
+
+    bench.undo_and_check(&tidied.undoable(), "Tidy up with AV1");
+}
+
+/// With AV1 on, an animation becomes MP4 after the AV1 step, so AV1 does not encode the MP4 that
+/// Tidy up has just made: the GIF is held once, and nothing in between.
+#[test]
+fn tidy_up_with_av1_converts_an_animation_once() {
+    let Some(bench) = Bench::open("tidy-up-av1-animation") else {
+        return;
+    };
+    if !bench.videos {
+        return;
+    }
+    let tidied = bench
+        .engine
+        .tidy_up(
+            bench.root.id,
+            TidyUpChoices {
+                categories: CONVERT.to_vec(),
+                clean_up: false,
+                silent: false,
+                av1: true,
+            },
+        )
+        .run(&bench.quiet())
+        .unwrap();
+    bench.follow_up(&tidied.follow_up);
+    assert!(tidied.notes.is_empty(), "{:?}", tidied.notes);
+    assert!(
+        Tree::of(&bench.archive)
+            .files
+            .contains_key("clips/loop.mp4")
+    );
+    let held = bench.held_by_original();
+    assert!(held.contains_key("clips/loop.gif"), "{held:?}");
+    assert!(!held.contains_key("clips/loop.mp4"), "{held:?}");
+    bench.assert_holding_agrees();
 }
 
 /// Emptying holding takes its batch folders away (into the sandboxed run's own trash), and what

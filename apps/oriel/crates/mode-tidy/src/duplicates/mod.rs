@@ -3606,7 +3606,7 @@ impl DuplicatesPage {
             Button::new("duplicates-back")
                 .outline()
                 .quiet_edge(cx)
-                .label("Back to Overview")
+                .label("Back to Tidy")
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.state
                         .update(cx, |state, cx| state.go(TidyPage::Overview, cx));

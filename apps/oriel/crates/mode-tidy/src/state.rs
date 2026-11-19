@@ -15,7 +15,7 @@ use gpui_kit::{App, AppContext as _, Context, Entity, SharedString, Subscription
 use oriel_core_paths::DataRoot;
 use oriel_core_tidy::contract::{
     AudioState, CategoryCount, DuplicateScope, EncoderCapabilities, FileFlag, FileFormat, FileKind,
-    OptimizeCategory, PreferredFolder, Root, RootId, Settings, Tidy,
+    OptimizeCategory, PreferredFolder, Root, RootId, Settings, Tidy, TidyUpChoices,
 };
 use oriel_core_tidy::contract::{HoldingList, HoldingRequest};
 use oriel_core_tidy::{AnalysisKind, FollowUp, Progress, TidyEngine};
@@ -35,6 +35,9 @@ use crate::pages::TidyPage;
 const ROOT_KEY: &str = "oriel.tidy.root";
 /// Convert's groups the owner closed, as a JSON array, under Electron Oriel's key.
 const CONVERT_GROUPS_KEY: &str = "glazier.convert-groups";
+/// The rest of Tidy up's switches, as a JSON array of the ones off, and whether videos go to AV1.
+const TIDY_OFF_KEY: &str = "oriel.tidy.off";
+const AV1_KEY: &str = "oriel.tidy.av1";
 
 /// The keys Tidy's jobs have in the activity panel, each followed by the job's number.
 const CHANGE_JOB: &str = "change-";
@@ -76,42 +79,11 @@ impl ConvertGroup {
         }
     }
 
-    pub fn label(self) -> &'static str {
-        match self {
-            ConvertGroup::Pictures => "Pictures → AVIF",
-            ConvertGroup::Animations => "Animations → MP4",
-            ConvertGroup::Videos => "Videos → MP4",
-        }
-    }
-
     pub fn categories(self) -> &'static [OptimizeCategory] {
         match self {
             ConvertGroup::Pictures => &[OptimizeCategory::StillToAvif],
             ConvertGroup::Animations => &[OptimizeCategory::AnimationToMp4],
             ConvertGroup::Videos => &[OptimizeCategory::VideoRemux, OptimizeCategory::VideoConvert],
-        }
-    }
-
-    pub fn nouns(self) -> (&'static str, &'static str) {
-        match self {
-            ConvertGroup::Pictures => ("picture", "pictures"),
-            ConvertGroup::Animations => ("animation", "animations"),
-            ConvertGroup::Videos => ("video", "videos"),
-        }
-    }
-
-    /// The kind of file the group converts, which its "and N more" opens in the Library.
-    pub fn kind(self) -> FileKind {
-        match self {
-            ConvertGroup::Videos => FileKind::Video,
-            _ => FileKind::Image,
-        }
-    }
-
-    pub fn target(self) -> &'static str {
-        match self {
-            ConvertGroup::Pictures => "AVIF",
-            _ => "MP4",
         }
     }
 
@@ -124,6 +96,26 @@ impl ConvertGroup {
             .fold((0, 0), |(files, bytes), entry| {
                 (files + entry.files, bytes + entry.bytes)
             })
+    }
+}
+
+/// Tidy up's switches beside Convert's groups: silent soundtracks, and Clean up's junk, empty
+/// folders and extensions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CleanPart {
+    /// Junk to holding, empty folders removed, wrong extensions fixed.
+    CleanUp,
+    SilentTracks,
+}
+
+impl CleanPart {
+    pub const ALL: [CleanPart; 2] = [CleanPart::SilentTracks, CleanPart::CleanUp];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            CleanPart::CleanUp => "cleanup",
+            CleanPart::SilentTracks => "silent",
+        }
     }
 }
 
@@ -236,6 +228,9 @@ pub struct TidyState {
     requests: Requests,
     request_number: u64,
     convert_groups: BTreeSet<ConvertGroup>,
+    /// The clean-up parts switched off, and whether Tidy up re-encodes videos to AV1.
+    clean_off: BTreeSet<CleanPart>,
+    av1: bool,
     /// Convert's categories whose estimate for the folder on screen has been asked for and not
     /// yet landed, and those whose estimate failed since the catalog last changed.
     estimating: HashSet<OptimizeCategory>,
@@ -294,6 +289,8 @@ impl TidyState {
             .and_then(TidyPage::from_key)
             .unwrap_or(TidyPage::Overview);
         let convert_groups = read_convert_groups(cx);
+        let clean_off = read_clean_off(cx);
+        let av1 = LocalStorage::get(cx, AV1_KEY) == Some("true");
         let opening = {
             let data = data.clone();
             cx.spawn_in(window, async move |this, cx| {
@@ -335,6 +332,8 @@ impl TidyState {
             requests: Requests::default(),
             request_number: 0,
             convert_groups,
+            clean_off,
+            av1,
             estimating: HashSet::new(),
             estimates_failed: HashSet::new(),
         }
@@ -553,6 +552,47 @@ impl TidyState {
             let text = serde_json::to_string(&keys).unwrap_or_else(|_| "[]".into());
             LocalStorage::set(cx, CONVERT_GROUPS_KEY, &text);
             cx.notify();
+        }
+    }
+
+    pub fn clean_part_on(&self, part: CleanPart) -> bool {
+        !self.clean_off.contains(&part)
+    }
+
+    pub fn set_clean_part(&mut self, part: CleanPart, on: bool, cx: &mut Context<Self>) {
+        let changed = if on {
+            self.clean_off.remove(&part)
+        } else {
+            self.clean_off.insert(part)
+        };
+        if changed {
+            let keys: Vec<&str> = self.clean_off.iter().map(|part| part.key()).collect();
+            let text = serde_json::to_string(&keys).unwrap_or_else(|_| "[]".into());
+            LocalStorage::set(cx, TIDY_OFF_KEY, &text);
+            cx.notify();
+        }
+    }
+
+    /// Whether Tidy up re-encodes videos to AV1 (Shrink), rather than keeping their codec.
+    pub fn av1(&self) -> bool {
+        self.av1
+    }
+
+    pub fn set_av1(&mut self, av1: bool, cx: &mut Context<Self>) {
+        if self.av1 != av1 {
+            self.av1 = av1;
+            LocalStorage::set(cx, AV1_KEY, if av1 { "true" } else { "false" });
+            cx.notify();
+        }
+    }
+
+    /// What Tidy up runs, from the switches on. AV1 goes with the videos' switch.
+    pub fn tidy_up_choices(&self) -> TidyUpChoices {
+        TidyUpChoices {
+            categories: self.convert_categories(),
+            clean_up: self.clean_part_on(CleanPart::CleanUp),
+            silent: self.clean_part_on(CleanPart::SilentTracks),
+            av1: self.av1 && self.convert_groups.contains(&ConvertGroup::Videos),
         }
     }
 
@@ -1320,6 +1360,17 @@ impl TidyState {
             Estimate::Known { before, after }
         }
     }
+}
+
+/// The clean-up parts last switched off, none at first.
+fn read_clean_off(cx: &App) -> BTreeSet<CleanPart> {
+    let keys = LocalStorage::get(cx, TIDY_OFF_KEY)
+        .and_then(|text| serde_json::from_str::<Vec<String>>(text).ok())
+        .unwrap_or_default();
+    CleanPart::ALL
+        .into_iter()
+        .filter(|part| keys.iter().any(|key| key == part.key()))
+        .collect()
 }
 
 /// The switches Convert last had on, all three at first.

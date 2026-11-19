@@ -30,12 +30,9 @@ fn in_a_switch_target(element: &ElementSnapshot, elements: &[ElementSnapshot]) -
         })
 }
 
-const TIDY_PAGES: [&str; 8] = [
-    "tidy-Overview",
+const TIDY_PAGES: [&str; 5] = [
+    "tidy-Tidy",
     "tidy-Duplicates",
-    "tidy-Convert",
-    "tidy-Clean up",
-    "tidy-Shrink",
     "tidy-Library",
     "tidy-History",
     "tidy-Holding",

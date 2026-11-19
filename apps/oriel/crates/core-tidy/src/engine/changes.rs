@@ -23,10 +23,11 @@ use super::{AnalysisKind, Inner, Queued, TidyEngine, on_thread};
 use crate::catalog::files::{list_file_ids, roots_of_files};
 use crate::catalog::roots::{list_roots, read_settings};
 use crate::contract::{
-    AudioState, CategoryCount, EmptyHoldingResult, EncoderCapabilities, ExtensionFix, FileFilter,
-    FileId, FileKind, FileRow, HoldingId, HoldingList, HoldingRequest, MAX_HISTORY_ROWS,
-    OptimizeCategory, OptimizeEstimate, OptimizeSummary, PlanId, PlanListRequest, PlanPreview,
-    PlanRequest, PlanStatus, PlanStepPage, PlanStepsRequest, PlanSummary, RootId, VideoQuality,
+    AudioState, CategoryCount, EmptyHoldingResult, EncoderCapabilities, FileFilter, FileId,
+    FileKind, HoldingId, HoldingList, HoldingRequest, MAX_HISTORY_ROWS, OptimizeCategory,
+    OptimizeEstimate, OptimizeSummary, PlanId, PlanListRequest, PlanPreview, PlanRequest,
+    PlanStatus, PlanStepPage, PlanStepsRequest, PlanSummary, RootId, Tidy, TidyUpChoices,
+    VideoQuality,
 };
 use crate::media::convert::{Conversion, Converter, pixels};
 use crate::media::transcode::encoder_capabilities;
@@ -577,47 +578,6 @@ impl TidyEngine {
         })
     }
 
-    /// Every extension Clean up would fix under a root, with the name it would give each file.
-    pub fn extension_fixes(
-        &self,
-        root_id: RootId,
-    ) -> impl Future<Output = anyhow::Result<Vec<ExtensionFix>>> + Send + use<> {
-        self.query(move |inner, connection| {
-            let scan = inner.candidates(connection, root_id)?;
-            Ok(
-                crate::optimize::extension_fixes(connection, root_id, &scan.candidates)?
-                    .into_iter()
-                    .map(|(record, name)| ExtensionFix {
-                        file: record.to_file_row(),
-                        name,
-                    })
-                    .collect(),
-            )
-        })
-    }
-
-    /// The files Convert would change in `categories` under a root, in path order, at most
-    /// `limit` of them: what one of Convert's sections shows.
-    pub fn convertible_files(
-        &self,
-        root_id: RootId,
-        categories: Vec<OptimizeCategory>,
-        limit: usize,
-    ) -> impl Future<Output = anyhow::Result<Vec<FileRow>>> + Send + use<> {
-        self.query(move |inner, connection| {
-            let mut rows: Vec<FileRow> = inner
-                .candidates(connection, root_id)?
-                .candidates
-                .into_iter()
-                .filter(|candidate| categories.contains(&candidate.category))
-                .map(|candidate| candidate.record.to_file_row())
-                .collect();
-            rows.sort_by_cached_key(|row| row.rel_path.to_ascii_lowercase());
-            rows.truncate(limit);
-            Ok(rows)
-        })
-    }
-
     /// What converting a category would save, from a sample converted into a temp folder, never
     /// the archive. Kept while the category holds the same files and bytes at the same video
     /// quality, so asking each time Tidy opens does not encode the samples again; Overview's
@@ -672,11 +632,14 @@ impl TidyEngine {
         })
     }
 
-    /// Tidy up as one change: Clean up, then the silent soundtracks, then Convert in
-    /// `categories` (none for Clean up's own "do all"), each step there is work for, run as
-    /// [`Self::perform_steps`] runs them. Duplicates are not a step: which copy to keep depends
-    /// on where each one is, so the owner decides every set.
-    pub fn tidy_up(&self, root_id: RootId, categories: Vec<OptimizeCategory>) -> Queued<TidiedUp> {
+    /// Tidy up as one change, each step there is work for, run as [`Self::perform_steps`] runs
+    /// them: Clean up, then the silent soundtracks, then Convert in the choices' categories. With
+    /// AV1 on, pictures go first, then the AV1 re-encode, the longest step, and then animations
+    /// and the video categories for the videos it left: a MOV it shrinks is encoded once,
+    /// straight to AV1 MP4, and an animation becomes MP4 after it, so AV1 does not encode that
+    /// MP4 again. Duplicates are not a step: which copy to keep depends on where each one is, so
+    /// the owner decides every set.
+    pub fn tidy_up(&self, root_id: RootId, choices: TidyUpChoices) -> Queued<TidiedUp> {
         let ticket = self
             .inner
             .scheduler
@@ -688,20 +651,7 @@ impl TidyEngine {
             let tidy = inner
                 .catalog
                 .blocking(move |connection| overview_inner.overview(connection, root_id))?;
-            let steps: Vec<TidyStep> = [
-                (tidy.cleanup.count() > 0)
-                    .then_some(TidyStep::Plan(PlanRequest::Cleanup { root_id })),
-                (tidy.silent_tracks.files > 0).then_some(TidyStep::SilentVideos(root_id)),
-                (!categories.is_empty()).then_some(TidyStep::Plan(PlanRequest::Optimize {
-                    root_id,
-                    categories,
-                    file_ids: None,
-                })),
-            ]
-            .into_iter()
-            .flatten()
-            .collect();
-            Ok(inner.perform_steps_locked(steps, turn))
+            Ok(inner.perform_steps_locked(tidy_up_steps(root_id, &tidy, choices), turn))
         })
     }
 
@@ -941,6 +891,44 @@ impl std::fmt::Display for PlanFailed {
 }
 
 impl std::error::Error for PlanFailed {}
+
+/// Tidy up's steps for `tidy`, in the order [`TidyEngine::tidy_up`] gives.
+fn tidy_up_steps(root_id: RootId, tidy: &Tidy, choices: TidyUpChoices) -> Vec<TidyStep> {
+    let optimize = |categories: Vec<OptimizeCategory>| {
+        (!categories.is_empty()).then_some(TidyStep::Plan(PlanRequest::Optimize {
+            root_id,
+            categories,
+            file_ids: None,
+        }))
+    };
+    // Animations become MP4 videos that AV1 would take next, so with AV1 on they go after it,
+    // with the videos, to be encoded once.
+    let (after_av1, pictures): (Vec<_>, Vec<_>) =
+        choices.categories.into_iter().partition(|category| {
+            matches!(
+                category,
+                OptimizeCategory::VideoRemux
+                    | OptimizeCategory::VideoConvert
+                    | OptimizeCategory::AnimationToMp4
+            )
+        });
+    let mut steps = vec![
+        (choices.clean_up && tidy.cleanup.count() > 0)
+            .then_some(TidyStep::Plan(PlanRequest::Cleanup { root_id })),
+        (choices.silent && tidy.silent_tracks.files > 0).then_some(TidyStep::SilentVideos(root_id)),
+    ];
+    if choices.av1 && tidy.shrink.files > 0 {
+        steps.push(optimize(pictures));
+        steps.push(Some(TidyStep::Plan(PlanRequest::ShrinkVideos {
+            root_id,
+            limit_bytes: None,
+        })));
+        steps.push(optimize(after_av1));
+    } else {
+        steps.push(optimize(pictures.into_iter().chain(after_av1).collect()));
+    }
+    steps.into_iter().flatten().collect()
+}
 
 /// Every video of a root measured as silent.
 fn silent_video_ids(connection: &Connection, root_id: RootId) -> anyhow::Result<Vec<FileId>> {

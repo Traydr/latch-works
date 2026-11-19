@@ -895,7 +895,7 @@ impl SettingsSection {
         let mut convert = SettingsGroup::new("Convert").child(
             SettingsRow::new("Video quality")
                 .description(
-                    "Used when a video has to be re-encoded. Shrink's AV1 runs at CRF 40, 35 or 30",
+                    "Used when a video has to be re-encoded. AV1 in Tidy up runs at CRF 40, 35 or 30",
                 )
                 .child(quality),
         );

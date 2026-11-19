@@ -16,7 +16,7 @@ use gpui_kit::component::{ActiveTheme as _, WindowExt as _};
 use gpui_kit::{
     App, AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable, InteractiveElement as _,
     IntoElement, KeyDownEvent, ParentElement as _, Pixels, Render, Styled as _, Subscription, Task,
-    Window, div, px,
+    Window, div, prelude::FluentBuilder as _, px,
 };
 use oriel_core_paths::DataRoot;
 use oriel_launch::{Launch, storage_keys};
@@ -88,6 +88,8 @@ pub struct Shell {
     welcome: Option<(Entity<Welcome>, bool, Subscription)>,
     /// The launch's check opens the activity panel whenever work runs.
     open_activity_on_work: bool,
+    /// The app's menus off macOS, in the row Alt shows across the window's top.
+    menu_bar: Option<Entity<oriel_ui::MenuBar>>,
     pub(crate) spike: Option<crate::spike::ShellSpike>,
     _subscriptions: Vec<Subscription>,
 }
@@ -143,10 +145,14 @@ impl Shell {
                 this.save_window_soon(cx);
             }),
             // However the window comes back (the Dock icon, ⌘-Tab, a file opened with the app),
-            // a quit waiting for work is called off.
+            // a quit waiting for work is called off. An Alt held as the window goes (Alt+Tab, a
+            // launcher's Alt+Space) is let go elsewhere, so it is not the menu bar's: the window
+            // would otherwise see it let go when it comes back, and show the menus.
             cx.observe_window_activation(window, |this, window, cx| {
                 if window.is_window_active() {
                     this.quit.update(cx, |quit, cx| quit.cancel(cx));
+                } else if let Some(bar) = &this.menu_bar {
+                    bar.update(cx, |bar, _| bar.window_deactivated());
                 }
             }),
             cx.on_app_quit(|this, _| {
@@ -202,6 +208,7 @@ impl Shell {
             folder_sources: None,
             welcome: None,
             open_activity_on_work: checks.activity_panel,
+            menu_bar: oriel_ui::MenuBar::for_window(cx),
             spike: crate::spike::ShellSpike::open(&launch.variables),
             _subscriptions: subscriptions,
         };
@@ -602,7 +609,35 @@ impl Render for Shell {
                     window.remove_window();
                 }
             }))
-            .child(content);
+            // Alt let go on its own shows the menu bar; with a key or a press it is a shortcut's.
+            .when_some(self.menu_bar.clone(), |this, bar| {
+                let (keys, presses) = (bar.clone(), bar.clone());
+                this.capture_key_down(move |event: &KeyDownEvent, _, cx| {
+                    let modifier_only = matches!(
+                        event.keystroke.key.as_str(),
+                        "alt" | "shift" | "control" | "platform" | "function"
+                    );
+                    if !modifier_only {
+                        keys.update(cx, |bar, _| bar.interrupt());
+                    }
+                })
+                .capture_any_mouse_down(move |_, _, cx| {
+                    presses.update(cx, |bar, _| bar.interrupt());
+                })
+                .on_modifiers_changed(move |event, window, cx| {
+                    bar.update(cx, |bar, cx| {
+                        bar.on_modifiers_changed(&event.modifiers, window, cx);
+                    });
+                })
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .size_full()
+                    .children(self.menu_bar.clone())
+                    .child(div().flex_1().min_h_0().child(content)),
+            );
         oriel_ui::stand_on_foot(shell, foot, &jobs, window, cx)
     }
 }

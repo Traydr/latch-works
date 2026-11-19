@@ -154,7 +154,7 @@ fn a_folder_tidy_tidies_is_offered_to_view_and_the_modes_hand_files_and_folders_
 
     // Tidy's Overview opens the whole folder in View.
     press(cx, handle, "secondary-2");
-    click(cx, handle, "tidy-Overview");
+    click(cx, handle, "tidy-Tidy");
     click(cx, handle, "overview-open-in-view");
     assert_eq!(title(cx, handle).as_deref(), Some("View – Oriel"));
     wait_until(cx, handle, "View to list the archive again", |cx| {

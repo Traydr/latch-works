@@ -1,6 +1,7 @@
 //! The 60 px bar at the top of a mode's content: the sidebar's compact toggle first, then the
-//! page's title, then the page's own controls. VoiceOver reads it as the page's toolbar, named
-//! after the page, with the title as its heading.
+//! page's title, then the page's own controls, and off macOS the window's caption buttons at the
+//! end. VoiceOver reads it as the page's toolbar, named after the page, with the title as its
+//! heading.
 
 use gpui_kit::component::{
     ActiveTheme as _, Icon,
@@ -16,6 +17,7 @@ use crate::controls::ControlSize as _;
 use crate::controls::TextRole as _;
 use crate::drag::DragStrip;
 use crate::shell::ShellState;
+use crate::window_chrome::CaptionButtons;
 
 pub const TOP_BAR_HEIGHT: f32 = 60.;
 
@@ -91,27 +93,33 @@ impl RenderOnce for TopBar {
         };
         let toggle_tooltip = crate::keys::labelled(toggle_label, crate::keys::SIDEBAR);
 
-        DragStrip::new("top-bar")
+        let bar = DragStrip::new("top-bar")
             .accessible(Role::Toolbar, self.title.clone())
             .flex()
             .flex_row()
             .items_center()
-            .flex_shrink_0()
-            .h(px(TOP_BAR_HEIGHT))
+            .flex_1()
+            .min_w_0()
+            .h_full()
             .px_3()
             .gap_2()
-            .border_b_1()
-            .border_color(cx.theme().border)
             .child(
                 // The bar's size in the house scale, the owner having found smaller ones too small
-                // beside the title.
-                Button::new("toggle-sidebar")
-                    .ghost()
-                    .bar_size()
-                    .icon(Icon::new(toggle_icon))
-                    .accessibility_label(toggle_label)
-                    .tooltip(toggle_tooltip)
-                    .on_click(move |_, _, cx| shell.update(cx, |shell, cx| shell.toggle_rail(cx))),
+                // beside the title. A press on it must not move the window.
+                div()
+                    .flex_shrink_0()
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .child(
+                        Button::new("toggle-sidebar")
+                            .ghost()
+                            .bar_size()
+                            .icon(Icon::new(toggle_icon))
+                            .accessibility_label(toggle_label)
+                            .tooltip(toggle_tooltip)
+                            .on_click(move |_, _, cx| {
+                                shell.update(cx, |shell, cx| shell.toggle_rail(cx))
+                            }),
+                    ),
             )
             .child(
                 div()
@@ -164,6 +172,18 @@ impl RenderOnce for TopBar {
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .when(!narrow, |this| this.children(self.quiet))
                     .children(self.trailing),
-            )
+            );
+
+        // Off macOS the caption buttons end the bar, at the window's top right. They sit beside
+        // the strip that moves the window, not in it, so Windows hit-tests them as its own.
+        div()
+            .flex()
+            .flex_row()
+            .flex_shrink_0()
+            .h(px(TOP_BAR_HEIGHT))
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(bar)
+            .children(CaptionButtons::for_window())
     }
 }
