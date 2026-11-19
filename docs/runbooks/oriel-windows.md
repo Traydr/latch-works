@@ -247,13 +247,19 @@ the detail and the numbers:
       brings the first to the front; a check's run with its own data folder starts beside it.
 - [x] **Setup.exe** (and an upgrade to a local 1.0.1): installs silently (`--silent`) to `%LocalAppData%\Oriel\current`, starts,
       shows About's licences, uninstalls cleanly, and leaves the data folder.
-- [ ] The window's top since the title row went: dragging and double-click on the top bar and
-      the sidebar strip, snap layouts on the maximize button, minimize, restore and close, the menu
-      bar Alt shows (its keys, the mouse, and its commands reaching the page; Alt must not also open
-      the system menu), the caption buttons over the viewer, and the taskbar progress during a push.
+- [x] The window's top since the title row went (2026-11-19, Windows 11): dragging and
+      double-click on the top bar and the sidebar strip, minimize, maximize, restore and close
+      (Settings and the viewer too), and the menu bar Alt shows: ← → move along it, ↓, Return or
+      Space open a menu, a command reaches the page, Escape or a second Alt hides it, Alt chords
+      and Alt+Tab do not show it, and no key is swallowed. **Snap Layouts does not show** (see
+      Known risks). The taskbar progress during a push is not checked.
 
 ## Known risks
 
+- **Snap Layouts.** Hovering Oriel's maximize button shows no Snap Layouts flyout, though the
+  window answers the hit test with the maximize button (`HTMAXBUTTON`). `gpui-fast-windows`
+  0.1.12 marks `WM_NCMOUSEMOVE` over a caption button as handled, so `DefWindowProc`, which shows
+  the flyout, never sees it. The fix is in that crate: pass those moves on to `DefWindowProc`.
 - **Video speed.** Every frame is converted to BGRA on the CPU, copied back from the GPU's decoder,
   and uploaded to a new texture: twice the copies of the macOS path. 1080p60 is likely, 4K is
   not. If it falls short, mpv's D3D11 render API into a shared texture is the next step, which

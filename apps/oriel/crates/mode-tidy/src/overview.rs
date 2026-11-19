@@ -507,12 +507,23 @@ impl OverviewPage {
         let display = if saved > 0. {
             format::bytes(saved)
         } else {
-            format!("{} to tidy", format::plural(files, "file"))
+            format!("{} to make", format::plural(files, "change"))
         };
         let note = format!(
-            "{} · everything goes to holding first and can be undone",
-            format::plural(files, "file")
+            "{} · one Undo takes them all back",
+            format::plural(files, "change")
         );
+        // How much of the saving is on copies a duplicate set would remove, which Duplicates'
+        // own totals count in full.
+        let on_copies = (!tidying && saved > 0.)
+            .then(|| plan::on_copies(state, data, &rows))
+            .filter(|bytes| *bytes > 0.)
+            .map(|bytes| {
+                format!(
+                    "About {} of this is on copies Duplicates would remove",
+                    format::bytes(bytes)
+                )
+            });
         let av1 = rows
             .iter()
             .any(|work| work.row == PlanRow::Videos && work.on && state.av1() && work.todo())
@@ -629,7 +640,16 @@ impl OverviewPage {
                                 this.child(Spinner::new().small())
                             }),
                     )
-                    .child(widgets::caption(note, cx).mt(px(6.))),
+                    .child(widgets::caption(note, cx).mt(px(6.)))
+                    .when_some(on_copies, |this, on_copies| {
+                        this.child(
+                            div()
+                                .id("overview-on-copies")
+                                .test_support()
+                                .aria_label(SharedString::from(on_copies.clone()))
+                                .child(widgets::caption(on_copies, cx).mt_0p5()),
+                        )
+                    }),
             )
             .child(
                 div()
@@ -668,8 +688,9 @@ impl OverviewPage {
             PlanRow::Videos => {
                 let caption = if state.av1() && work.files > 0 {
                     format!(
-                        "{} · AV1, one encode each, even from MOV",
-                        format::plural(work.files, "video")
+                        "{} · {} encoded once to AV1, even from MOV",
+                        format::plural(work.files, "video"),
+                        format::count(plan::video_split(state, data).to_av1)
                     )
                 } else if work.files > 0 {
                     format!(
@@ -902,7 +923,8 @@ impl OverviewPage {
         let state = self.state.read(cx);
         let mut lines: Vec<String> = Vec::new();
         let mut warning: Option<&'static str> = None;
-        let preset = match work.row {
+        // Each link opens the Library on some of the row's files.
+        let presets: Vec<(&'static str, &'static str, LibraryPreset)> = match work.row {
             PlanRow::Videos => {
                 let split = plan::video_split(state, data);
                 if split.to_av1 > 0 {
@@ -950,27 +972,46 @@ impl OverviewPage {
                 {
                     warning = Some("No H.264 encoder on this machine");
                 }
-                LibraryPreset {
-                    kinds: vec![FileKind::Video],
-                    flags: vec![FileFlag::Convertible],
-                    ..LibraryPreset::default()
-                }
+                // AV1 takes MP4s too, which are not Convert's, so with it on every video shows.
+                let flags = if state.av1() {
+                    Vec::new()
+                } else {
+                    vec![FileFlag::Convertible]
+                };
+                vec![(
+                    "library",
+                    "Show in Library",
+                    LibraryPreset {
+                        kinds: vec![FileKind::Video],
+                        flags,
+                        ..LibraryPreset::default()
+                    },
+                )]
             }
             PlanRow::Pictures => {
                 lines.push("AVIF at quality 70 · HEIC and TIFF stay as they are".into());
-                LibraryPreset {
-                    kinds: vec![FileKind::Image],
-                    flags: vec![FileFlag::Convertible],
-                    ..LibraryPreset::default()
-                }
+                vec![(
+                    "library",
+                    "Show in Library",
+                    LibraryPreset {
+                        kinds: vec![FileKind::Image],
+                        flags: vec![FileFlag::Convertible],
+                        formats: vec![FileFormat::Jpeg, FileFormat::Png, FileFormat::Bmp],
+                        ..LibraryPreset::default()
+                    },
+                )]
             }
             PlanRow::Animations => {
                 lines.push("GIFs and animated WebP become MP4 that loop".into());
-                LibraryPreset {
-                    kinds: vec![FileKind::Image],
-                    flags: vec![FileFlag::Convertible],
-                    ..LibraryPreset::default()
-                }
+                vec![(
+                    "library",
+                    "Show in Library",
+                    LibraryPreset {
+                        flags: vec![FileFlag::Convertible],
+                        formats: vec![FileFormat::Gif, FileFormat::Webp],
+                        ..LibraryPreset::default()
+                    },
+                )]
             }
             PlanRow::SilentTracks => {
                 lines.push("Soundtracks measured as pure silence are taken out".into());
@@ -982,11 +1023,15 @@ impl OverviewPage {
                         format::count(analysis.sound_measurable)
                     ));
                 }
-                LibraryPreset {
-                    kinds: vec![FileKind::Video],
-                    audio_states: vec![AudioState::Silent],
-                    ..LibraryPreset::default()
-                }
+                vec![(
+                    "library",
+                    "Show in Library",
+                    LibraryPreset {
+                        kinds: vec![FileKind::Video],
+                        audio_states: vec![AudioState::Silent],
+                        ..LibraryPreset::default()
+                    },
+                )]
             }
             PlanRow::CleanUp => {
                 let cleanup = &data.cleanup;
@@ -1008,14 +1053,23 @@ impl OverviewPage {
                         format::plural(cleanup.extensions, "wrong extension")
                     ));
                 }
-                LibraryPreset {
-                    flags: vec![if cleanup.junk > 0 {
-                        FileFlag::Junk
-                    } else {
-                        FileFlag::ExtensionMismatch
-                    }],
+                let flagged = |flag| LibraryPreset {
+                    flags: vec![flag],
                     ..LibraryPreset::default()
-                }
+                };
+                [
+                    (cleanup.junk > 0).then(|| ("junk", "Show junk", flagged(FileFlag::Junk))),
+                    (cleanup.extensions > 0).then(|| {
+                        (
+                            "extensions",
+                            "Show wrong extensions",
+                            flagged(FileFlag::ExtensionMismatch),
+                        )
+                    }),
+                ]
+                .into_iter()
+                .flatten()
+                .collect()
             }
         };
         let key = work.row.key();
@@ -1039,17 +1093,21 @@ impl OverviewPage {
                 )
             })
             .child(
-                div().child(
-                    Button::new(SharedString::from(format!("overview-library-{key}")))
-                        .text()
-                        .row_size()
-                        .label("Show in Library")
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            let preset = preset.clone();
-                            this.state
-                                .update(cx, |state, cx| state.open_library(preset, cx));
-                        })),
-                ),
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_3()
+                    .children(presets.into_iter().map(|(id, label, preset)| {
+                        Button::new(SharedString::from(format!("overview-{id}-{key}")))
+                            .text()
+                            .row_size()
+                            .label(label)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                let preset = preset.clone();
+                                this.state
+                                    .update(cx, |state, cx| state.open_library(preset, cx));
+                            }))
+                    })),
             )
             .into_any_element()
     }

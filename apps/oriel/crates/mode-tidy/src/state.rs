@@ -1322,6 +1322,12 @@ impl TidyState {
         self.estimate_of(categories, |entry| entry.bytes)
     }
 
+    /// [`Self::estimate`] for what stays once the open duplicate sets' suggestions are taken: the
+    /// difference is what converting would save on copies those sets would remove.
+    pub fn estimate_beside_duplicates(&self, categories: &[OptimizeCategory]) -> Estimate {
+        self.estimate_of(categories, |entry| entry.bytes - entry.duplicate_bytes)
+    }
+
     fn estimate_of(
         &self,
         categories: &[OptimizeCategory],

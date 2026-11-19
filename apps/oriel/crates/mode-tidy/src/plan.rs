@@ -247,8 +247,37 @@ pub fn video_split(state: &TidyState, tidy: &Tidy) -> VideoSplit {
     }
 }
 
-/// What Tidy up would do with the switches as they are: the files it touches and the saving, and
-/// whether part of the saving is still being estimated.
+/// Of the saving on the rows switched on, what is on copies the open duplicate sets would remove,
+/// whose whole size Duplicates' own totals count: reading the two together counts nothing twice.
+pub fn on_copies(state: &TidyState, tidy: &Tidy, rows: &[RowWork]) -> f64 {
+    rows.iter()
+        .filter(|work| work.on && work.todo())
+        .map(|work| match work.row {
+            PlanRow::Videos if state.av1() => tidy.shrink.duplicate_saving as f64,
+            PlanRow::Videos | PlanRow::Pictures | PlanRow::Animations => {
+                let categories = work.row.group().map_or(&[][..], ConvertGroup::categories);
+                match (
+                    state.estimate(categories),
+                    state.estimate_beside_duplicates(categories),
+                ) {
+                    (
+                        Estimate::Known { before, after },
+                        Estimate::Known {
+                            before: b,
+                            after: a,
+                        },
+                    ) => ((before - after) - (b - a)).max(0.),
+                    _ => 0.,
+                }
+            }
+            PlanRow::SilentTracks | PlanRow::CleanUp => 0.,
+        })
+        .sum()
+}
+
+/// What Tidy up would do with the switches as they are: the changes it makes (a file converted
+/// and stripped of a silent soundtrack is two, an empty folder or a renamed file one each) and the
+/// saving, and whether part of the saving is still being estimated.
 pub fn totals(rows: &[RowWork]) -> (i64, f64, bool) {
     rows.iter()
         .filter(|work| work.on)

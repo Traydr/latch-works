@@ -571,14 +571,6 @@ pub struct CategoryCount {
     pub estimate: Option<OptimizeEstimate>,
 }
 
-/// A file whose extension Clean up would fix, and the name it would give it: AVIF and MP4 under
-/// their own extension, anything else under its format's when the one it has is wrong.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ExtensionFix {
-    pub file: FileRow,
-    pub name: String,
-}
-
 /// How many files one reason left out of Convert or Shrink.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SkipCount {

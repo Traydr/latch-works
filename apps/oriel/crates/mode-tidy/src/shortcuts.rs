@@ -9,7 +9,8 @@ const OVERVIEW: ShortcutGroup = (
     "Tidy",
     &[
         ("Move between rows", "up down", None),
-        ("Open or close a row", "right left", Some("(or enter)")),
+        ("Open a row", "right", Some("(or enter)")),
+        ("Close a row", "left", None),
         ("Switch a row on or off", "space", None),
     ],
 );

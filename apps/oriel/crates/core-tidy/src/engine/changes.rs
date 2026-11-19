@@ -23,11 +23,11 @@ use super::{AnalysisKind, Inner, Queued, TidyEngine, on_thread};
 use crate::catalog::files::{list_file_ids, roots_of_files};
 use crate::catalog::roots::{list_roots, read_settings};
 use crate::contract::{
-    AudioState, CategoryCount, EmptyHoldingResult, EncoderCapabilities, ExtensionFix, FileFilter,
-    FileId, FileKind, FileRow, HoldingId, HoldingList, HoldingRequest, MAX_HISTORY_ROWS,
-    OptimizeCategory, OptimizeEstimate, OptimizeSummary, PlanId, PlanListRequest, PlanPreview,
-    PlanRequest, PlanStatus, PlanStepPage, PlanStepsRequest, PlanSummary, RootId, Tidy,
-    TidyUpChoices, VideoQuality,
+    AudioState, CategoryCount, EmptyHoldingResult, EncoderCapabilities, FileFilter, FileId,
+    FileKind, HoldingId, HoldingList, HoldingRequest, MAX_HISTORY_ROWS, OptimizeCategory,
+    OptimizeEstimate, OptimizeSummary, PlanId, PlanListRequest, PlanPreview, PlanRequest,
+    PlanStatus, PlanStepPage, PlanStepsRequest, PlanSummary, RootId, Tidy, TidyUpChoices,
+    VideoQuality,
 };
 use crate::media::convert::{Conversion, Converter, pixels};
 use crate::media::transcode::encoder_capabilities;
@@ -575,47 +575,6 @@ impl TidyEngine {
             };
             let emptied = mark_batches_emptied(store, root_id, &trashed)?;
             Ok(EmptyHoldingResult { emptied, failed })
-        })
-    }
-
-    /// Every extension Clean up would fix under a root, with the name it would give each file.
-    pub fn extension_fixes(
-        &self,
-        root_id: RootId,
-    ) -> impl Future<Output = anyhow::Result<Vec<ExtensionFix>>> + Send + use<> {
-        self.query(move |inner, connection| {
-            let scan = inner.candidates(connection, root_id)?;
-            Ok(
-                crate::optimize::extension_fixes(connection, root_id, &scan.candidates)?
-                    .into_iter()
-                    .map(|(record, name)| ExtensionFix {
-                        file: record.to_file_row(),
-                        name,
-                    })
-                    .collect(),
-            )
-        })
-    }
-
-    /// The files Convert would change in `categories` under a root, in path order, at most
-    /// `limit` of them: what one of Convert's sections shows.
-    pub fn convertible_files(
-        &self,
-        root_id: RootId,
-        categories: Vec<OptimizeCategory>,
-        limit: usize,
-    ) -> impl Future<Output = anyhow::Result<Vec<FileRow>>> + Send + use<> {
-        self.query(move |inner, connection| {
-            let mut rows: Vec<FileRow> = inner
-                .candidates(connection, root_id)?
-                .candidates
-                .into_iter()
-                .filter(|candidate| categories.contains(&candidate.category))
-                .map(|candidate| candidate.record.to_file_row())
-                .collect();
-            rows.sort_by_cached_key(|row| row.rel_path.to_ascii_lowercase());
-            rows.truncate(limit);
-            Ok(rows)
         })
     }
 

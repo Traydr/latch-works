@@ -241,10 +241,10 @@ shrink like any other, and the sets can be resolved afterwards:
   `source_sha256`): the owner asked for that encode. A larger file that is not its source still
   wins. The reason says so and names the size difference, and the owner can keep the larger copy.
   Whichever goes waits in holding.
-- Shrink's totals count one encode for a set of copies and a hard-linked file's bytes once, and a
-  run's batch never cuts a set of copies in two. Overview's savings leave out copies its duplicate
-  totals would remove, so the two figures add up. Convert and Shrink's own pages count every file
-  they would change.
+- AV1's totals count one encode for a set of copies and a hard-linked file's bytes once, and a
+  Tidy up with AV1 takes a set of copies whole. The Tidy page's saving counts every file it would
+  change, copies included, and says under the figure how much of it is on copies that Duplicates'
+  totals would remove, so the two can be read together.
 
 After every scan and change, background analysis fingerprints every still (a 64-bit perceptual
 hash) and every video and animation (frames at 10, 30, 50, 70 and 90% of its length), and

@@ -4,8 +4,10 @@
 //! buttons over the sidebar's strip and the menus in the menu bar, so neither part draws there.
 //!
 //! On Windows the caption buttons draw nothing but their look: each is a window control area,
-//! which Windows hit-tests itself, so it presses them, shows Snap Layouts over maximize, and
-//! closes the window as its own buttons would. They must not sit inside a [`DragStrip`]: GPUI
+//! which Windows hit-tests itself, so it presses them and closes the window as its own buttons
+//! would. Snap Layouts does not show over maximize yet: `gpui-fast-windows` marks the mouse moves
+//! over these areas as handled, so Windows' default handling, which shows the flyout, never
+//! sees them (`docs/runbooks/oriel-windows.md`, "Known risks"). They must not sit inside a [`DragStrip`]: GPUI
 //! answers a hit test with the first control area under the pointer in paint order, which would be
 //! the strip's.
 //!
