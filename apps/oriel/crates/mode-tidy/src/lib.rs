@@ -1,9 +1,9 @@
-//! Tidy: Overview is home. Duplicates, Convert and Clean up are the work, in any order, and Shrink
-//! is the optional AV1 re-encode beside them; Library and History are the archive; Holding sits at
-//! the foot of the sidebar, on `oriel-core-tidy`'s engine.
+//! Tidy: the Tidy page is home, one plan for converting, cleaning up and re-encoding to AV1 with
+//! one Tidy up, and Duplicates sits beside it, as the owner decides every set; Library and History
+//! are the archive; Holding sits at the foot of the sidebar, on `oriel-core-tidy`'s engine.
 //!
 //! [`TidyMode`] is the mode's root: the sidebar, the page on screen, Tidy's commands (Add
-//! Folder…, Rescan, Undo, Select All, Find, the pages on ⌥⌘1–7) and the folder picker. What the
+//! Folder…, Rescan, Undo, Select All, Find, the pages on ⌥⌘1–5) and the folder picker. What the
 //! pages share lives in [`TidyState`]: every scan, analysis and change is a job running one of the
 //! engine's operations, whose queue decides when each runs, and the state reports them to the
 //! shell's activity panel. What Tidy hands the other modes, and takes from them, goes through the
@@ -15,8 +15,6 @@
 
 mod actions;
 mod check;
-mod cleanup;
-mod convert;
 pub mod duplicates;
 mod folder_picker;
 mod history;
@@ -28,11 +26,11 @@ mod loaded;
 mod overview;
 mod page_spike;
 mod pages;
+mod plan;
 mod quick_look;
 mod selection;
 mod settings;
 mod shortcuts;
-mod shrink;
 mod sidebar;
 mod spike;
 pub mod state;
@@ -67,12 +65,9 @@ use oriel_ui::{
     ModeReporter, OfferedFolders, ShellState, TextRole as _, TopBar,
 };
 
-use crate::cleanup::CleanupPage;
-use crate::convert::ConvertPage;
 use crate::folder_picker::PickOptions;
 use crate::history::HistoryPage;
 use crate::overview::OverviewPage;
-use crate::shrink::ShrinkPage;
 use crate::synthetic::{SyntheticLibrary, synthetic_rows};
 use crate::thumbs::Thumbs;
 
@@ -104,9 +99,6 @@ pub struct TidyMode {
     thumbs: Entity<Thumbs>,
     overview: Entity<OverviewPage>,
     duplicates: Entity<DuplicatesPage>,
-    convert: Entity<ConvertPage>,
-    cleanup: Entity<CleanupPage>,
-    shrink: Entity<ShrinkPage>,
     library: Entity<LibraryPage>,
     history: Entity<HistoryPage>,
     holding: Entity<HoldingPage>,
@@ -144,9 +136,6 @@ impl TidyMode {
         let thumbs = cx.new(|_| Thumbs::new());
         let overview = cx.new(|cx| OverviewPage::new(&state, &thumbs, cx));
         let duplicates = cx.new(|cx| DuplicatesPage::new(&state, &thumbs, cx));
-        let convert = cx.new(|cx| ConvertPage::new(&state, &thumbs, cx));
-        let cleanup = cx.new(|cx| CleanupPage::new(&state, &thumbs, cx));
-        let shrink = cx.new(|cx| ShrinkPage::new(&state, &thumbs, cx));
         let library = cx.new(|cx| LibraryPage::new(&state, &thumbs, window, cx));
         let history = cx.new(|cx| HistoryPage::new(&state, &thumbs, cx));
         let holding = cx.new(|cx| HoldingPage::new(&state, &thumbs, cx));
@@ -207,9 +196,6 @@ impl TidyMode {
             thumbs,
             overview,
             duplicates,
-            convert,
-            cleanup,
-            shrink,
             library,
             history,
             holding,
@@ -313,9 +299,6 @@ impl TidyMode {
             }
             TidyPage::Overview => view(&self.overview, cx),
             TidyPage::Duplicates => view(&self.duplicates, cx),
-            TidyPage::Convert => view(&self.convert, cx),
-            TidyPage::CleanUp => view(&self.cleanup, cx),
-            TidyPage::Shrink => view(&self.shrink, cx),
             TidyPage::Library => view(&self.library, cx),
             TidyPage::History => view(&self.history, cx),
             TidyPage::Holding => view(&self.holding, cx),
@@ -351,18 +334,11 @@ impl TidyMode {
         }
     }
 
-    /// ⌘↩: the main action of the page on screen, where it has one.
+    /// ⌘↩: the main action of the page on screen, where it has one: Tidy up.
     fn run_main_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        match self.state.read(cx).page() {
-            TidyPage::Overview => self
-                .overview
-                .update(cx, |page, cx| page.tidy_up(window, cx)),
-            TidyPage::Convert => self.convert.update(cx, |page, cx| page.convert(window, cx)),
-            TidyPage::CleanUp => self
-                .cleanup
-                .update(cx, |page, cx| page.clean_up(window, cx)),
-            TidyPage::Shrink => self.shrink.update(cx, |page, cx| page.shrink(window, cx)),
-            _ => {}
+        if self.state.read(cx).page() == TidyPage::Overview {
+            self.overview
+                .update(cx, |page, cx| page.tidy_up(window, cx));
         }
     }
 

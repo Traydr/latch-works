@@ -69,13 +69,13 @@ fn starts_in_view_and_switches_modes_from_the_switcher_and_the_menu(cx: &mut Tes
 
     click(cx, handle, "mode-Tidy");
     assert_eq!(mode(&opened, cx), ModeId::Tidy);
-    assert!(is_drawn(cx, handle, "tidy-Overview"));
+    assert!(is_drawn(cx, handle, "tidy-Tidy"));
 
     choose_from_menu(cx, handle, "View", "Sync");
     assert_eq!(mode(&opened, cx), ModeId::Sync);
     assert_eq!(title(cx, handle).as_deref(), Some("Sync – Oriel"));
     assert!(
-        !is_drawn(cx, handle, "tidy-Overview"),
+        !is_drawn(cx, handle, "tidy-Tidy"),
         "Tidy is drawn while hidden"
     );
 
@@ -390,7 +390,7 @@ fn one_settings_page_at_the_section_of_the_mode_on_screen(cx: &mut TestAppContex
     press(cx, handle, "escape");
     assert!(!is_drawn(cx, handle, "settings-back"));
     assert_eq!(mode(&opened, cx), ModeId::Tidy);
-    assert!(is_drawn(cx, handle, "tidy-Overview"));
+    assert!(is_drawn(cx, handle, "tidy-Tidy"));
 }
 
 #[gpui_kit::test]
@@ -678,14 +678,14 @@ fn voiceover_reads_the_switcher_the_sidebar_and_the_top_bar_by_name(cx: &mut Tes
             (library.role(), library.label(), library.selected()),
             (Some(Role::Button), Some("Library"), Some(false))
         );
-        assert_eq!(window.find("tidy-Overview").selected(), Some(true));
+        assert_eq!(window.find("tidy-Tidy").selected(), Some(true));
         let settings = window.find("settings-item");
         assert_eq!(settings.label(), Some("Settings"));
 
         let top_bar = window.find("top-bar");
         assert_eq!(
             (top_bar.role(), top_bar.label()),
-            (Some(Role::Toolbar), Some("Overview"))
+            (Some(Role::Toolbar), Some("Tidy"))
         );
         let heading = window.find("top-bar-title");
         assert_eq!(heading.role(), Some(Role::Heading));

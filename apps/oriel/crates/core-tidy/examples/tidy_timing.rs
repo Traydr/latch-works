@@ -30,7 +30,7 @@ use futures::executor::block_on;
 use oriel_core_paths::DataRoot;
 use oriel_core_tidy::contract::{
     DuplicateScope, DuplicateSetRequest, OptimizeCategory, PlanRequest, PlanSummary,
-    SimilarityLevel,
+    SimilarityLevel, TidyUpChoices,
 };
 use oriel_core_tidy::internals::FINGERPRINT_VERSION;
 use oriel_core_tidy::internals::FINGERPRINTABLE_SQL;
@@ -456,12 +456,14 @@ fn make_changes(engine: &TidyEngine, root_id: i64, timed: &Timed) {
             engine
                 .tidy_up(
                     root_id,
-                    [
-                        OptimizeCategory::StillToAvif,
-                        OptimizeCategory::RenameAvif,
-                        OptimizeCategory::RenameMp4,
-                    ]
-                    .to_vec(),
+                    TidyUpChoices::convert(
+                        [
+                            OptimizeCategory::StillToAvif,
+                            OptimizeCategory::RenameAvif,
+                            OptimizeCategory::RenameMp4,
+                        ]
+                        .to_vec(),
+                    ),
                 )
                 .run(timed)
                 .unwrap()

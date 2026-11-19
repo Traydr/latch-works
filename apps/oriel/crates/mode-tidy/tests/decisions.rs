@@ -151,25 +151,6 @@ async fn clicking_a_copy_row_to_close_a_menu_only_closes_it(cx: &mut TestAppCont
     assert!(!held_files(&session).is_empty());
 }
 
-#[gpui_kit::test]
-async fn clicking_convert_to_close_its_options_only_closes_them(cx: &mut TestAppContext) {
-    if !media_ready() {
-        return;
-    }
-    let session = launch(cx, "press-convert");
-    add_archive(cx, &session).await;
-    go(cx, &session, TidyPage::Convert);
-    settle(cx, &session).await;
-    click(cx, &session, "convert-options");
-    assert!(popup_open(cx), "the menu is open");
-    click(cx, &session, "convert-run");
-    settle(cx, &session).await;
-    assert!(held_files(&session).is_empty(), "nothing converted");
-    click(cx, &session, "convert-run");
-    wait_for_change(cx, &session).await;
-    assert!(cx.read(last_toast).unwrap().starts_with("Converted"));
-}
-
 /// A press inside a menu is the menu's, and is not taken for one outside it: its first item, Look
 /// closer, opens the loupe.
 #[gpui_kit::test]

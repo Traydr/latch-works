@@ -101,11 +101,6 @@ pub struct Read {
 }
 
 impl PageReads {
-    /// Reads again at the next chance, as a page's Try again asks.
-    pub fn forget(&mut self) {
-        self.seen = (None, 0);
-    }
-
     /// Whether `page` reads now; if so it counts as read. `None` while another page is on
     /// screen, nothing changed, or the engine has no folder to read yet.
     pub fn due(&mut self, page: TidyPage, state: &TidyState) -> Option<Read> {

@@ -1,5 +1,6 @@
 //! Tidy's sidebar: the folder on screen with its menu, the pages in
-//! order under "To do" and "Archive" with their counts, and Holding at the foot. What runs shows
+//! order, Tidy and Duplicates first and then "Archive", with their counts, and Holding at the
+//! foot. What runs shows
 //! in the shell's activity panel, at the window's bottom right.
 
 use std::path::Path;
@@ -12,7 +13,7 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px,
 };
 use oriel_core_domain::format;
-use oriel_core_tidy::contract::{OptimizeCategory, Root, Tidy};
+use oriel_core_tidy::contract::Root;
 use oriel_ui::ModeId;
 use oriel_ui::TextRole as _;
 use oriel_ui::layout::NavItem;
@@ -20,26 +21,6 @@ use oriel_ui::locations::{LocationItem, LocationSwitcher, location_id, shared_lo
 
 use crate::pages::{PageGroup, TidyPage};
 use crate::state::TidyState;
-
-/// The files Convert would change, without the extension fixes Clean up makes.
-pub fn convert_count(tidy: &Tidy) -> i64 {
-    tidy.convert
-        .categories
-        .iter()
-        .filter(|entry| {
-            !matches!(
-                entry.category,
-                OptimizeCategory::RenameAvif | OptimizeCategory::RenameMp4
-            )
-        })
-        .map(|entry| entry.files)
-        .sum()
-}
-
-/// Everything Clean up would do: silent soundtracks, junk, empty folders and wrong extensions.
-pub fn cleanup_count(tidy: &Tidy) -> i64 {
-    tidy.silent_tracks.files + tidy.cleanup.count()
-}
 
 fn counted(count: i64) -> Option<String> {
     (count > 0).then(|| format::count(count))
@@ -240,23 +221,16 @@ fn badge(state: &TidyState, page: TidyPage) -> Option<String> {
                 ),
             )
         }
-        TidyPage::Convert => counted(convert_count(state.overview()?)),
-        TidyPage::CleanUp => counted(cleanup_count(state.overview()?)),
-        // What AV1 would save, not a count: shrinking is optional, and Tidy up leaves it out.
-        TidyPage::Shrink => state
-            .overview()
-            .filter(|tidy| tidy.shrink.files > 0)
-            .map(|tidy| {
-                format!(
-                    "~{}",
-                    format::bytes((tidy.shrink.bytes - tidy.shrink.estimated_bytes) as f64)
-                )
-            }),
+        // The files Tidy up would touch with its switches as they are.
+        TidyPage::Overview => {
+            let tidy = state.overview()?;
+            counted(crate::plan::totals(&crate::plan::rows(state, tidy)).0)
+        }
         TidyPage::Holding => state
             .holding_preview()
             .filter(|holding| holding.total > 0)
             .map(|holding| format::bytes(holding.total_bytes)),
-        TidyPage::Overview | TidyPage::Library | TidyPage::History => None,
+        TidyPage::Library | TidyPage::History => None,
     }
 }
 
@@ -309,7 +283,7 @@ pub fn navigation(state: &Entity<TidyState>, rail: bool, window: &Window, cx: &A
                 .when(rail, |this| this.items_center())
                 .children(page_items(
                     state,
-                    &[PageGroup::Home, PageGroup::ToDo, PageGroup::Archive],
+                    &[PageGroup::Home, PageGroup::Archive],
                     rail,
                     window,
                     cx,

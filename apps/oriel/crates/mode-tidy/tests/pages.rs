@@ -519,17 +519,34 @@ async fn settings_list_the_encoders_when_one_is_missing(cx: &mut TestAppContext)
 }
 
 #[gpui_kit::test]
-async fn overviews_arrows_move_between_its_rows_and_return_opens_one(cx: &mut TestAppContext) {
+async fn the_tidy_pages_arrows_move_between_its_rows_return_opens_one_and_space_switches_it(
+    cx: &mut TestAppContext,
+) {
     let session = launch(cx, "overview-rows");
     add_archive(cx, &session).await;
     go(cx, &session, TidyPage::Overview);
     settle(cx, &session).await;
-    // ↓ rests on the first row, Clean up's; ↩ opens its page.
+    let first = ["videos", "pictures", "animations", "silent", "cleanup"]
+        .into_iter()
+        .find(|key| description(cx, &session, format!("overview-row-{key}")).is_some())
+        .expect("the plan lists a row");
+    // ↓ rests on the first row; ↩ opens it.
     press(cx, &session, "down");
     press(cx, &session, "enter");
+    assert!(
+        cx.update_window(session.handle, |_, window, _| {
+            window
+                .try_find(format!("overview-detail-{first}"))
+                .is_some()
+        })
+        .unwrap(),
+        "{first} opened"
+    );
+    // Space switches it off, and Tidy up leaves it.
+    press(cx, &session, "space");
     assert_eq!(
-        cx.read(|cx| session.state.read(cx).page()),
-        TidyPage::CleanUp
+        description(cx, &session, format!("overview-row-{first}")).as_deref(),
+        Some("off")
     );
 }
 

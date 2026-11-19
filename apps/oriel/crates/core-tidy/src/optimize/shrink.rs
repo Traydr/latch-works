@@ -12,7 +12,7 @@ use super::candidates::{taken_paths, video_source_of};
 use crate::catalog::files::{SqlParams, query_records};
 use crate::catalog::rows::{FILE_COLUMNS, FILES_FROM, FileRecord};
 use crate::catalog::timings::{EncodeTiming, encode_timings};
-use crate::contract::{FileId, RootId, ShrinkItem, ShrinkTotals, SkipReason};
+use crate::contract::{FileId, OptimizeCategory, RootId, ShrinkItem, ShrinkTotals, SkipReason};
 
 /// Below this many bits per pixel each second a video is already compact: an AV1 re-encode at
 /// Tidy's settings saves little and can come out larger.
@@ -130,8 +130,13 @@ pub struct ShrinkScan {
 
 impl ShrinkScan {
     /// The candidates added up. `removable` names the files the open duplicate sets' suggestions
-    /// would remove.
-    pub fn totals(&self, removable: &HashSet<FileId>) -> ShrinkTotals {
+    /// would remove, and `converted` the videos Convert would copy (`VideoRemux`) or re-encode
+    /// (`VideoConvert`) into MP4.
+    pub fn totals(
+        &self,
+        removable: &HashSet<FileId>,
+        converted: &HashMap<FileId, OptimizeCategory>,
+    ) -> ShrinkTotals {
         let mut totals = ShrinkTotals {
             files: self.candidates.len() as i64,
             ..ShrinkTotals::default()
@@ -139,9 +144,16 @@ impl ShrinkScan {
         for ShrinkCandidate { record, item } in &self.candidates {
             totals.bytes += item.bytes;
             totals.estimated_bytes += item.estimated_bytes;
+            totals.encode_ms += item.encode_ms.round() as i64;
             if removable.contains(&record.id) {
                 totals.duplicate_saving += item.bytes - item.estimated_bytes;
             }
+            match converted.get(&record.id) {
+                Some(OptimizeCategory::VideoRemux) => totals.from_remux += 1,
+                Some(_) => totals.from_reencode += 1,
+                None => continue,
+            }
+            totals.convert_bytes += item.bytes;
         }
         totals
     }

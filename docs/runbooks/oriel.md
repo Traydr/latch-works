@@ -134,7 +134,7 @@ What used to have a variable of its own is a script now, for example:
 | Settings at the mode's section | `key cmd-,` (then `click` the section in Settings' sidebar for another) |
 | The shortcut sheet | `key ?` |
 | Tidy's folder picker | `idle; key cmd-o` |
-| A Tidy page | `idle; key alt-cmd-<n>`, ⌥⌘1–7 in the sidebar's order (Shrink has none: `click` it) |
+| A Tidy page | `idle; key alt-cmd-<n>`, ⌥⌘1–5 in the sidebar's order |
 | Tidy's changes running, the second queued behind the first | `idle; key alt-cmd-3; key cmd-enter; key alt-cmd-4; wait 1000; key cmd-enter` (Convert, then Clean up: it changes files, so point it only at a copy) |
 | Duplicates' Matching popover, a video playing in the loupe | `idle; key alt-cmd-2; click <x>,<y>` on the button or the picture |
 | Duplicates on a later set, with another version kept, in the loupe | `idle; key alt-cmd-2; key s` (each `s` skips a set); `key shift-<n>` keeps version n as well; `key space` opens the loupe; `scroll` or `key pagedown` moves down its versions |

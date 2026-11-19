@@ -291,9 +291,6 @@ fn schedule(only: Option<&str>, sets: usize) -> VecDeque<(String, Action)> {
     if wanted("pages") {
         let pages = [
             TidyPage::Duplicates,
-            TidyPage::Convert,
-            TidyPage::CleanUp,
-            TidyPage::Shrink,
             TidyPage::Library,
             TidyPage::History,
             TidyPage::Holding,

@@ -15,6 +15,7 @@ use gpui_kit::{
 use oriel_core_paths::{DataRoot, LocateError, NativeSet};
 use oriel_core_tidy::Media;
 use oriel_launch::Launch;
+use oriel_mode_tidy::state::{CleanPart, ConvertGroup};
 use oriel_mode_tidy::{TidyMode, TidyPage, TidyState};
 use oriel_ui::{Foot, Mode as _, ModeId, ShellState};
 
@@ -431,6 +432,27 @@ pub async fn add_archive(cx: &mut TestAppContext, session: &Session) {
 pub fn go(cx: &mut TestAppContext, session: &Session, page: TidyPage) {
     click(cx, session, ElementId::Name(page.item_id().into()));
     assert_eq!(cx.read(|cx| session.state.read(cx).page()), page);
+}
+
+/// Switches Tidy up's rows so that it runs only Convert's `groups` and the clean-up `parts`, with
+/// the videos re-encoded to AV1 when `av1`.
+pub fn tidy_only(
+    cx: &mut TestAppContext,
+    session: &Session,
+    groups: &[ConvertGroup],
+    parts: &[CleanPart],
+    av1: bool,
+) {
+    session.state.update(cx, |state, cx| {
+        for group in ConvertGroup::ALL {
+            state.set_convert_group(group, groups.contains(&group), cx);
+        }
+        for part in CleanPart::ALL {
+            state.set_clean_part(part, parts.contains(&part), cx);
+        }
+        state.set_av1(av1, cx);
+    });
+    cx.run_until_parked();
 }
 
 /// Duplicates' set whose files include `name`, by its position in the queue.

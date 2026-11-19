@@ -1174,7 +1174,21 @@ impl Inner {
                 ),
             },
             convert: summarize_candidates(&scan, &removable),
-            shrink: shrink.totals(&removable),
+            shrink: shrink.totals(
+                &removable,
+                &scan
+                    .candidates
+                    .iter()
+                    .filter(|candidate| {
+                        matches!(
+                            candidate.category,
+                            crate::contract::OptimizeCategory::VideoRemux
+                                | crate::contract::OptimizeCategory::VideoConvert
+                        )
+                    })
+                    .map(|candidate| (candidate.record.id, candidate.category))
+                    .collect(),
+            ),
             silent_tracks: catalog.silent_tracks,
             cleanup: CleanupCounts {
                 junk: catalog.junk,

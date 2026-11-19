@@ -16,31 +16,21 @@ use oriel_ui::toast::ToastExt as _;
 const FLOOR: Pixels = px(32.);
 
 /// What the walk finds under the floor that is not a target of its own: the text inside a framed
-/// input, whose whole frame takes the click, and the kit's sort arrow, inside a header cell whose
-/// whole width sorts.
-const NOT_TARGETS: [&str; 2] = ["input-state", "icon-sort"];
+/// input, whose whole frame takes the click, the kit's sort arrow, inside a header cell whose
+/// whole width sorts, and the track of the Tidy page's switches, whose strips above and below
+/// press it too (`oriel_ui::switch`).
+const NOT_TARGETS: [&str; 3] = ["input-state", "icon-sort", "overview-switch-"];
 
 /// What the pages scroll in.
-const SCROLLERS: [&str; 7] = [
+const SCROLLERS: [&str; 5] = [
     "version-grid",
     "copy-rows",
     "overview-scroll",
-    "cleanup-scroll",
-    "convert-scroll",
     "history-scroll",
     "holding-scroll",
 ];
 
-const PAGES: [TidyPage; 8] = [
-    TidyPage::Overview,
-    TidyPage::Duplicates,
-    TidyPage::Convert,
-    TidyPage::CleanUp,
-    TidyPage::Shrink,
-    TidyPage::Library,
-    TidyPage::History,
-    TidyPage::Holding,
-];
+const PAGES: [TidyPage; 5] = TidyPage::ALL;
 
 fn drawn(cx: &mut TestAppContext, session: &Session) -> Vec<ElementSnapshot> {
     render(cx, session);
@@ -491,7 +481,7 @@ async fn tab_leaves_the_library_table_and_a_digit_works_from_the_sidebar(cx: &mu
     go(cx, &session, TidyPage::Duplicates);
     settle(cx, &session).await;
     let sets = open_sets(cx, &session);
-    tab_to(cx, &session, "tidy-Overview");
+    tab_to(cx, &session, "tidy-Tidy");
     press(cx, &session, "2");
     wait_for_change(cx, &session).await;
     assert_eq!(
