@@ -161,8 +161,8 @@ gnullvm (1 GB with debug info; a release build needs `fxc.exe`), and `package wi
 - **The title bar**: there is no separate row; the window draws its top itself, as on macOS
   (`appears_transparent`). The sidebar's top strip has the app's name. The menus are hidden until
   Alt, pressed and let go on its own, shows them in a row across the window's top, read from
-  `cx.get_menus()` each time; ← → move along it, ↓, Return or Space opens a menu, and Escape, a second
-  Alt, a command or a press elsewhere hides it again. Each page's top bar (and
+  `cx.get_menus()` each time; ← → move along it, ↓, Return or Space opens a menu, and Escape,
+  a second Alt, a command or a press elsewhere hides it again. Each page's top bar (and
   Settings' header, the viewer and the comic reader) ends with the caption buttons, which Windows
   hit-tests itself through `WindowControlArea` (`crates/ui/src/window_chrome.rs`). The empty parts
   of the top bar and the strip drag the window. The menus follow Electron Oriel's Windows
