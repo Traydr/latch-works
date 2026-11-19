@@ -345,9 +345,19 @@ impl MenuBar {
         if !self.shown {
             return;
         }
+        // A command runs before the popup's dismissal reaches the row, so what it opened (a dialog,
+        // a sheet) may hold focus by now: that keeps it, as GPUI Kit's popup menu leaves it.
+        let popup_focused = self.open.as_ref().is_some_and(|(_, popup, _)| {
+            popup.read(cx).focus_handle(cx).contains_focused(window, cx)
+        });
+        let focus_moved_on = window.focused(cx).is_some()
+            && !self.focus.contains_focused(window, cx)
+            && !popup_focused;
         self.shown = false;
         self.open = None;
-        if let Some(focus) = self.return_focus.take() {
+        if let Some(focus) = self.return_focus.take()
+            && !focus_moved_on
+        {
             focus.focus(window, cx);
         }
         cx.notify();

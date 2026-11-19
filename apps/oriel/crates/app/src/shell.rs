@@ -145,10 +145,14 @@ impl Shell {
                 this.save_window_soon(cx);
             }),
             // However the window comes back (the Dock icon, ⌘-Tab, a file opened with the app),
-            // a quit waiting for work is called off.
+            // a quit waiting for work is called off. An Alt held as the window goes (Alt+Tab, a
+            // launcher's Alt+Space) is let go elsewhere, so it is not the menu bar's: the window
+            // would otherwise see it let go when it comes back, and show the menus.
             cx.observe_window_activation(window, |this, window, cx| {
                 if window.is_window_active() {
                     this.quit.update(cx, |quit, cx| quit.cancel(cx));
+                } else if let Some(bar) = &this.menu_bar {
+                    bar.update(cx, |bar, _| bar.interrupt());
                 }
             }),
             cx.on_app_quit(|this, _| {
