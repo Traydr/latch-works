@@ -54,8 +54,8 @@ pub const SIDEBAR_WIDTH: f32 = 248.;
 /// The rail's width on macOS, where the window buttons sit in its top strip: at 16 px in they end
 /// near 76 px, so the rail is wide enough to hold them.
 pub const RAIL_WIDTH: f32 = 88.;
-/// The strip above the switcher, which holds the window buttons and the app's mark, and moves the
-/// window.
+/// The strip above the switcher, which holds the app's name and, on macOS, the window buttons,
+/// and moves the window.
 pub const SIDEBAR_STRIP_HEIGHT: f32 = 60.;
 /// The rail's buttons: 56 px targets in the 88 px macOS rail.
 const RAIL_BUTTON: f32 = 56.;
@@ -74,6 +74,35 @@ pub fn is_short_window(window: &Window) -> bool {
 /// buttons and folder take more of the height than the full sidebar's do.
 pub fn is_short_rail(window: &Window) -> bool {
     f32::from(window.viewport_size().height) < 860.
+}
+
+/// The sidebar's top strip, a mode's or Settings': the app's name, which the rail leaves out.
+/// On macOS the window buttons sit in it too; elsewhere the app's menus are Alt's
+/// ([`crate::window_chrome::MenuBar`]).
+#[derive(IntoElement)]
+pub(crate) struct SidebarStrip {
+    id: &'static str,
+    rail: bool,
+}
+
+impl SidebarStrip {
+    pub(crate) fn new(id: &'static str, rail: bool) -> Self {
+        Self { id, rail }
+    }
+}
+
+impl RenderOnce for SidebarStrip {
+    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        DragStrip::new(self.id)
+            .flex()
+            .flex_row()
+            .items_center()
+            .w_full()
+            .flex_shrink_0()
+            .h(px(SIDEBAR_STRIP_HEIGHT))
+            .when(self.rail, |this| this.justify_center())
+            .children(AppMark::for_sidebar(self.rail))
+    }
 }
 
 #[derive(IntoElement)]
@@ -159,13 +188,7 @@ impl RenderOnce for ModeLayout {
                     .text_color(theme.sidebar_foreground)
                     .border_r_1()
                     .border_color(theme.sidebar_border)
-                    .child(
-                        DragStrip::new("sidebar-strip")
-                            .w_full()
-                            .flex_shrink_0()
-                            .h(px(SIDEBAR_STRIP_HEIGHT))
-                            .children(AppMark::for_sidebar(rail)),
-                    )
+                    .child(SidebarStrip::new("sidebar-strip", rail))
                     .child(ModeSwitcher::new(&self.shell, rail))
                     .child(
                         div()

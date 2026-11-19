@@ -158,10 +158,16 @@ gnullvm (1 GB with debug info; a release build needs `fxc.exe`), and `package wi
   the data folder>`; a second launch writes its paths into the pipe of the same name and exits, and
   the first opens them in View, or comes to the front when there are none
   (`crates/app/src/single_instance.rs`).
-- **The title bar**: the window draws its own, as on macOS: GPUI Kit's `TitleBar`, with the app's
-  menus in it through GPUI Kit's `AppMenuBar` and the caption buttons Windows hit-tests itself
-  (`windows_frame.rs`). The menus follow Electron Oriel's Windows template: no app menu; File ends
-  with Settings… and Exit; Window has Minimize and Close; Help has About.
+- **The title bar**: there is no separate row; the window draws its top itself, as on macOS
+  (`appears_transparent`). The sidebar's top strip has the app's name. The menus are hidden until
+  Alt, pressed and let go on its own, shows them in a row across the window's top, read from
+  `cx.get_menus()` each time; ← → move along it, ↓ or Return opens a menu, and Escape, a second
+  Alt, a command or a press elsewhere hides it again. Each page's top bar (and
+  Settings' header, the viewer and the comic reader) ends with the caption buttons, which Windows
+  hit-tests itself through `WindowControlArea` (`crates/ui/src/window_chrome.rs`). The empty parts
+  of the top bar and the strip drag the window. The menus follow Electron Oriel's Windows
+  template: no app menu; File ends with Settings… and Exit; Window has Minimize and Close; Help
+  has About.
 - **Progress**: the taskbar button's (`ITaskbarList3`) while a push or a Tidy change runs.
 - **Video**: libmpv's software renderer (`hwdec=d3d11va-copy`), each frame a BGRA image GPUI
   draws with `img()`: GPUI's `surface()` is macOS only.
@@ -241,9 +247,10 @@ the detail and the numbers:
       brings the first to the front; a check's run with its own data folder starts beside it.
 - [x] **Setup.exe** (and an upgrade to a local 1.0.1): installs silently (`--silent`) to `%LocalAppData%\Oriel\current`, starts,
       shows About's licences, uninstalls cleanly, and leaves the data folder.
-- [ ] The title bar: double-click to maximize, snap layouts on the maximize button and the menus
-      by mouse work; **the menus by Alt do not** (GPUI Kit's menu bar has no Alt); dragging and the
-      taskbar progress during a push not checked.
+- [ ] The window's top since the title row went: dragging and double-click on the top bar and
+      the sidebar strip, snap layouts on the maximize button, minimize, restore and close, the menu
+      bar Alt shows (its keys, the mouse, and its commands reaching the page; Alt must not also open
+      the system menu), the caption buttons over the viewer, and the taskbar progress during a push.
 
 ## Known risks
 

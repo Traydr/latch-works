@@ -16,8 +16,6 @@ mod spike;
 mod terminate;
 pub mod welcome;
 pub mod window_state;
-#[cfg(windows)]
-mod windows_frame;
 
 pub use oriel_launch::Launch;
 
@@ -148,7 +146,8 @@ fn with_main_window(
 }
 
 /// The window's options: where it was last, on the display it was on, else 1320 × 860 centred, at
-/// least 960 × 640, the window buttons inset in a transparent title bar.
+/// least 960 × 640, with a transparent title bar: macOS insets its window buttons in it, and
+/// elsewhere the app draws its own caption buttons there.
 pub fn main_window_options(launch: &Launch, cx: &mut App) -> WindowOptions {
     let saved = WindowState::read(&launch.data.window_state());
     let (display_id, bounds) = match WindowState::placement(saved.as_ref(), &Screen::all(cx)) {
@@ -193,21 +192,10 @@ fn open_main_window(launch: &Launch, cx: &mut App) -> Entity<Shell> {
         });
         shell
     };
-    #[cfg(not(windows))]
+    // The shell fills the window on every platform. Off macOS it draws the caption buttons and
+    // the app's menus itself (`oriel_ui::window_chrome`), in the transparent title bar's place.
     let (handle, shell) =
         gpui_kit::open_window(options, cx, build).expect("Oriel could not open its window");
-    // On Windows the shell sits under the window's own title bar and menus.
-    #[cfg(windows)]
-    let (handle, shell) = {
-        let mut built = None;
-        let (handle, _) = gpui_kit::open_window(options, cx, |window, cx| {
-            let shell = build(window, cx);
-            built = Some(shell.clone());
-            cx.new(|cx| windows_frame::WindowsFrame::new(shell, cx))
-        })
-        .expect("Oriel could not open its window");
-        (handle, built.expect("the window built its shell"))
-    };
     if let Some(handle) = handle.downcast::<gpui_kit::base::Root>() {
         cx.set_global(MainWindow {
             handle,

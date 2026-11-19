@@ -11,13 +11,13 @@ use gpui_kit::{
     TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
 
-use crate::app_mark::AppMark;
 use crate::controls::TextRole as _;
 use crate::drag::DragStrip;
 use crate::focus::FocusReveal;
-use crate::layout::{NavItem, SIDEBAR_STRIP_HEIGHT, SIDEBAR_WIDTH};
+use crate::layout::{NavItem, SIDEBAR_WIDTH, SidebarStrip};
 use crate::shell::{SettingsSection, ShellState};
 use crate::top_bar::TOP_BAR_HEIGHT;
+use crate::window_chrome::CaptionButtons;
 
 /// The element id of `section`'s entry in Settings' sidebar: `settings-section-general`, …
 pub fn section_item_id(section: SettingsSection) -> SharedString {
@@ -97,13 +97,7 @@ impl RenderOnce for SettingsFrame {
                     .text_color(theme.sidebar_foreground)
                     .border_r_1()
                     .border_color(theme.sidebar_border)
-                    .child(
-                        DragStrip::new("settings-strip")
-                            .w_full()
-                            .flex_shrink_0()
-                            .h(px(SIDEBAR_STRIP_HEIGHT))
-                            .children(AppMark::for_sidebar(false)),
-                    )
+                    .child(SidebarStrip::new("settings-strip", false))
                     .child(
                         div()
                             .id("settings-sections")
@@ -128,28 +122,39 @@ impl RenderOnce for SettingsFrame {
                     .min_w_0()
                     .min_h_0()
                     .child(
-                        DragStrip::new("settings-header")
-                            .accessible(Role::Toolbar, current.label())
+                        // The caption buttons end the header, beside the strip that moves the
+                        // window rather than in it, as the top bar has them.
+                        div()
                             .flex()
                             .flex_row()
-                            .items_center()
                             .flex_shrink_0()
                             .h(px(TOP_BAR_HEIGHT))
-                            .px_5()
                             .border_b_1()
                             .border_color(theme.border)
                             .child(
-                                div()
-                                    .id("settings-title")
-                                    .test_support()
-                                    .role(Role::Heading)
-                                    .aria_level(1)
-                                    .aria_label(current.label())
-                                    .truncate()
-                                    .text_title()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(current.label()),
-                            ),
+                                DragStrip::new("settings-header")
+                                    .accessible(Role::Toolbar, current.label())
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .h_full()
+                                    .px_5()
+                                    .child(
+                                        div()
+                                            .id("settings-title")
+                                            .test_support()
+                                            .role(Role::Heading)
+                                            .aria_level(1)
+                                            .aria_label(current.label())
+                                            .truncate()
+                                            .text_title()
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .child(current.label()),
+                                    ),
+                            )
+                            .children(CaptionButtons::for_window()),
                     )
                     .child(
                         div()
