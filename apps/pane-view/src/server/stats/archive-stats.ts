@@ -1,6 +1,19 @@
 import type { MediaType } from "@latch-works/media-domain";
-import { and, asc, count, desc, eq, exists, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
-import { db } from "../db";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  gte,
+  isNotNull,
+  isNull,
+  ne,
+  not,
+  sql,
+} from "drizzle-orm";
+import { type Database, db } from "../db";
 import { folders, libraryEntries, mediaObjects, syncRuns } from "../db/schema";
 import {
   averageDailyGrowth,
@@ -40,6 +53,11 @@ export interface ArchiveStats {
     entriesPerDay: number;
     projectedBytesIn90Days: number;
   };
+  /** Stored originals no live entry uses, such as the copy a re-encode replaced. */
+  reclaimable: {
+    bytes: number;
+    objectCount: number;
+  };
   recentGrowth: Array<{
     bytesAdded: number;
     day: string;
@@ -77,6 +95,22 @@ export interface ArchiveStats {
   };
 }
 
+/**
+ * A media object a live library entry references. Every stat counts only these:
+ * a content change or a delete leaves the old original stored until a purge in
+ * Manage removes it, and counting it would show a re-encode as growth.
+ */
+function isLiveObject() {
+  return exists(
+    db
+      .select({ id: libraryEntries.id })
+      .from(libraryEntries)
+      .where(
+        and(eq(libraryEntries.mediaObjectId, mediaObjects.id), isNull(libraryEntries.deletedAt)),
+      ),
+  );
+}
+
 function utcDaysAgo(days: number): Date {
   const date = new Date();
   date.setUTCHours(0, 0, 0, 0);
@@ -85,7 +119,7 @@ function utcDaysAgo(days: number): Date {
   return date;
 }
 
-export async function readArchiveStats(): Promise<ArchiveStats> {
+export async function readArchiveStats(database: Database = db): Promise<ArchiveStats> {
   const historyStart = utcDaysAgo(HISTORY_DAYS - 1);
   const growthStart = utcDaysAgo(GROWTH_WINDOW_DAYS - 1);
   const today = toDayKey(new Date());
@@ -103,46 +137,56 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
     imageStatsRow,
     largestObjectRow,
     entryBytesRow,
-    referencedObjectBytesRow,
+    reclaimableRow,
     objectDailyRows,
     entryDailyRows,
     syncDailyRows,
   ] = await Promise.all([
-    db.select({ value: count() }).from(libraryEntries).where(isNull(libraryEntries.deletedAt)),
-    db.select({ value: count() }).from(libraryEntries).where(isNotNull(libraryEntries.deletedAt)),
-    db.select({ value: count() }).from(folders).where(isNull(folders.deletedAt)),
-    db
+    database
+      .select({ value: count() })
+      .from(libraryEntries)
+      .where(isNull(libraryEntries.deletedAt)),
+    database
+      .select({ value: count() })
+      .from(libraryEntries)
+      .where(isNotNull(libraryEntries.deletedAt)),
+    database.select({ value: count() }).from(folders).where(isNull(folders.deletedAt)),
+    database
       .select({
         bytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
         count: count(),
       })
-      .from(mediaObjects),
-    db
+      .from(mediaObjects)
+      .where(isLiveObject()),
+    database
       .select({
         newest: sql<Date | null>`max(${mediaObjects.createdAt})`,
         oldest: sql<Date | null>`min(${mediaObjects.createdAt})`,
       })
-      .from(mediaObjects),
-    db
+      .from(mediaObjects)
+      .where(isLiveObject()),
+    database
       .select({
         bytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
         count: count(),
         mediaType: mediaObjects.mediaType,
       })
       .from(mediaObjects)
+      .where(isLiveObject())
       .groupBy(mediaObjects.mediaType)
       .orderBy(desc(sql`coalesce(sum(${mediaObjects.size}), 0)`)),
-    db
+    database
       .select({
         bytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
         count: count(),
         extension: mediaObjects.extension,
       })
       .from(mediaObjects)
+      .where(isLiveObject())
       .groupBy(mediaObjects.extension)
       .orderBy(desc(sql`coalesce(sum(${mediaObjects.size}), 0)`))
       .limit(TOP_LIMIT),
-    db
+    database
       .select({
         entryCount: sql`count(*)::int`.mapWith(Number),
         name: folders.name,
@@ -157,55 +201,45 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       .groupBy(folders.path, folders.name)
       .orderBy(desc(sql`count(*)`))
       .limit(TOP_LIMIT),
-    db
+    database
       .select({
         imageCount: count(),
       })
       .from(mediaObjects)
-      .where(sql`${mediaObjects.mediaType} in ('image', 'gif')`),
-    db
+      .where(and(sql`${mediaObjects.mediaType} in ('image', 'gif')`, isLiveObject())),
+    database
       .select({
         extension: mediaObjects.extension,
         size: mediaObjects.size,
       })
       .from(mediaObjects)
+      .where(isLiveObject())
       .orderBy(desc(mediaObjects.size))
       .limit(1),
-    db
+    database
       .select({
         entryBytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
       })
       .from(libraryEntries)
       .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
       .where(isNull(libraryEntries.deletedAt)),
-    db
+    database
       .select({
-        objectBytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
+        bytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
+        count: count(),
       })
       .from(mediaObjects)
-      .where(
-        exists(
-          db
-            .select({ id: libraryEntries.id })
-            .from(libraryEntries)
-            .where(
-              and(
-                eq(libraryEntries.mediaObjectId, mediaObjects.id),
-                isNull(libraryEntries.deletedAt),
-              ),
-            ),
-        ),
-      ),
-    db
+      .where(not(isLiveObject())),
+    database
       .select({
         bytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
         day: sql<string>`to_char(date_trunc('day', ${mediaObjects.createdAt} at time zone 'utc'), 'YYYY-MM-DD')`,
       })
       .from(mediaObjects)
-      .where(gte(mediaObjects.createdAt, historyStart))
+      .where(and(gte(mediaObjects.createdAt, historyStart), isLiveObject()))
       .groupBy(sql`date_trunc('day', ${mediaObjects.createdAt} at time zone 'utc')`)
       .orderBy(asc(sql`date_trunc('day', ${mediaObjects.createdAt} at time zone 'utc')`)),
-    db
+    database
       .select({
         count: count(),
         day: sql<string>`to_char(date_trunc('day', ${libraryEntries.firstSeenAt} at time zone 'utc'), 'YYYY-MM-DD')`,
@@ -214,7 +248,7 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       .where(and(isNull(libraryEntries.deletedAt), gte(libraryEntries.firstSeenAt, historyStart)))
       .groupBy(sql`date_trunc('day', ${libraryEntries.firstSeenAt} at time zone 'utc')`)
       .orderBy(asc(sql`date_trunc('day', ${libraryEntries.firstSeenAt} at time zone 'utc')`)),
-    db
+    database
       .select({
         completed:
           sql`coalesce(sum(case when ${syncRuns.status} = 'completed' then 1 else 0 end), 0)`.mapWith(
@@ -349,10 +383,9 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
   }));
 
   const entryBytes = entryBytesRow[0]?.entryBytes ?? 0;
-  const referencedObjectBytes = referencedObjectBytesRow[0]?.objectBytes ?? 0;
   // When multiple library paths share content-addressed objects, entry bytes exceed
   // unique object bytes. Treat that gap as "saved" by dedupe.
-  const dedupeSavedBytes = Math.max(0, entryBytes - referencedObjectBytes);
+  const dedupeSavedBytes = Math.max(0, entryBytes - mediaObjectBytes);
 
   return {
     byMediaType: byMediaTypeRows.map((row) => ({
@@ -373,6 +406,10 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       entriesLast30Days,
       entriesPerDay,
       projectedBytesIn90Days: projectForward(mediaObjectBytes, bytesPerDay, 90),
+    },
+    reclaimable: {
+      bytes: reclaimableRow[0]?.bytes ?? 0,
+      objectCount: reclaimableRow[0]?.count ?? 0,
     },
     recentGrowth,
     sizeOverTime,

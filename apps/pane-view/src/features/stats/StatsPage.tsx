@@ -11,6 +11,8 @@ import {
   type DitherColor,
   Grid,
   Legend,
+  Line,
+  LineChart,
   Pie,
   PieChart,
   Sparkline,
@@ -42,7 +44,8 @@ const GROWTH_CHART_CONFIG = {
 } satisfies ChartConfig;
 
 const SYNC_CHART_CONFIG = {
-  started: { color: "blue" as const, label: "Sync runs" },
+  completed: { color: "green" as const, label: "Completed" },
+  failed: { color: "red" as const, label: "Failed" },
 } satisfies ChartConfig;
 
 const EXTENSION_CHART_CONFIG = {
@@ -67,7 +70,7 @@ function StatCard({
   hint,
   spark,
 }: {
-  hint?: string;
+  hint?: ReactNode;
   label: string;
   spark?: number[];
   value: string;
@@ -78,7 +81,7 @@ function StatCard({
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">{label}</p>
           <p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>
-          {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+          {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
         </div>
         {spark && spark.length > 1 ? (
           <div className="h-12 w-24 shrink-0">
@@ -213,7 +216,7 @@ export function StatsPage() {
               />
             </section>
 
-            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <StatCard
                 label="Average object"
                 value={formatBytes(stats.totals.averageObjectBytes)}
@@ -228,11 +231,16 @@ export function StatsPage() {
                 label="Dedupe savings"
                 value={formatBytes(stats.funFacts.dedupeSavedBytes)}
               />
+              <StatCard
+                hint={<ReclaimableHint objectCount={stats.reclaimable.objectCount} />}
+                label="Reclaimable"
+                value={formatBytes(stats.reclaimable.bytes)}
+              />
             </section>
 
             <div className="grid gap-4 lg:grid-cols-2">
               <ChartPanel
-                description="Cumulative original storage in MB from object created dates (last 90 days)."
+                description="Cumulative size in MB of the originals live entries use, by the day each was stored (last 90 days)."
                 title="Size over time"
               >
                 {stats.sizeOverTime.length > 1 ? (
@@ -270,30 +278,32 @@ export function StatsPage() {
                 title="Daily growth"
               >
                 {stats.recentGrowth.some((row) => row.bytesAdded > 0) ? (
-                  <BarChart bloom="aura" config={GROWTH_CHART_CONFIG} data={recentGrowthChartData}>
+                  <LineChart bloom="aura" config={GROWTH_CHART_CONFIG} data={recentGrowthChartData}>
                     <Grid />
                     <XAxis dataKey="label" />
                     <YAxis />
                     <Tooltip labelKey="label" />
-                    <Bar dataKey="bytesAdded" variant="gradient" />
-                  </BarChart>
+                    <Line dataKey="bytesAdded" />
+                  </LineChart>
                 ) : (
                   <EmptyChart />
                 )}
               </ChartPanel>
 
               <ChartPanel
-                description="Sync runs started each day over the last 90 days."
+                description="Sync runs that completed or failed each day over the last 90 days."
                 title="Sync activity"
               >
                 {stats.syncActivity.some((row) => row.started > 0) ? (
-                  <BarChart bloom="aura" config={SYNC_CHART_CONFIG} data={stats.syncActivity}>
+                  <LineChart bloom="aura" config={SYNC_CHART_CONFIG} data={stats.syncActivity}>
+                    <Legend />
                     <Grid />
                     <XAxis dataKey="label" />
                     <YAxis />
                     <Tooltip labelKey="label" />
-                    <Bar dataKey="started" variant="gradient" />
-                  </BarChart>
+                    <Line dataKey="completed" />
+                    <Line dataKey="failed" strokeVariant="dashed" />
+                  </LineChart>
                 ) : (
                   <EmptyChart />
                 )}
@@ -409,6 +419,19 @@ function StatsHighlights({ stats }: { stats: ArchiveStats }) {
         <TimestampCard label="Oldest object" value={stats.totals.oldestObjectAt} />
         <TimestampCard label="Newest object" value={stats.totals.newestObjectAt} />
       </section>
+    </>
+  );
+}
+
+function ReclaimableHint({ objectCount }: { objectCount: number }) {
+  if (objectCount === 0) return "Nothing unused is stored";
+
+  return (
+    <>
+      {objectCount.toLocaleString()} unused {objectCount === 1 ? "copy" : "copies"} ·{" "}
+      <Link className="underline underline-offset-2 hover:text-foreground" to="/manage">
+        purge in Manage
+      </Link>
     </>
   );
 }
