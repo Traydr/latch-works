@@ -296,10 +296,11 @@ impl PaneViewClient {
         &self,
         body: &types::ReportMediaFactsRequest,
         cancel: Option<&CancelToken>,
-    ) -> anyhow::Result<()> {
-        self.post::<_, serde_json::Value>(routes::MEDIA_FACTS, body, cancel)
-            .await
-            .map(drop)
+    ) -> anyhow::Result<usize> {
+        let answer: types::ReportMediaFactsResponse =
+            self.post(routes::MEDIA_FACTS, body, cancel).await?;
+        // A count of media objects: a whole, non-negative number.
+        Ok(answer.updated.max(0.0) as usize)
     }
 
     /// `deleteRemoteItem`.

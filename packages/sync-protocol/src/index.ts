@@ -26,6 +26,7 @@ export {
   RemoteSnapshotResponseSchema,
   type ReportMediaFactsRequest,
   ReportMediaFactsRequestSchema,
+  ReportMediaFactsResponseSchema,
   SYNC_ROUTES,
   type SyncPlanCounts,
   SyncRunSchema,

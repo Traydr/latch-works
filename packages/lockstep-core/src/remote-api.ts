@@ -13,6 +13,7 @@ import {
   contentTypeForExtension,
   type DeleteObjectRequest,
   type ReportMediaFactsRequest,
+  ReportMediaFactsResponseSchema,
   SYNC_ROUTES,
   SyncRunSchema,
   UploadTargetSchema,
@@ -193,7 +194,10 @@ export async function pushMediaItem({
   );
 }
 
-/** Reports what a push learned about originals Pane View already holds (see media-facts.ts). */
+/**
+ * Reports what a push learned about originals Pane View already holds (see media-facts.ts), and
+ * answers how many media objects Pane View updated.
+ */
 export async function reportMediaFacts({
   api,
   body,
@@ -202,8 +206,16 @@ export async function reportMediaFacts({
   api: PaneViewApi;
   body: ReportMediaFactsRequest;
   signal?: AbortSignal;
-}): Promise<void> {
-  await postJson(api, SYNC_ROUTES.mediaFacts, body, AcknowledgementSchema, signal);
+}): Promise<number> {
+  const { updated } = await postJson(
+    api,
+    SYNC_ROUTES.mediaFacts,
+    body,
+    ReportMediaFactsResponseSchema,
+    signal,
+  );
+
+  return updated;
 }
 
 /**

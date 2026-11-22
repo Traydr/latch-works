@@ -1,13 +1,13 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
 import {
   ArrowUpDown,
-  BookOpen,
   Film,
   FolderMinus,
   ImageIcon,
   ListTree,
   RefreshCcw,
   Shuffle,
+  SlidersHorizontal,
   Volume2,
 } from "lucide-react";
 import { useState } from "react";
@@ -128,67 +128,115 @@ function ExcludeControl({
   );
 }
 
-interface MediaFilterTogglesProps {
+interface MediaFilterMenuProps {
   onChange: (patch: Partial<MediaVisibility>) => void;
   visibility: MediaVisibility;
 }
 
+/** One media-type filter as the Filter menu lists it. */
+interface MediaFilter {
+  active: boolean;
+  disabled: boolean;
+  icon: typeof ImageIcon;
+  key: keyof MediaVisibility;
+  name: string;
+  title: string;
+}
+
+function mediaFilters({ showImages, showVideos, videosWithAudioOnly }: MediaVisibility) {
+  return [
+    {
+      active: showImages,
+      disabled: false,
+      icon: ImageIcon,
+      key: "showImages",
+      name: "Images",
+      title: "Show images",
+    },
+    {
+      active: showVideos,
+      disabled: false,
+      icon: Film,
+      key: "showVideos",
+      name: "Videos",
+      title: "Show videos",
+    },
+    {
+      active: showVideos && videosWithAudioOnly,
+      disabled: !showVideos,
+      icon: Volume2,
+      key: "videosWithAudioOnly",
+      name: "Videos with audio only",
+      title: showVideos ? "Only videos with audio" : "Show videos to filter them by audio",
+    },
+  ] satisfies MediaFilter[];
+}
+
 /**
- * Quick toggles for the gallery's media-type filters, the same settings the
- * settings drawer holds. "Audio" narrows videos to those with sound, so it
- * waits for videos to be shown. Labels appear only on wide screens, where the
- * toolbar has room for them.
+ * The gallery's media-type filters, the same settings the settings drawer
+ * holds, behind one Filter button whose menu toggles each. "Videos with audio
+ * only" narrows videos to those with sound, so it waits for videos to be shown.
+ * The button's dot says a filter is hiding something.
  */
-function MediaFilterToggles({ onChange, visibility }: MediaFilterTogglesProps) {
-  const { showImages, showVideos, videosWithAudioOnly } = visibility;
-  const audioActive = showVideos && videosWithAudioOnly;
+function MediaFilterMenu({ onChange, visibility }: MediaFilterMenuProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const filters = mediaFilters(visibility);
+
+  const filtered = filters.some((filter) =>
+    filter.key === "videosWithAudioOnly" ? filter.active : !filter.active,
+  );
 
   return (
-    <fieldset aria-label="Media types" className="flex items-center gap-2">
+    <div className="relative">
       <Button
-        aria-pressed={showImages}
-        className={toolButtonClass(showImages)}
-        onClick={() => onChange({ showImages: !showImages })}
+        aria-expanded={menuOpen}
+        aria-haspopup="menu"
+        className={cn(toolButtonClass(false), "relative", menuOpen && "bg-accent")}
+        onClick={() => setMenuOpen((open) => !open)}
         size="sm"
-        title={showImages ? "Hide images" : "Show images"}
+        title="Filter media types"
         type="button"
-        variant={showImages ? "default" : "outline"}
+        variant="outline"
       >
-        <ImageIcon className="size-4" />
-        <span className="hidden lg:inline">Images</span>
+        <SlidersHorizontal className="size-4" />
+        <span className="hidden sm:inline">Filter</span>
+        {filtered ? (
+          <span
+            aria-hidden="true"
+            className="absolute -top-1 -right-1 size-2 rounded-full bg-primary"
+          />
+        ) : null}
       </Button>
-      <Button
-        aria-pressed={showVideos}
-        className={toolButtonClass(showVideos)}
-        onClick={() => onChange({ showVideos: !showVideos })}
-        size="sm"
-        title={showVideos ? "Hide videos" : "Show videos"}
-        type="button"
-        variant={showVideos ? "default" : "outline"}
-      >
-        <Film className="size-4" />
-        <span className="hidden lg:inline">Videos</span>
-      </Button>
-      <Button
-        aria-pressed={audioActive}
-        className={toolButtonClass(audioActive)}
-        disabled={!showVideos}
-        onClick={() => onChange({ videosWithAudioOnly: !videosWithAudioOnly })}
-        size="sm"
-        title={
-          !showVideos
-            ? "Show videos to filter them by audio"
-            : audioActive
-              ? "Show all videos"
-              : "Only videos with audio"
-        }
-        type="button"
-        variant={audioActive ? "default" : "outline"}
-      >
-        <Volume2 className="size-4" />
-        <span className="hidden lg:inline">Audio</span>
-      </Button>
-    </fieldset>
+      {menuOpen ? (
+        <div
+          aria-label="Media types"
+          className="absolute right-0 bottom-[calc(100%+0.5rem)] z-30 w-52 rounded-2xl border border-border bg-popover p-1 shadow-xl backdrop-blur-xl"
+          role="menu"
+        >
+          {filters.map((filter) => (
+            <button
+              aria-checked={filter.active}
+              className={cn(
+                "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-50",
+                filter.active
+                  ? "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"
+                  : "text-foreground hover:bg-accent",
+              )}
+              disabled={filter.disabled}
+              key={filter.key}
+              onClick={() => onChange({ [filter.key]: !visibility[filter.key] })}
+              role="menuitemcheckbox"
+              title={filter.title}
+              type="button"
+            >
+              <filter.icon className="size-4" />
+              <span className="flex-1">{filter.name}</span>
+              {filter.active ? <span className="text-violet-400">•</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -212,10 +260,10 @@ export function FloatingToolbar({
   const activeLabel = SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? "Sort";
 
   return (
-    <div className="pointer-events-none fixed bottom-5 left-1/2 z-20 -translate-x-1/2">
+    <div className="pointer-events-none fixed inset-x-0 bottom-5 z-20 flex justify-center">
       <div
         data-floating-toolbar=""
-        className="pointer-events-auto flex max-w-[96vw] items-center gap-2 rounded-xl border border-border bg-background/95 px-3 py-2 shadow-lg backdrop-blur-sm"
+        className="pointer-events-auto flex max-w-[96vw] flex-wrap items-center justify-center gap-2 rounded-xl border border-border bg-background/95 px-3 py-2 shadow-lg backdrop-blur-sm"
       >
         <Button
           aria-pressed={recursive}
@@ -242,13 +290,11 @@ export function FloatingToolbar({
           type="button"
           variant={comicMode ? "default" : "outline"}
         >
-          <BookOpen className="size-4" />
+          <ImageIcon className="size-4" />
           <span className="hidden sm:inline">Comic</span>
         </Button>
         {recursive || comicMode ? <ExcludeControl key={currentPath} {...exclude} /> : null}
-        <div className="h-5 w-px bg-border" />
-        <MediaFilterToggles onChange={onChangeMediaVisibility} visibility={mediaVisibility} />
-        <div className="h-5 w-px bg-border" />
+        <MediaFilterMenu onChange={onChangeMediaVisibility} visibility={mediaVisibility} />
         <div className="relative">
           <Button
             aria-expanded={sortMenuOpen}
@@ -309,7 +355,7 @@ export function FloatingToolbar({
             <span className="hidden sm:inline">Shuffle</span>
           </Button>
         ) : null}
-        <div className="h-5 w-px bg-border" />
+        <div className="hidden h-5 w-px bg-border sm:block" />
         <Button
           className={toolButtonClass(false)}
           disabled={isRefreshing}

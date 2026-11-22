@@ -135,7 +135,7 @@ async function uploadAudio({
 
 /**
  * Probes the kept videos Pane View has no audio fact for and reports what it learns; returns how
- * many facts Pane View accepted. A failed report is a warning, not a failed push: the uploads are
+ * many media objects Pane View updated. A failed report is a warning, not a failed push: the uploads are
  * already done, and the next push tries again.
  */
 async function reportMissingAudioFacts({
@@ -173,8 +173,7 @@ async function reportMissingAudioFacts({
 
   for (const body of mediaFactsRequests(facts)) {
     try {
-      await reportMediaFacts({ api, body, signal });
-      reported += body.facts.length;
+      reported += await reportMediaFacts({ api, body, signal });
     } catch (error) {
       throwIfAborted(signal);
       observer?.onEvent({

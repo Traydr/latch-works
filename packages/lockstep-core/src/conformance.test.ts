@@ -37,6 +37,7 @@ import {
   originalObjectKey,
   type RemoteEntry,
   RemoteEntrySchema,
+  ReportMediaFactsRequestSchema,
   SYNC_ROUTES,
   UploadUrlRequestSchema,
 } from "@latch-works/sync-protocol";
@@ -1340,6 +1341,8 @@ const WireVectorsSchema = z.object({
     local: z.array(z.object({ path: z.string(), size: z.number(), sha256: z.string().optional() })),
     remote: z.array(RemoteEntrySchema),
     missing: z.array(z.object({ path: z.string(), sha256: z.string(), size: z.number() })),
+    /** The body that reports the missing videos once probed as having audio. */
+    request: ReportMediaFactsRequestSchema,
     batchSizes: z.array(z.number()),
   }),
 });
@@ -1530,6 +1533,11 @@ function makeWireVectors(): WireVectors {
       local: MEDIA_FACTS_LOCAL.map(({ path, sha256, size }) => ({ path, sha256, size })),
       remote: MEDIA_FACTS_REMOTE,
       missing: videosMissingAudioFacts(createSyncPlan(MEDIA_FACTS_LOCAL, MEDIA_FACTS_REMOTE)),
+      request: mediaFactsRequests(
+        videosMissingAudioFacts(createSyncPlan(MEDIA_FACTS_LOCAL, MEDIA_FACTS_REMOTE)).map(
+          ({ sha256, size }) => ({ hasAudio: true, sha256, size }),
+        ),
+      )[0] ?? { facts: [] },
       batchSizes: mediaFactsRequests(
         Array.from({ length: MAX_MEDIA_FACTS_PER_REQUEST * 2 + 1 }, () => ({
           hasAudio: true,

@@ -446,6 +446,15 @@
         "size": 10
       }
     ],
+    "request": {
+      "facts": [
+        {
+          "hasAudio": true,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 10
+        }
+      ]
+    },
     "batchSizes": [500, 500, 1]
   }
 }

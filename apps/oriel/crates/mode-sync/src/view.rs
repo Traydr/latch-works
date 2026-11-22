@@ -902,6 +902,11 @@ impl SyncMode {
         };
         let counts = reviewed.plan.counts;
         let push_count = counts.to_push();
+        let audio_count = if push_count == 0 {
+            run::videos_awaiting_audio(&reviewed.plan)
+        } else {
+            0
+        };
         let push_bytes = self
             .plan_facts
             .as_ref()
@@ -960,7 +965,12 @@ impl SyncMode {
                         .bar_size()
                         .primary()
                         .icon(IconName::ArrowUp)
-                        .label(if push_count == 0 {
+                        .label(if push_count == 0 && audio_count > 0 {
+                            format!(
+                                "Report audio for {}",
+                                format::plural_as(audio_count, "video", "videos")
+                            )
+                        } else if push_count == 0 {
                             "Nothing to push".to_owned()
                         } else {
                             format!(
@@ -969,7 +979,7 @@ impl SyncMode {
                                 format::bytes(push_bytes)
                             )
                         })
-                        .disabled(running || push_count == 0)
+                        .disabled(running || (push_count == 0 && audio_count == 0))
                         .on_click(cx.listener(|this, _, window, cx| this.push_now(window, cx))),
                 )
             })

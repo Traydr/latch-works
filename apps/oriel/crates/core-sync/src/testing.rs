@@ -92,11 +92,7 @@ static WIRE: LazyLock<Wire> = LazyLock::new(|| {
         delete: Shape::of([&wire["delete"]]),
         create_run: Shape::of([&wire["createRun"]]),
         finalize: examples("finalize", "body"),
-        // wire.json lists no media-facts body, so its shape is written here from sync-protocol's
-        // `ReportMediaFactsRequest`; its limit comes from the vectors.
-        media_facts: Shape::of([&json!({
-            "facts": [{ "hasAudio": true, "sha256": "", "size": 0 }],
-        })]),
+        media_facts: Shape::of([&wire["mediaFacts"]["request"]]),
         max_media_facts: wire["constants"]["maxMediaFactsPerRequest"]
             .as_u64()
             .expect("the media-facts limit in wire.json") as usize,

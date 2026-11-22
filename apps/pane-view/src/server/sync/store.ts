@@ -106,28 +106,29 @@ export async function recordMediaFacts(
     return { updated: 0 };
   }
 
+  // One statement for the whole request: the facts join media_objects as a VALUES list.
+  const reported = sql`(values ${sql.join(
+    facts.map((fact) => sql`(${fact.sha256}, ${fact.size}::bigint, ${fact.hasAudio}::boolean)`),
+    sql`, `,
+  )}) as reported (sha256, size, has_audio)`;
+
   return database.transaction(async (tx) => {
     await assertNoActiveCleanupJob(tx);
 
-    let updated = 0;
+    const rows = await tx
+      .update(mediaObjects)
+      .set({ hasAudio: sql`reported.has_audio` })
+      .from(reported)
+      .where(
+        and(
+          eq(mediaObjects.sha256, sql`reported.sha256`),
+          eq(mediaObjects.size, sql`reported.size`),
+          eq(mediaObjects.mediaType, "video"),
+        ),
+      )
+      .returning({ id: mediaObjects.id });
 
-    for (const fact of facts) {
-      const rows = await tx
-        .update(mediaObjects)
-        .set({ hasAudio: fact.hasAudio })
-        .where(
-          and(
-            eq(mediaObjects.sha256, fact.sha256),
-            eq(mediaObjects.size, fact.size),
-            eq(mediaObjects.mediaType, "video"),
-          ),
-        )
-        .returning({ id: mediaObjects.id });
-
-      updated += rows.length;
-    }
-
-    return { updated };
+    return { updated: rows.length };
   });
 }
 

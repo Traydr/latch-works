@@ -66,6 +66,9 @@ export class FfprobeUnavailableError extends Error {
   }
 }
 
+/** How long one probe may run, as Oriel's pinned ffprobe allows: a stalled share fails the probe. */
+const PROBE_TIMEOUT_MS = 30_000;
+
 function ffprobeCommand(): string {
   return process.env.LOCKSTEP_FFPROBE?.trim() || "ffprobe";
 }
@@ -93,7 +96,12 @@ export const probeHasAudio: AudioProbe = (filePath, signal) => {
         // Absolute (resolveLocalFilePath), so never read as an option.
         filePath,
       ],
-      { signal, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        killSignal: "SIGKILL",
+        signal,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: PROBE_TIMEOUT_MS,
+      },
     );
 
     let stdout = "";
@@ -109,9 +117,11 @@ export const probeHasAudio: AudioProbe = (filePath, signal) => {
     child.on("error", (error: NodeJS.ErrnoException) => {
       reject(error.code === "ENOENT" ? new FfprobeUnavailableError(command) : error);
     });
-    child.on("close", (code) => {
+    child.on("close", (code, killedBy) => {
       if (code === 0) {
         resolve(stdout.trim() !== "");
+      } else if (killedBy !== null && !signal?.aborted) {
+        reject(new Error(`ffprobe did not finish within ${PROBE_TIMEOUT_MS / 1000}s`));
       } else {
         reject(new Error(`ffprobe failed with ${code}: ${stderr.trim() || "no output"}`));
       }

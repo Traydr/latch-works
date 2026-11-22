@@ -130,6 +130,9 @@ export const ReportMediaFactsRequestSchema = z.object({
 
 export type ReportMediaFactsRequest = z.infer<typeof ReportMediaFactsRequestSchema>;
 
+/** How many media objects a media-facts request updated; facts for bytes Pane View lacks count 0. */
+export const ReportMediaFactsResponseSchema = z.object({ updated: z.number() });
+
 /**
  * One library entry in the snapshot. A non-string `sha256` is dropped rather than rejected.
  * `hasAudio` is present only for a video whose audio Pane View knows; a client reports the facts

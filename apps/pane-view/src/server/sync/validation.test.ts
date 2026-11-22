@@ -8,6 +8,7 @@ import {
   parseCompleteObjectBody,
   parseCreateSyncRunBody,
   parseFinalizeSyncRunBody,
+  parseReportMediaFactsBody,
   parseSyncLogicalPath,
   parseUploadUrlBody,
 } from "./validation";
@@ -17,6 +18,7 @@ const WireVectorsSchema = z.object({
   createRun: z.json(),
   delete: z.json(),
   finalize: z.array(z.object({ body: z.json(), name: z.string() })),
+  mediaFacts: z.object({ request: z.json() }),
   registrations: z.array(
     z.object({
       completeObject: z.json(),
@@ -54,6 +56,13 @@ describe("the bodies Lockstep sends", () => {
 
   it.each(wire.finalize)("finalizing $name", ({ body }) => {
     expect(parseFinalizeSyncRunBody(body).ok).toBe(true);
+  });
+
+  it("a report of videos' audio", () => {
+    expect(parseReportMediaFactsBody(wire.mediaFacts.request)).toEqual({
+      ok: true,
+      body: [{ hasAudio: true, sha256: "a".repeat(64), size: 10 }],
+    });
   });
 });
 

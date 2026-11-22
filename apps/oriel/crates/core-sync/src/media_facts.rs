@@ -235,7 +235,7 @@ pub(crate) async fn report_missing_audio_facts(
     let mut reported = 0;
     for body in media_facts_requests(&facts) {
         match client.report_media_facts(&body, Some(cancel)).await {
-            Ok(()) => reported += body.facts.len(),
+            Ok(updated) => reported += updated,
             Err(error) => {
                 if !is_cancelled(&error) {
                     status(

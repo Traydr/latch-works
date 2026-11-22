@@ -218,6 +218,24 @@ fn finds_the_videos_missing_audio_facts_as_lockstep_core_does() {
 }
 
 #[test]
+fn reports_media_facts_in_the_body_lockstep_core_posts() {
+    let vectors = &wire()["mediaFacts"];
+    let facts: Vec<types::MediaFact> = vectors["missing"]
+        .as_array()
+        .expect("a list in wire.json")
+        .iter()
+        .map(|fact| types::MediaFact {
+            has_audio: true,
+            sha256: text(&fact["sha256"]).to_owned(),
+            size: number(&fact["size"]) as f64,
+        })
+        .collect();
+    let requests = media_facts_requests(&facts);
+    assert_eq!(requests.len(), 1);
+    assert_eq!(body(&requests[0]), vectors["request"]);
+}
+
+#[test]
 fn batches_media_facts_as_lockstep_core_does() {
     let wire = wire();
     assert_eq!(
