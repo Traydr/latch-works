@@ -127,6 +127,8 @@ export const GalleryListingRequestSchema = z.object({
   showImages: z.boolean(),
   showVideos: z.boolean(),
   sortMode: GallerySortModeSchema,
+  /** Narrows videos to those with audio; comics hold images only, so it leaves them alone. */
+  videosWithAudioOnly: z.boolean().optional(),
 });
 
 export interface GalleryListingRequest {
@@ -140,6 +142,7 @@ export interface GalleryListingRequest {
   showImages: boolean;
   showVideos: boolean;
   sortMode: GallerySortMode;
+  videosWithAudioOnly: boolean;
 }
 
 /**
@@ -169,6 +172,8 @@ export function normalizeListingRequest(
     showImages: input.showImages,
     showVideos: input.showVideos,
     sortMode: input.sortMode,
+    // Meaningless while videos are hidden, so it stays out of the query key then.
+    videosWithAudioOnly: input.showVideos && (input.videosWithAudioOnly ?? false),
   };
 }
 

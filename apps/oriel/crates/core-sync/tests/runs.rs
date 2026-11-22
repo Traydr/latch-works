@@ -222,6 +222,155 @@ fn an_update_registers_under_the_remote_spelling() {
     assert_eq!(library["photos/img_1.jpg"].size, 29);
 }
 
+/// A two-second clip with an AAC tone or without sound, from the pinned ffmpeg, as its bytes;
+/// `None` once the test has said it skips for want of the tools.
+fn clip_bytes(sound: bool) -> Option<Vec<u8>> {
+    let tools = oriel_test_archive::media_tools()?;
+    let scratch = tempfile::tempdir().unwrap();
+    let path = scratch.path().join("clip.mp4");
+    let spec = oriel_test_archive::ClipSpec {
+        width: 64,
+        height: 48,
+        rate: 10,
+        seconds: 1,
+        sound,
+    };
+    oriel_test_archive::clip(&tools, &path, spec);
+    Some(fs::read(path).unwrap())
+}
+
+/// The status lines a run reported.
+fn statuses(events: &Mutex<Vec<RunEvent>>) -> Vec<String> {
+    events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|event| match event {
+            RunEvent::Status(line) => Some(line.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn an_uploaded_video_registers_whether_it_has_audio() {
+    let (Some(talk), Some(loop_clip)) = (clip_bytes(true), clip_bytes(false)) else {
+        return;
+    };
+    let setup = setup(&[
+        ("clips/talk.mp4", &talk),
+        ("clips/loop.mp4", &loop_clip),
+        ("photo.jpg", b"not a video"),
+    ]);
+    let plan = setup.plan(HashMode::None);
+    assert_eq!(plan.counts.upload, 3);
+    let client = setup.client();
+    let options = setup.push_options(plan);
+    let (observer, events) = recorder();
+    let result = setup
+        .block_on(async move {
+            push_changes(options, &client, Some(&observer), &CancelToken::new()).await
+        })
+        .unwrap();
+    assert_eq!(result.summary.applied, 3, "{:?}", statuses(&events));
+
+    let audio: Vec<(String, Option<bool>)> = setup
+        .server
+        .library()
+        .into_iter()
+        .map(|(path, entry)| (path, entry.has_audio))
+        .collect();
+    assert_eq!(
+        audio,
+        [
+            ("clips/loop.mp4".to_owned(), Some(false)),
+            ("clips/talk.mp4".to_owned(), Some(true)),
+            ("photo.jpg".to_owned(), None),
+        ]
+    );
+    // The uploads said it all, so there was nothing left to report.
+    assert!(setup.server.media_fact_reports().is_empty());
+    assert_eq!(result.summary.media_facts_reported, 0);
+}
+
+#[test]
+fn a_push_reports_the_audio_of_kept_videos_pane_view_does_not_know() {
+    let (Some(talk), Some(loop_clip)) = (clip_bytes(true), clip_bytes(false)) else {
+        return;
+    };
+    let setup = setup(&[
+        ("clips/talk.mp4", &talk),
+        ("clips/loop.mp4", &loop_clip),
+        ("photo.jpg", b"a photo"),
+    ]);
+    // Synced before Pane View knew videos' audio.
+    setup.server.seed("clips/talk.mp4", &talk);
+    setup.server.seed("clips/loop.mp4", &loop_clip);
+    setup.server.seed("photo.jpg", b"a photo");
+    let plan = setup.plan(HashMode::RemoteAware);
+    assert_eq!((plan.counts.keep, plan.counts.to_push()), (3, 0));
+
+    let client = setup.client();
+    let options = setup.push_options(plan);
+    let (observer, events) = recorder();
+    let result = setup
+        .block_on(async move {
+            push_changes(options, &client, Some(&observer), &CancelToken::new()).await
+        })
+        .unwrap();
+    let statuses = statuses(&events);
+    assert_eq!(result.summary.media_facts_reported, 2, "{statuses:?}");
+    assert!(statuses.contains(&"Checking 2 synced video(s) for audio.".to_owned()));
+    // Nothing was uploaded, so no sync run was opened for the facts.
+    assert!(setup.server.runs().is_empty());
+    // The run is reported complete once its facts are in.
+    let completed = events
+        .lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .find_map(|event| match event {
+            RunEvent::Complete(summary) => Some(summary.media_facts_reported),
+            _ => None,
+        });
+    assert_eq!(completed, Some(2));
+
+    let reports = setup.server.media_fact_reports();
+    assert_eq!(reports.len(), 1);
+    let library = setup.server.library();
+    let mut reported: Vec<(String, bool)> = reports[0]
+        .iter()
+        .map(|fact| {
+            let path = library
+                .iter()
+                .find(|(_, entry)| Some(entry.sha256.as_str()) == fact["sha256"].as_str())
+                .map(|(path, _)| path.clone())
+                .unwrap();
+            (path, fact["hasAudio"].as_bool().unwrap())
+        })
+        .collect();
+    reported.sort();
+    assert_eq!(
+        reported,
+        [
+            ("clips/loop.mp4".to_owned(), false),
+            ("clips/talk.mp4".to_owned(), true),
+        ]
+    );
+    assert_eq!(library["clips/talk.mp4"].has_audio, Some(true));
+    assert_eq!(library["photo.jpg"].has_audio, None);
+
+    // Once Pane View knows, a later push has nothing to report.
+    let plan = setup.plan(HashMode::RemoteAware);
+    let client = setup.client();
+    let options = setup.push_options(plan);
+    let again = setup
+        .block_on(async move { push_changes(options, &client, None, &CancelToken::new()).await })
+        .unwrap();
+    assert_eq!(again.summary.media_facts_reported, 0);
+    assert_eq!(setup.server.media_fact_reports().len(), 1);
+}
+
 #[test]
 fn a_file_changed_since_the_plan_fails_its_item_and_the_run() {
     let setup = setup(&[("a.jpg", b"one"), ("b.jpg", b"two")]);

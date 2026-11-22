@@ -5,9 +5,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+use oriel_core_domain::MediaType;
 use oriel_core_domain::format;
 use oriel_core_sync::ScanArchiveProgress;
-use oriel_core_sync::{LockstepPlan, PlanCounts, RunAction, RunEvent, RunStatus};
+use oriel_core_sync::{LockstepPlan, PlanCounts, RunAction, RunEvent, RunStatus, SyncPlanAction};
 
 /// Lines the run log keeps; older ones scroll away.
 const LOG_LINES: usize = 200;
@@ -604,6 +605,26 @@ pub fn prune_availability(
     PruneAvailability::Enabled {
         delete_count: counts.delete,
     }
+}
+
+/// The kept videos whose audio Pane View does not know yet, by the plan on screen. With nothing
+/// to upload, Push still runs for these: it probes them and reports their audio. The plan on
+/// screen has no hashes, so the push plans again and reports only the videos whose hash matches.
+pub fn videos_awaiting_audio(plan: &LockstepPlan) -> usize {
+    plan.items
+        .iter()
+        .filter(|item| {
+            item.action == SyncPlanAction::Keep
+                && item
+                    .local
+                    .as_ref()
+                    .is_some_and(|local| local.media_type == MediaType::Video)
+                && item
+                    .remote
+                    .as_ref()
+                    .is_some_and(|remote| remote.has_audio.is_none())
+        })
+        .count()
 }
 
 /// "3 remote entries", "1 remote entry".

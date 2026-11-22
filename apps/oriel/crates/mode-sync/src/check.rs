@@ -109,6 +109,7 @@ fn local(path: &str, size: u64) -> MediaItem {
 
 fn item(action: SyncPlanAction, path: String, size: u64) -> SyncPlanItem {
     let remote = RemoteEntrySnapshot {
+        has_audio: None,
         path: path.clone(),
         sha256: None,
         size,

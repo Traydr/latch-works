@@ -9,6 +9,7 @@ import {
   normalizeListingRequest,
   normalizeSnapshotRequest,
 } from "@/features/library/listing-contract";
+import type { AppSettings } from "@/features/settings/types";
 
 /**
  * The rules of gallery browse state (Plan 048), with no React in them;
@@ -99,12 +100,18 @@ export function snapshotRequestFor(
   return normalizeSnapshotRequest({ path: state.path, query: state.q });
 }
 
+/** The gallery's media-type toggles, as the app settings hold them. */
+export type MediaVisibility = Pick<
+  AppSettings,
+  "showImages" | "showVideos" | "videosWithAudioOnly"
+>;
+
 export function listingRequestFor(
   state: Pick<
     ResolvedBrowseState,
     "comicMode" | "path" | "query" | "randomSeed" | "recursive" | "sortMode"
   >,
-  settings: { showImages: boolean; showVideos: boolean },
+  settings: MediaVisibility,
   excludedPaths: readonly string[] = [],
 ): GalleryListingRequest {
   return normalizeListingRequest({
@@ -117,6 +124,7 @@ export function listingRequestFor(
     showImages: settings.showImages,
     showVideos: settings.showVideos,
     sortMode: state.sortMode,
+    videosWithAudioOnly: settings.videosWithAudioOnly,
   });
 }
 

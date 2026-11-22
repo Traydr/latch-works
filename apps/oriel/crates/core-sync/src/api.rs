@@ -40,6 +40,7 @@ pub(crate) mod routes {
     pub(crate) const RUNS: &str = "/api/sync/runs";
     pub(crate) const UPLOAD_URL: &str = "/api/sync/upload-url";
     pub(crate) const COMPLETE_OBJECT: &str = "/api/sync/complete-object";
+    pub(crate) const MEDIA_FACTS: &str = "/api/sync/media-facts";
 
     /// `completeSyncRunRoute`.
     pub(crate) fn complete_run(sync_run_id: &str) -> String {
@@ -58,6 +59,9 @@ pub(crate) const FINALIZE_RETRY_DELAYS: [Duration; 2] =
 /// How long one finalize attempt may take. A finalize is a single row update, so a slower answer
 /// counts as a failed attempt and is retried.
 pub(crate) const FINALIZE_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The most facts one media-facts request may carry, `MAX_MEDIA_FACTS_PER_REQUEST`.
+pub(crate) const MAX_MEDIA_FACTS_PER_REQUEST: usize = 500;
 
 /// How often an upload or a hash reports its bytes.
 pub(crate) const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
@@ -284,6 +288,19 @@ impl PaneViewClient {
         self.post::<_, serde_json::Value>(routes::COMPLETE_OBJECT, body, cancel)
             .await
             .map(drop)
+    }
+
+    /// `reportMediaFacts`: what a push learned about originals Pane View already holds. Needs no
+    /// sync run; the answer is only an acknowledgement.
+    pub async fn report_media_facts(
+        &self,
+        body: &types::ReportMediaFactsRequest,
+        cancel: Option<&CancelToken>,
+    ) -> anyhow::Result<usize> {
+        let answer: types::ReportMediaFactsResponse =
+            self.post(routes::MEDIA_FACTS, body, cancel).await?;
+        // A count of media objects: a whole, non-negative number.
+        Ok(answer.updated.max(0.0) as usize)
     }
 
     /// `deleteRemoteItem`.
@@ -577,9 +594,9 @@ const NO_ENTRIES: &str = "Remote sync snapshot response must include an entries 
 const BAD_ENTRY: &str = "Remote snapshot entries must include path and size.";
 
 /// `RemoteSnapshotResponseSchema`: a snapshot answer's entries, read in one pass straight into
-/// them. Fields it does not know are ignored and a hash that is not a string is dropped
-/// (`.catch(undefined)`). Unlike zod, an entry written as an array or with a key named twice is
-/// read rather than refused; Pane View writes neither.
+/// them. Fields it does not know are ignored, and a hash that is not a string or an audio flag that
+/// is not a boolean is dropped (`.catch(undefined)`). Unlike zod, an entry written as an array or
+/// with a key named twice is read rather than refused; Pane View writes neither.
 pub(crate) fn parse_snapshot(text: &str) -> anyhow::Result<Vec<RemoteEntrySnapshot>> {
     let in_entry = Cell::new(false);
     let mut reader = serde_json::Deserializer::from_str(text);
@@ -599,57 +616,81 @@ struct Entry {
     size: f64,
     #[serde(default, deserialize_with = "string_or_nothing")]
     sha256: Option<String>,
+    #[serde(default, rename = "hasAudio", deserialize_with = "bool_or_nothing")]
+    has_audio: Option<bool>,
 }
 
 /// A string, or `None` for any other value, which is read past.
 fn string_or_nothing<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<String>, D::Error> {
-    struct AnyValue;
+    Ok(deserializer
+        .deserialize_any(AnyValue)?
+        .and_then(|value| match value {
+            Scalar::String(value) => Some(value),
+            Scalar::Bool(_) => None,
+        }))
+}
 
-    impl<'de> Visitor<'de> for AnyValue {
-        type Value = Option<String>;
+/// A boolean, or `None` for any other value, which is read past.
+fn bool_or_nothing<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<bool>, D::Error> {
+    Ok(deserializer
+        .deserialize_any(AnyValue)?
+        .and_then(|value| match value {
+            Scalar::Bool(value) => Some(value),
+            Scalar::String(_) => None,
+        }))
+}
 
-        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            formatter.write_str("any JSON value")
-        }
+/// A string or boolean an entry may hold; any other value reads as `None`.
+enum Scalar {
+    String(String),
+    Bool(bool),
+}
 
-        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
-            Ok(Some(value.to_owned()))
-        }
+/// Any JSON value, kept when it is a string or a boolean and read past otherwise.
+struct AnyValue;
 
-        fn visit_bool<E>(self, _: bool) -> Result<Self::Value, E> {
-            Ok(None)
-        }
+impl<'de> Visitor<'de> for AnyValue {
+    type Value = Option<Scalar>;
 
-        fn visit_unit<E>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_i64<E>(self, _: i64) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_u64<E>(self, _: u64) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_f64<E>(self, _: f64) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-            while seq.next_element::<IgnoredAny>()?.is_some() {}
-            Ok(None)
-        }
-
-        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-            while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
-            Ok(None)
-        }
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("any JSON value")
     }
 
-    deserializer.deserialize_any(AnyValue)
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
+        Ok(Some(Scalar::String(value.to_owned())))
+    }
+
+    fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E> {
+        Ok(Some(Scalar::Bool(value)))
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_i64<E>(self, _: i64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_u64<E>(self, _: u64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_f64<E>(self, _: f64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        while seq.next_element::<IgnoredAny>()?.is_some() {}
+        Ok(None)
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
+        Ok(None)
+    }
 }
 
 /// The answer's top level: its entries, if it has an `entries` key. The flag says whether a
@@ -707,6 +748,7 @@ impl<'de> Visitor<'de> for Entries<'_> {
         loop {
             match seq.next_element::<Entry>() {
                 Ok(Some(entry)) => entries.push(RemoteEntrySnapshot {
+                    has_audio: entry.has_audio,
                     path: entry.path,
                     sha256: entry.sha256,
                     size: entry.size as u64,

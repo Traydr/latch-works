@@ -10,6 +10,7 @@ import { ArchiveMediaTypeSchema } from "./objects.js";
 
 export const SYNC_ROUTES = {
   completeObject: "/api/sync/complete-object",
+  mediaFacts: "/api/sync/media-facts",
   runs: "/api/sync/runs",
   snapshot: "/api/sync/snapshot",
   uploadUrl: "/api/sync/upload-url",
@@ -81,6 +82,11 @@ export const CompleteObjectRequestSchema = z.object({
   sha256: z.string(),
   size: z.number(),
   syncRunId: z.string(),
+  /**
+   * A video's audio: whether it has at least one audio stream. Absent for other media, and for a
+   * video the client could not probe; Pane View then keeps whatever it already knew.
+   */
+  hasAudio: z.boolean().optional(),
 });
 
 export type CompleteObjectRequest = z.infer<typeof CompleteObjectRequestSchema>;
@@ -102,8 +108,38 @@ export const UploadTargetSchema = z.object({
   uploadUrl: z.string(),
 });
 
-/** One library entry in the snapshot. A non-string `sha256` is dropped rather than rejected. */
+/**
+ * What a client learned about an original's content that its type does not say, keyed by the
+ * bytes: today whether a video has audio. Clients report it for videos already synced before the
+ * fact was recorded, so Pane View learns it without the upload being repeated.
+ */
+export const MediaFactSchema = z.object({
+  hasAudio: z.boolean(),
+  sha256: z.string(),
+  size: z.number(),
+});
+
+export type MediaFact = z.infer<typeof MediaFactSchema>;
+
+/** Most facts one `POST /api/sync/media-facts` may carry. */
+export const MAX_MEDIA_FACTS_PER_REQUEST = 500;
+
+export const ReportMediaFactsRequestSchema = z.object({
+  facts: z.array(MediaFactSchema).max(MAX_MEDIA_FACTS_PER_REQUEST),
+});
+
+export type ReportMediaFactsRequest = z.infer<typeof ReportMediaFactsRequestSchema>;
+
+/** How many media objects a media-facts request updated; facts for bytes Pane View lacks count 0. */
+export const ReportMediaFactsResponseSchema = z.object({ updated: z.number() });
+
+/**
+ * One library entry in the snapshot. A non-string `sha256` is dropped rather than rejected.
+ * `hasAudio` is present only for a video whose audio Pane View knows; a client reports the facts
+ * of the videos it lacks.
+ */
 export const RemoteEntrySchema = z.object({
+  hasAudio: z.boolean().optional().catch(undefined),
   path: z.string(),
   sha256: z.string().optional().catch(undefined),
   size: z.number(),

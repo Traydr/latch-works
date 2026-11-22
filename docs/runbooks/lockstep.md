@@ -121,6 +121,13 @@ and defers hashes for obvious uploads or size changes until those items are sele
 then asks the API for upload targets and uploads originals when storage credentials are configured.
 `push` never applies remote deletes — use `prune` for those.
 
+`push` also tells Pane View which videos have audio, for its gallery's audio filter. It probes each
+video it uploads with ffprobe (`ffprobe` on `PATH`, or the binary `LOCKSTEP_FFPROBE` names). After
+the uploads it probes the kept videos whose audio Pane View does not know yet, such as videos
+synced before Pane View recorded audio, and reports them through `POST /api/sync/media-facts`. That
+route only sets `media_objects.has_audio` and uploads nothing. Without ffprobe, `push` warns once and
+uploads as usual, and those videos stay out of the audio filter until a later push can probe them.
+
 ```powershell
 $env:LOCKSTEP_API_URL = "http://localhost:3000"
 $env:LOCKSTEP_API_TOKEN = "replace-me"

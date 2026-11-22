@@ -95,6 +95,7 @@ fn prunes_as_lockstep_core_does() {
             .remote
             .iter()
             .map(|path| RemoteEntrySnapshot {
+                has_audio: None,
                 path: path.clone(),
                 sha256: None,
                 size: 1,

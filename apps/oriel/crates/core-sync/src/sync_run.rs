@@ -157,6 +157,19 @@ impl<'a> SyncRun<'a> {
     /// unfinalized outranks a cancel or a stopping error: it is the one the user must act on.
     pub(crate) async fn finish(self, outcome: RunOutcome) -> anyhow::Result<RunSummary> {
         let observer = self.observer;
+        let summary = self.finish_holding_complete(outcome).await?;
+        emit(observer, RunEvent::Complete(summary.clone()));
+        Ok(summary)
+    }
+
+    /// [`Self::finish`], but a run that ends without an interruption is not yet reported
+    /// complete: the caller sends its [`RunEvent::Complete`] once its own work after the run is
+    /// done, as a push does once it has reported its videos' audio.
+    pub(crate) async fn finish_holding_complete(
+        self,
+        outcome: RunOutcome,
+    ) -> anyhow::Result<RunSummary> {
+        let observer = self.observer;
         let finalize_error = self
             .client
             .finalize_sync_run(
@@ -199,9 +212,7 @@ impl<'a> SyncRun<'a> {
                         outcome.skipped
                     )
                 });
-                let summary = self.summary(&outcome, outcome.status(), message);
-                emit(observer, RunEvent::Complete(summary.clone()));
-                Ok(summary)
+                Ok(self.summary(&outcome, outcome.status(), message))
             }
         }
     }

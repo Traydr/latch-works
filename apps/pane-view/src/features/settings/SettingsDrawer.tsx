@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { type CopyStatus, useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
+import { cn } from "@/lib/utils";
 import { GALLERY_HOTKEYS } from "./hotkeys";
 import { type AppSettings, type AppSettingsPatch, ThemeModeSchema } from "./types";
 
@@ -135,6 +136,12 @@ export function SettingsDrawer({
               label="Show videos"
               onChange={(checked) => onUpdate({ showVideos: checked })}
             />
+            <ToggleRow
+              checked={settings.videosWithAudioOnly}
+              disabled={!settings.showVideos}
+              label="Only videos with audio"
+              onChange={(checked) => onUpdate({ videosWithAudioOnly: checked })}
+            />
           </section>
 
           <section className="space-y-3">
@@ -225,18 +232,26 @@ export function SettingsDrawer({
 
 function ToggleRow({
   checked,
+  disabled = false,
   label,
   onChange,
 }: {
   checked: boolean;
+  disabled?: boolean;
   label: string;
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 text-sm">
+    <label
+      className={cn(
+        "flex items-center justify-between gap-3 text-sm",
+        disabled && "text-muted-foreground",
+      )}
+    >
       <span>{label}</span>
       <input
         checked={checked}
+        disabled={disabled}
         type="checkbox"
         onChange={(event) => onChange(event.target.checked)}
       />

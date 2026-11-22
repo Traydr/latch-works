@@ -177,6 +177,10 @@ async function runPush(
   } else {
     console.log(`Push finished: ${result.applied} change(s) applied.`);
   }
+
+  if (result.mediaFactsReported) {
+    console.log(`Recorded audio for ${result.mediaFactsReported} synced video(s).`);
+  }
 }
 
 async function runPrune(

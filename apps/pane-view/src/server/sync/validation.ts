@@ -18,15 +18,18 @@ import {
   CreateSyncRunRequestSchema,
   contentTypeForExtension,
   DeleteObjectRequestSchema,
+  MAX_MEDIA_FACTS_PER_REQUEST,
   MAX_SYNC_UPLOAD_BYTES,
+  MediaFactSchema,
   originalObjectKey,
+  ReportMediaFactsRequestSchema,
   SHA256_PATTERN,
   SyncRunStatusSchema,
   UploadUrlRequestSchema,
 } from "@latch-works/sync-protocol";
 import { z } from "zod";
 import type { JsonValue } from "@/lib/json";
-import type { CompleteObjectInput, RemoteDeleteInput } from "./store";
+import type { CompleteObjectInput, MediaFactInput, RemoteDeleteInput } from "./store";
 import type { FinalizeSyncRunBody, StartSyncRunInput } from "./sync-runs";
 
 export type ParsedSyncBody<Body> = { ok: true; body: Body } | { ok: false; error: string };
@@ -103,6 +106,24 @@ const UploadedObjectBodySchema = CompleteObjectRequestSchema.extend({
   objectKey: z.string({ error: "objectKey is required" }),
   contentType: z.string({ error: "contentType is required" }),
   syncRunId: syncRunIdSchema("syncRunId is required"),
+  hasAudio: z.boolean({ error: "hasAudio must be a boolean" }).optional(),
+});
+
+const MediaFactBodySchema = MediaFactSchema.extend({
+  hasAudio: z.boolean({ error: "hasAudio must be a boolean" }),
+  sha256: z
+    .string({ error: "sha256 is required" })
+    .regex(SHA256_PATTERN, { error: SHA256_ERROR })
+    .transform((sha256) => sha256.toLowerCase()),
+  size: uploadSizeSchema,
+});
+
+const ReportMediaFactsBodySchema = ReportMediaFactsRequestSchema.extend({
+  facts: z
+    .array(MediaFactBodySchema, { error: "facts must be an array" })
+    .max(MAX_MEDIA_FACTS_PER_REQUEST, {
+      error: `facts must hold at most ${MAX_MEDIA_FACTS_PER_REQUEST} entries`,
+    }),
 });
 
 const RemoteDeleteBodySchema = DeleteObjectRequestSchema.extend({
@@ -256,6 +277,8 @@ function validateUploadedObject(
       contentType: body.contentType,
       extension,
       filename,
+      // Audio describes videos only; a client that sends it for anything else is ignored.
+      hasAudio: body.mediaType === "video" ? (body.hasAudio ?? null) : null,
       logicalPath,
       mediaType: body.mediaType,
       mtimeMs: body.mtimeMs,
@@ -286,6 +309,12 @@ export function parseCompleteObjectBody(json: JsonValue): ParsedSyncBody<Complet
   const upload = validateUploadedObject(parsed.body);
 
   return upload.ok ? { ok: true, body: { action: "upload", ...upload.body } } : upload;
+}
+
+export function parseReportMediaFactsBody(json: JsonValue): ParsedSyncBody<MediaFactInput[]> {
+  const parsed = parseWith(ReportMediaFactsBodySchema, json);
+
+  return parsed.ok ? { ok: true, body: parsed.body.facts } : parsed;
 }
 
 export function parseCreateSyncRunBody(json: JsonValue): ParsedSyncBody<StartSyncRunInput> {

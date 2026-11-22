@@ -32,9 +32,12 @@ import {
   completeSyncRunRoute,
   contentTypeForExtension,
   DeleteObjectRequestSchema,
+  MAX_MEDIA_FACTS_PER_REQUEST,
   MAX_SYNC_UPLOAD_BYTES,
   originalObjectKey,
   type RemoteEntry,
+  RemoteEntrySchema,
+  ReportMediaFactsRequestSchema,
   SYNC_ROUTES,
   UploadUrlRequestSchema,
 } from "@latch-works/sync-protocol";
@@ -43,6 +46,7 @@ import { z } from "zod";
 import { isListingReusable } from "./directory-alias-index.js";
 import { doctor } from "./doctor.js";
 import { HashCache, hashCachePath, loadHashCache } from "./hash-cache.js";
+import { mediaFactsRequests, videosMissingAudioFacts } from "./media-facts.js";
 import { selectPlanningHashPaths } from "./plan-sync.js";
 import { pruneDeleted } from "./prune-deleted.js";
 import {
@@ -1274,9 +1278,11 @@ const WireVectorsSchema = z.object({
     finalizeAttemptTimeoutMs: z.number(),
     finalizeRetryDelaysMs: z.array(z.number()),
     maxUploadBytes: z.number(),
+    maxMediaFactsPerRequest: z.number(),
     routes: z.object({
       completeObject: z.string(),
       completeRun: z.string(),
+      mediaFacts: z.string(),
       runs: z.string(),
       snapshot: z.string(),
       uploadUrl: z.string(),
@@ -1291,6 +1297,7 @@ const WireVectorsSchema = z.object({
         mtimeMs: z.number(),
         sha256: z.string(),
       }),
+      hasAudio: z.boolean().optional(),
       logicalPath: z.string(),
       uploadUrl: UploadUrlRequestSchema,
       completeObject: CompleteObjectRequestSchema,
@@ -1317,11 +1324,27 @@ const WireVectorsSchema = z.object({
       name: z.string(),
       body: z.string(),
       entries: z
-        .array(z.object({ path: z.string(), size: z.number(), sha256: z.string().optional() }))
+        .array(
+          z.object({
+            hasAudio: z.boolean().optional(),
+            path: z.string(),
+            size: z.number(),
+            sha256: z.string().optional(),
+          }),
+        )
         .optional(),
       error: z.string().optional(),
     }),
   ),
+  /** The kept videos a push probes for audio, and the request bodies it batches their facts in. */
+  mediaFacts: z.object({
+    local: z.array(z.object({ path: z.string(), size: z.number(), sha256: z.string().optional() })),
+    remote: z.array(RemoteEntrySchema),
+    missing: z.array(z.object({ path: z.string(), sha256: z.string(), size: z.number() })),
+    /** The body that reports the missing videos once probed as having audio. */
+    request: ReportMediaFactsRequestSchema,
+    batchSizes: z.array(z.number()),
+  }),
 });
 
 type WireVectors = z.infer<typeof WireVectorsSchema>;
@@ -1338,6 +1361,40 @@ const WIRE_REGISTRATIONS = [
   { name: "a PDF", path: "docs/Manual.pdf", remotePath: undefined },
   { name: "an MKV uploads as bytes", path: "clips/take.mkv", remotePath: undefined },
   { name: "a Unicode path", path: "Café/résumé.webp", remotePath: undefined },
+  {
+    name: "a video with audio",
+    path: "clips/talk.mp4",
+    remotePath: undefined,
+    hasAudio: true,
+  },
+  {
+    name: "a silent video",
+    path: "clips/loop.webm",
+    remotePath: undefined,
+    hasAudio: false,
+  },
+];
+
+/*
+ * Which kept videos lack an audio fact: a video kept with matching hashes and no remote `hasAudio`
+ * is missing one; a video Pane View knows, a non-video, an update, an upload, and a kept video
+ * whose hash was not checked are not.
+ */
+const MEDIA_FACTS_LOCAL = [
+  mediaItem("unknown.mp4", 10, SHA_A),
+  mediaItem("known.mp4", 11, SHA_B),
+  mediaItem("photo.jpg", 12, SHA_C),
+  mediaItem("changed.mov", 13, SHA_A),
+  mediaItem("new.mkv", 14, SHA_A),
+  mediaItem("unhashed.mp4", 15),
+];
+
+const MEDIA_FACTS_REMOTE: RemoteEntry[] = [
+  { path: "unknown.mp4", size: 10, sha256: SHA_A },
+  { path: "known.mp4", size: 11, sha256: SHA_B, hasAudio: false },
+  { path: "photo.jpg", size: 12, sha256: SHA_C },
+  { path: "changed.mov", size: 13, sha256: SHA_B },
+  { path: "unhashed.mp4", size: 15, sha256: SHA_C },
 ];
 
 const WIRE_PLAN: LockstepPlan = {
@@ -1397,6 +1454,10 @@ const WIRE_SNAPSHOTS = [
     body: '{"entries":[{"path":"a.jpg","size":1,"mediaType":"image"}],"status":"ok"}',
   },
   {
+    name: "a video's audio is read, and a non-boolean one dropped",
+    body: '{"entries":[{"path":"a.mp4","size":1,"hasAudio":true},{"path":"b.mp4","size":2,"hasAudio":false},{"path":"c.mp4","size":3,"hasAudio":"yes"},{"path":"d.mp4","size":4,"hasAudio":null}]}',
+  },
+  {
     name: "a null or numeric hash is dropped",
     body: '{"entries":[{"path":"a.jpg","size":1,"sha256":null},{"path":"b.jpg","size":2,"sha256":5}]}',
   },
@@ -1413,10 +1474,13 @@ function makeWireVectors(): WireVectors {
       createRunCancelGraceMs: CREATE_SYNC_RUN_CANCEL_GRACE_MS,
       finalizeAttemptTimeoutMs: FINALIZE_ATTEMPT_TIMEOUT_MS,
       finalizeRetryDelaysMs: FINALIZE_RETRY_DELAYS_MS,
+      maxMediaFactsPerRequest: MAX_MEDIA_FACTS_PER_REQUEST,
       maxUploadBytes: MAX_SYNC_UPLOAD_BYTES,
       routes: { ...SYNC_ROUTES, completeRun: completeSyncRunRoute("{syncRunId}") },
     },
-    registrations: WIRE_REGISTRATIONS.map(({ name, path, remotePath }) => {
+    registrations: WIRE_REGISTRATIONS.map((registration) => {
+      const { name, path, remotePath } = registration;
+      const hasAudio = "hasAudio" in registration ? registration.hasAudio : undefined;
       const item = { ...mediaItem(path, 1234, SHA_A), sha256: SHA_A };
       const logicalPath = remotePath ?? path;
       const uploadUrl = uploadUrlBody(item, logicalPath);
@@ -1424,9 +1488,11 @@ function makeWireVectors(): WireVectors {
       return {
         name,
         item: { path: item.path, size: item.size, mtimeMs: item.mtimeMs, sha256: item.sha256 },
+        hasAudio,
         logicalPath,
         uploadUrl,
         completeObject: completeObjectBody({
+          hasAudio,
           item,
           logicalPath,
           objectKey: originalObjectKey({
@@ -1463,6 +1529,23 @@ function makeWireVectors(): WireVectors {
         return { name, body, error: error instanceof Error ? error.message : String(error) };
       }
     }),
+    mediaFacts: {
+      local: MEDIA_FACTS_LOCAL.map(({ path, sha256, size }) => ({ path, sha256, size })),
+      remote: MEDIA_FACTS_REMOTE,
+      missing: videosMissingAudioFacts(createSyncPlan(MEDIA_FACTS_LOCAL, MEDIA_FACTS_REMOTE)),
+      request: mediaFactsRequests(
+        videosMissingAudioFacts(createSyncPlan(MEDIA_FACTS_LOCAL, MEDIA_FACTS_REMOTE)).map(
+          ({ sha256, size }) => ({ hasAudio: true, sha256, size }),
+        ),
+      )[0] ?? { facts: [] },
+      batchSizes: mediaFactsRequests(
+        Array.from({ length: MAX_MEDIA_FACTS_PER_REQUEST * 2 + 1 }, () => ({
+          hasAudio: true,
+          sha256: SHA_A,
+          size: 1,
+        })),
+      ).map((request) => request.facts.length),
+    },
   };
 }
 

@@ -1,13 +1,14 @@
 //! Test support, behind the `test-support` feature: a small Pane View on a local port, and the
 //! e2e stack's description for the tests and the bench that run against the real one.
 //!
-//! [`FakePaneView`] serves the five sync routes with its library in memory. Each request body
+//! [`FakePaneView`] serves the six sync routes with its library in memory. Each request body
 //! must have the shape of the bodies `conformance/lockstep-core/wire.json` lists for its route,
 //! which Pane View's routes are tested to accept, and may write only into a running sync run.
 //! Pane View's other checks of a body stay Pane View's: the fake stands in for the routes'
 //! shapes and the storage behind them. Upload URLs are signed with the length and SHA-256 headers
 //! (plan 026), the PUT is checked as S3 checks it, and a registration must name stored bytes of
-//! its hash. Requests without the token get a 401.
+//! its hash. Media facts set the audio of the library's entries with their hash and size, as Pane
+//! View sets its videos'. Requests without the token get a 401.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead as _, BufReader, Read as _, Write as _};
@@ -68,6 +69,8 @@ struct Wire {
     delete: Shape,
     create_run: Shape,
     finalize: Shape,
+    media_facts: Shape,
+    max_media_facts: usize,
 }
 
 static WIRE: LazyLock<Wire> = LazyLock::new(|| {
@@ -89,6 +92,10 @@ static WIRE: LazyLock<Wire> = LazyLock::new(|| {
         delete: Shape::of([&wire["delete"]]),
         create_run: Shape::of([&wire["createRun"]]),
         finalize: examples("finalize", "body"),
+        media_facts: Shape::of([&wire["mediaFacts"]["request"]]),
+        max_media_facts: wire["constants"]["maxMediaFactsPerRequest"]
+            .as_u64()
+            .expect("the media-facts limit in wire.json") as usize,
     }
 });
 
@@ -97,8 +104,11 @@ static WIRE: LazyLock<Wire> = LazyLock::new(|| {
 #[derive(Debug)]
 enum Shape {
     Object(BTreeMap<String, (Shape, bool)>),
+    /// A list whose items all have the shape.
+    Array(Box<Shape>),
     String,
     Number,
+    Bool,
 }
 
 impl Shape {
@@ -127,8 +137,16 @@ impl Shape {
                         .collect(),
                 )
             }
+            Value::Array(_) => {
+                let items: Vec<&Value> = examples
+                    .iter()
+                    .flat_map(|example| example.as_array().expect("examples of one shape"))
+                    .collect();
+                Self::Array(Box::new(Self::of(items)))
+            }
             Value::String(_) => Self::String,
             Value::Number(_) => Self::Number,
+            Value::Bool(_) => Self::Bool,
             other => panic!("wire.json has no {other} in a body"),
         }
     }
@@ -136,7 +154,13 @@ impl Shape {
     /// Why `value` does not have this shape, if it does not.
     fn check(&self, value: &Value, at: &str) -> Result<(), String> {
         match (self, value) {
-            (Self::String, Value::String(_)) | (Self::Number, Value::Number(_)) => Ok(()),
+            (Self::String, Value::String(_))
+            | (Self::Number, Value::Number(_))
+            | (Self::Bool, Value::Bool(_)) => Ok(()),
+            (Self::Array(item), Value::Array(items)) => items
+                .iter()
+                .enumerate()
+                .try_for_each(|(index, value)| item.check(value, &format!("{at}{index}."))),
             (Self::Object(keys), Value::Object(object)) => {
                 if let Some(extra) = object.keys().find(|key| !keys.contains_key(*key)) {
                     return Err(format!("{at}{extra} is not part of the body"));
@@ -160,6 +184,8 @@ impl Shape {
 pub struct FakeEntry {
     pub sha256: String,
     pub size: u64,
+    /// Whether the video has audio, once a registration or a media fact said.
+    pub has_audio: Option<bool>,
 }
 
 /// A sync run as the fake recorded it.
@@ -177,6 +203,7 @@ struct State {
     objects: HashMap<String, Vec<u8>>,
     runs: Vec<FakeRun>,
     puts: Vec<HashMap<String, String>>,
+    media_facts: Vec<Vec<Value>>,
 }
 
 impl State {
@@ -330,6 +357,7 @@ impl FakePaneView {
             FakeEntry {
                 sha256,
                 size: bytes.len() as u64,
+                has_audio: None,
             },
         );
     }
@@ -340,6 +368,11 @@ impl FakePaneView {
 
     pub fn runs(&self) -> Vec<FakeRun> {
         self.lock().runs.clone()
+    }
+
+    /// The facts of each media-facts request, in the order they came.
+    pub fn media_fact_reports(&self) -> Vec<Vec<Value>> {
+        self.lock().media_facts.clone()
     }
 
     /// The headers of each upload, lower-cased.
@@ -524,7 +557,12 @@ impl Shared {
                     .library
                     .iter()
                     .map(|(path, entry)| {
-                        json!({ "path": path, "sha256": entry.sha256, "size": entry.size })
+                        let mut listed =
+                            json!({ "path": path, "sha256": entry.sha256, "size": entry.size });
+                        if let Some(has_audio) = entry.has_audio {
+                            listed["hasAudio"] = json!(has_audio);
+                        }
+                        listed
                     })
                     .collect();
                 (200, json!({ "entries": entries }))
@@ -590,6 +628,7 @@ impl Shared {
                 let entry = FakeEntry {
                     sha256: hex(&Sha256::digest(object)),
                     size: object.len() as u64,
+                    has_audio: body["hasAudio"].as_bool(),
                 };
                 if Some(entry.sha256.as_str()) != body["sha256"].as_str() {
                     return bad("sha256 does not match storage".to_owned());
@@ -597,6 +636,28 @@ impl Shared {
                 let path = body["logicalPath"].as_str().unwrap_or_default().to_owned();
                 state.library.insert(path, entry);
                 (200, json!({}))
+            }
+            ("POST", routes::MEDIA_FACTS) => {
+                if let Err(error) = wire.media_facts.check(body, "") {
+                    return bad(error);
+                }
+                let facts = body["facts"].as_array().cloned().unwrap_or_default();
+                if facts.len() > wire.max_media_facts {
+                    return bad(format!("at most {} facts", wire.max_media_facts));
+                }
+                let mut updated = 0;
+                for fact in &facts {
+                    for entry in state.library.values_mut() {
+                        if Some(entry.sha256.as_str()) == fact["sha256"].as_str()
+                            && Some(entry.size) == fact["size"].as_u64()
+                        {
+                            entry.has_audio = fact["hasAudio"].as_bool();
+                            updated += 1;
+                        }
+                    }
+                }
+                state.media_facts.push(facts);
+                (200, json!({ "updated": updated }))
             }
             ("POST", _) if finalized_run.is_some() => {
                 if let Err(error) = wire.finalize.check(body, "") {

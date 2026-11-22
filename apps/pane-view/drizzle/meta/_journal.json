@@ -169,6 +169,13 @@
       "when": 1795311206436,
       "tag": "0023_library_size_events",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795349308181,
+      "tag": "0024_media_objects_has_audio",
+      "breakpoints": true
     }
   ]
 }

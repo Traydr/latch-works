@@ -88,7 +88,7 @@ describe("requests", () => {
   });
 
   it("carries excludes on the listing only while the folded recursive flag is on (Plan 054)", () => {
-    const settings = { showImages: true, showVideos: true };
+    const settings = { showImages: true, showVideos: true, videosWithAudioOnly: false };
     const excludes = ["photos/kids"];
 
     const recursive = resolveBrowseState({ path: "photos", recursive: true }, persisted());
@@ -105,7 +105,9 @@ describe("requests", () => {
   it("builds the normalized listing request", () => {
     const state = resolveBrowseState({ path: "photos" }, persisted());
 
-    expect(listingRequestFor(state, { showImages: true, showVideos: false })).toEqual({
+    expect(
+      listingRequestFor(state, { showImages: true, showVideos: false, videosWithAudioOnly: true }),
+    ).toEqual({
       comicMode: false,
       excludedPaths: [],
       limit: 60,
@@ -116,6 +118,7 @@ describe("requests", () => {
       showImages: true,
       showVideos: false,
       sortMode: "name-asc",
+      videosWithAudioOnly: false,
     });
   });
 });

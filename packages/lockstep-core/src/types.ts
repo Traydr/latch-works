@@ -1,4 +1,5 @@
 import type { SyncRunStatus } from "@latch-works/sync-protocol";
+import type { AudioProbe } from "./media-facts.js";
 import type { ScanArchiveProgress, SkippedArchiveEntry } from "./scan.js";
 import type { SyncPlan, SyncPlanAction } from "./sync-plan.js";
 
@@ -18,6 +19,8 @@ export interface RunSummary {
   message?: string;
   /** Prune only: planned deletes left alone because the file is back in the source folder. */
   skipped: number;
+  /** Push only: synced videos whose audio was reported to Pane View after their upload. */
+  mediaFactsReported?: number;
   status: SyncRunStatus;
 }
 
@@ -74,6 +77,8 @@ export interface PushChangesOptions extends PaneViewApi {
   maxChanges?: number;
   /** The plan the user reviewed; push uploads and updates its items and never plans again. */
   plan: LockstepPlan;
+  /** Whether a video has audio; ffprobe by default. */
+  probeAudio?: AudioProbe;
   signal?: AbortSignal;
   uploadConcurrency?: number;
 }

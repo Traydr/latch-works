@@ -27,6 +27,7 @@ const listingRequest: GalleryListingRequest = {
   showImages: true,
   showVideos: true,
   sortMode: "name-asc",
+  videosWithAudioOnly: false,
 };
 
 const snapshotRequest: LibrarySnapshotRequest = {

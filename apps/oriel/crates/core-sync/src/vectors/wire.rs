@@ -8,13 +8,16 @@ use oriel_core_domain::{MediaItem, detect_media_type, get_base_name, get_extensi
 use serde_json::Value;
 
 use crate::api::{
-    CREATE_SYNC_RUN_CANCEL_GRACE, FINALIZE_ATTEMPT_TIMEOUT, FINALIZE_RETRY_DELAYS, delete_body,
-    json_body, parse_snapshot, routes,
+    CREATE_SYNC_RUN_CANCEL_GRACE, FINALIZE_ATTEMPT_TIMEOUT, FINALIZE_RETRY_DELAYS,
+    MAX_MEDIA_FACTS_PER_REQUEST, delete_body, json_body, parse_snapshot, routes, types,
 };
 use crate::events::RunAction;
+use crate::media_facts::{MissingAudioFact, media_facts_requests, videos_missing_audio_facts};
 use crate::plan::LockstepPlan;
 use crate::push::registration;
-use crate::sync_plan::{PlanCounts, RemoteEntrySnapshot, SyncPlanAction, SyncPlanItem};
+use crate::sync_plan::{
+    PlanCounts, RemoteEntrySnapshot, SyncPlanAction, SyncPlanItem, create_sync_plan,
+};
 use crate::sync_run::{Interruption, RunOutcome, create_run_body, outcome_body};
 
 fn wire() -> Value {
@@ -98,6 +101,8 @@ fn registers_files_as_lockstep_core_does() {
             text(&case["logicalPath"]),
             text(&item["sha256"]),
             media.size,
+            case.get("hasAudio")
+                .map(|has_audio| has_audio.as_bool().unwrap()),
             text(&recorded["syncRunId"]),
         )
         .unwrap();
@@ -161,15 +166,99 @@ fn reads_snapshots_as_lockstep_core_does() {
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|entry| RemoteEntrySnapshot {
-                    path: text(&entry["path"]).to_owned(),
-                    sha256: entry.get("sha256").map(|sha256| text(sha256).to_owned()),
-                    size: number(&entry["size"]),
-                })
+                .map(remote_entry)
                 .collect()),
         };
         assert_eq!(read, expected, "{name}");
     }
+}
+
+/// A snapshot entry as the vectors write one.
+fn remote_entry(entry: &Value) -> RemoteEntrySnapshot {
+    RemoteEntrySnapshot {
+        has_audio: entry
+            .get("hasAudio")
+            .map(|has_audio| has_audio.as_bool().expect("a boolean in wire.json")),
+        path: text(&entry["path"]).to_owned(),
+        sha256: entry.get("sha256").map(|sha256| text(sha256).to_owned()),
+        size: number(&entry["size"]),
+    }
+}
+
+#[test]
+fn finds_the_videos_missing_audio_facts_as_lockstep_core_does() {
+    let vectors = &wire()["mediaFacts"];
+    let list = |key: &str| {
+        vectors[key]
+            .as_array()
+            .expect("a list in wire.json")
+            .clone()
+    };
+    let local: Vec<MediaItem> = list("local")
+        .iter()
+        .map(|item| {
+            super::media_item(
+                text(&item["path"]),
+                number(&item["size"]),
+                item.get("sha256").map(text),
+            )
+        })
+        .collect();
+    let remote: Vec<RemoteEntrySnapshot> = list("remote").iter().map(remote_entry).collect();
+    let missing: Vec<MissingAudioFact> = list("missing")
+        .iter()
+        .map(|fact| MissingAudioFact {
+            path: text(&fact["path"]).to_owned(),
+            sha256: text(&fact["sha256"]).to_owned(),
+            size: number(&fact["size"]),
+        })
+        .collect();
+    let plan = create_sync_plan(&local, &remote);
+    assert_eq!(videos_missing_audio_facts(&plan.items), missing);
+}
+
+#[test]
+fn reports_media_facts_in_the_body_lockstep_core_posts() {
+    let vectors = &wire()["mediaFacts"];
+    let facts: Vec<types::MediaFact> = vectors["missing"]
+        .as_array()
+        .expect("a list in wire.json")
+        .iter()
+        .map(|fact| types::MediaFact {
+            has_audio: true,
+            sha256: text(&fact["sha256"]).to_owned(),
+            size: number(&fact["size"]) as f64,
+        })
+        .collect();
+    let requests = media_facts_requests(&facts);
+    assert_eq!(requests.len(), 1);
+    assert_eq!(body(&requests[0]), vectors["request"]);
+}
+
+#[test]
+fn batches_media_facts_as_lockstep_core_does() {
+    let wire = wire();
+    assert_eq!(
+        number(&wire["constants"]["maxMediaFactsPerRequest"]),
+        MAX_MEDIA_FACTS_PER_REQUEST as u64
+    );
+    let fact = types::MediaFact {
+        has_audio: true,
+        sha256: "a".repeat(64),
+        size: 1.0,
+    };
+    let facts = vec![fact; MAX_MEDIA_FACTS_PER_REQUEST * 2 + 1];
+    let sizes: Vec<u64> = media_facts_requests(&facts)
+        .iter()
+        .map(|request| request.facts.len() as u64)
+        .collect();
+    let expected: Vec<u64> = wire["mediaFacts"]["batchSizes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(number)
+        .collect();
+    assert_eq!(sizes, expected);
 }
 
 #[test]
@@ -204,6 +293,7 @@ fn posts_to_lockstep_cores_routes() {
         ("runs", routes::RUNS),
         ("uploadUrl", routes::UPLOAD_URL),
         ("completeObject", routes::COMPLETE_OBJECT),
+        ("mediaFacts", routes::MEDIA_FACTS),
     ] {
         assert_eq!(text(&routes_json[key]), route, "{key}");
     }

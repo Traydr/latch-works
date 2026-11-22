@@ -89,6 +89,7 @@ block but never writes it:
 | `LOCKSTEP_SOURCE` | Default local archive path |
 | `LOCKSTEP_API_URL` | Pane View base URL |
 | `LOCKSTEP_API_TOKEN` | Sync API bearer token (matches `PANE_VIEW_SYNC_TOKEN`) |
+| `LOCKSTEP_FFPROBE` | ffprobe to probe videos for audio with (default: `ffprobe` on `PATH`) |
 
 CLI flags override env, and env overrides the config file. Use `--api-token-env` to read the token from a different variable name.
 

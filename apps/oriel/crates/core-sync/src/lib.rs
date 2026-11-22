@@ -4,7 +4,7 @@
 //!   uploads, updates, keeps and deletes;
 //! - [`push_changes`]: a plan's uploads and updates through a bounded upload queue, each file
 //!   hashed as it streams and sent with the checksum and length headers Pane View signs
-//!   (plan 026);
+//!   (plan 026), then the audio of the synced videos Pane View does not know yet;
 //! - [`prune_deleted`]: a reviewed plan's deletes, each re-checked against the source folder;
 //! - [`doctor`]: the source folder, the URL, the token and the snapshot endpoint, checked;
 //! - [`HashCache`]: the per-source cache of SHA-256s, in lockstep-core's file format;
@@ -23,6 +23,7 @@ mod doctor;
 mod events;
 mod format;
 mod hash_cache;
+mod media_facts;
 mod plan;
 mod prune;
 mod push;

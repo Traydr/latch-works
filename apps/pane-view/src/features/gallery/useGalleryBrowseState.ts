@@ -6,6 +6,7 @@ import {
   type BrowseIntent,
   buildBrowseSearch,
   listingRequestFor,
+  type MediaVisibility,
   type ResolvedBrowseState,
   resolveBrowseState,
   resolveInitialRedirect,
@@ -69,7 +70,7 @@ type BrowseNavigate = (options: BrowseNavigateOptions) => Promise<void> | void;
 export interface UseGalleryBrowseStateOptions {
   navigate: BrowseNavigate;
   search: GalleryBrowseSearch;
-  settings: { showImages: boolean; showVideos: boolean };
+  settings: MediaVisibility;
 }
 
 function withSeed(state: PersistedBrowseState): SeededBrowseState {
@@ -173,7 +174,11 @@ export function useGalleryBrowseState({
     () =>
       listingRequestFor(
         { comicMode, path, query: state.query, randomSeed, recursive, sortMode },
-        { showImages: settings.showImages, showVideos: settings.showVideos },
+        {
+          showImages: settings.showImages,
+          showVideos: settings.showVideos,
+          videosWithAudioOnly: settings.videosWithAudioOnly,
+        },
         excludedChildPaths,
       ),
     [
@@ -184,6 +189,7 @@ export function useGalleryBrowseState({
       recursive,
       settings.showImages,
       settings.showVideos,
+      settings.videosWithAudioOnly,
       sortMode,
       state.query,
     ],
