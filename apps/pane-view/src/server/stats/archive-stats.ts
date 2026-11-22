@@ -11,11 +11,11 @@ import {
   isNull,
   lt,
   ne,
-  not,
   sql,
 } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { folders, libraryEntries, librarySizeEvents, mediaObjects, syncRuns } from "../db/schema";
+import { orphanedMediaObjectCondition } from "../management/orphaned-sources";
 import {
   averageDailyGrowth,
   type CumulativePoint,
@@ -54,7 +54,10 @@ export interface ArchiveStats {
     entriesPerDay: number;
     projectedBytesIn90Days: number;
   };
-  /** Stored originals no live entry uses, such as the copy a re-encode replaced. */
+  /**
+   * Stored originals no live entry uses, such as the copy a re-encode replaced.
+   * Counted by Manage's own definition, so a purge there clears this to zero.
+   */
   reclaimable: {
     bytes: number;
     objectCount: number;
@@ -232,7 +235,7 @@ export async function readArchiveStats(database: Database = db): Promise<Archive
         count: count(),
       })
       .from(mediaObjects)
-      .where(not(isLiveObject())),
+      .where(orphanedMediaObjectCondition()),
     database
       .select({
         bytes: sql`coalesce(sum(${librarySizeEvents.bytesDelta}), 0)`.mapWith(Number),

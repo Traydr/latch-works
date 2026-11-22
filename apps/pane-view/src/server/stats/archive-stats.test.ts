@@ -121,8 +121,22 @@ describe("library size ledger", () => {
 
     const stats = await readArchiveStats(db);
 
-    expect(stats.recentGrowth.at(-1)?.netBytes).toBe(-6000);
-    expect(stats.recentGrowth.at(-4)?.netBytes).toBe(9000);
+    // Find each event's day as the database dated it, so a run across midnight UTC still matches.
+    const eventDays = await db
+      .select({
+        day: sql<string>`to_char(${librarySizeEvents.occurredAt} at time zone 'utc', 'YYYY-MM-DD')`,
+        kind: librarySizeEvents.kind,
+      })
+      .from(librarySizeEvents);
+
+    const netBytesOn = (kind: string) => {
+      const day = eventDays.find((event) => event.kind === kind)?.day;
+
+      return stats.recentGrowth.find((bucket) => bucket.day === day)?.netBytes;
+    };
+
+    expect(netBytesOn("replaced")).toBe(-6000);
+    expect(netBytesOn("added")).toBe(9000);
     expect(stats.sizeOverTime.at(-1)?.value).toBe(3000);
     expect(stats.growth.bytesLast30Days).toBe(3000);
   });

@@ -63,9 +63,12 @@ type ArchiveStats = NonNullable<ReturnType<typeof useArchiveStatsQuery>["data"]>
 
 /** A size change with its sign, such as "+1.2 GB" or "−350.0 MB". */
 function formatSignedBytes(bytes: number): string {
-  if (bytes === 0) return formatBytes(0);
+  // A per-day average can be a fraction of a byte, which formatBytes has no unit for.
+  const magnitude = Math.round(Math.abs(bytes));
 
-  return `${bytes < 0 ? "−" : "+"}${formatBytes(Math.abs(bytes))}`;
+  if (magnitude === 0) return formatBytes(0);
+
+  return `${bytes < 0 ? "−" : "+"}${formatBytes(magnitude)}`;
 }
 
 function formatRate(bytesPerDay: number): string {
@@ -303,7 +306,7 @@ export function StatsPage() {
                 description="Sync runs that completed or failed each day over the last 90 days."
                 title="Sync activity"
               >
-                {stats.syncActivity.some((row) => row.started > 0) ? (
+                {stats.syncActivity.some((row) => row.completed > 0 || row.failed > 0) ? (
                   <LineChart bloom="aura" config={SYNC_CHART_CONFIG} data={stats.syncActivity}>
                     <Legend />
                     <Grid />
