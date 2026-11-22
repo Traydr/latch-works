@@ -102,7 +102,8 @@ export function averageDailyGrowth(
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
-  if (total <= 0) {
+  // Net growth can be negative: a re-encode pass or a delete shrinks the archive.
+  if (total === 0) {
     return 0;
   }
 

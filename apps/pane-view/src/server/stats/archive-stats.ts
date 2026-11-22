@@ -9,12 +9,13 @@ import {
   gte,
   isNotNull,
   isNull,
+  lt,
   ne,
-  not,
   sql,
 } from "drizzle-orm";
 import { type Database, db } from "../db";
-import { folders, libraryEntries, mediaObjects, syncRuns } from "../db/schema";
+import { folders, libraryEntries, librarySizeEvents, mediaObjects, syncRuns } from "../db/schema";
+import { orphanedMediaObjectCondition } from "../management/orphaned-sources";
 import {
   averageDailyGrowth,
   type CumulativePoint,
@@ -53,13 +54,17 @@ export interface ArchiveStats {
     entriesPerDay: number;
     projectedBytesIn90Days: number;
   };
-  /** Stored originals no live entry uses, such as the copy a re-encode replaced. */
+  /**
+   * Stored originals no live entry uses, such as the copy a re-encode replaced.
+   * Counted by Manage's own definition, so a purge there clears this to zero.
+   */
   reclaimable: {
     bytes: number;
     objectCount: number;
   };
   recentGrowth: Array<{
-    bytesAdded: number;
+    /** Net change in the size of live entries that day; a re-encode or a delete is negative. */
+    netBytes: number;
     day: string;
     entriesAdded: number;
     label: string;
@@ -138,7 +143,8 @@ export async function readArchiveStats(database: Database = db): Promise<Archive
     largestObjectRow,
     entryBytesRow,
     reclaimableRow,
-    objectDailyRows,
+    sizeBeforeHistoryRow,
+    sizeDailyRows,
     entryDailyRows,
     syncDailyRows,
   ] = await Promise.all([
@@ -229,16 +235,22 @@ export async function readArchiveStats(database: Database = db): Promise<Archive
         count: count(),
       })
       .from(mediaObjects)
-      .where(not(isLiveObject())),
+      .where(orphanedMediaObjectCondition()),
     database
       .select({
-        bytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
-        day: sql<string>`to_char(date_trunc('day', ${mediaObjects.createdAt} at time zone 'utc'), 'YYYY-MM-DD')`,
+        bytes: sql`coalesce(sum(${librarySizeEvents.bytesDelta}), 0)`.mapWith(Number),
       })
-      .from(mediaObjects)
-      .where(and(gte(mediaObjects.createdAt, historyStart), isLiveObject()))
-      .groupBy(sql`date_trunc('day', ${mediaObjects.createdAt} at time zone 'utc')`)
-      .orderBy(asc(sql`date_trunc('day', ${mediaObjects.createdAt} at time zone 'utc')`)),
+      .from(librarySizeEvents)
+      .where(lt(librarySizeEvents.occurredAt, historyStart)),
+    database
+      .select({
+        bytes: sql`coalesce(sum(${librarySizeEvents.bytesDelta}), 0)`.mapWith(Number),
+        day: sql<string>`to_char(date_trunc('day', ${librarySizeEvents.occurredAt} at time zone 'utc'), 'YYYY-MM-DD')`,
+      })
+      .from(librarySizeEvents)
+      .where(gte(librarySizeEvents.occurredAt, historyStart))
+      .groupBy(sql`date_trunc('day', ${librarySizeEvents.occurredAt} at time zone 'utc')`)
+      .orderBy(asc(sql`date_trunc('day', ${librarySizeEvents.occurredAt} at time zone 'utc')`)),
     database
       .select({
         count: count(),
@@ -272,27 +284,20 @@ export async function readArchiveStats(database: Database = db): Promise<Archive
   const oldestObjectAt = ageRow[0]?.oldest ? new Date(ageRow[0].oldest) : null;
   const newestObjectAt = ageRow[0]?.newest ? new Date(ageRow[0].newest) : null;
 
-  // Baseline size before the visible window so the cumulative chart meets today's total.
-  const bytesInWindow = objectDailyRows.reduce((sum, row) => sum + row.bytes, 0);
-  const baselineBytes = Math.max(0, mediaObjectBytes - bytesInWindow);
-
-  const objectDaily: DailyBucket[] = fillDailyBuckets(
-    objectDailyRows.map((row) => ({
-      day: row.day,
-      value: row.bytes,
-    })),
+  // The ledger's running sum is the size of live entries, so the window starts
+  // from everything that happened before it and each day adds its net change.
+  const sizeDaily: DailyBucket[] = fillDailyBuckets(
+    sizeDailyRows.map((row) => ({ day: row.day, value: row.bytes })),
     { endDay: today, startDay: historyStartKey },
   );
 
-  const firstObjectDay = objectDaily[0];
+  const firstSizeDay = sizeDaily[0];
 
-  if (firstObjectDay) {
-    objectDaily[0] = {
-      day: firstObjectDay.day,
-      value: firstObjectDay.value + baselineBytes,
+  if (firstSizeDay) {
+    sizeDaily[0] = {
+      day: firstSizeDay.day,
+      value: firstSizeDay.value + (sizeBeforeHistoryRow[0]?.bytes ?? 0),
     };
-  } else if (mediaObjectBytes > 0) {
-    objectDaily.push({ day: today, value: mediaObjectBytes });
   }
 
   const activeEntries = activeEntriesRow[0]?.value ?? 0;
@@ -318,11 +323,11 @@ export async function readArchiveStats(database: Database = db): Promise<Archive
     entryDaily.push({ day: today, value: activeEntries });
   }
 
-  const sizeOverTime = toCumulativeSeries(objectDaily);
+  const sizeOverTime = toCumulativeSeries(sizeDaily);
   const entriesOverTime = toCumulativeSeries(entryDaily);
 
   const growthDailyBytes = fillDailyBuckets(
-    objectDailyRows.map((row) => ({
+    sizeDailyRows.map((row) => ({
       day: row.day,
       value: row.bytes,
     })),
@@ -376,7 +381,7 @@ export async function readArchiveStats(database: Database = db): Promise<Archive
   });
 
   const recentGrowth = growthDailyBytes.map((bucket, index) => ({
-    bytesAdded: bucket.value,
+    netBytes: bucket.value,
     day: bucket.day,
     entriesAdded: growthDailyEntries[index]?.value ?? 0,
     label: formatDayLabel(bucket.day),

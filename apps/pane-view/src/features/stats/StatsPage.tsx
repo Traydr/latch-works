@@ -15,6 +15,7 @@ import {
   LineChart,
   Pie,
   PieChart,
+  ReferenceLine,
   Sparkline,
   Tooltip,
   XAxis,
@@ -40,7 +41,7 @@ const ENTRY_CHART_CONFIG = {
 } satisfies ChartConfig;
 
 const GROWTH_CHART_CONFIG = {
-  bytesAdded: { color: "orange" as const, label: "MB added" },
+  netMegabytes: { color: "orange" as const, label: "Net MB" },
 } satisfies ChartConfig;
 
 const SYNC_CHART_CONFIG = {
@@ -60,8 +61,18 @@ const ARCHIVE_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-GB", {
 
 type ArchiveStats = NonNullable<ReturnType<typeof useArchiveStatsQuery>["data"]>;
 
+/** A size change with its sign, such as "+1.2 GB" or "−350.0 MB". */
+function formatSignedBytes(bytes: number): string {
+  // A per-day average can be a fraction of a byte, which formatBytes has no unit for.
+  const magnitude = Math.round(Math.abs(bytes));
+
+  if (magnitude === 0) return formatBytes(0);
+
+  return `${bytes < 0 ? "−" : "+"}${formatBytes(magnitude)}`;
+}
+
 function formatRate(bytesPerDay: number): string {
-  return `${formatBytes(bytesPerDay)}/day`;
+  return `${formatSignedBytes(bytesPerDay)}/day`;
 }
 
 function StatCard({
@@ -126,12 +137,12 @@ export function StatsPage() {
   const recentGrowthChartData =
     stats?.recentGrowth.map((point) => ({
       ...point,
-      bytesAdded: bytesToMegabytes(point.bytesAdded),
+      netMegabytes: bytesToMegabytes(point.netBytes),
     })) ?? [];
 
   const sizeSpark = sizeChartData.map((point) => point.value);
   const entrySpark = stats?.entriesOverTime.map((point) => point.value) ?? [];
-  const growthSpark = recentGrowthChartData.map((point) => point.bytesAdded);
+  const growthSpark = recentGrowthChartData.map((point) => point.netMegabytes);
 
   const mediaTypePieData =
     stats?.byMediaType.map((row) => ({
@@ -210,7 +221,7 @@ export function StatsPage() {
                 value={formatRate(stats.growth.bytesPerDay)}
               />
               <StatCard
-                hint={`Last 30 days: ${formatBytes(stats.growth.bytesLast30Days)}`}
+                hint={`Last 30 days: ${formatSignedBytes(stats.growth.bytesLast30Days)}`}
                 label="90-day projection"
                 value={formatBytes(stats.growth.projectedBytesIn90Days)}
               />
@@ -240,7 +251,7 @@ export function StatsPage() {
 
             <div className="grid gap-4 lg:grid-cols-2">
               <ChartPanel
-                description="Cumulative size in MB of the originals live entries use, by the day each was stored (last 90 days)."
+                description="Size of live files in MB at the end of each day, drops included (last 90 days)."
                 title="Size over time"
               >
                 {stats.sizeOverTime.length > 1 ? (
@@ -274,16 +285,17 @@ export function StatsPage() {
               </ChartPanel>
 
               <ChartPanel
-                description="MB ingested per day over the last 30 days."
-                title="Daily growth"
+                description="Net MB added or removed each day over the last 30 days; re-encodes and deletes dip below zero."
+                title="Daily change"
               >
-                {stats.recentGrowth.some((row) => row.bytesAdded > 0) ? (
+                {stats.recentGrowth.some((row) => row.netBytes !== 0) ? (
                   <LineChart bloom="aura" config={GROWTH_CHART_CONFIG} data={recentGrowthChartData}>
                     <Grid />
+                    <ReferenceLine y={0} />
                     <XAxis dataKey="label" />
                     <YAxis />
                     <Tooltip labelKey="label" />
-                    <Line dataKey="bytesAdded" />
+                    <Line dataKey="netMegabytes" />
                   </LineChart>
                 ) : (
                   <EmptyChart />
@@ -294,7 +306,7 @@ export function StatsPage() {
                 description="Sync runs that completed or failed each day over the last 90 days."
                 title="Sync activity"
               >
-                {stats.syncActivity.some((row) => row.started > 0) ? (
+                {stats.syncActivity.some((row) => row.completed > 0 || row.failed > 0) ? (
                   <LineChart bloom="aura" config={SYNC_CHART_CONFIG} data={stats.syncActivity}>
                     <Legend />
                     <Grid />

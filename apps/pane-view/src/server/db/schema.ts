@@ -29,6 +29,13 @@ export const syncRunStatusEnum = pgEnum("sync_run_status", SYNC_RUN_STATUSES);
 
 export const syncActionEnum = pgEnum("sync_action", ["upload", "delete"]);
 
+export const librarySizeEventKindEnum = pgEnum("library_size_event_kind", [
+  "added",
+  "replaced",
+  "removed",
+  "restored",
+]);
+
 export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", MAINTENANCE_JOB_TYPES);
 
 export const maintenanceJobStatusEnum = pgEnum("maintenance_job_status", MAINTENANCE_JOB_STATUSES);
@@ -205,6 +212,29 @@ export const libraryEntries = pgTable(
     parentIndex: index("library_entries_parent_path_idx").on(table.parentPath),
     mediaObjectIndex: index("library_entries_media_object_id_idx").on(table.mediaObjectId),
     deletedAtIndex: index("library_entries_deleted_at_idx").on(table.deletedAt),
+  }),
+);
+
+/**
+ * How the size of live library entries changed, one row per entry change. A
+ * trigger on library_entries writes every row (migration 0023), so no write
+ * path can skip it; nothing in the app inserts here. The running sum of
+ * `bytesDelta` is the total size of live entries at that moment, which lets
+ * the stats chart show a re-encode or a delete as the drop it was. No foreign
+ * keys: a row outlives the media object and entry it names.
+ */
+export const librarySizeEvents = pgTable(
+  "library_size_events",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+    logicalPath: text("logical_path").notNull(),
+    mediaObjectId: uuid("media_object_id").notNull(),
+    kind: librarySizeEventKindEnum("kind").notNull(),
+    bytesDelta: bigint("bytes_delta", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    occurredAtIndex: index("library_size_events_occurred_at_idx").on(table.occurredAt),
   }),
 );
 
