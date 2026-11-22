@@ -71,6 +71,7 @@ fn plans_as_lockstep_core_does() {
             .remote
             .iter()
             .map(|entry| RemoteEntrySnapshot {
+                has_audio: None,
                 path: entry.path.clone(),
                 sha256: entry.sha256.clone(),
                 size: entry.size,

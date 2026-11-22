@@ -1,6 +1,6 @@
 import { getBaseName, getParentPath, type MediaType } from "@latch-works/media-domain";
 import type { RemoteEntry } from "@latch-works/sync-protocol";
-import { eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { assertNoActiveCleanupJob } from "../db/library-guards";
 import {
@@ -41,6 +41,8 @@ export interface CompleteObjectInput {
   contentType: string;
   extension: string;
   filename: string;
+  /** A video's audio as the client probed it; null when unknown or not a video. */
+  hasAudio: boolean | null;
   logicalPath: string;
   mediaType: MediaType;
   mtimeMs: number;
@@ -48,6 +50,13 @@ export interface CompleteObjectInput {
   sha256: string;
   size: number;
   syncRunId: string;
+}
+
+/** What a client probed about an original Pane View holds, its hash lowercased. */
+export interface MediaFactInput {
+  hasAudio: boolean;
+  sha256: string;
+  size: number;
 }
 
 /** A remote delete, its path normalized. */
@@ -59,8 +68,9 @@ export interface RemoteDeleteInput {
 export async function listRemoteSyncSnapshot(
   database: Database = db,
 ): Promise<{ entries: RemoteEntry[] }> {
-  const entries = await database
+  const rows = await database
     .select({
+      hasAudio: mediaObjects.hasAudio,
       path: libraryEntries.logicalPath,
       sha256: mediaObjects.sha256,
       size: mediaObjects.size,
@@ -69,7 +79,56 @@ export async function listRemoteSyncSnapshot(
     .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
     .where(isNull(libraryEntries.deletedAt));
 
+  // `hasAudio` only where it is known: its absence is what asks a client to report it.
+  const entries = rows.map(({ hasAudio, path, sha256, size }) => {
+    const entry: RemoteEntry = { path, sha256, size };
+
+    if (hasAudio !== null) {
+      entry.hasAudio = hasAudio;
+    }
+
+    return entry;
+  });
+
   return { entries };
+}
+
+/**
+ * Records the facts clients report about originals already stored. Only videos take an audio
+ * fact, and a fact naming bytes Pane View does not hold changes nothing. Answers how many media
+ * objects it updated.
+ */
+export async function recordMediaFacts(
+  facts: readonly MediaFactInput[],
+  database: Database = db,
+): Promise<{ updated: number }> {
+  if (facts.length === 0) {
+    return { updated: 0 };
+  }
+
+  return database.transaction(async (tx) => {
+    await assertNoActiveCleanupJob(tx);
+
+    let updated = 0;
+
+    for (const fact of facts) {
+      const rows = await tx
+        .update(mediaObjects)
+        .set({ hasAudio: fact.hasAudio })
+        .where(
+          and(
+            eq(mediaObjects.sha256, fact.sha256),
+            eq(mediaObjects.size, fact.size),
+            eq(mediaObjects.mediaType, "video"),
+          ),
+        )
+        .returning({ id: mediaObjects.id });
+
+      updated += rows.length;
+    }
+
+    return { updated };
+  });
 }
 
 export async function completeSyncedObject(
@@ -112,6 +171,7 @@ export async function completeSyncedObject(
       .values({
         contentType: input.contentType,
         extension: input.extension,
+        hasAudio: input.hasAudio,
         mediaType: input.mediaType,
         objectKey,
         sha256: input.sha256,
@@ -121,6 +181,8 @@ export async function completeSyncedObject(
         set: {
           contentType: input.contentType,
           extension: input.extension,
+          // A client that could not probe keeps what an earlier one learned about the same bytes.
+          hasAudio: sql`coalesce(excluded.has_audio, ${mediaObjects.hasAudio})`,
           mediaType: input.mediaType,
           objectKey,
           size: input.size,

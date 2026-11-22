@@ -60,6 +60,8 @@ pub struct RunSummary {
     pub skipped: Option<usize>,
     pub message: Option<String>,
     pub plan_counts: Option<PlanCounts>,
+    /// Push only: synced videos whose audio was reported to Pane View after their upload.
+    pub media_facts_reported: usize,
 }
 
 impl RunSummary {
@@ -73,6 +75,7 @@ impl RunSummary {
             skipped: None,
             message: None,
             plan_counts,
+            media_facts_reported: 0,
         }
     }
 

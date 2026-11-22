@@ -341,6 +341,7 @@ describe("Shutter source purge", () => {
         contentType: "image/jpeg",
         extension: "jpg",
         filename: "e.jpg",
+        hasAudio: null,
         logicalPath: "gone/e.jpg",
         mediaType: "image",
         mtimeMs: 1_700_000_000_000,

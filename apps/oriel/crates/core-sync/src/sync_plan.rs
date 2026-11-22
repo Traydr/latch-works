@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 /// What Pane View holds at a path.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteEntrySnapshot {
+    /// Whether the video has audio, when Pane View knows; absent for other media.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_audio: Option<bool>,
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,

@@ -141,6 +141,11 @@ export const mediaObjects = pgTable(
     contentType: text("content_type").notNull(),
     extension: text("extension").notNull(),
     mediaType: mediaTypeEnum("media_type").notNull(),
+    /**
+     * Whether a video has at least one audio stream, as the sync client probed it; null for other
+     * media and for a video no client has probed yet (migration 0024).
+     */
+    hasAudio: boolean("has_audio"),
     objectKey: text("object_key").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },

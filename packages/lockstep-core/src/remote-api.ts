@@ -12,6 +12,7 @@ import {
   completeSyncRunRoute,
   contentTypeForExtension,
   type DeleteObjectRequest,
+  type ReportMediaFactsRequest,
   SYNC_ROUTES,
   SyncRunSchema,
   UploadTargetSchema,
@@ -29,6 +30,7 @@ type SyncRequestBody =
   | CompleteSyncRunRequest
   | CreateSyncRunRequest
   | DeleteObjectRequest
+  | ReportMediaFactsRequest
   | UploadUrlRequest;
 
 export type HashedMediaItem = MediaItem & { sha256: string };
@@ -96,11 +98,14 @@ export function uploadUrlBody(item: HashedMediaItem, logicalPath: string): Uploa
 }
 
 export function completeObjectBody({
+  hasAudio,
   item,
   logicalPath,
   objectKey,
   syncRunId,
 }: {
+  /** A probed video's audio; undefined for other media or a video that could not be probed. */
+  hasAudio?: boolean;
   item: HashedMediaItem;
   logicalPath: string;
   objectKey: string;
@@ -113,7 +118,7 @@ export function completeObjectBody({
     throw new Error("unsupported media type");
   }
 
-  return {
+  const body: CompleteObjectRequest = {
     contentType,
     extension: getExtension(filename),
     filename,
@@ -125,6 +130,12 @@ export function completeObjectBody({
     size,
     syncRunId,
   };
+
+  if (hasAudio !== undefined) {
+    body.hasAudio = hasAudio;
+  }
+
+  return body;
 }
 
 export function createSyncRunBody(plan: LockstepPlan): CreateSyncRunRequest {
@@ -138,6 +149,7 @@ export function createSyncRunBody(plan: LockstepPlan): CreateSyncRunRequest {
  */
 export async function pushMediaItem({
   api,
+  hasAudio,
   item,
   logicalPath,
   onStage,
@@ -146,6 +158,7 @@ export async function pushMediaItem({
   syncRunId,
 }: {
   api: PaneViewApi;
+  hasAudio?: boolean;
   item: HashedMediaItem;
   logicalPath: string;
   onStage: (stage: PushStage, bytes?: { done: number; total: number }) => void;
@@ -174,10 +187,23 @@ export async function pushMediaItem({
   await postJson(
     api,
     SYNC_ROUTES.completeObject,
-    completeObjectBody({ item, logicalPath, objectKey: target.objectKey, syncRunId }),
+    completeObjectBody({ hasAudio, item, logicalPath, objectKey: target.objectKey, syncRunId }),
     AcknowledgementSchema,
     signal,
   );
+}
+
+/** Reports what a push learned about originals Pane View already holds (see media-facts.ts). */
+export async function reportMediaFacts({
+  api,
+  body,
+  signal,
+}: {
+  api: PaneViewApi;
+  body: ReportMediaFactsRequest;
+  signal?: AbortSignal;
+}): Promise<void> {
+  await postJson(api, SYNC_ROUTES.mediaFacts, body, AcknowledgementSchema, signal);
 }
 
 /**

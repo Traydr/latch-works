@@ -1132,10 +1132,14 @@ impl SyncMode {
                 if summary.status == RunStatus::Completed {
                     this.push_completed = true;
                 }
+                let audio = match summary.media_facts_reported {
+                    0 => String::new(),
+                    reported => format!(" Reported the audio of {reported} synced video(s)."),
+                };
                 this.run.finish(
                     RunPhase::Done,
                     Some(format!(
-                        "Push {}: {} item(s).",
+                        "Push {}: {} item(s).{audio}",
                         summary.status.as_str(),
                         summary.applied
                     )),

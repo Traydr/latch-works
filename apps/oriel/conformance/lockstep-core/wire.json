@@ -4,9 +4,11 @@
     "createRunCancelGraceMs": 10000,
     "finalizeAttemptTimeoutMs": 5000,
     "finalizeRetryDelaysMs": [250, 1000],
+    "maxMediaFactsPerRequest": 500,
     "maxUploadBytes": 5368709120,
     "routes": {
       "completeObject": "/api/sync/complete-object",
+      "mediaFacts": "/api/sync/media-facts",
       "runs": "/api/sync/runs",
       "snapshot": "/api/sync/snapshot",
       "uploadUrl": "/api/sync/upload-url",
@@ -153,6 +155,66 @@
         "size": 1234,
         "syncRunId": "00000000-0000-4000-8000-000000000001"
       }
+    },
+    {
+      "name": "a video with audio",
+      "item": {
+        "path": "clips/talk.mp4",
+        "size": 1234,
+        "mtimeMs": 1700000000000,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "hasAudio": true,
+      "logicalPath": "clips/talk.mp4",
+      "uploadUrl": {
+        "contentType": "video/mp4",
+        "filename": "talk.mp4",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234
+      },
+      "completeObject": {
+        "contentType": "video/mp4",
+        "extension": "mp4",
+        "filename": "talk.mp4",
+        "logicalPath": "clips/talk.mp4",
+        "mediaType": "video",
+        "mtimeMs": 1700000000000,
+        "objectKey": "originals/sha256/aa/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234,
+        "syncRunId": "00000000-0000-4000-8000-000000000001",
+        "hasAudio": true
+      }
+    },
+    {
+      "name": "a silent video",
+      "item": {
+        "path": "clips/loop.webm",
+        "size": 1234,
+        "mtimeMs": 1700000000000,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "hasAudio": false,
+      "logicalPath": "clips/loop.webm",
+      "uploadUrl": {
+        "contentType": "video/webm",
+        "filename": "loop.webm",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234
+      },
+      "completeObject": {
+        "contentType": "video/webm",
+        "extension": "webm",
+        "filename": "loop.webm",
+        "logicalPath": "clips/loop.webm",
+        "mediaType": "video",
+        "mtimeMs": 1700000000000,
+        "objectKey": "originals/sha256/aa/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webm",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234,
+        "syncRunId": "00000000-0000-4000-8000-000000000001",
+        "hasAudio": false
+      }
     }
   ],
   "delete": {
@@ -285,6 +347,16 @@
       "entries": [{ "path": "a.jpg", "size": 1 }]
     },
     {
+      "name": "a video's audio is read, and a non-boolean one dropped",
+      "body": "{\"entries\":[{\"path\":\"a.mp4\",\"size\":1,\"hasAudio\":true},{\"path\":\"b.mp4\",\"size\":2,\"hasAudio\":false},{\"path\":\"c.mp4\",\"size\":3,\"hasAudio\":\"yes\"},{\"path\":\"d.mp4\",\"size\":4,\"hasAudio\":null}]}",
+      "entries": [
+        { "hasAudio": true, "path": "a.mp4", "size": 1 },
+        { "hasAudio": false, "path": "b.mp4", "size": 2 },
+        { "path": "c.mp4", "size": 3 },
+        { "path": "d.mp4", "size": 4 }
+      ]
+    },
+    {
       "name": "a null or numeric hash is dropped",
       "body": "{\"entries\":[{\"path\":\"a.jpg\",\"size\":1,\"sha256\":null},{\"path\":\"b.jpg\",\"size\":2,\"sha256\":5}]}",
       "entries": [{ "path": "a.jpg", "size": 1 }, { "path": "b.jpg", "size": 2 }]
@@ -309,5 +381,71 @@
       "body": "{\"entries\":[\"a.jpg\"]}",
       "error": "Remote snapshot entries must include path and size."
     }
-  ]
+  ],
+  "mediaFacts": {
+    "local": [
+      {
+        "path": "unknown.mp4",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 10
+      },
+      {
+        "path": "known.mp4",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "size": 11
+      },
+      {
+        "path": "photo.jpg",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "size": 12
+      },
+      {
+        "path": "changed.mov",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 13
+      },
+      {
+        "path": "new.mkv",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 14
+      },
+      { "path": "unhashed.mp4", "size": 15 }
+    ],
+    "remote": [
+      {
+        "path": "unknown.mp4",
+        "size": 10,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "path": "known.mp4",
+        "size": 11,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "hasAudio": false
+      },
+      {
+        "path": "photo.jpg",
+        "size": 12,
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "path": "changed.mov",
+        "size": 13,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "path": "unhashed.mp4",
+        "size": 15,
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    ],
+    "missing": [
+      {
+        "path": "unknown.mp4",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 10
+      }
+    ],
+    "batchSizes": [500, 500, 1]
+  }
 }

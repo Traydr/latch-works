@@ -5127,6 +5127,8 @@ dependencies = [
  "oriel-core-domain",
  "oriel-core-sync",
  "oriel-runtime",
+ "oriel-test-archive",
+ "oriel-tools",
  "reqwest",
  "serde",
  "serde_json",

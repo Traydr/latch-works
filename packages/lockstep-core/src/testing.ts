@@ -2,7 +2,7 @@
  * A stand-in for Pane View's sync API, for tests of the Lockstep clients. It serves on a loopback
  * port, parses every body with the sync protocol as Pane View does, and keeps what a sync leaves
  * behind: the runs and how they ended, the uploaded originals, and the library entries the
- * snapshot lists.
+ * snapshot lists, with the audio facts reported for them.
  */
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -17,12 +17,15 @@ import {
   contentTypeForExtension,
   DeleteObjectRequestSchema,
   originalObjectKey,
+  ReportMediaFactsRequestSchema,
   SYNC_ROUTES,
   UploadUrlRequestSchema,
 } from "@latch-works/sync-protocol";
 import { z } from "zod";
 
 export interface FakeLibraryEntry {
+  /** A video's audio as a client reported it; absent while unknown. */
+  hasAudio?: boolean;
   objectKey?: string;
   path: string;
   sha256?: string;
@@ -41,6 +44,7 @@ type FakeRoute =
   | "completeRun"
   | "createRun"
   | "delete"
+  | "mediaFacts"
   | "snapshot"
   | "upload"
   | "uploadUrl";
@@ -189,6 +193,10 @@ export async function startFakePaneView({
         : { route: "completeObject", path: parse(CompleteObjectRequestSchema, body).logicalPath };
     }
 
+    if (url === SYNC_ROUTES.mediaFacts) {
+      return { route: "mediaFacts" };
+    }
+
     throw new RequestError(404, `No route for ${request.method} ${url}`);
   };
 
@@ -196,7 +204,12 @@ export async function startFakePaneView({
     switch (route) {
       case "snapshot":
         return JSON.stringify({
-          entries: [...library.values()].map(({ path, sha256, size }) => ({ path, sha256, size })),
+          entries: [...library.values()].map(({ hasAudio, path, sha256, size }) => ({
+            hasAudio,
+            path,
+            sha256,
+            size,
+          })),
         });
       case "createRun": {
         const syncRunId = `run-${runs.length + 1}`;
@@ -261,6 +274,7 @@ export async function startFakePaneView({
         }
 
         library.set(registration.logicalPath, {
+          hasAudio: registration.hasAudio,
           objectKey: registration.objectKey,
           path: registration.logicalPath,
           sha256: registration.sha256,
@@ -268,6 +282,25 @@ export async function startFakePaneView({
         });
 
         return JSON.stringify({});
+      }
+
+      case "mediaFacts": {
+        const { facts } = parse(ReportMediaFactsRequestSchema, body);
+        let updated = 0;
+
+        for (const fact of facts) {
+          for (const entry of library.values()) {
+            if (
+              entry.sha256?.toLowerCase() === fact.sha256.toLowerCase() &&
+              entry.size === fact.size
+            ) {
+              entry.hasAudio = fact.hasAudio;
+              updated += 1;
+            }
+          }
+        }
+
+        return JSON.stringify({ updated });
       }
 
       case "delete": {

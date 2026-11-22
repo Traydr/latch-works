@@ -7,6 +7,10 @@
 //! and the queue goes on; a cancel stops new items, aborts those under way, and finalizes the
 //! run as cancelled.
 //!
+//! A video is probed for audio before it is registered, and once a run completes, even one with
+//! nothing to send, the kept videos whose audio Pane View does not know are probed and reported
+//! (`media_facts`). The run's [`RunEvent::Complete`] waits for that.
+//!
 //! The queue runs as many items at once as the caller asks, or, when it does not, as many as
 //! [`UploadWidth`] finds worth running.
 
@@ -24,9 +28,10 @@ use oriel_runtime::fs_meta::modified_ms;
 use crate::api::{
     ApiTarget, PROGRESS_INTERVAL, PaneViewClient, is_overload, types, until_cancelled,
 };
-use crate::events::{Observer, RunAction, RunEvent, RunSummary, emit, status};
+use crate::events::{Observer, RunAction, RunEvent, RunStatus, RunSummary, emit, status};
 use crate::format::format_push_error;
 use crate::hash_cache::{HashCache, HashCacheEntry, load_hash_cache};
+use crate::media_facts::{AudioProbe, report_missing_audio_facts};
 use crate::plan::{LockstepPlan, is_cancelled, planned_changes, planned_uploads};
 use crate::rules::{
     content_type_for_extension, resolve_local_file_path, resolve_upload_concurrency,
@@ -88,9 +93,11 @@ pub async fn push_changes(
     let changed = planned_changes(&plan.items);
     let (to_push, omitted) = planned_uploads(&plan.items, options.max_changes);
     let to_push: Vec<SyncPlanItem> = to_push.into_iter().cloned().collect();
+    let probe = AudioProbe::default();
 
     if to_push.is_empty() {
         let summary = RunSummary::nothing_to_do(RunAction::Push, plan.counts);
+        let summary = with_audio_facts(summary, &plan, &probe, client, observer, cancel).await;
         emit(observer, RunEvent::Complete(summary.clone()));
         return Ok(PushResult {
             plan,
@@ -133,6 +140,7 @@ pub async fn push_changes(
         client,
         observer,
         cancel,
+        probe: &probe,
         source_root: &plan.source_root,
         sync_run_id: run.id(),
         total,
@@ -149,7 +157,7 @@ pub async fn push_changes(
     }
 
     let summary = run
-        .finish(RunOutcome {
+        .finish_holding_complete(RunOutcome {
             applied: tally.pushed,
             capped: total,
             failed: tally.failed,
@@ -157,11 +165,36 @@ pub async fn push_changes(
             interruption: cancel.is_cancelled().then_some(Interruption::Cancelled),
         })
         .await?;
+    let summary = with_audio_facts(summary, &plan, &probe, client, observer, cancel).await;
+    emit(observer, RunEvent::Complete(summary.clone()));
     Ok(PushResult {
         plan,
         summary,
         upload_widths,
     })
+}
+
+/// The summary, with the audio facts reported for the plan's kept videos when the run completed.
+async fn with_audio_facts(
+    mut summary: RunSummary,
+    plan: &LockstepPlan,
+    probe: &AudioProbe,
+    client: &PaneViewClient,
+    observer: Option<&Observer>,
+    cancel: &CancelToken,
+) -> RunSummary {
+    if summary.status == RunStatus::Completed {
+        summary.media_facts_reported = report_missing_audio_facts(
+            &plan.items,
+            &plan.source_root,
+            probe,
+            client,
+            observer,
+            cancel,
+        )
+        .await;
+    }
+    summary
 }
 
 /// What the queue's items came to.
@@ -250,6 +283,8 @@ struct ItemContext<'a> {
     client: &'a PaneViewClient,
     observer: Option<&'a Observer>,
     cancel: &'a CancelToken,
+    /// Tells whether each uploaded video has audio.
+    probe: &'a AudioProbe,
     source_root: &'a Path,
     sync_run_id: &'a str,
     total: usize,
@@ -282,12 +317,27 @@ async fn push_item(context: &ItemContext<'_>, current: usize, item: &SyncPlanIte
 
     let outcome = async {
         let (local, before) = prepare_item(context, current, local).await?;
+        let has_audio = context
+            .probe
+            .upload_audio(
+                context.source_root,
+                &local.path,
+                local.media_type,
+                observer,
+                context.cancel,
+            )
+            .await?;
         // Keep the existing library row when only case or the jpeg/jpg spelling differs.
         let logical_path = match (&item.action, &item.remote) {
             (SyncPlanAction::Update, Some(remote)) => remote.path.clone(),
             _ => local.path.clone(),
         };
-        push_media_item(context, current, &item.path, &local, before, &logical_path).await
+        let registering = Registering {
+            item: &local,
+            has_audio,
+            logical_path: &logical_path,
+        };
+        push_media_item(context, current, &item.path, registering, before).await
     }
     .await;
 
@@ -478,14 +528,26 @@ fn hash_reporting(
     hash_file_contents(file_path, None, Some(cancel), &report)
 }
 
-/// `pushMediaItem`: registers, uploads and records one file under `logical_path`.
+/// What one file is registered as.
+struct Registering<'a> {
+    /// The file, with its hash.
+    item: &'a MediaItem,
+    /// A probed video's audio; `None` for other media or a video that could not be probed.
+    has_audio: Option<bool>,
+    logical_path: &'a str,
+}
+
+/// `pushMediaItem`: registers, uploads and records one file under its logical path.
 async fn push_media_item(
     context: &ItemContext<'_>,
     current: usize,
     plan_path: &str,
-    item: &MediaItem,
+    Registering {
+        item,
+        has_audio,
+        logical_path,
+    }: Registering<'_>,
     (before, before_mtime): Stat,
-    logical_path: &str,
 ) -> anyhow::Result<()> {
     let observer = context.observer;
     let total = context.total;
@@ -505,8 +567,14 @@ async fn push_media_item(
         .sha256
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("{} has no hash", item.path))?;
-    let (signing, mut recording) =
-        registration(item, logical_path, sha256, before.size, context.sync_run_id)?;
+    let (signing, mut recording) = registration(
+        item,
+        logical_path,
+        sha256,
+        before.size,
+        has_audio,
+        context.sync_run_id,
+    )?;
 
     stage("registering", "requesting upload URL");
     let target = context
@@ -554,12 +622,14 @@ async fn push_media_item(
 }
 
 /// A file's registration under `logical_path`: what asks Pane View for its signed upload URL, and
-/// what then records it in the library, once given the storage key Pane View signed.
+/// what then records it in the library, once given the storage key Pane View signed. `has_audio`
+/// is sent only when known: for a video whose probe succeeded.
 pub(crate) fn registration(
     item: &MediaItem,
     logical_path: &str,
     sha256: &str,
     size: u64,
+    has_audio: Option<bool>,
     sync_run_id: &str,
 ) -> anyhow::Result<(types::UploadUrlRequest, types::CompleteObjectRequest)> {
     let filename = get_base_name(logical_path);
@@ -575,6 +645,7 @@ pub(crate) fn registration(
         content_type,
         extension,
         filename,
+        has_audio,
         logical_path: logical_path.to_owned(),
         media_type: media_type(item.media_type)?,
         mtime_ms: item.mtime_ms,

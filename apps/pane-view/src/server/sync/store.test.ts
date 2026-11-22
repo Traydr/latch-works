@@ -4,7 +4,12 @@ import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from ".
 import { testDatabaseForSuite } from "../library/test-db";
 import type { StoredObjectHead } from "../media/storage-client";
 import type { SyncStoreDependencies } from "./store";
-import { completeSyncedObject, markRemoteDeleted } from "./store";
+import {
+  completeSyncedObject,
+  listRemoteSyncSnapshot,
+  markRemoteDeleted,
+  recordMediaFacts,
+} from "./store";
 import { finalizeSyncRun } from "./sync-runs";
 
 /**
@@ -37,6 +42,7 @@ const uploadInput = {
   contentType: "image/jpeg",
   extension: "jpg",
   filename: "photo.jpg",
+  hasAudio: null,
   logicalPath: "photos/photo.jpg",
   mediaType: "image" as const,
   mtimeMs: 1_700_000_000_000,
@@ -357,5 +363,68 @@ describe("folder lifecycle", () => {
       "photos/new",
       "photos/new/2026",
     ]);
+  });
+});
+
+describe("video audio", () => {
+  const videoInput = {
+    ...uploadInput,
+    contentType: "video/mp4",
+    extension: "mp4",
+    filename: "talk.mp4",
+    logicalPath: "clips/talk.mp4",
+    mediaType: "video" as const,
+  };
+
+  beforeEach(() => {
+    storedHead = { ...attestedHead, contentType: "video/mp4" };
+  });
+
+  it("keeps a video's known audio when a later client could not probe the same bytes", async () => {
+    const syncRunId = await insertRun("running");
+
+    await completeSyncedObject({ ...videoInput, hasAudio: true, syncRunId }, dependencies());
+    await completeSyncedObject(
+      { ...videoInput, hasAudio: null, logicalPath: "clips/copy.mp4", syncRunId },
+      dependencies(),
+    );
+
+    const [media] = await testDatabase().db.select().from(mediaObjects);
+    expect(media?.hasAudio).toBe(true);
+  });
+
+  it("lists a video's audio in the snapshot only once it is known", async () => {
+    const syncRunId = await insertRun("running");
+    await completeSyncedObject({ ...videoInput, syncRunId }, dependencies());
+
+    expect((await listRemoteSyncSnapshot(testDatabase().db)).entries).toEqual([
+      { path: "clips/talk.mp4", sha256, size: 1024 },
+    ]);
+
+    await expect(
+      recordMediaFacts([{ hasAudio: false, sha256, size: 1024 }], testDatabase().db),
+    ).resolves.toEqual({ updated: 1 });
+    expect((await listRemoteSyncSnapshot(testDatabase().db)).entries).toEqual([
+      { hasAudio: false, path: "clips/talk.mp4", sha256, size: 1024 },
+    ]);
+  });
+
+  it("records reported audio for videos only, and only for bytes it holds", async () => {
+    const syncRunId = await insertRun("running");
+    storedHead = attestedHead;
+    await completeSyncedObject({ ...uploadInput, syncRunId }, dependencies());
+
+    await expect(
+      recordMediaFacts(
+        [
+          { hasAudio: true, sha256, size: 1024 },
+          { hasAudio: true, sha256: "f".repeat(64), size: 1024 },
+        ],
+        testDatabase().db,
+      ),
+    ).resolves.toEqual({ updated: 0 });
+
+    const [media] = await testDatabase().db.select().from(mediaObjects);
+    expect(media?.hasAudio).toBeNull();
   });
 });

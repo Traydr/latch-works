@@ -88,13 +88,19 @@ function directChildExcludes(currentPath: string, excludedPaths: readonly string
   return [...new Set(directChildren)];
 }
 
-/** Media-type filters from the gallery visibility toggles. */
+/**
+ * Media-type filters from the gallery visibility toggles. `videosWithAudioOnly`
+ * narrows the videos shown to those a sync client probed as having audio; a
+ * video whose audio is still unknown is left out.
+ */
 export function buildMediaVisibilityConditions({
   showImages,
   showVideos,
+  videosWithAudioOnly = false,
 }: {
   showImages: boolean;
   showVideos: boolean;
+  videosWithAudioOnly?: boolean;
 }): SQL[] {
   const conditions: SQL[] = [];
 
@@ -104,6 +110,12 @@ export function buildMediaVisibilityConditions({
 
   if (!showVideos) {
     conditions.push(ne(mediaObjects.mediaType, "video"));
+  } else if (videosWithAudioOnly) {
+    const withAudio = or(ne(mediaObjects.mediaType, "video"), eq(mediaObjects.hasAudio, true));
+
+    if (withAudio) {
+      conditions.push(withAudio);
+    }
   }
 
   return conditions;

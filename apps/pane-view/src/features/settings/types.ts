@@ -14,6 +14,8 @@ export const AppSettingsSchema = z.object({
   rememberViewerPosition: z.boolean().catch(false),
   showImages: z.boolean().catch(true),
   showVideos: z.boolean().catch(true),
+  /** Narrows the videos the gallery shows to those with audio. */
+  videosWithAudioOnly: z.boolean().catch(false),
   theme: ThemeModeSchema.catch("system"),
   thumbnailSize: z.number().positive().catch(220),
 });

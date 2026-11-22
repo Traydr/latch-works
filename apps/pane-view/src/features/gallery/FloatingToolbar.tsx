@@ -1,7 +1,18 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
-import { ArrowUpDown, FolderMinus, ImageIcon, ListTree, RefreshCcw, Shuffle } from "lucide-react";
+import {
+  ArrowUpDown,
+  BookOpen,
+  Film,
+  FolderMinus,
+  ImageIcon,
+  ListTree,
+  RefreshCcw,
+  Shuffle,
+  Volume2,
+} from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import type { MediaVisibility } from "@/features/gallery/browse-state-rules";
 import {
   type ExcludableChildFolder,
   FolderExcludeDialog,
@@ -25,6 +36,8 @@ interface FloatingToolbarProps {
   currentPath: string;
   exclude: ExcludeControlProps;
   isRefreshing: boolean;
+  mediaVisibility: MediaVisibility;
+  onChangeMediaVisibility: (patch: Partial<MediaVisibility>) => void;
   onChangeSortMode: (mode: GallerySortMode) => void;
   onRefresh: () => void;
   onToggleComicMode: () => void;
@@ -115,11 +128,77 @@ function ExcludeControl({
   );
 }
 
+interface MediaFilterTogglesProps {
+  onChange: (patch: Partial<MediaVisibility>) => void;
+  visibility: MediaVisibility;
+}
+
+/**
+ * Quick toggles for the gallery's media-type filters, the same settings the
+ * settings drawer holds. "Audio" narrows videos to those with sound, so it
+ * waits for videos to be shown. Labels appear only on wide screens, where the
+ * toolbar has room for them.
+ */
+function MediaFilterToggles({ onChange, visibility }: MediaFilterTogglesProps) {
+  const { showImages, showVideos, videosWithAudioOnly } = visibility;
+  const audioActive = showVideos && videosWithAudioOnly;
+
+  return (
+    <fieldset aria-label="Media types" className="flex items-center gap-2">
+      <Button
+        aria-pressed={showImages}
+        className={toolButtonClass(showImages)}
+        onClick={() => onChange({ showImages: !showImages })}
+        size="sm"
+        title={showImages ? "Hide images" : "Show images"}
+        type="button"
+        variant={showImages ? "default" : "outline"}
+      >
+        <ImageIcon className="size-4" />
+        <span className="hidden lg:inline">Images</span>
+      </Button>
+      <Button
+        aria-pressed={showVideos}
+        className={toolButtonClass(showVideos)}
+        onClick={() => onChange({ showVideos: !showVideos })}
+        size="sm"
+        title={showVideos ? "Hide videos" : "Show videos"}
+        type="button"
+        variant={showVideos ? "default" : "outline"}
+      >
+        <Film className="size-4" />
+        <span className="hidden lg:inline">Videos</span>
+      </Button>
+      <Button
+        aria-pressed={audioActive}
+        className={toolButtonClass(audioActive)}
+        disabled={!showVideos}
+        onClick={() => onChange({ videosWithAudioOnly: !videosWithAudioOnly })}
+        size="sm"
+        title={
+          !showVideos
+            ? "Show videos to filter them by audio"
+            : audioActive
+              ? "Show all videos"
+              : "Only videos with audio"
+        }
+        type="button"
+        variant={audioActive ? "default" : "outline"}
+      >
+        <Volume2 className="size-4" />
+        <span className="hidden lg:inline">Audio</span>
+      </Button>
+    </fieldset>
+  );
+}
+
 export function FloatingToolbar({
   comicMode,
   currentPath,
   exclude,
   isRefreshing,
+  mediaVisibility,
+  onChangeMediaVisibility,
   onChangeSortMode,
   onRefresh,
   onToggleComicMode,
@@ -163,10 +242,13 @@ export function FloatingToolbar({
           type="button"
           variant={comicMode ? "default" : "outline"}
         >
-          <ImageIcon className="size-4" />
+          <BookOpen className="size-4" />
           <span className="hidden sm:inline">Comic</span>
         </Button>
         {recursive || comicMode ? <ExcludeControl key={currentPath} {...exclude} /> : null}
+        <div className="h-5 w-px bg-border" />
+        <MediaFilterToggles onChange={onChangeMediaVisibility} visibility={mediaVisibility} />
+        <div className="h-5 w-px bg-border" />
         <div className="relative">
           <Button
             aria-expanded={sortMenuOpen}

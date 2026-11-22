@@ -36,6 +36,9 @@
         },
         "syncRunId": {
           "type": "string"
+        },
+        "hasAudio": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -113,9 +116,27 @@
       },
       "required": ["delete", "keep", "update", "upload"]
     },
+    "MediaFact": {
+      "type": "object",
+      "properties": {
+        "hasAudio": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "size": {
+          "type": "number"
+        }
+      },
+      "required": ["hasAudio", "sha256", "size"]
+    },
     "RemoteEntry": {
       "type": "object",
       "properties": {
+        "hasAudio": {
+          "type": "boolean"
+        },
         "path": {
           "type": "string"
         },
@@ -139,6 +160,19 @@
         }
       },
       "required": ["entries"]
+    },
+    "ReportMediaFactsRequest": {
+      "type": "object",
+      "properties": {
+        "facts": {
+          "maxItems": 500,
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MediaFact"
+          }
+        }
+      },
+      "required": ["facts"]
     },
     "SyncRun": {
       "type": "object",

@@ -11,6 +11,7 @@ import {
   type MediaItem,
 } from "@latch-works/media-domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AudioProbe } from "./media-facts.js";
 import { pushChanges } from "./push-changes.js";
 import { UnfinalizedSyncRunError } from "./sync-run.js";
 import { type FakePaneView, startFakePaneView } from "./testing.js";
@@ -67,7 +68,16 @@ function createPlan(items: LockstepPlan["items"]): LockstepPlan {
   };
 }
 
-function push(plan: LockstepPlan, options: { maxChanges?: number; signal?: AbortSignal } = {}) {
+/** A probe that answers from a fixed list of the archive paths that have audio. */
+function fakeAudioProbe(withAudio: readonly string[]): AudioProbe {
+  return async (filePath) =>
+    withAudio.some((archivePath) => filePath === path.join(sourceRoot, archivePath));
+}
+
+function push(
+  plan: LockstepPlan,
+  options: { maxChanges?: number; probeAudio?: AudioProbe; signal?: AbortSignal } = {},
+) {
   const events: LockstepRunEvent[] = [];
 
   const result = pushChanges(
@@ -140,6 +150,67 @@ describe("pushChanges", () => {
         syncRunId: "run-1",
       },
     ]);
+  });
+
+  it("registers each uploaded video with whether it has audio, and nothing else with it", async () => {
+    const plan = createPlan(
+      uploads(
+        await localFile("clips/talk.mp4", "talk bytes"),
+        await localFile("clips/loop.webm", "loop bytes"),
+        await localFile("photos/photo.jpg", "photo bytes"),
+      ),
+    );
+
+    await push(plan, { probeAudio: fakeAudioProbe(["clips/talk.mp4", "photos/photo.jpg"]) }).result;
+
+    expect(
+      Object.fromEntries([...paneView.library].map(([key, entry]) => [key, entry.hasAudio])),
+    ).toEqual({
+      "clips/loop.webm": false,
+      "clips/talk.mp4": true,
+      "photos/photo.jpg": undefined,
+    });
+  });
+
+  it("reports the audio of kept videos Pane View does not know, without a sync run", async () => {
+    const unknown = {
+      ...(await localFile("clips/unknown.mp4", "unknown")),
+      sha256: sha256("unknown"),
+    };
+
+    const known = { ...(await localFile("clips/known.mp4", "known")), sha256: sha256("known") };
+
+    await paneView.close();
+    paneView = await startFakePaneView({
+      entries: [
+        { path: unknown.path, sha256: unknown.sha256, size: unknown.size },
+        { hasAudio: false, path: known.path, sha256: known.sha256, size: known.size },
+      ],
+    });
+
+    const plan = createPlan([
+      {
+        action: "keep",
+        local: unknown,
+        path: unknown.path,
+        remote: paneView.library.get(unknown.path),
+      },
+      { action: "keep", local: known, path: known.path, remote: paneView.library.get(known.path) },
+    ]);
+
+    await expect(
+      push(plan, { probeAudio: fakeAudioProbe([unknown.path, known.path]) }).result,
+    ).resolves.toEqual({
+      action: "push",
+      applied: 0,
+      failed: 0,
+      mediaFactsReported: 1,
+      skipped: 0,
+      status: "completed",
+    });
+    expect(paneView.requests).toEqual([{ route: "mediaFacts" }]);
+    expect(paneView.library.get(unknown.path)?.hasAudio).toBe(true);
+    expect(paneView.library.get(known.path)?.hasAudio).toBe(false);
   });
 
   it("registers an update at the remote path when only case and the jpeg alias differ", async () => {

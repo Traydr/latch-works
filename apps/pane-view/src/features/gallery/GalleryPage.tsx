@@ -352,6 +352,8 @@ export function GalleryPage(): JSX.Element {
         currentPath={displayPath}
         exclude={folders.exclude}
         isRefreshing={showRefreshing}
+        mediaVisibility={settings}
+        onChangeMediaVisibility={updateSettings}
         onChangeSortMode={browse.setSortMode}
         onRefresh={() => {
           deliveryCache.retryFailed();

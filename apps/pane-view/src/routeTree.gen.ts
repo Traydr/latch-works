@@ -19,6 +19,7 @@ import { Route as AuthedGalleryIndexRouteImport } from './routes/_authed/_galler
 import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
 import { Route as ApiSyncCompleteObjectRouteImport } from './routes/api.sync.complete-object'
+import { Route as ApiSyncMediaFactsRouteImport } from './routes/api.sync.media-facts'
 import { Route as ApiSyncRunsRouteImport } from './routes/api.sync.runs'
 import { Route as ApiSyncSnapshotRouteImport } from './routes/api.sync.snapshot'
 import { Route as ApiSyncUploadUrlRouteImport } from './routes/api.sync.upload-url'
@@ -73,6 +74,11 @@ const ApiSyncCompleteObjectRoute = ApiSyncCompleteObjectRouteImport.update({
   path: '/api/sync/complete-object',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSyncMediaFactsRoute = ApiSyncMediaFactsRouteImport.update({
+  id: '/api/sync/media-facts',
+  path: '/api/sync/media-facts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSyncRunsRoute = ApiSyncRunsRouteImport.update({
   id: '/api/sync/runs',
   path: '/api/sync/runs',
@@ -109,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
+  '/api/sync/media-facts': typeof ApiSyncMediaFactsRoute
   '/api/sync/runs': typeof ApiSyncRunsRouteWithChildren
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
+  '/api/sync/media-facts': typeof ApiSyncMediaFactsRoute
   '/api/sync/runs': typeof ApiSyncRunsRouteWithChildren
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
+  '/api/sync/media-facts': typeof ApiSyncMediaFactsRoute
   '/api/sync/runs': typeof ApiSyncRunsRouteWithChildren
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/sync/complete-object'
+    | '/api/sync/media-facts'
     | '/api/sync/runs'
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
@@ -174,6 +184,7 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/sync/complete-object'
+    | '/api/sync/media-facts'
     | '/api/sync/runs'
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
@@ -190,6 +201,7 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/sync/complete-object'
+    | '/api/sync/media-facts'
     | '/api/sync/runs'
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
@@ -205,6 +217,7 @@ export interface RootRouteChildren {
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiSyncCompleteObjectRoute: typeof ApiSyncCompleteObjectRoute
+  ApiSyncMediaFactsRoute: typeof ApiSyncMediaFactsRoute
   ApiSyncRunsRoute: typeof ApiSyncRunsRouteWithChildren
   ApiSyncSnapshotRoute: typeof ApiSyncSnapshotRoute
   ApiSyncUploadUrlRoute: typeof ApiSyncUploadUrlRoute
@@ -281,6 +294,13 @@ declare module '@tanstack/react-router' {
       path: '/api/sync/complete-object'
       fullPath: '/api/sync/complete-object'
       preLoaderRoute: typeof ApiSyncCompleteObjectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/sync/media-facts': {
+      id: '/api/sync/media-facts'
+      path: '/api/sync/media-facts'
+      fullPath: '/api/sync/media-facts'
+      preLoaderRoute: typeof ApiSyncMediaFactsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/sync/runs': {
@@ -367,6 +387,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiSyncCompleteObjectRoute: ApiSyncCompleteObjectRoute,
+  ApiSyncMediaFactsRoute: ApiSyncMediaFactsRoute,
   ApiSyncRunsRoute: ApiSyncRunsRouteWithChildren,
   ApiSyncSnapshotRoute: ApiSyncSnapshotRoute,
   ApiSyncUploadUrlRoute: ApiSyncUploadUrlRoute,

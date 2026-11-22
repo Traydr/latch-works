@@ -62,8 +62,17 @@ function buildGalleryListingMediaQuery(
   cursor: MediaCursor | null,
   database: Database,
 ) {
-  const { excludedPaths, limit, path, query, randomSeed, recursive, showImages, showVideos } =
-    request;
+  const {
+    excludedPaths,
+    limit,
+    path,
+    query,
+    randomSeed,
+    recursive,
+    showImages,
+    showVideos,
+    videosWithAudioOnly,
+  } = request;
 
   const { mediaConditions } = buildLibraryConditions({
     currentPath: path,
@@ -72,7 +81,9 @@ function buildGalleryListingMediaQuery(
     recursive,
   });
 
-  mediaConditions.push(...buildMediaVisibilityConditions({ showImages, showVideos }));
+  mediaConditions.push(
+    ...buildMediaVisibilityConditions({ showImages, showVideos, videosWithAudioOnly }),
+  );
 
   const order = galleryListingOrder(request.sortMode, randomSeed);
 
