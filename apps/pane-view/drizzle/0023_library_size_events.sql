@@ -8,10 +8,10 @@
 -- (soft-deleted or deleted) and restored. Every write path goes through it,
 -- including the ones the app adds later.
 --
--- Data-writing. Seeds one "added" row per live entry at its first_seen_at with
--- the size of its current content, so the ledger's sum starts equal to the size
--- of live entries. History before this migration is that estimate; it is exact
--- from here on.
+-- Data-writing. Creates the trigger first, then seeds one "added" row per live
+-- entry at its first_seen_at with the size of its current content, so the
+-- ledger's sum starts equal to the size of live entries. History before this
+-- migration is that estimate; it is exact from here on.
 CREATE TYPE "public"."library_size_event_kind" AS ENUM('added', 'replaced', 'removed', 'restored');--> statement-breakpoint
 CREATE TABLE "library_size_events" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "library_size_events_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
@@ -24,11 +24,6 @@ CREATE TABLE "library_size_events" (
 --> statement-breakpoint
 CREATE INDEX "library_size_events_occurred_at_idx" ON "library_size_events" USING btree ("occurred_at");
 --> statement-breakpoint
-INSERT INTO "library_size_events" ("occurred_at", "logical_path", "media_object_id", "kind", "bytes_delta")
-SELECT "entry"."first_seen_at", "entry"."logical_path", "entry"."media_object_id", 'added', "object"."size"
-FROM "library_entries" AS "entry"
-INNER JOIN "media_objects" AS "object" ON "object"."id" = "entry"."media_object_id"
-WHERE "entry"."deleted_at" IS NULL;--> statement-breakpoint
 -- A live entry's bytes are its media object's size; a soft-deleted entry has none.
 -- Media sizes never change ((sha256, size) is the media key), so reading the size
 -- when the entry changes is exact. A hard delete of a live entry cascading from its
@@ -85,3 +80,12 @@ $$;--> statement-breakpoint
 CREATE TRIGGER "library_entries_size_events"
 AFTER INSERT OR DELETE OR UPDATE OF "media_object_id", "deleted_at" ON "library_entries"
 FOR EACH ROW EXECUTE FUNCTION "record_library_size_event"();
+--> statement-breakpoint
+-- Seed after the trigger exists: CREATE TRIGGER holds a lock on library_entries until
+-- the migration commits, so no sync can write an entry between the seed's snapshot and
+-- the trigger, and every write committed before the lock is in the snapshot.
+INSERT INTO "library_size_events" ("occurred_at", "logical_path", "media_object_id", "kind", "bytes_delta")
+SELECT "entry"."first_seen_at", "entry"."logical_path", "entry"."media_object_id", 'added', "object"."size"
+FROM "library_entries" AS "entry"
+INNER JOIN "media_objects" AS "object" ON "object"."id" = "entry"."media_object_id"
+WHERE "entry"."deleted_at" IS NULL;
