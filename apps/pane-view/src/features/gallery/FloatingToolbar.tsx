@@ -212,7 +212,7 @@ function MediaFilterMenu({ onChange, visibility }: MediaFilterMenuProps) {
       {menuOpen ? (
         <div
           aria-label="Media types"
-          className="absolute right-0 bottom-[calc(100%+0.5rem)] z-30 w-52 rounded-xl bg-popover p-1 shadow-float"
+          className="absolute right-0 bottom-[calc(100%+0.5rem)] z-30 w-60 rounded-xl bg-popover p-1 shadow-float"
           role="menu"
         >
           {filters.map((filter) => (
@@ -227,7 +227,7 @@ function MediaFilterMenu({ onChange, visibility }: MediaFilterMenuProps) {
               type="button"
             >
               <filter.icon className="size-4" />
-              <span className="flex-1">{filter.name}</span>
+              <span className="flex-1 whitespace-nowrap">{filter.name}</span>
               <Check
                 aria-hidden="true"
                 className={cn("size-4 text-primary", !filter.active && "invisible")}
