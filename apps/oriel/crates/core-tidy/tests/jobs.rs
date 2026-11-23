@@ -462,6 +462,16 @@ fn a_paused_change_keeps_its_tool_suspended() {
     assert!(change.is_running());
 
     change.progress.resume();
+    let progress = change.progress.clone();
     change.finish().expect("and finished");
     assert_eq!(ticks(&scratch), 25, "it went on when resumed");
+    // The activity panel names each part of a video's step, so a long one never looks stuck.
+    assert_eq!(
+        progress.stages(),
+        [
+            "Encoding",
+            "Checking the result",
+            "Moving the original to holding"
+        ]
+    );
 }

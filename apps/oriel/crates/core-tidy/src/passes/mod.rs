@@ -29,6 +29,13 @@ pub trait Progress: Send + Sync {
     /// Names what a long step works on and how far it has got, from 0 to 1, when it can say; or
     /// that it has ended.
     fn item(&self, _item: Option<(&str, Option<f32>)>) {}
+    /// Names the part of that step under way ("Reading the original", "Encoding", "Checking the
+    /// result") and how far the part has got when it can say, or that the step has no named part
+    /// now. A new item starts with none.
+    fn stage(&self, _stage: Option<(&str, Option<f32>)>) {}
+    /// Says the work has come to rest for a pause (true), or goes on (false), so the owner sees
+    /// "Paused" only once nothing runs, and "Pausing" while what was in hand finishes.
+    fn paused_here(&self, _here: bool) {}
     /// The token tool runs are killed by, when there is one.
     fn cancel_token(&self) -> Option<&CancelToken>;
 
@@ -61,11 +68,19 @@ pub trait Progress: Send + Sync {
     /// background, while work the owner asked for runs), and fails once it is cancelled, paused
     /// or not.
     fn checkpoint(&self) -> Result<(), Cancelled> {
-        match (self.pause_token(), self.cancel_token()) {
-            (Some(pause), Some(cancel)) => pause.wait_blocking(cancel),
-            (Some(pause), None) => pause.wait_blocking(&CancelToken::new()),
-            _ => self.check(),
+        let Some(pause) = self.pause_token() else {
+            return self.check();
+        };
+        if !pause.is_paused() {
+            return self.check();
         }
+        self.paused_here(true);
+        let waited = match self.cancel_token() {
+            Some(cancel) => pause.wait_blocking(cancel),
+            None => pause.wait_blocking(&CancelToken::new()),
+        };
+        self.paused_here(false);
+        waited
     }
 }
 

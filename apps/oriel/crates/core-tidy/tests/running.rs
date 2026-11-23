@@ -12,6 +12,7 @@ use oriel_runtime::{CancelToken, Cancelled, PauseToken};
 #[derive(Default)]
 struct Seen {
     phases: Vec<String>,
+    stages: Vec<String>,
     waiting: bool,
     background: bool,
 }
@@ -27,6 +28,11 @@ pub struct Watched {
 impl Watched {
     pub fn phases(&self) -> Vec<String> {
         self.seen.lock().unwrap().phases.clone()
+    }
+
+    /// The parts of its steps it named, in order, each once in a row.
+    pub fn stages(&self) -> Vec<String> {
+        self.seen.lock().unwrap().stages.clone()
     }
 
     pub fn is_waiting(&self) -> bool {
@@ -64,6 +70,15 @@ impl Progress for Watched {
     }
 
     fn done(&self, _: u64) {}
+
+    fn stage(&self, stage: Option<(&str, Option<f32>)>) {
+        let mut seen = self.seen.lock().unwrap();
+        if let Some((label, _)) = stage
+            && seen.stages.last().map(String::as_str) != Some(label)
+        {
+            seen.stages.push(label.to_owned());
+        }
+    }
 
     fn cancel_token(&self) -> Option<&CancelToken> {
         Some(self.quiet.token())

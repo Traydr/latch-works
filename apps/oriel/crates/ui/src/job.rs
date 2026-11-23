@@ -11,6 +11,7 @@ use std::panic::AssertUnwindSafe;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use anyhow::Context as _;
 use futures::channel::{mpsc, oneshot};
@@ -36,7 +37,21 @@ pub struct JobProgress {
     item: Option<SharedString>,
     /// In thousandths, which also keeps a redraw from following every frame.
     item_thousandths: Option<u16>,
+    /// The part of the step on [`Self::item`] under way, such as "Encoding".
+    stage: Option<SharedString>,
+    /// How far that part has got, in thousandths, when it says.
+    stage_thousandths: Option<u16>,
+    /// When the item, or its part, began: what the time left is reckoned from.
+    since: Option<Instant>,
+    /// The owner stopped the job and it is winding down.
+    stopping: bool,
+    /// The work has come to rest for a pause, at a checkpoint.
+    paused_here: bool,
 }
+
+/// How long a part runs before the time it has left is reckoned: the first moments of an encode
+/// say little about its pace.
+const TIME_LEFT_AFTER: Duration = Duration::from_secs(5);
 
 impl JobProgress {
     /// What one long step works on now, such as the video being encoded.
@@ -84,6 +99,49 @@ impl JobProgress {
         self.background
     }
 
+    /// The part of the step on [`Self::item`] under way, such as "Reading the original".
+    pub fn stage(&self) -> Option<&SharedString> {
+        self.stage.as_ref()
+    }
+
+    /// Whether the owner stopped the job and it has yet to wind down.
+    pub fn is_stopping(&self) -> bool {
+        self.stopping
+    }
+
+    /// "Encoding · 47% · about 3 min left": the part of the step under way, how far it has got
+    /// and, once it has run long enough to tell, how long it has left at `now`.
+    pub fn stage_detail(&self, now: Instant) -> Option<String> {
+        let (share, own) = match self.stage_thousandths {
+            Some(share) => (Some(f32::from(share) / 1000.), true),
+            None => (self.item_share(), false),
+        };
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(stage) = &self.stage {
+            parts.push(stage.to_string());
+        }
+        if let Some(share) = share.filter(|_| own || self.item.is_some()) {
+            parts.push(format!("{}%", percent(share)));
+            if let Some(left) = self.time_left(share, now) {
+                parts.push(left);
+            }
+        }
+        (!parts.is_empty()).then(|| parts.join(" · "))
+    }
+
+    /// "about 3 min left", from how long the part has run and how far it has got.
+    fn time_left(&self, share: f32, now: Instant) -> Option<String> {
+        if self.paused || !(0.01..1.).contains(&share) {
+            return None;
+        }
+        let elapsed = now.checked_duration_since(self.since?)?;
+        if elapsed < TIME_LEFT_AFTER {
+            return None;
+        }
+        let left = elapsed.as_secs_f64() * f64::from(1. - share) / f64::from(share);
+        Some(time_left(Duration::from_secs_f64(left)))
+    }
+
     /// The file name of [`Self::item`], which is a path.
     pub fn item_name(&self) -> Option<&str> {
         let item = self.item.as_deref()?;
@@ -93,19 +151,24 @@ impl JobProgress {
     /// Whether the owner paused the job while a tool works on through its file because it
     /// cannot be stopped where it is ([`oriel_runtime::tools_suspend`] false), so the job is not
     /// yet paused.
+    ///
+    /// Paused work is at rest once it waits at a checkpoint, waits for its turn, or (asked for,
+    /// where tools stop where they are) has its file's tool held. Until then what it had in hand
+    /// finishes: stills encoding, a background analysis's files, a tool on Windows.
     pub fn is_pausing(&self) -> bool {
-        self.paused && !oriel_runtime::tools_suspend() && self.item.is_some()
+        let held_tool = oriel_runtime::tools_suspend() && !self.background && self.item.is_some();
+        self.paused && !self.stopping && !self.paused_here && !self.waiting && !held_tool
     }
 
-    /// "Pausing after clip-3.mp4 · 47%", while [`Self::is_pausing`].
+    /// "Pausing after this file · 47%", while [`Self::is_pausing`].
     pub fn pausing_after(&self) -> Option<String> {
         if !self.is_pausing() {
             return None;
         }
-        let name = self.item_name()?;
-        Some(match self.item_share() {
-            Some(share) => format!("Pausing after {name} · {}%", percent(share)),
-            None => format!("Pausing after {name}"),
+        Some(match (self.item.is_some(), self.item_share()) {
+            (true, Some(share)) => format!("Pausing after this file · {}%", percent(share)),
+            (true, None) => "Pausing after this file".to_owned(),
+            (false, _) => "Pausing once the work in hand is done".to_owned(),
         })
     }
 
@@ -129,7 +192,7 @@ impl JobProgress {
             self.phase.clone()
         };
         let still_going = self.pausing_after();
-        let state = if still_going.is_some() {
+        let state = if still_going.is_some() || self.stopping {
             JobState::Running
         } else if self.paused {
             JobState::Paused
@@ -148,22 +211,40 @@ impl JobProgress {
             job = job.progress(fraction);
         }
         if let Some(name) = self.item_name() {
-            job = job.detail(match (still_going, share) {
-                (Some(words), _) => words,
-                (None, Some(share)) => format!("{name} · {}%", percent(share)),
-                (None, None) => name.to_owned(),
-            });
+            job = job.item(name.to_owned());
+        }
+        let detail = if self.stopping {
+            Some("Stopping… what is done stays done".to_owned())
+        } else {
+            still_going.or_else(|| self.stage_detail(Instant::now()))
+        };
+        if let Some(detail) = detail {
+            job = job.detail(detail);
         }
         job.state(state)
             .counts(self.done, self.total)
-            .pausable(state != JobState::Queued)
-            .stoppable(true)
+            .pausable(state != JobState::Queued && !self.stopping)
+            .stoppable(!self.stopping)
     }
 }
 
 /// A share as whole percent, rounded down, as a step's progress is shown.
 fn percent(share: f32) -> f32 {
     (share * 100.).floor()
+}
+
+/// "about 40 s left", "about 3 min left", "about 1 h 20 min left": rounded, as a guess is.
+fn time_left(left: Duration) -> String {
+    let seconds = left.as_secs();
+    if seconds < 60 {
+        let tens = seconds.div_ceil(10).max(1) * 10;
+        format!("about {tens} s left")
+    } else if seconds < 60 * 60 {
+        format!("about {} min left", seconds.div_ceil(60))
+    } else {
+        let minutes = seconds.div_ceil(60);
+        format!("about {} h {} min left", minutes / 60, minutes % 60)
+    }
 }
 
 /// Why a job did not finish with a value.
@@ -285,6 +366,7 @@ impl<T: Send + 'static> Job<T> {
                             let shown = this.update(cx, |job: &mut Self, cx| {
                                 job.progress = JobProgress {
                                     paused: job.pause.is_paused(),
+                                    stopping: job.token.is_cancelled(),
                                     ..progress
                                 };
                                 cx.notify();
@@ -353,6 +435,8 @@ impl<T: Send + 'static> Job<T> {
         self.progress = JobProgress {
             paused: false,
             waiting: false,
+            stopping: false,
+            paused_here: false,
             ..progress
         };
         let event = match &result {
@@ -452,6 +536,7 @@ impl<T: 'static> Job<T> {
             self.token.cancel();
             self.pause.resume();
             self.progress.paused = false;
+            self.progress.stopping = true;
             cx.notify();
         }
     }
@@ -593,8 +678,35 @@ impl JobReporter {
             None => (None, None),
         };
         self.report(|progress| {
+            // Another file, or none, starts afresh: its parts are its own.
+            if progress.item != name {
+                progress.stage = None;
+                progress.stage_thousandths = None;
+                progress.since = name.is_some().then(Instant::now);
+            }
             progress.item = name;
-            progress.item_thousandths = share.map(|share| (share.clamp(0., 1.) * 1000.) as u16);
+            progress.item_thousandths = share.map(thousandths);
+        });
+    }
+
+    /// Says the work has come to rest for a pause, or goes on; see [`JobProgress::is_pausing`].
+    pub fn set_paused_here(&self, here: bool) {
+        self.report(|progress| progress.paused_here = here);
+    }
+
+    /// Names the part of the step on the item under way and how far it has got when it can say;
+    /// see [`JobProgress::stage`]. A new part starts the clock its time left is reckoned by.
+    pub fn set_stage(&self, stage: Option<(&str, Option<f32>)>) {
+        let (label, share) = match stage {
+            Some((label, share)) => (Some(SharedString::from(label.to_owned())), share),
+            None => (None, None),
+        };
+        self.report(|progress| {
+            if progress.stage != label {
+                progress.since = Some(Instant::now());
+            }
+            progress.stage = label;
+            progress.stage_thousandths = share.map(thousandths);
         });
     }
 
@@ -637,13 +749,31 @@ impl JobReporter {
     /// A checkpoint for work on a thread of its own: blocks while the job is paused, and returns
     /// `Err(Cancelled)` once it is cancelled, paused or not.
     pub fn wait_while_paused(&self) -> Result<(), Cancelled> {
-        self.pause.wait_blocking(&self.token)
+        if !self.pause.is_paused() {
+            return self.token.check();
+        }
+        self.set_paused_here(true);
+        let waited = self.pause.wait_blocking(&self.token);
+        self.set_paused_here(false);
+        waited
     }
 
     /// The async checkpoint: resolves once the job is not paused, or with `Err(Cancelled)` once
     /// it is cancelled.
     pub fn resumed(&self) -> impl Future<Output = Result<(), Cancelled>> + Send + 'static {
-        self.pause.resumed(&self.token)
+        let reporter = self.clone();
+        let waiting = self.pause.resumed(&self.token);
+        async move {
+            let paused = reporter.pause.is_paused();
+            if paused {
+                reporter.set_paused_here(true);
+            }
+            let waited = waiting.await;
+            if paused {
+                reporter.set_paused_here(false);
+            }
+            waited
+        }
     }
 
     /// Says the job waits for its turn (true) or works again (false); see
@@ -676,6 +806,10 @@ impl JobReporter {
     }
 }
 
+fn thousandths(share: f32) -> u16 {
+    (share.clamp(0., 1.) * 1000.) as u16
+}
+
 /// The latest progress, shared between the work and the job's UI task.
 #[derive(Default)]
 struct ProgressSlot {
@@ -692,5 +826,119 @@ impl ProgressSlot {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn encoding(share: f32, since: Instant) -> JobProgress {
+        JobProgress {
+            phase: "Shrinking videos".into(),
+            done: 2,
+            total: 5,
+            item: Some("clips/holiday.mp4".into()),
+            item_thousandths: Some(thousandths(share)),
+            stage: Some("Encoding".into()),
+            since: Some(since),
+            ..JobProgress::default()
+        }
+    }
+
+    #[test]
+    fn a_long_step_says_its_file_its_part_and_the_time_it_has_left() {
+        let since = Instant::now();
+        let job = encoding(0.25, since);
+        // Too soon to tell its pace.
+        assert_eq!(
+            job.stage_detail(since + Duration::from_secs(1)).as_deref(),
+            Some("Encoding · 25%")
+        );
+        assert_eq!(
+            job.stage_detail(since + Duration::from_secs(60)).as_deref(),
+            Some("Encoding · 25% · about 3 min left")
+        );
+        let row = job.activity("change-1", &"Tidy up".into());
+        assert_eq!(
+            row.current_item().map(|item| item.as_ref()),
+            Some("holiday.mp4")
+        );
+        assert_eq!(row.summary(), "Shrinking videos 2 of 5");
+
+        // A part with a share of its own says that share, and leaves the bar to the step.
+        let reading = JobProgress {
+            stage: Some("Reading the original".into()),
+            stage_thousandths: Some(400),
+            item_thousandths: None,
+            ..encoding(0., since)
+        };
+        assert_eq!(
+            reading.stage_detail(since).as_deref(),
+            Some("Reading the original · 40%")
+        );
+        assert_eq!(
+            reading.activity("change-1", &"Tidy up".into()).ratio(),
+            Some(2. / 5.)
+        );
+    }
+
+    #[test]
+    fn time_left_is_rounded_as_a_guess_is() {
+        assert_eq!(time_left(Duration::from_secs(3)), "about 10 s left");
+        assert_eq!(time_left(Duration::from_secs(41)), "about 50 s left");
+        assert_eq!(time_left(Duration::from_secs(150)), "about 3 min left");
+        assert_eq!(
+            time_left(Duration::from_secs(4_810)),
+            "about 1 h 21 min left"
+        );
+    }
+
+    #[test]
+    fn paused_work_says_pausing_until_it_has_come_to_rest() {
+        let since = Instant::now();
+        let name: SharedString = "Tidy up".into();
+        // Background work's tools finish their file.
+        let background = JobProgress {
+            paused: true,
+            background: true,
+            ..encoding(0.5, since)
+        };
+        let row = background.activity("analysis-1", &name);
+        assert_eq!(row.job_state(), JobState::Running);
+        assert_eq!(row.caption(), "Pausing after this file · 50%");
+
+        // Work with no file named, such as stills, until it reaches its checkpoint.
+        let stills = JobProgress {
+            paused: true,
+            item: None,
+            item_thousandths: None,
+            stage: None,
+            ..encoding(0., since)
+        };
+        assert_eq!(
+            stills.activity("change-1", &name).caption(),
+            "Pausing once the work in hand is done"
+        );
+        let at_rest = JobProgress {
+            paused_here: true,
+            ..stills
+        };
+        assert_eq!(
+            at_rest.activity("change-1", &name).job_state(),
+            JobState::Paused
+        );
+    }
+
+    #[test]
+    fn a_stopped_job_says_it_is_stopping_and_offers_no_controls() {
+        let job = JobProgress {
+            stopping: true,
+            ..encoding(0.5, Instant::now())
+        };
+        let row = job.activity("change-1", &"Tidy up".into());
+        assert_eq!(row.job_state(), JobState::Running);
+        assert_eq!(row.caption(), "Stopping… what is done stays done");
+        assert_eq!(row, row.clone().pausable(false).stoppable(false));
     }
 }

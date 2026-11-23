@@ -59,7 +59,7 @@ use crate::contract::{
     FileFormat, HoldingId, PlanId, PlanKind, PlanStepAction, Root, RootId, StepStatus,
 };
 use crate::media::convert::{Conversion, Converter, pixels};
-use crate::passes::hash::{HashError, hash_edges, hash_whole_file};
+use crate::passes::hash::{HashError, hash_edges, hash_whole_file, hash_whole_file_reporting};
 use crate::passes::{Media, Progress, run_concurrently};
 use crate::paths::is_within;
 use crate::scan::{dir_of, whole_ms};
@@ -512,6 +512,9 @@ struct ConvertContext<'a> {
     not_smaller: Option<NotSmaller>,
     /// The result carries the original's audio track unchanged.
     keep_loudness: bool,
+    /// The step says which part of it is under way ([`Progress::stage`]): a video's or an
+    /// animation's, which run one at a time. Stills run several at once and say nothing.
+    stages: bool,
 }
 
 /// Removes a conversion's temp file however the conversion ends.
@@ -532,10 +535,25 @@ fn expected_of(path: &Path, metadata: &fs::Metadata) -> (i64, f64, f64) {
     )
 }
 
-/// The file's SHA-256 as it is now, or `None` if it cannot be read through.
-fn hash_of(deps: &ExecutorDeps<'_>, path: &Path) -> anyhow::Result<Option<String>> {
+/// The file's SHA-256 as it is now, or `None` if it cannot be read through. With `stage`, the
+/// read says so and how far through the file it is: a large video takes a while.
+fn hash_of(
+    deps: &ExecutorDeps<'_>,
+    path: &Path,
+    stage: Option<&str>,
+) -> anyhow::Result<Option<String>> {
     let metadata = fs::metadata(path)?;
-    match hash_whole_file(path, expected_of(path, &metadata), deps.progress) {
+    let size = metadata.size().max(1) as f64;
+    let on_read = |read: u64| {
+        if let Some(stage) = stage {
+            deps.progress
+                .stage(Some((stage, Some((read as f64 / size) as f32))));
+        }
+    };
+    if let Some(stage) = stage {
+        deps.progress.stage(Some((stage, Some(0.))));
+    }
+    match hash_whole_file_reporting(path, expected_of(path, &metadata), deps.progress, &on_read) {
         Ok(sha256) => Ok(Some(sha256)),
         Err(HashError::Cancelled) => Err(Cancelled.into()),
         Err(HashError::Unreadable) => Ok(None),
@@ -600,6 +618,7 @@ fn take_earlier_result(
     earlier: &EarlierResult,
     temp: &Path,
     verify: &impl Fn(&Path) -> anyhow::Result<OutputFacts>,
+    stages: bool,
 ) -> anyhow::Result<Option<OutputFacts>> {
     let unusable = || {
         let _ = fs::remove_file(temp);
@@ -609,6 +628,10 @@ fn take_earlier_result(
         return Ok(None);
     }
     let _ = fs::remove_file(temp);
+    if stages {
+        deps.progress
+            .stage(Some(("Reusing an identical file's result", None)));
+    }
     let linked = earlier
         .held
         .as_deref()
@@ -617,8 +640,13 @@ fn take_earlier_result(
     if !linked && fs::copy(&earlier.output, temp).is_err() {
         return unusable();
     }
-    if hash_of(deps, temp)?.as_deref() != Some(earlier.sha256.as_str()) {
+    if hash_of(deps, temp, stages.then_some("Checking an earlier result"))?.as_deref()
+        != Some(earlier.sha256.as_str())
+    {
         return unusable();
+    }
+    if stages {
+        deps.progress.stage(Some(("Checking the result", None)));
     }
     match verify(temp) {
         Ok(facts) => Ok(Some(facts)),
@@ -686,10 +714,21 @@ fn convert(
     }
     let temp = TempFile(PathBuf::from(temp_path_of(&target.to_string_lossy())));
     let spec = serde_json::to_string(&step.spec)?;
+    let stages = context.stages;
+    let stage = |label: &str| {
+        if stages {
+            deps.progress.stage(Some((label, None)));
+        }
+    };
     // Copies are told by the catalog's hash, which is checked against the bytes before they are
     // given another file's result, or offer theirs to another.
     let confirmed = match step.source_sha256.as_deref() {
-        Some(sha256) if hash_of(deps, &source)?.as_deref() == Some(sha256) => Some(sha256),
+        Some(sha256)
+            if hash_of(deps, &source, stages.then_some("Reading the original"))?.as_deref()
+                == Some(sha256) =>
+        {
+            Some(sha256)
+        }
         _ => None,
     };
 
@@ -703,7 +742,9 @@ fn convert(
     let mut reused = None;
     if let Some(sha256) = confirmed {
         for earlier in earlier_results(deps, sha256, &spec)? {
-            if let Some(facts) = take_earlier_result(deps, &source, &earlier, &temp.0, &verify)? {
+            if let Some(facts) =
+                take_earlier_result(deps, &source, &earlier, &temp.0, &verify, stages)?
+            {
                 reused = Some((facts, earlier.sha256));
                 break;
             }
@@ -713,9 +754,10 @@ fn convert(
         Some((facts, sha256)) => (Some(SAME_RESULT.to_owned()), facts, Some(sha256)),
         None => {
             let note = produce(&temp.0)?;
+            stage("Checking the result");
             let facts = verify(&temp.0)?;
             let sha256 = match confirmed {
-                Some(_) => hash_of(deps, &temp.0)?,
+                Some(_) => hash_of(deps, &temp.0, stages.then_some("Reading the result"))?,
                 None => None,
             };
             (note, facts, sha256)
@@ -744,6 +786,7 @@ fn convert(
         )));
     }
 
+    stage("Moving the original to holding");
     copy_times(&temp.0, context.source)?;
     let hashes = match &output_sha256 {
         Some(sha256) => Some(OutputHashes {
@@ -1000,6 +1043,7 @@ fn execute_step(
                     require_smaller: true,
                     not_smaller,
                     keep_loudness: false,
+                    stages: false,
                 },
                 |temp| {
                     let pixels = pixels(expected.width, expected.height);
@@ -1094,7 +1138,12 @@ fn execute_step(
                 },
                 not_smaller,
                 keep_loudness: audio == Some(AudioTrackPlan::Copy),
+                stages: true,
             };
+            // Each part of a video's step can take minutes on a large file, so the step names its
+            // file from the start and says which part it is on.
+            let name = step.from_rel.as_str();
+            deps.progress.item(Some((name, known_length.then_some(0.))));
             convert(
                 deps,
                 step,
@@ -1109,9 +1158,8 @@ fn execute_step(
                         None => Conversion::Animation,
                     };
                     let started = Instant::now();
-                    // Encoding a video can take minutes, so it says which and how far along.
-                    let name = step.from_rel.as_str();
-                    deps.progress.item(Some((name, known_length.then_some(0.))));
+                    // Encoding a video can take minutes, so it says how far along it is.
+                    deps.progress.stage(Some((encode_stage(tracks), None)));
                     let on_seconds = |seconds: f64| {
                         let share = expected
                             .duration_ms
@@ -1146,6 +1194,16 @@ fn execute_step(
                 verify,
             )
         }
+    }
+}
+
+/// What the encode part of a video's or animation's step is called while it runs.
+fn encode_stage(tracks: Option<(VideoTrackPlan, AudioTrackPlan)>) -> &'static str {
+    match tracks {
+        None => "Converting",
+        Some((VideoTrackPlan::Copy, AudioTrackPlan::Copy | AudioTrackPlan::Drop)) => "Repackaging",
+        Some((VideoTrackPlan::Copy, AudioTrackPlan::EncodeAac)) => "Converting the sound",
+        Some((VideoTrackPlan::Encode { .. }, _)) => "Encoding",
     }
 }
 

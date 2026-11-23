@@ -179,14 +179,39 @@ pub(crate) fn hash_whole_file(
     expected: (i64, f64, f64),
     progress: &dyn Progress,
 ) -> Result<String, HashError> {
+    hash_whole_file_reporting(path, expected, progress, &|_| {})
+}
+
+/// [`hash_whole_file`], telling `on_read` how many bytes it has read so far after each piece, so a
+/// long read of a large video can say how far it has got. Paused as a tool is (asked-for work,
+/// not background), it waits between pieces rather than reading on under a "Paused".
+pub(crate) fn hash_whole_file_reporting(
+    path: &Path,
+    expected: (i64, f64, f64),
+    progress: &dyn Progress,
+    on_read: &dyn Fn(u64),
+) -> Result<String, HashError> {
     let mut file = File::open(path).map_err(|_| HashError::Unreadable)?;
     let mut hash = Sha256::new();
     let mut buffer = vec![0; 1024 * 1024];
+    let mut read = 0_u64;
     loop {
         progress.check().map_err(|_| HashError::Cancelled)?;
+        if let (Some(pause), Some(cancel)) = (progress.pause_token(), progress.cancel_token())
+            && pause.holds_tools()
+        {
+            progress.paused_here(true);
+            let waited = pause.wait_blocking(cancel);
+            progress.paused_here(false);
+            waited.map_err(|_| HashError::Cancelled)?;
+        }
         match file.read(&mut buffer) {
             Ok(0) => break,
-            Ok(count) => hash.update(&buffer[..count]),
+            Ok(count) => {
+                hash.update(&buffer[..count]);
+                read += count as u64;
+                on_read(read);
+            }
             Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
             Err(_) => return Err(HashError::Unreadable),
         }
