@@ -25,7 +25,7 @@ export function SyncRunHistoryTable({
   return (
     <div className="space-y-3">
       {runningCount > 0 && onCancelAllRunning ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2">
           <p className="text-sm text-muted-foreground">
             {runningCount} sync run{runningCount === 1 ? "" : "s"} marked running. Stop stuck runs
             to unlock maintenance actions.
@@ -42,7 +42,7 @@ export function SyncRunHistoryTable({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-lg border border-border">
+      <div className="overflow-x-auto rounded-xl bg-card shadow-surface">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
             <tr>
@@ -92,9 +92,9 @@ export function SyncRunHistoryTable({
 function StatusBadge({ status }: { status: SyncRunHistoryEntry["status"] }) {
   const className =
     status === "completed"
-      ? "text-emerald-600 dark:text-emerald-400"
+      ? "text-success"
       : status === "running"
-        ? "text-amber-600 dark:text-amber-400"
+        ? "text-warning"
         : status === "failed"
           ? "text-destructive"
           : "text-muted-foreground";
