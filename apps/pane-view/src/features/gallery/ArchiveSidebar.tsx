@@ -61,7 +61,7 @@ export function ArchiveSidebar({
           />
           <div className={cn("min-w-0 transition-opacity", isCollapsed && "opacity-0")}>
             <strong className="block truncate text-sm font-semibold">Pane View</strong>
-            <span className="block truncate text-[11px] text-muted-foreground">Latch Works</span>
+            <span className="block truncate text-xs text-muted-foreground">Latch Works</span>
           </div>
         </div>
       </SidebarHeader>
@@ -72,7 +72,7 @@ export function ArchiveSidebar({
             <SidebarMenu aria-label="Archive folders">
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  className="rounded-none min-h-10 md:min-h-8 hover:bg-sidebar-accent"
+                  className="min-h-10 md:min-h-8"
                   isActive={!currentPath}
                   onClick={() => onNavigateToPath("")}
                   title="Archive root"
@@ -90,7 +90,6 @@ export function ArchiveSidebar({
                   <SidebarMenuItem key={ancestor.path}>
                     <SidebarMenuButton
                       className={cn(
-                        "rounded-none",
                         isCollapsed ? "" : "justify-start gap-1.5 px-2",
                       )}
                       isActive={ancestor.path === currentPath}
@@ -100,7 +99,7 @@ export function ArchiveSidebar({
                       style={isCollapsed ? undefined : { paddingLeft: `${12 + depth * 12}px` }}
                     >
                       <Folder className="size-3.5 shrink-0 text-amber-500" />
-                      <span className="min-w-0 flex-1 truncate text-xs">{ancestor.label}</span>
+                      <span className="min-w-0 flex-1 truncate text-[13px]">{ancestor.label}</span>
                       {ancestor.path !== currentPath && !isCollapsed ? (
                         <ChevronRight className="size-3 shrink-0 opacity-60" />
                       ) : null}
@@ -116,7 +115,6 @@ export function ArchiveSidebar({
                   <SidebarMenuItem key={folder.path}>
                     <SidebarMenuButton
                       className={cn(
-                        "rounded-none",
                         isCollapsed ? "" : "justify-start gap-1.5 px-2",
                       )}
                       disabled={foldersDisabled}
@@ -126,7 +124,7 @@ export function ArchiveSidebar({
                       style={isCollapsed ? undefined : { paddingLeft: `${12 + depth * 12}px` }}
                     >
                       <Folder className="size-3.5 shrink-0 text-amber-500" />
-                      <span className="min-w-0 flex-1 truncate text-xs">{folder.name}</span>
+                      <span className="min-w-0 flex-1 truncate text-[13px]">{folder.name}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
