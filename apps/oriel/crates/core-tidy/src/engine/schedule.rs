@@ -467,6 +467,10 @@ impl Progress for Turn<'_> {
         self.progress.paused_here(here);
     }
 
+    fn runs_through_pause(&self, on: bool) {
+        self.progress.runs_through_pause(on);
+    }
+
     fn cancel_token(&self) -> Option<&CancelToken> {
         self.progress.cancel_token()
     }

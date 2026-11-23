@@ -517,6 +517,23 @@ struct ConvertContext<'a> {
     stages: bool,
 }
 
+/// In-process work a pause does not stop, said for as long as it is in scope
+/// ([`Progress::runs_through_pause`]).
+struct RunsThroughPause<'a>(&'a dyn Progress);
+
+impl<'a> RunsThroughPause<'a> {
+    fn new(progress: &'a dyn Progress) -> Self {
+        progress.runs_through_pause(true);
+        Self(progress)
+    }
+}
+
+impl Drop for RunsThroughPause<'_> {
+    fn drop(&mut self) {
+        self.0.runs_through_pause(false);
+    }
+}
+
 /// Removes a conversion's temp file however the conversion ends.
 struct TempFile(PathBuf);
 
@@ -553,7 +570,8 @@ fn hash_of(
     if let Some(stage) = stage {
         deps.progress.stage(Some((stage, Some(0.))));
     }
-    match hash_whole_file_reporting(path, expected_of(path, &metadata), deps.progress, &on_read) {
+    let on_read: Option<&dyn Fn(u64)> = stage.map(|_| &on_read as &dyn Fn(u64));
+    match hash_whole_file_reporting(path, expected_of(path, &metadata), deps.progress, on_read) {
         Ok(sha256) => Ok(Some(sha256)),
         Err(HashError::Cancelled) => Err(Cancelled.into()),
         Err(HashError::Unreadable) => Ok(None),
@@ -632,12 +650,16 @@ fn take_earlier_result(
         deps.progress
             .stage(Some(("Reusing an identical file's result", None)));
     }
-    let linked = earlier
-        .held
-        .as_deref()
-        .is_some_and(|held| same_inode(held, source))
-        && fs::hard_link(&earlier.output, temp).is_ok();
-    if !linked && fs::copy(&earlier.output, temp).is_err() {
+    let copied = {
+        let _copying = stages.then(|| RunsThroughPause::new(deps.progress));
+        let linked = earlier
+            .held
+            .as_deref()
+            .is_some_and(|held| same_inode(held, source))
+            && fs::hard_link(&earlier.output, temp).is_ok();
+        linked || fs::copy(&earlier.output, temp).is_ok()
+    };
+    if !copied {
         return unusable();
     }
     if hash_of(deps, temp, stages.then_some("Checking an earlier result"))?.as_deref()
@@ -787,6 +809,8 @@ fn convert(
     }
 
     stage("Moving the original to holding");
+    // Across volumes the move is a copy, which runs on through a pause.
+    let _moving = stages.then(|| RunsThroughPause::new(deps.progress));
     copy_times(&temp.0, context.source)?;
     let hashes = match &output_sha256 {
         Some(sha256) => Some(OutputHashes {
@@ -1159,13 +1183,17 @@ fn execute_step(
                     };
                     let started = Instant::now();
                     // Encoding a video can take minutes, so it says how far along it is.
-                    deps.progress.stage(Some((encode_stage(tracks), None)));
+                    deps.progress
+                        .stage(Some((encode_stage(tracks), known_length.then_some(0.))));
+                    let encoding = encode_stage(tracks);
                     let on_seconds = |seconds: f64| {
                         let share = expected
                             .duration_ms
                             .filter(|length| *length > 0.)
                             .map(|length| (seconds * 1000. / length).clamp(0., 1.) as f32);
+                        // The item's share moves the bar; the part's says the percentage.
                         deps.progress.item(Some((name, share)));
+                        deps.progress.stage(Some((encoding, share)));
                     };
                     deps.converter().convert(
                         conversion,

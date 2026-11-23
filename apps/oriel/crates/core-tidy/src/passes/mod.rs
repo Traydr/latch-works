@@ -36,6 +36,9 @@ pub trait Progress: Send + Sync {
     /// Says the work has come to rest for a pause (true), or goes on (false), so the owner sees
     /// "Paused" only once nothing runs, and "Pausing" while what was in hand finishes.
     fn paused_here(&self, _here: bool) {}
+    /// Says the part of the step under way is in-process work a pause does not stop (a copy, a
+    /// move across volumes), so it reads "Pausing" until that part ends.
+    fn runs_through_pause(&self, _on: bool) {}
     /// The token tool runs are killed by, when there is one.
     fn cancel_token(&self) -> Option<&CancelToken>;
 

@@ -179,17 +179,18 @@ pub(crate) fn hash_whole_file(
     expected: (i64, f64, f64),
     progress: &dyn Progress,
 ) -> Result<String, HashError> {
-    hash_whole_file_reporting(path, expected, progress, &|_| {})
+    hash_whole_file_reporting(path, expected, progress, None)
 }
 
-/// [`hash_whole_file`], telling `on_read` how many bytes it has read so far after each piece, so a
-/// long read of a large video can say how far it has got. Paused as a tool is (asked-for work,
-/// not background), it waits between pieces rather than reading on under a "Paused".
+/// [`hash_whole_file`] for one long read at a time, such as a large video's in a change:
+/// `on_read` hears how many bytes it has read after each piece, and paused as a tool is
+/// (asked-for work, not background) it waits between pieces rather than reading on. Reads that run
+/// several at once pass `None` and finish their file, to come to rest together at a checkpoint.
 pub(crate) fn hash_whole_file_reporting(
     path: &Path,
     expected: (i64, f64, f64),
     progress: &dyn Progress,
-    on_read: &dyn Fn(u64),
+    on_read: Option<&dyn Fn(u64)>,
 ) -> Result<String, HashError> {
     let mut file = File::open(path).map_err(|_| HashError::Unreadable)?;
     let mut hash = Sha256::new();
@@ -197,20 +198,22 @@ pub(crate) fn hash_whole_file_reporting(
     let mut read = 0_u64;
     loop {
         progress.check().map_err(|_| HashError::Cancelled)?;
-        if let (Some(pause), Some(cancel)) = (progress.pause_token(), progress.cancel_token())
+        if on_read.is_some()
+            && let (Some(pause), Some(cancel)) = (progress.pause_token(), progress.cancel_token())
             && pause.holds_tools()
         {
-            progress.paused_here(true);
-            let waited = pause.wait_blocking(cancel);
-            progress.paused_here(false);
-            waited.map_err(|_| HashError::Cancelled)?;
+            pause
+                .wait_blocking(cancel)
+                .map_err(|_| HashError::Cancelled)?;
         }
         match file.read(&mut buffer) {
             Ok(0) => break,
             Ok(count) => {
                 hash.update(&buffer[..count]);
                 read += count as u64;
-                on_read(read);
+                if let Some(on_read) = on_read {
+                    on_read(read);
+                }
             }
             Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
             Err(_) => return Err(HashError::Unreadable),
@@ -228,4 +231,70 @@ pub(crate) fn hash_whole_file_reporting(
         return Err(HashError::Unreadable);
     }
     Ok(hex(&hash.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use super::*;
+    use crate::passes::Quiet;
+
+    /// Removes the file when dropped.
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    /// A file of `bytes` and what a hash expects of it.
+    fn file(bytes: usize) -> (Scratch, std::path::PathBuf, (i64, f64, f64)) {
+        let path =
+            std::env::temp_dir().join(format!("oriel-hash-pause-{}.bin", std::process::id()));
+        let folder = Scratch(path.clone());
+        std::fs::write(&path, vec![7_u8; bytes]).unwrap();
+        let metadata = std::fs::metadata(&path).unwrap();
+        let (seconds, nanoseconds) = change_time(&path, &metadata);
+        let expected = (
+            metadata.size() as i64,
+            whole_ms(metadata.mtime(), metadata.mtime_nsec()) as f64,
+            whole_ms(seconds, nanoseconds) as f64,
+        );
+        (folder, path, expected)
+    }
+
+    /// A long read for a change waits while the change is paused and goes on when resumed;
+    /// background work's read finishes its file, as its tools do.
+    #[test]
+    fn a_reported_read_waits_while_asked_for_work_is_paused() {
+        let (_folder, path, expected) = file(3 * 1024 * 1024);
+        let progress = Quiet::new();
+        progress.pause().pause();
+        let (done, finished) = mpsc::channel();
+        let reading = progress.clone();
+        let read_path = path.clone();
+        let reader = std::thread::spawn(move || {
+            let hashed = hash_whole_file_reporting(&read_path, expected, &reading, Some(&|_| {}));
+            done.send(()).unwrap();
+            hashed
+        });
+        assert!(
+            finished.recv_timeout(Duration::from_millis(300)).is_err(),
+            "it read on while paused"
+        );
+        progress.pause().resume();
+        assert!(reader.join().unwrap().is_ok());
+
+        let background = Quiet::new();
+        background.pause().set_background(true);
+        background.pause().pause();
+        assert!(hash_whole_file_reporting(&path, expected, &background, Some(&|_| {})).is_ok());
+        // Reads that run several at once finish their file and come to rest at a checkpoint.
+        let paused = Quiet::new();
+        paused.pause().pause();
+        assert!(hash_whole_file(&path, expected, &paused).is_ok());
+    }
 }

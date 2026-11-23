@@ -47,6 +47,8 @@ pub struct JobProgress {
     stopping: bool,
     /// The work has come to rest for a pause, at a checkpoint.
     paused_here: bool,
+    /// The part of the step under way is in-process work a pause does not stop, such as a copy.
+    runs_through_pause: bool,
 }
 
 /// How long a part runs before the time it has left is reckoned: the first moments of an encode
@@ -112,15 +114,17 @@ impl JobProgress {
     /// "Encoding · 47% · about 3 min left": the part of the step under way, how far it has got
     /// and, once it has run long enough to tell, how long it has left at `now`.
     pub fn stage_detail(&self, now: Instant) -> Option<String> {
-        let (share, own) = match self.stage_thousandths {
-            Some(share) => (Some(f32::from(share) / 1000.), true),
-            None => (self.item_share(), false),
+        // A named part says only its own share: the encode's last share is no measure of the
+        // check or the move that follow it.
+        let share = match (&self.stage, self.stage_thousandths) {
+            (Some(_), share) => share.map(|share| f32::from(share) / 1000.),
+            (None, _) => self.item_share().filter(|_| self.item.is_some()),
         };
         let mut parts: Vec<String> = Vec::new();
         if let Some(stage) = &self.stage {
             parts.push(stage.to_string());
         }
-        if let Some(share) = share.filter(|_| own || self.item.is_some()) {
+        if let Some(share) = share {
             parts.push(format!("{}%", percent(share)));
             if let Some(left) = self.time_left(share, now) {
                 parts.push(left);
@@ -154,9 +158,13 @@ impl JobProgress {
     ///
     /// Paused work is at rest once it waits at a checkpoint, waits for its turn, or (asked for,
     /// where tools stop where they are) has its file's tool held. Until then what it had in hand
-    /// finishes: stills encoding, a background analysis's files, a tool on Windows.
+    /// finishes: stills encoding, a background analysis's files, a tool on Windows, a copy or a
+    /// move that runs through a pause ([`JobReporter::set_runs_through_pause`]).
     pub fn is_pausing(&self) -> bool {
-        let held_tool = oriel_runtime::tools_suspend() && !self.background && self.item.is_some();
+        let held_tool = oriel_runtime::tools_suspend()
+            && !self.background
+            && self.item.is_some()
+            && !self.runs_through_pause;
         self.paused && !self.stopping && !self.paused_here && !self.waiting && !held_tool
     }
 
@@ -236,13 +244,15 @@ fn percent(share: f32) -> f32 {
 /// "about 40 s left", "about 3 min left", "about 1 h 20 min left": rounded, as a guess is.
 fn time_left(left: Duration) -> String {
     let seconds = left.as_secs();
+    let minutes = seconds.div_ceil(60);
     if seconds < 60 {
         let tens = seconds.div_ceil(10).max(1) * 10;
         format!("about {tens} s left")
-    } else if seconds < 60 * 60 {
-        format!("about {} min left", seconds.div_ceil(60))
+    } else if minutes < 60 {
+        format!("about {minutes} min left")
+    } else if minutes.is_multiple_of(60) {
+        format!("about {} h left", minutes / 60)
     } else {
-        let minutes = seconds.div_ceil(60);
         format!("about {} h {} min left", minutes / 60, minutes % 60)
     }
 }
@@ -682,11 +692,18 @@ impl JobReporter {
             if progress.item != name {
                 progress.stage = None;
                 progress.stage_thousandths = None;
+                progress.runs_through_pause = false;
                 progress.since = name.is_some().then(Instant::now);
             }
             progress.item = name;
             progress.item_thousandths = share.map(thousandths);
         });
+    }
+
+    /// Says the part of the step under way is in-process work that runs on through a pause, such
+    /// as a copy, so the job reads "Pausing" rather than "Paused" until it ends.
+    pub fn set_runs_through_pause(&self, on: bool) {
+        self.report(|progress| progress.runs_through_pause = on);
     }
 
     /// Says the work has come to rest for a pause, or goes on; see [`JobProgress::is_pausing`].
@@ -752,10 +769,8 @@ impl JobReporter {
         if !self.pause.is_paused() {
             return self.token.check();
         }
-        self.set_paused_here(true);
-        let waited = self.pause.wait_blocking(&self.token);
-        self.set_paused_here(false);
-        waited
+        let _at_rest = AtRest::new(self);
+        self.pause.wait_blocking(&self.token)
     }
 
     /// The async checkpoint: resolves once the job is not paused, or with `Err(Cancelled)` once
@@ -764,15 +779,9 @@ impl JobReporter {
         let reporter = self.clone();
         let waiting = self.pause.resumed(&self.token);
         async move {
-            let paused = reporter.pause.is_paused();
-            if paused {
-                reporter.set_paused_here(true);
-            }
-            let waited = waiting.await;
-            if paused {
-                reporter.set_paused_here(false);
-            }
-            waited
+            // Dropped mid-wait, the future still says the work goes on.
+            let _at_rest = reporter.pause.is_paused().then(|| AtRest::new(&reporter));
+            waiting.await
         }
     }
 
@@ -803,6 +812,22 @@ impl JobReporter {
         if !self.slot.pending.swap(true, Ordering::AcqRel) {
             let _ = self.wake.unbounded_send(());
         }
+    }
+}
+
+/// The work at rest for a pause until dropped.
+struct AtRest(JobReporter);
+
+impl AtRest {
+    fn new(reporter: &JobReporter) -> Self {
+        reporter.set_paused_here(true);
+        Self(reporter.clone())
+    }
+}
+
+impl Drop for AtRest {
+    fn drop(&mut self) {
+        self.0.set_paused_here(false);
     }
 }
 
@@ -841,6 +866,7 @@ mod tests {
             item: Some("clips/holiday.mp4".into()),
             item_thousandths: Some(thousandths(share)),
             stage: Some("Encoding".into()),
+            stage_thousandths: Some(thousandths(share)),
             since: Some(since),
             ..JobProgress::default()
         }
@@ -881,6 +907,19 @@ mod tests {
             reading.activity("change-1", &"Tidy up".into()).ratio(),
             Some(2. / 5.)
         );
+
+        // A part with no share of its own says none: the encode's last share is not its own.
+        let checking = JobProgress {
+            stage: Some("Checking the result".into()),
+            stage_thousandths: None,
+            ..encoding(0.98, since)
+        };
+        assert_eq!(
+            checking
+                .stage_detail(since + Duration::from_secs(60))
+                .as_deref(),
+            Some("Checking the result")
+        );
     }
 
     #[test]
@@ -888,6 +927,8 @@ mod tests {
         assert_eq!(time_left(Duration::from_secs(3)), "about 10 s left");
         assert_eq!(time_left(Duration::from_secs(41)), "about 50 s left");
         assert_eq!(time_left(Duration::from_secs(150)), "about 3 min left");
+        assert_eq!(time_left(Duration::from_secs(3_545)), "about 1 h left");
+        assert_eq!(time_left(Duration::from_secs(3_600)), "about 1 h left");
         assert_eq!(
             time_left(Duration::from_secs(4_810)),
             "about 1 h 21 min left"

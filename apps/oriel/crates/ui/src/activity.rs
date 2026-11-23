@@ -245,6 +245,8 @@ impl ActivityJob {
             && self.pausable == other.pausable
             && self.stoppable == other.stoppable
             && (self.total > 0) == (other.total > 0)
+            // The item's line coming or going changes the row's height.
+            && self.item.is_some() == other.item.is_some()
     }
 }
 
