@@ -17,7 +17,6 @@
     "@aws-sdk/client-s3": "^3.1151.0",
     "@aws-sdk/s3-request-presigner": "^3.1151.0",
     "@better-auth/drizzle-adapter": "^1.7.15",
-    "@fontsource-variable/geist": "^5.3.0",
     "@latch-works/media-domain": "workspace:*",
     "@latch-works/sync-protocol": "workspace:*",
     "@shutter/client": "workspace:*",
