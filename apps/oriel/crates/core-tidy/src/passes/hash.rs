@@ -18,7 +18,7 @@ use sha2::{Digest as _, Sha256};
 use crate::catalog::files::{SqlParams, record_edge_hash, record_sha256};
 use crate::catalog::rows::to_absolute_path;
 use crate::contract::FileId;
-use crate::passes::{PassContext, Progress, for_each_concurrent};
+use crate::passes::{PassContext, Progress, RunsThroughPause, for_each_concurrent};
 use crate::scan::whole_ms;
 
 /// Bytes read from each end of a file for the cheap first comparison.
@@ -108,8 +108,12 @@ pub fn run_hash_pass(context: &PassContext<'_>) -> anyhow::Result<()> {
         |file| {
             let path = to_absolute_path(&file.root_path, &file.rel_path);
             let expected = (file.size, file.mtime_ms.trunc(), file.ctime_ms.trunc());
-            // Changed while hashing or unreadable: left for the next scan.
-            let sha256 = match hash_whole_file(&path, expected, context.progress) {
+            // Changed while hashing or unreadable: left for the next scan. A pause lets the read
+            // finish its file.
+            let reading = RunsThroughPause::new(context.progress);
+            let hashed = hash_whole_file(&path, expected, context.progress);
+            drop(reading);
+            let sha256 = match hashed {
                 Ok(sha256) => sha256,
                 Err(HashError::Cancelled) => return Err(Cancelled.into()),
                 Err(HashError::Unreadable) => return Ok(()),
@@ -202,9 +206,11 @@ pub(crate) fn hash_whole_file_reporting(
             && let (Some(pause), Some(cancel)) = (progress.pause_token(), progress.cancel_token())
             && pause.holds_tools()
         {
-            pause
-                .wait_blocking(cancel)
-                .map_err(|_| HashError::Cancelled)?;
+            // One read at a time, so it can say it is at rest wherever tools cannot be held.
+            progress.paused_here(true);
+            let waited = pause.wait_blocking(cancel);
+            progress.paused_here(false);
+            waited.map_err(|_| HashError::Cancelled)?;
         }
         match file.read(&mut buffer) {
             Ok(0) => break,

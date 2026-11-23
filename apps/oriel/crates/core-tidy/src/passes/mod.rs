@@ -87,6 +87,23 @@ pub trait Progress: Send + Sync {
     }
 }
 
+/// In-process work a pause does not stop, said for as long as it is in scope
+/// ([`Progress::runs_through_pause`]).
+pub(crate) struct RunsThroughPause<'a>(&'a dyn Progress);
+
+impl<'a> RunsThroughPause<'a> {
+    pub(crate) fn new(progress: &'a dyn Progress) -> Self {
+        progress.runs_through_pause(true);
+        Self(progress)
+    }
+}
+
+impl Drop for RunsThroughPause<'_> {
+    fn drop(&mut self) {
+        self.0.runs_through_pause(false);
+    }
+}
+
 /// Progress nobody watches, for tests and one-off runs; it stops when its token is cancelled
 /// and waits while its pause token is paused, which also holds its tools unless the work says
 /// it is background work.

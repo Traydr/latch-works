@@ -47,8 +47,13 @@ pub struct JobProgress {
     stopping: bool,
     /// The work has come to rest for a pause, at a checkpoint.
     paused_here: bool,
-    /// The part of the step under way is in-process work a pause does not stop, such as a copy.
-    runs_through_pause: bool,
+    /// How many pieces of in-process work a pause does not stop are under way, such as a copy
+    /// or a still's encode.
+    runs_through_pause: u16,
+    /// How long the job had been paused, in all, by the time [`Self::since`] began, and by now:
+    /// paused time is no measure of the pace.
+    paused_before_since: Duration,
+    paused_total: Duration,
 }
 
 /// How long a part runs before the time it has left is reckoned: the first moments of an encode
@@ -138,7 +143,10 @@ impl JobProgress {
         if self.paused || !(0.01..1.).contains(&share) {
             return None;
         }
-        let elapsed = now.checked_duration_since(self.since?)?;
+        let paused = self.paused_total.saturating_sub(self.paused_before_since);
+        let elapsed = now
+            .checked_duration_since(self.since?)?
+            .saturating_sub(paused);
         if elapsed < TIME_LEFT_AFTER {
             return None;
         }
@@ -157,14 +165,13 @@ impl JobProgress {
     /// yet paused.
     ///
     /// Paused work is at rest once it waits at a checkpoint, waits for its turn, or (asked for,
-    /// where tools stop where they are) has its file's tool held. Until then what it had in hand
-    /// finishes: stills encoding, a background analysis's files, a tool on Windows, a copy or a
-    /// move that runs through a pause ([`JobReporter::set_runs_through_pause`]).
+    /// where tools stop where they are) has its tools held with nothing else running on. Until
+    /// then what it had in hand finishes: a background analysis's files, a tool on Windows, and
+    /// in-process work a pause does not stop ([`JobReporter::set_runs_through_pause`]): stills
+    /// encoding, a scan's reads, a copy or a move.
     pub fn is_pausing(&self) -> bool {
-        let held_tool = oriel_runtime::tools_suspend()
-            && !self.background
-            && self.item.is_some()
-            && !self.runs_through_pause;
+        let held_tool =
+            oriel_runtime::tools_suspend() && !self.background && self.runs_through_pause == 0;
         self.paused && !self.stopping && !self.paused_here && !self.waiting && !held_tool
     }
 
@@ -245,7 +252,7 @@ fn percent(share: f32) -> f32 {
 fn time_left(left: Duration) -> String {
     let seconds = left.as_secs();
     let minutes = seconds.div_ceil(60);
-    if seconds < 60 {
+    if seconds <= 50 {
         let tens = seconds.div_ceil(10).max(1) * 10;
         format!("about {tens} s left")
     } else if minutes < 60 {
@@ -332,6 +339,8 @@ pub struct Job<T> {
     status: JobStatus<T>,
     token: CancelToken,
     pause: PauseToken,
+    /// When the owner last paused it, while paused.
+    paused_at: Option<Instant>,
     _task: Task<()>,
 }
 
@@ -374,9 +383,18 @@ impl<T: Send + 'static> Job<T> {
                         Either::Right((Some(()), _)) => {
                             let progress = slot.take();
                             let shown = this.update(cx, |job: &mut Self, cx| {
+                                // The time left is reckoned from when the part began, less the
+                                // time the job has been paused since.
+                                let paused_before_since = if progress.since == job.progress.since {
+                                    job.progress.paused_before_since
+                                } else {
+                                    job.progress.paused_total
+                                };
                                 job.progress = JobProgress {
                                     paused: job.pause.is_paused(),
                                     stopping: job.token.is_cancelled(),
+                                    paused_total: job.progress.paused_total,
+                                    paused_before_since,
                                     ..progress
                                 };
                                 cx.notify();
@@ -399,6 +417,7 @@ impl<T: Send + 'static> Job<T> {
                 status: JobStatus::Running,
                 token,
                 pause,
+                paused_at: None,
                 _task: task,
             }
         })
@@ -569,6 +588,11 @@ impl<T: 'static> Job<T> {
     pub fn set_paused(&mut self, paused: bool, cx: &mut Context<Self>) {
         if self.is_running() && !self.token.is_cancelled() && self.pause.set_paused(paused) {
             self.progress.paused = paused;
+            if paused {
+                self.paused_at = Some(Instant::now());
+            } else if let Some(at) = self.paused_at.take() {
+                self.progress.paused_total += at.elapsed();
+            }
             cx.notify();
         }
     }
@@ -692,7 +716,6 @@ impl JobReporter {
             if progress.item != name {
                 progress.stage = None;
                 progress.stage_thousandths = None;
-                progress.runs_through_pause = false;
                 progress.since = name.is_some().then(Instant::now);
             }
             progress.item = name;
@@ -703,7 +726,13 @@ impl JobReporter {
     /// Says the part of the step under way is in-process work that runs on through a pause, such
     /// as a copy, so the job reads "Pausing" rather than "Paused" until it ends.
     pub fn set_runs_through_pause(&self, on: bool) {
-        self.report(|progress| progress.runs_through_pause = on);
+        self.report(|progress| {
+            progress.runs_through_pause = if on {
+                progress.runs_through_pause.saturating_add(1)
+            } else {
+                progress.runs_through_pause.saturating_sub(1)
+            };
+        });
     }
 
     /// Says the work has come to rest for a pause, or goes on; see [`JobProgress::is_pausing`].
@@ -926,6 +955,7 @@ mod tests {
     fn time_left_is_rounded_as_a_guess_is() {
         assert_eq!(time_left(Duration::from_secs(3)), "about 10 s left");
         assert_eq!(time_left(Duration::from_secs(41)), "about 50 s left");
+        assert_eq!(time_left(Duration::from_secs(55)), "about 1 min left");
         assert_eq!(time_left(Duration::from_secs(150)), "about 3 min left");
         assert_eq!(time_left(Duration::from_secs(3_545)), "about 1 h left");
         assert_eq!(time_left(Duration::from_secs(3_600)), "about 1 h left");
@@ -949,13 +979,28 @@ mod tests {
         assert_eq!(row.job_state(), JobState::Running);
         assert_eq!(row.caption(), "Pausing after this file · 50%");
 
-        // Work with no file named, such as stills, until it reaches its checkpoint.
-        let stills = JobProgress {
+        // Asked-for work with no file named, such as a scan's probes, is at rest once its tools
+        // are held, wherever they can be.
+        let probing = JobProgress {
             paused: true,
             item: None,
             item_thousandths: None,
             stage: None,
+            stage_thousandths: None,
             ..encoding(0., since)
+        };
+        let held = if oriel_runtime::tools_suspend() {
+            JobState::Paused
+        } else {
+            JobState::Running
+        };
+        assert_eq!(probing.activity("scan-1", &name).job_state(), held);
+
+        // In-process work a pause does not stop, such as stills encoding, runs on until it reaches
+        // its checkpoint.
+        let stills = JobProgress {
+            runs_through_pause: 2,
+            ..probing
         };
         assert_eq!(
             stills.activity("change-1", &name).caption(),
@@ -968,6 +1013,21 @@ mod tests {
         assert_eq!(
             at_rest.activity("change-1", &name).job_state(),
             JobState::Paused
+        );
+    }
+
+    #[test]
+    fn paused_time_is_no_measure_of_the_pace() {
+        let since = Instant::now();
+        // Half done in 2 minutes of work, after 10 minutes paused.
+        let job = JobProgress {
+            paused_total: Duration::from_secs(600),
+            ..encoding(0.5, since)
+        };
+        assert_eq!(
+            job.stage_detail(since + Duration::from_secs(720))
+                .as_deref(),
+            Some("Encoding · 50% · about 2 min left")
         );
     }
 

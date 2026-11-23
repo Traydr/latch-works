@@ -60,7 +60,7 @@ use crate::contract::{
 };
 use crate::media::convert::{Conversion, Converter, pixels};
 use crate::passes::hash::{HashError, hash_edges, hash_whole_file, hash_whole_file_reporting};
-use crate::passes::{Media, Progress, run_concurrently};
+use crate::passes::{Media, Progress, RunsThroughPause, run_concurrently};
 use crate::paths::is_within;
 use crate::scan::{dir_of, whole_ms};
 use oriel_tools::{ToolError, probe_video};
@@ -515,23 +515,6 @@ struct ConvertContext<'a> {
     /// The step says which part of it is under way ([`Progress::stage`]): a video's or an
     /// animation's, which run one at a time. Stills run several at once and say nothing.
     stages: bool,
-}
-
-/// In-process work a pause does not stop, said for as long as it is in scope
-/// ([`Progress::runs_through_pause`]).
-struct RunsThroughPause<'a>(&'a dyn Progress);
-
-impl<'a> RunsThroughPause<'a> {
-    fn new(progress: &'a dyn Progress) -> Self {
-        progress.runs_through_pause(true);
-        Self(progress)
-    }
-}
-
-impl Drop for RunsThroughPause<'_> {
-    fn drop(&mut self) {
-        self.0.runs_through_pause(false);
-    }
 }
 
 /// Removes a conversion's temp file however the conversion ends.
@@ -1466,7 +1449,11 @@ pub(crate) fn apply_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Re
                 stills,
                 deps.still_concurrency,
                 deps.progress,
-                |step: &&StepRecord| run(step),
+                // A still's encode runs in this process, and a pause lets it finish.
+                |step: &&StepRecord| {
+                    let _encoding = RunsThroughPause::new(deps.progress);
+                    run(step)
+                },
             )?;
         }
         for step in steps
