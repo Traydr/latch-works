@@ -55,7 +55,7 @@ export function PaneViewImage({
     return (
       <div
         aria-hidden
-        className={cn(className, "grid place-items-center bg-zinc-800 text-zinc-600")}
+        className={cn(className, "grid place-items-center bg-muted text-muted-foreground")}
       >
         <ImageOff size={20} />
       </div>
@@ -63,7 +63,7 @@ export function PaneViewImage({
   }
 
   if (loading || !resolvedUrl || retry.phase === "waiting") {
-    return <div aria-hidden className={cn(className, "bg-zinc-800/80")} />;
+    return <div aria-hidden className={cn(className, "bg-muted")} />;
   }
 
   return (

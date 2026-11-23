@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { GALLERY_HOTKEYS } from "./hotkeys";
 
 interface HotkeyOverlayProps {
@@ -6,32 +7,30 @@ interface HotkeyOverlayProps {
 
 export function HotkeyOverlay({ onClose }: HotkeyOverlayProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4 backdrop-blur-sm">
       <button
         type="button"
         className="absolute inset-0"
         aria-label="Close keyboard shortcuts"
         onClick={onClose}
       />
-      <section className="relative z-10 w-full max-w-lg rounded-2xl border border-border bg-background p-5 shadow-xl">
+      <section className="relative z-10 w-full max-w-lg rounded-xl bg-popover p-5 text-popover-foreground shadow-float">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-balance text-lg font-semibold">Keyboard shortcuts</h2>
-          <button
-            type="button"
-            className="rounded-lg border border-border px-3 py-1.5 text-sm"
-            onClick={onClose}
-          >
+          <Button type="button" variant="outline" onClick={onClose}>
             Close
-          </button>
+          </Button>
         </div>
         <ul className="space-y-2">
           {GALLERY_HOTKEYS.map((entry) => (
             <li
               key={entry.action}
-              className="flex items-center justify-between gap-4 rounded-lg border border-border/60 px-3 py-2 text-sm"
+              className="flex items-center justify-between gap-4 rounded-lg bg-secondary px-3 py-2 text-sm"
             >
               <span>{entry.action}</span>
-              <kbd className="rounded bg-muted px-2 py-0.5 font-mono text-xs">{entry.keys}</kbd>
+              <kbd className="rounded-md bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground shadow-surface">
+                {entry.keys}
+              </kbd>
             </li>
           ))}
         </ul>

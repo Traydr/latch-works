@@ -1,6 +1,7 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
 import {
   ArrowUpDown,
+  Check,
   Film,
   FolderMinus,
   ImageIcon,
@@ -56,11 +57,13 @@ const SORT_OPTIONS: { value: GallerySortMode; label: string }[] = [
   { value: "random", label: "Random" },
 ];
 
+/**
+ * A toolbar control, as Oriel's gallery toolbar draws them: a ghost button on the toolbar's
+ * surface, whose pressed state is a neutral wash (the theme's `secondary.active`) rather than a
+ * violet fill, darker than an open menu button's so the two read apart.
+ */
 function toolButtonClass(active: boolean): string {
-  return cn(
-    "h-9 gap-2 rounded-lg px-3",
-    active && "border-primary bg-primary text-primary-foreground",
-  );
+  return cn("h-9 gap-2 rounded-lg px-3 text-sm", active && "bg-pressed text-foreground");
 }
 
 /**
@@ -94,7 +97,7 @@ function ExcludeControl({
       <Button
         aria-expanded={showDialog}
         aria-haspopup="menu"
-        className={cn(toolButtonClass(false), "relative", showDialog && "bg-accent")}
+        className={cn(toolButtonClass(false), "relative", showDialog && "bg-secondary")}
         disabled={!available}
         onClick={() => {
           if (!dialogOpen) {
@@ -106,7 +109,7 @@ function ExcludeControl({
         size="sm"
         title={childFolders.length === 0 ? "No subfolders to exclude" : "Exclude subfolders"}
         type="button"
-        variant="outline"
+        variant="ghost"
       >
         <FolderMinus className="size-4" />
         <span className="hidden sm:inline">Exclude</span>
@@ -191,12 +194,12 @@ function MediaFilterMenu({ onChange, visibility }: MediaFilterMenuProps) {
       <Button
         aria-expanded={menuOpen}
         aria-haspopup="menu"
-        className={cn(toolButtonClass(false), "relative", menuOpen && "bg-accent")}
+        className={cn(toolButtonClass(false), "relative", menuOpen && "bg-secondary")}
         onClick={() => setMenuOpen((open) => !open)}
         size="sm"
         title="Filter media types"
         type="button"
-        variant="outline"
+        variant="ghost"
       >
         <SlidersHorizontal className="size-4" />
         <span className="hidden sm:inline">Filter</span>
@@ -210,18 +213,13 @@ function MediaFilterMenu({ onChange, visibility }: MediaFilterMenuProps) {
       {menuOpen ? (
         <div
           aria-label="Media types"
-          className="absolute right-0 bottom-[calc(100%+0.5rem)] z-30 w-52 rounded-2xl border border-border bg-popover p-1 shadow-xl backdrop-blur-xl"
+          className="absolute right-0 bottom-[calc(100%+0.5rem)] z-30 w-60 rounded-xl bg-popover p-1 shadow-float"
           role="menu"
         >
           {filters.map((filter) => (
             <button
               aria-checked={filter.active}
-              className={cn(
-                "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-50",
-                filter.active
-                  ? "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"
-                  : "text-foreground hover:bg-accent",
-              )}
+              className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left text-[13px] text-popover-foreground transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
               disabled={filter.disabled}
               key={filter.key}
               onClick={() => onChange({ [filter.key]: !visibility[filter.key] })}
@@ -230,8 +228,11 @@ function MediaFilterMenu({ onChange, visibility }: MediaFilterMenuProps) {
               type="button"
             >
               <filter.icon className="size-4" />
-              <span className="flex-1">{filter.name}</span>
-              {filter.active ? <span className="text-violet-400">•</span> : null}
+              <span className="flex-1 whitespace-nowrap">{filter.name}</span>
+              <Check
+                aria-hidden="true"
+                className={cn("size-4 text-primary", !filter.active && "invisible")}
+              />
             </button>
           ))}
         </div>
@@ -263,7 +264,7 @@ export function FloatingToolbar({
     <div className="pointer-events-none fixed inset-x-0 bottom-5 z-20 flex justify-center">
       <div
         data-floating-toolbar=""
-        className="pointer-events-auto flex max-w-[96vw] flex-wrap items-center justify-center gap-2 rounded-xl border border-border bg-background/95 px-3 py-2 shadow-lg backdrop-blur-sm"
+        className="pointer-events-auto flex max-w-[96vw] flex-wrap items-center justify-center gap-1 rounded-xl bg-popover/95 p-1.5 shadow-float backdrop-blur-sm"
       >
         <Button
           aria-pressed={recursive}
@@ -275,7 +276,7 @@ export function FloatingToolbar({
             recursiveDisabled ? "Open a folder to enable recursive browsing" : "Recursive browsing"
           }
           type="button"
-          variant={recursive ? "default" : "outline"}
+          variant="ghost"
         >
           <ListTree className="size-4" />
           <span className="hidden sm:inline">Recursive</span>
@@ -288,7 +289,7 @@ export function FloatingToolbar({
           size="sm"
           title={currentPath === "" ? "Open a folder for comic grouping" : "Comic grouping"}
           type="button"
-          variant={comicMode ? "default" : "outline"}
+          variant="ghost"
         >
           <ImageIcon className="size-4" />
           <span className="hidden sm:inline">Comic</span>
@@ -299,19 +300,19 @@ export function FloatingToolbar({
           <Button
             aria-expanded={sortMenuOpen}
             aria-haspopup="menu"
-            className={cn(toolButtonClass(false), sortMenuOpen && "bg-accent")}
+            className={cn(toolButtonClass(false), sortMenuOpen && "bg-secondary")}
             onClick={() => setSortMenuOpen((v) => !v)}
             size="sm"
             title="Sort"
             type="button"
-            variant="outline"
+            variant="ghost"
           >
             <ArrowUpDown className="size-4" />
             <span className="hidden sm:inline">{activeLabel}</span>
           </Button>
           {sortMenuOpen ? (
             <div
-              className="absolute bottom-[calc(100%+0.5rem)] left-0 z-30 w-40 rounded-2xl border border-border bg-popover p-1 shadow-xl backdrop-blur-xl"
+              className="absolute bottom-[calc(100%+0.5rem)] left-0 z-30 w-40 rounded-xl bg-popover p-1 shadow-float"
               role="menu"
             >
               {SORT_OPTIONS.map((option) => {
@@ -323,19 +324,17 @@ export function FloatingToolbar({
                     type="button"
                     role="menuitemradio"
                     aria-checked={selected}
-                    className={cn(
-                      "flex w-full cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs transition",
-                      selected
-                        ? "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"
-                        : "text-foreground hover:bg-accent",
-                    )}
+                    className="flex h-8 w-full cursor-pointer items-center justify-between rounded-lg px-2.5 text-left text-[13px] text-popover-foreground transition hover:bg-accent"
                     onClick={() => {
                       onChangeSortMode(option.value);
                       setSortMenuOpen(false);
                     }}
                   >
                     <span>{option.label}</span>
-                    {selected ? <span className="text-violet-400">•</span> : null}
+                    <Check
+                      aria-hidden="true"
+                      className={cn("size-4 text-primary", !selected && "invisible")}
+                    />
                   </button>
                 );
               })}
@@ -349,13 +348,13 @@ export function FloatingToolbar({
             size="sm"
             title="Shuffle again"
             type="button"
-            variant="outline"
+            variant="ghost"
           >
             <Shuffle className="size-4" />
             <span className="hidden sm:inline">Shuffle</span>
           </Button>
         ) : null}
-        <div className="hidden h-5 w-px bg-border sm:block" />
+        <div className="mx-1 hidden h-5 w-px bg-border sm:block" />
         <Button
           className={toolButtonClass(false)}
           disabled={isRefreshing}
@@ -363,7 +362,7 @@ export function FloatingToolbar({
           size="sm"
           title="Refresh"
           type="button"
-          variant="outline"
+          variant="ghost"
         >
           <RefreshCcw className={cn("size-4", isRefreshing && "animate-spin")} />
           <span className="hidden sm:inline">{isRefreshing ? "Refreshing" : "Refresh"}</span>

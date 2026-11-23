@@ -51,7 +51,7 @@ export function CleanupJobProgress({
       : "Deleted-item cleanup";
 
   return (
-    <section className="space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
+    <section className="space-y-3 rounded-xl border border-warning/40 bg-warning/5 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">{jobTitle}</h3>
@@ -93,7 +93,7 @@ export function CleanupJobProgress({
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full bg-amber-500 transition-[width]"
+              className="h-full bg-primary transition-[width]"
               style={{ width: `${progress.percent}%` }}
             />
           </div>

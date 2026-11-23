@@ -1,4 +1,3 @@
-@import "@fontsource-variable/geist";
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -13,6 +12,11 @@
   body {
     min-width: 320px;
     margin: 0;
+  }
+
+  /* Native checkboxes, radios, ranges and progress take the one violet accent. */
+  html {
+    accent-color: var(--primary);
   }
 
   body {
@@ -31,79 +35,121 @@
   }
 }
 
+/*
+ * Oriel's house style (apps/oriel/crates/ui/themes/oriel.json, Oriel Light and Oriel Dark), so
+ * Pane View and Oriel read as one product: zinc neutrals, surfaces lifted by a soft ring, neutral
+ * selection, and one violet accent. Colours keep the theme file's values and names (violet-600 is
+ * #7c3aed); a translucent zinc is the theme's `#18181b0d` written as rgb. Three are the web's own:
+ * the focus ring follows Electron Oriel's (the GPUI theme's violet-950 and violet-300 suit its 1px
+ * outline, not a 3px ring), and dark mode's success and warning, which the theme file lacks.
+ */
 :root {
   color-scheme: light;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-  --font-sans: "Geist Variable", "Aptos", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, monospace;
+  --background: #ffffff;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+  /* violet-600, hover violet-500 */
+  --primary: #7c3aed;
+  --primary-hover: #8b5cf6;
+  --primary-foreground: #ffffff;
+  --secondary: rgb(24 24 27 / 0.05);
+  --secondary-hover: rgb(24 24 27 / 0.08);
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #66666e;
+  /* Hover and the selected row: a neutral wash, never a violet fill. */
+  --accent: rgb(24 24 27 / 0.04);
+  --accent-foreground: #18181b;
+  --selected: rgb(24 24 27 / 0.06);
+  /* The theme's `secondary.active`: a pressed toggle. */
+  --pressed: rgb(24 24 27 / 0.1);
+  --scrollbar-thumb: rgb(113 113 122 / 0.45);
+  --scrollbar-thumb-hover: rgb(113 113 122 / 0.7);
+  /* red-600 */
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --success: #15803d;
+  --warning: #a16207;
+  --border: rgb(228 228 231 / 0.8);
+  --input: #84848d;
+  /* violet-500: the web's focus ring, drawn at half strength. */
+  --ring: #8b5cf6;
+  --selection: rgb(139 92 246 / 0.25);
+  --overlay: rgb(0 0 0 / 0.4);
+  --sidebar: #fafafa;
+  --sidebar-foreground: #3f3f46;
+  --sidebar-primary: #7c3aed;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgb(24 24 27 / 0.06);
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: rgb(228 228 231 / 0.8);
+  --sidebar-ring: #8b5cf6;
+  /* A surface's soft ring, and a floating one's ring and drop, as Electron Oriel drew them. */
+  --surface-ring:
+    0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06), 0 2px 4px 0 rgb(0 0 0 / 0.04);
+  --surface-ring-hover:
+    0 0 0 1px rgb(0 0 0 / 0.09), 0 1px 2px -1px rgb(0 0 0 / 0.08), 0 2px 4px 0 rgb(0 0 0 / 0.06);
+  --surface-float: 0 0 0 1px rgb(0 0 0 / 0.06), 0 16px 40px -18px rgb(0 0 0 / 0.35);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Oriel's radius is 8 px and its radius.lg 12 px: rounded-lg and rounded-xl here. */
   --radius: 0.5rem;
 }
 
 .dark {
   color-scheme: dark;
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.769 0.188 70.08);
-  --sidebar-primary-foreground: oklch(0.145 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #09090b;
+  --foreground: #f4f4f5;
+  --card: #09090b;
+  --card-foreground: #f4f4f5;
+  /* Lighter than the page: in the dark, elevation shows as lightness. */
+  --popover: #18181b;
+  --popover-foreground: #f4f4f5;
+  /* violet-500, hover violet-400 */
+  --primary: #8b5cf6;
+  --primary-hover: #a78bfa;
+  --primary-foreground: #ffffff;
+  --secondary: rgb(255 255 255 / 0.06);
+  --secondary-hover: rgb(255 255 255 / 0.09);
+  --secondary-foreground: #f4f4f5;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: rgb(255 255 255 / 0.04);
+  --accent-foreground: #ffffff;
+  --selected: rgb(255 255 255 / 0.07);
+  --pressed: rgb(255 255 255 / 0.12);
+  --scrollbar-thumb: rgb(161 161 170 / 0.45);
+  --scrollbar-thumb-hover: rgb(161 161 170 / 0.7);
+  /* red-500 */
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  /* Not in the theme file's dark theme: green-400 and yellow-400. */
+  --success: #4ade80;
+  --warning: #facc15;
+  --border: rgb(255 255 255 / 0.06);
+  --input: rgb(255 255 255 / 0.36);
+  /* violet-400: the web's focus ring, as in light mode. */
+  --ring: #a78bfa;
+  --selection: rgb(167 139 250 / 0.3);
+  --overlay: rgb(0 0 0 / 0.65);
+  --sidebar: #121214;
+  --sidebar-foreground: #d4d4d8;
+  --sidebar-primary: #8b5cf6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgb(255 255 255 / 0.07);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgb(255 255 255 / 0.06);
+  --sidebar-ring: #a78bfa;
+  --surface-ring: 0 0 0 1px rgb(255 255 255 / 0.08);
+  --surface-ring-hover: 0 0 0 1px rgb(255 255 255 / 0.13);
+  --surface-float: 0 0 0 1px rgb(255 255 255 / 0.08), 0 18px 44px -18px rgb(0 0 0 / 0.8);
+}
+
+::selection {
+  background-color: var(--selection);
 }
 
 @theme inline {
@@ -114,23 +160,25 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
+  --color-secondary-hover: var(--secondary-hover);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-selected: var(--selected);
+  --color-pressed: var(--pressed);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-overlay: var(--overlay);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -147,6 +195,10 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-surface: var(--surface-ring);
+  --shadow-surface-hover: var(--surface-ring-hover);
+  --shadow-float: var(--surface-float);
 }
 
 ::-webkit-scrollbar {
@@ -157,7 +209,12 @@
 ::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
+  background: var(--scrollbar-thumb);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
   background-clip: content-box;
 }
 

@@ -216,7 +216,7 @@ export function ManagementPage() {
         </header>
 
         {blockReason ? (
-          <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm">
+          <section className="rounded-xl border border-warning/40 bg-warning/5 px-4 py-3 text-sm">
             {blockReason} Destructive actions are disabled until running syncs are stopped or
             finished. Use the cleanup control below or sync run history to stop stuck work.
           </section>
@@ -229,7 +229,7 @@ export function ManagementPage() {
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {statCards.map((card) => (
-                <div className="rounded-xl border border-border p-4" key={card.label}>
+                <div className="rounded-xl bg-card p-4 shadow-surface" key={card.label}>
                   <p className="text-xs text-muted-foreground">{card.label}</p>
                   <p className="mt-1 text-lg font-semibold">{card.value}</p>
                 </div>
@@ -284,7 +284,7 @@ export function ManagementPage() {
           ) : null}
         </section>
 
-        <section className="space-y-3 rounded-xl border border-border p-4">
+        <section className="space-y-3 rounded-xl bg-card p-4 shadow-surface">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold">Delete folders</h2>
@@ -335,7 +335,7 @@ export function ManagementPage() {
           ) : null}
         </section>
 
-        <section className="space-y-3 rounded-xl border border-border p-4">
+        <section className="space-y-3 rounded-xl bg-card p-4 shadow-surface">
           <h2 className="text-sm font-semibold">Purge deleted items</h2>
           <p className="text-sm text-muted-foreground">
             Permanently remove all soft-deleted entries and their originals from Pane View storage
@@ -360,7 +360,7 @@ export function ManagementPage() {
           ) : null}
         </section>
 
-        <section className="space-y-3 rounded-xl border border-border p-4">
+        <section className="space-y-3 rounded-xl bg-card p-4 shadow-surface">
           <h2 className="text-sm font-semibold">Purge deleted Shutter sources</h2>
           <p className="text-sm text-muted-foreground">
             Delete Shutter sources associated only with soft-deleted items. This can run before or

@@ -33,7 +33,7 @@ const MEDIA_TYPE_COLORS = {
 } satisfies Record<MediaType, DitherColor>;
 
 const SIZE_CHART_CONFIG = {
-  value: { color: "blue" as const, label: "Archive size (MB)" },
+  value: { color: "teal" as const, label: "Archive size (MB)" },
 } satisfies ChartConfig;
 
 const ENTRY_CHART_CONFIG = {
@@ -87,7 +87,7 @@ function StatCard({
   value: string;
 }) {
   return (
-    <section aria-label={label} className="rounded-xl border border-border p-4">
+    <section aria-label={label} className="rounded-xl bg-card p-4 shadow-surface">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">{label}</p>
@@ -96,7 +96,7 @@ function StatCard({
         </div>
         {spark && spark.length > 1 ? (
           <div className="h-12 w-24 shrink-0">
-            <Sparkline animate bloom="aura" color="blue" data={spark} />
+            <Sparkline animate bloom="aura" color="purple" data={spark} />
           </div>
         ) : null}
       </div>
@@ -114,7 +114,7 @@ function ChartPanel({
   title: string;
 }) {
   return (
-    <section className="space-y-3 rounded-xl border border-border p-4">
+    <section className="space-y-3 rounded-xl bg-card p-4 shadow-surface">
       <div>
         <h2 className="text-sm font-semibold">{title}</h2>
         <p className="text-sm text-muted-foreground">{description}</p>
@@ -372,7 +372,7 @@ export function StatsPage() {
 function StatsHighlights({ stats }: { stats: ArchiveStats }) {
   return (
     <>
-      <section className="space-y-3 rounded-xl border border-border p-4">
+      <section className="space-y-3 rounded-xl bg-card p-4 shadow-surface">
         <div>
           <h2 className="text-sm font-semibold">Fun facts</h2>
           <p className="text-sm text-muted-foreground">
@@ -400,7 +400,7 @@ function StatsHighlights({ stats }: { stats: ArchiveStats }) {
         </div>
       </section>
 
-      <section className="space-y-3 rounded-xl border border-border p-4">
+      <section className="space-y-3 rounded-xl bg-card p-4 shadow-surface">
         <div>
           <h2 className="text-sm font-semibold">Busiest folders</h2>
           <p className="text-sm text-muted-foreground">Active folders ranked by entry count.</p>
@@ -450,7 +450,7 @@ function ReclaimableHint({ objectCount }: { objectCount: number }) {
 
 function TimestampCard({ label, value }: { label: string; value: Date | string | null }) {
   return (
-    <div className="rounded-xl border border-border p-4 text-sm">
+    <div className="rounded-xl bg-card p-4 shadow-surface text-sm">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 font-medium">
         {value ? ARCHIVE_TIMESTAMP_FORMATTER.format(new Date(value)) : "—"}
