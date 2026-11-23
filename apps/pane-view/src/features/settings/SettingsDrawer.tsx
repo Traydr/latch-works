@@ -171,7 +171,7 @@ export function SettingsDrawer({
               {GALLERY_HOTKEYS.map((entry) => (
                 <li key={entry.action} className="flex justify-between gap-3 text-sm">
                   <span>{entry.action}</span>
-                  <span className="font-mono text-xs text-muted-foreground">{entry.keys}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{entry.keys}</span>
                 </li>
               ))}
             </ul>
