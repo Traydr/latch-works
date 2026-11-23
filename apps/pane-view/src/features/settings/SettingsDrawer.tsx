@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { type CopyStatus, useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { cn } from "@/lib/utils";
 import { GALLERY_HOTKEYS } from "./hotkeys";
@@ -69,14 +70,14 @@ export function SettingsDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-overlay p-4 backdrop-blur-sm">
       <button
         type="button"
         className="absolute inset-0"
         aria-label="Close settings"
         onClick={onClose}
       />
-      <aside className="relative z-10 flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl">
+      <aside className="relative z-10 flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-float">
         <header className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
             <h2 className="text-balance text-lg font-semibold">Settings</h2>
@@ -84,13 +85,9 @@ export function SettingsDrawer({
               Usability, viewer, and diagnostics
             </p>
           </div>
-          <button
-            type="button"
-            className="rounded-lg border border-border px-3 py-1.5 text-sm"
-            onClick={onClose}
-          >
+          <Button type="button" variant="outline" onClick={onClose}>
             Close
-          </button>
+          </Button>
         </header>
 
         <div className="space-y-6 overflow-auto px-5 py-4">
@@ -104,7 +101,7 @@ export function SettingsDrawer({
             <label className="flex flex-col gap-1 text-sm">
               <span>Theme</span>
               <select
-                className="rounded-lg border border-border bg-background px-3 py-2"
+                className="h-8 rounded-lg border border-input bg-transparent px-2.5 dark:bg-accent"
                 value={settings.theme}
                 onChange={(event) => onUpdate({ theme: ThemeModeSchema.parse(event.target.value) })}
               >
@@ -182,36 +179,24 @@ export function SettingsDrawer({
 
           <section className="space-y-3">
             <h3 className="text-balance text-sm font-semibold">Diagnostics</h3>
-            <button
-              type="button"
-              className="rounded-lg border border-border px-3 py-2 text-sm"
-              onClick={() => void copyDiagnostics()}
-            >
+            <Button type="button" variant="outline" onClick={() => void copyDiagnostics()}>
               {DIAGNOSTICS_COPY_LABELS[diagnosticsCopy.status]}
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-destructive/40 px-3 py-2 text-sm text-destructive"
-              onClick={() => setConfirmOpen(true)}
-            >
+            </Button>
+            <Button type="button" variant="destructive" onClick={() => setConfirmOpen(true)}>
               Clear local preferences
-            </button>
+            </Button>
             {confirmOpen ? (
               <div className="rounded-lg border border-border p-3 text-sm">
                 <p className="mb-3 text-pretty">
                   Clear all Pane View local preferences on this device?
                 </p>
                 <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className="rounded-lg border border-border px-3 py-1.5"
-                    onClick={() => setConfirmOpen(false)}
-                  >
+                  <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)}>
                     Cancel
-                  </button>
+                  </Button>
                   <button
                     type="button"
-                    className="rounded-lg bg-destructive px-3 py-1.5 text-destructive-foreground"
+                    className="h-8 rounded-lg bg-destructive px-3 text-sm font-medium text-destructive-foreground"
                     onClick={() => {
                       clearLocalPreferences();
                       setConfirmOpen(false);
