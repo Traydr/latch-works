@@ -459,6 +459,18 @@ impl Progress for Turn<'_> {
         self.progress.item(item);
     }
 
+    fn stage(&self, stage: Option<(&str, Option<f32>)>) {
+        self.progress.stage(stage);
+    }
+
+    fn paused_here(&self, here: bool) {
+        self.progress.paused_here(here);
+    }
+
+    fn runs_through_pause(&self, on: bool) {
+        self.progress.runs_through_pause(on);
+    }
+
     fn cancel_token(&self) -> Option<&CancelToken> {
         self.progress.cancel_token()
     }
@@ -487,7 +499,9 @@ impl Progress for Turn<'_> {
                 continue;
             }
             if self.is_paused() {
+                self.progress.paused_here(true);
                 self.wait_while_paused();
+                self.progress.paused_here(false);
                 continue;
             }
             return Ok(());

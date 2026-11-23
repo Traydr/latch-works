@@ -115,6 +115,7 @@ pub struct ActivityJob {
     done: u64,
     total: u64,
     ratio: Option<f32>,
+    item: Option<SharedString>,
     detail: Option<SharedString>,
     pausable: bool,
     stoppable: bool,
@@ -131,6 +132,7 @@ impl ActivityJob {
             done: 0,
             total: 0,
             ratio: None,
+            item: None,
             detail: None,
             pausable: false,
             stoppable: false,
@@ -155,9 +157,23 @@ impl ActivityJob {
         self
     }
 
+    /// What one long step works on now, such as the video being encoded, on a line of its own.
+    pub fn item(mut self, item: impl Into<SharedString>) -> Self {
+        self.item = Some(item.into());
+        self
+    }
+
     /// A line under its progress, such as "1.2 GB of 3.4 GB · 2:31 left".
     pub fn detail(mut self, detail: impl Into<SharedString>) -> Self {
         self.detail = Some(detail.into());
+        self
+    }
+
+    /// [`Self::detail`] where it has nothing more particular to say.
+    pub fn or_detail(mut self, detail: impl Into<SharedString>) -> Self {
+        if self.detail.is_none() {
+            self.detail = Some(detail.into());
+        }
         self
     }
 
@@ -183,6 +199,11 @@ impl ActivityJob {
 
     pub fn job_state(&self) -> JobState {
         self.state
+    }
+
+    /// The file its step works on, if it says.
+    pub fn current_item(&self) -> Option<&SharedString> {
+        self.item.as_ref()
     }
 
     /// How far it has got, if that is known.
@@ -224,6 +245,8 @@ impl ActivityJob {
             && self.pausable == other.pausable
             && self.stoppable == other.stoppable
             && (self.total > 0) == (other.total > 0)
+            // The item's line coming or going changes the row's height.
+            && self.item.is_some() == other.item.is_some()
     }
 }
 
@@ -1032,6 +1055,18 @@ fn render_job(
                 }),
         )
         .children(progress)
+        .when_some(job.item.clone(), |this, item| {
+            this.child(
+                div()
+                    .id(ElementId::Name(id("item")))
+                    .test_support()
+                    .aria_label(item.clone())
+                    .min_w_0()
+                    .truncate()
+                    .text_caption()
+                    .child(item),
+            )
+        })
         .child(
             div()
                 .flex()

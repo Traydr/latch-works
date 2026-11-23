@@ -12,7 +12,7 @@ use crate::catalog::files::{SelectedFile, SqlParams, record_fingerprint, still_s
 use crate::catalog::rows::{FINGERPRINTABLE_SQL, kind_column, to_absolute_path};
 use crate::catalog::state::prints_changed;
 use crate::contract::{FileId, FileKind, RootId};
-use crate::passes::{PassContext, per_core, run_concurrently};
+use crate::passes::{PassContext, RunsThroughPause, per_core, run_concurrently};
 use crate::similarity::{
     FINGERPRINT_VERSION, Fingerprint, FingerprintError, FrameRun, Hash64, SAMPLE_POSITIONS,
     animation_frame_times, fingerprint_animation, fingerprint_still, frame_run_hashes,
@@ -112,6 +112,8 @@ fn fingerprint_pending(context: &PassContext<'_>, printed: &AtomicBool) -> anyho
     let videos_from = pending.partition_point(|pending| pending.kind == FileKind::Image);
     let (pictures, videos) = pending.split_at(videos_from);
     run_concurrently(pictures, per_core(), progress, |pending| {
+        // A libvips decode runs in this process, and a pause lets it finish.
+        let _decoding = RunsThroughPause::new(progress);
         if is_current(context, &pending.file)?
             && let Some(made) = fingerprint_picture(context, pending)
         {

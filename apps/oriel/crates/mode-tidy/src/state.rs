@@ -142,6 +142,18 @@ impl Progress for Reporting {
         self.0.set_item(item);
     }
 
+    fn stage(&self, stage: Option<(&str, Option<f32>)>) {
+        self.0.set_stage(stage);
+    }
+
+    fn paused_here(&self, here: bool) {
+        self.0.set_paused_here(here);
+    }
+
+    fn runs_through_pause(&self, on: bool) {
+        self.0.set_runs_through_pause(on);
+    }
+
     fn cancel_token(&self) -> Option<&CancelToken> {
         Some(self.0.cancel_token())
     }
@@ -168,12 +180,31 @@ enum TaskKind {
     Analysis,
 }
 
+/// A scan or an analysis about to be listed.
+struct NewTask {
+    kind: TaskKind,
+    /// It catches the catalog up after a change; see [`Running::after_change`].
+    after_change: bool,
+}
+
+impl From<TaskKind> for NewTask {
+    fn from(kind: TaskKind) -> Self {
+        Self {
+            kind,
+            after_change: false,
+        }
+    }
+}
+
 /// A scan or an analysis of one root, and what watches it.
 pub struct Running {
     pub root_id: RootId,
     pub job: AnyJob,
     id: u64,
     kind: TaskKind,
+    /// It catches the catalog up after a change, which the activity panel says, so a stopped
+    /// change's rescan does not read as the change running on.
+    after_change: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -946,20 +977,25 @@ impl TidyState {
         let job = Job::run_blocking(name, "tidy follow-up", cx, move |reporter| {
             work.run(&Reporting(reporter))
         });
-        self.add_task(kind, root_id, job, Vec::new(), window, cx);
+        let task = NewTask {
+            kind,
+            after_change: true,
+        };
+        self.add_task(task, root_id, job, Vec::new(), window, cx);
     }
 
     /// Follows a scan or analysis job: its phases move the catalog's version, so the pages show
     /// what it has found so far, and its end takes it off the list and reads the roots again.
     fn add_task<T: Send + 'static>(
         &mut self,
-        kind: TaskKind,
+        task: impl Into<NewTask>,
         root_id: RootId,
         job: Entity<Job<T>>,
         mut subscriptions: Vec<Subscription>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let NewTask { kind, after_change } = task.into();
         let id = self.next_work;
         self.next_work += 1;
         let mut phase = SharedString::default();
@@ -1000,6 +1036,7 @@ impl TidyState {
             job: job.into(),
             id,
             kind,
+            after_change,
             _subscriptions: subscriptions,
         });
         self.report_activity(cx);
@@ -1151,11 +1188,14 @@ impl TidyState {
         });
         let mut jobs: Vec<ActivityJob> = changes.collect();
         let queued = jobs.split_off(jobs.len().min(1));
-        jobs.extend(
-            self.tasks
-                .iter()
-                .map(|task| task.job.activity(Self::task_key(task), cx)),
-        );
+        jobs.extend(self.tasks.iter().map(|task| {
+            let job = task.job.activity(Self::task_key(task), cx);
+            if task.after_change {
+                job.or_detail("Bringing the catalog up to date after the change")
+            } else {
+                job
+            }
+        }));
         jobs.extend(queued);
         jobs
     }
