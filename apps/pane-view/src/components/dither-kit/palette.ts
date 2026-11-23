@@ -5,6 +5,7 @@ export type DitherColor =
   | "green"
   | "blue"
   | "purple"
+  | "teal"
   | "pink"
   | "orange"
   | "red"
@@ -21,6 +22,7 @@ export const PALETTE: Record<DitherColor, Seed> = {
     line: [200, 175, 255],
     star: [225, 210, 255],
   },
+  teal: { fill: [20, 184, 166], line: [110, 231, 214], star: [190, 245, 236] },
   pink: { fill: [240, 90, 190], line: [255, 170, 220], star: [255, 205, 235] },
   orange: {
     fill: [255, 150, 50],

@@ -97,7 +97,7 @@ export function ArchiveSidebar({
                       style={isCollapsed ? undefined : { paddingLeft: `${12 + depth * 12}px` }}
                     >
                       <Folder className="size-3.5 shrink-0 text-amber-500" />
-                      <span className="min-w-0 flex-1 truncate text-[13px]">{ancestor.label}</span>
+                      <span className="min-w-0 flex-1 truncate">{ancestor.label}</span>
                       {ancestor.path !== currentPath && !isCollapsed ? (
                         <ChevronRight className="size-3 shrink-0 opacity-60" />
                       ) : null}
@@ -120,7 +120,7 @@ export function ArchiveSidebar({
                       style={isCollapsed ? undefined : { paddingLeft: `${12 + depth * 12}px` }}
                     >
                       <Folder className="size-3.5 shrink-0 text-amber-500" />
-                      <span className="min-w-0 flex-1 truncate text-[13px]">{folder.name}</span>
+                      <span className="min-w-0 flex-1 truncate">{folder.name}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

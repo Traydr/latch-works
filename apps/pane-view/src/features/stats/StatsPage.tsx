@@ -33,7 +33,7 @@ const MEDIA_TYPE_COLORS = {
 } satisfies Record<MediaType, DitherColor>;
 
 const SIZE_CHART_CONFIG = {
-  value: { color: "purple" as const, label: "Archive size (MB)" },
+  value: { color: "teal" as const, label: "Archive size (MB)" },
 } satisfies ChartConfig;
 
 const ENTRY_CHART_CONFIG = {

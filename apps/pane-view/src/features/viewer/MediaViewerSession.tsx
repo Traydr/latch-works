@@ -115,7 +115,7 @@ export function MediaViewerSession({
     // react-doctor-disable-next-line react-doctor/no-noninteractive-element-interactions
     <dialog
       ref={dialog.dialogRef}
-      className={`fixed inset-0 z-50 m-0 h-dvh max-h-none w-screen max-w-none border-0 bg-zinc-950/95 p-0 text-zinc-100 ${!isMobile && !chromeVisible ? "cursor-none" : ""}`}
+      className={`dark fixed inset-0 z-50 m-0 h-dvh max-h-none w-screen max-w-none border-0 bg-zinc-950/95 p-0 text-zinc-100 ${!isMobile && !chromeVisible ? "cursor-none" : ""}`}
       aria-label={`Viewer for ${item.name}`}
       onCancel={(event) => {
         event.preventDefault();

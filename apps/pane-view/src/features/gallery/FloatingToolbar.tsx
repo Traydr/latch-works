@@ -59,10 +59,11 @@ const SORT_OPTIONS: { value: GallerySortMode; label: string }[] = [
 
 /**
  * A toolbar control, as Oriel's gallery toolbar draws them: a ghost button on the toolbar's
- * surface, whose pressed state is a neutral wash rather than a violet fill.
+ * surface, whose pressed state is a neutral wash (the theme's `secondary.active`) rather than a
+ * violet fill, darker than an open menu button's so the two read apart.
  */
 function toolButtonClass(active: boolean): string {
-  return cn("h-9 gap-2 rounded-lg px-3 text-sm", active && "bg-selected text-foreground");
+  return cn("h-9 gap-2 rounded-lg px-3 text-sm", active && "bg-pressed text-foreground");
 }
 
 /**
@@ -263,7 +264,7 @@ export function FloatingToolbar({
     <div className="pointer-events-none fixed inset-x-0 bottom-5 z-20 flex justify-center">
       <div
         data-floating-toolbar=""
-        className="pointer-events-auto flex max-w-[96vw] flex-wrap items-center justify-center gap-2 gap-1 rounded-xl bg-popover/95 p-1.5 shadow-float backdrop-blur-sm"
+        className="pointer-events-auto flex max-w-[96vw] flex-wrap items-center justify-center gap-1 rounded-xl bg-popover/95 p-1.5 shadow-float backdrop-blur-sm"
       >
         <Button
           aria-pressed={recursive}
