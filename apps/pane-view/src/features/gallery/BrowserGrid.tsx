@@ -126,10 +126,10 @@ export function BrowserGrid({
       data-scroll-restoration-id={GALLERY_GRID_SCROLL_ID}
     >
       {entries.length === 0 ? (
-        <div className="grid min-h-60 place-items-center rounded-lg border border-dashed border-zinc-800 text-center">
-          <div className="grid max-w-xs justify-items-center gap-2 text-sm text-zinc-400">
+        <div className="grid min-h-60 place-items-center rounded-lg border border-dashed border-border text-center">
+          <div className="grid max-w-xs justify-items-center gap-2 text-sm text-muted-foreground">
             <Archive className="size-6" />
-            <strong className="text-zinc-100">No archive entries</strong>
+            <strong className="text-foreground">No archive entries</strong>
             <span>Sync media or choose another archive path.</span>
           </div>
         </div>

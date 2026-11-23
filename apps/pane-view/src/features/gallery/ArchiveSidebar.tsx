@@ -89,9 +89,7 @@ export function ArchiveSidebar({
                 return (
                   <SidebarMenuItem key={ancestor.path}>
                     <SidebarMenuButton
-                      className={cn(
-                        isCollapsed ? "" : "justify-start gap-1.5 px-2",
-                      )}
+                      className={cn(isCollapsed ? "" : "justify-start gap-1.5 px-2")}
                       isActive={ancestor.path === currentPath}
                       onClick={() => onNavigateToPath(ancestor.path)}
                       title={ancestor.path}
@@ -114,9 +112,7 @@ export function ArchiveSidebar({
                 return (
                   <SidebarMenuItem key={folder.path}>
                     <SidebarMenuButton
-                      className={cn(
-                        isCollapsed ? "" : "justify-start gap-1.5 px-2",
-                      )}
+                      className={cn(isCollapsed ? "" : "justify-start gap-1.5 px-2")}
                       disabled={foldersDisabled}
                       onClick={() => onNavigateToPath(folder.path)}
                       title={folder.path}

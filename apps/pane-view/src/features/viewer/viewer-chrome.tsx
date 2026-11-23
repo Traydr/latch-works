@@ -11,7 +11,7 @@ const ICON_BUTTON_TONE = {
   capsule:
     "hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-400 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent",
   /** The top bar's actions. */
-  bar: "hover:bg-violet-500/25 hover:text-violet-100",
+  bar: "hover:bg-white/10 hover:text-white",
 } as const;
 
 export interface IconButtonProps {
