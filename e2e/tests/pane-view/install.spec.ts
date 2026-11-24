@@ -28,9 +28,12 @@ async function readThemeColors(page: Page): Promise<Array<{ content: string; med
 
 test.describe("install", () => {
   test("the manifest is linked, served as a manifest, and its icons resolve", async ({
+    baseURL,
     page,
-    request,
+    playwright,
   }) => {
+    // iOS fetches the manifest and icons with no session, so these requests carry none either.
+    const request = await playwright.request.newContext({ baseURL });
     await page.goto("/login");
     const href = await page.locator('link[rel="manifest"]').getAttribute("href");
     expect(href).toBe("/manifest.webmanifest");
@@ -63,6 +66,7 @@ test.describe("install", () => {
     await expect(
       head.locator('meta[name="apple-mobile-web-app-status-bar-style"]'),
     ).toHaveAttribute("content", "default");
+    await request.dispose();
   });
 
   test("the theme-color metas follow the system scheme, then a manual theme", async ({ page }) => {
@@ -86,20 +90,21 @@ test.describe("install", () => {
         { content: DARK_BACKGROUND, media: "(prefers-color-scheme: dark)" },
       ]);
 
-    // An in-app navigation re-renders the head, and a reload rebuilds it: the colour survives both.
-    await page
-      .getByRole("list", { name: "Archive folders" })
-      .getByTitle("mixed", { exact: true })
-      .click();
-    await expect(page).toHaveURL(/path=mixed/);
-    expect((await readThemeColors(page)).map((meta) => meta.content)).toEqual([
-      DARK_BACKGROUND,
-      DARK_BACKGROUND,
-    ]);
-
+    // A reload renders the authored metas again; the stored theme must win over them.
     await page.reload();
     await expect
       .poll(async () => (await readThemeColors(page)).map((meta) => meta.content))
       .toEqual([DARK_BACKGROUND, DARK_BACKGROUND]);
+
+    // Back on System, each meta returns to its own scheme's colour.
+    await openSettings(page);
+    await page.getByLabel("Theme").selectOption("system");
+    await closeSettings(page);
+    await expect
+      .poll(() => readThemeColors(page))
+      .toEqual([
+        { content: LIGHT_BACKGROUND, media: "(prefers-color-scheme: light)" },
+        { content: DARK_BACKGROUND, media: "(prefers-color-scheme: dark)" },
+      ]);
   });
 });
