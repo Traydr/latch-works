@@ -37,8 +37,16 @@ export function ArchiveSidebar({
   onNavigateToPath,
   onOpenSettings,
 }: ArchiveSidebarProps) {
-  const { state } = useSidebar();
+  const { setOpenMobile, state } = useSidebar();
   const isCollapsed = state === "collapsed";
+
+  // On a phone the sidebar is a modal sheet: left open, it would sit over the settings dialog
+  // and take every tap meant for it.
+  const openSettings = () => {
+    setOpenMobile(false);
+    onOpenSettings();
+  };
+
   // The "Archive root" row below stands for the root, so it adds no crumb of its own.
   const ancestors = currentPath ? buildBreadcrumbItems(currentPath) : [];
   const childFolders = [...folders].sort(compareByName);
@@ -130,31 +138,43 @@ export function ArchiveSidebar({
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <SidebarFooter className="border-t border-sidebar-border p-2 pb-[max(0.5rem,var(--safe-area-bottom))]">
         <div className="grid gap-1">
           <Button
-            className="w-full justify-start gap-2"
-            onClick={onOpenSettings}
+            className="w-full justify-start gap-2 pointer-coarse:h-11"
+            onClick={openSettings}
             type="button"
             variant="ghost"
           >
             <Settings className="size-4" />
             <span>Settings</span>
           </Button>
-          <Button asChild className="w-full justify-start gap-2" variant="ghost">
+          <Button
+            asChild
+            className="w-full justify-start gap-2 pointer-coarse:h-11"
+            variant="ghost"
+          >
             <Link to="/stats">
               <BarChart3 className="size-4" />
               <span>Stats</span>
             </Link>
           </Button>
-          <Button asChild className="w-full justify-start gap-2" variant="ghost">
+          <Button
+            asChild
+            className="w-full justify-start gap-2 pointer-coarse:h-11"
+            variant="ghost"
+          >
             <Link to="/manage">
               <Wrench className="size-4" />
               <span>Manage</span>
             </Link>
           </Button>
           <form action="/api/auth/logout" method="post">
-            <Button className="w-full justify-start gap-2" type="submit" variant="ghost">
+            <Button
+              className="w-full justify-start gap-2 pointer-coarse:h-11"
+              type="submit"
+              variant="ghost"
+            >
               <LogOut className="size-4" />
               <span>Sign out</span>
             </Button>

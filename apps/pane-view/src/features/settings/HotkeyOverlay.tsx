@@ -7,7 +7,7 @@ interface HotkeyOverlayProps {
 
 export function HotkeyOverlay({ onClose }: HotkeyOverlayProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4 pr-[max(1rem,var(--safe-area-right))] pb-[max(1rem,var(--safe-area-bottom))] pl-[max(1rem,var(--safe-area-left))] backdrop-blur-sm">
       <button
         type="button"
         className="absolute inset-0"

@@ -186,7 +186,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="h-dvh w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          className="h-dvh w-(--sidebar-width) bg-sidebar p-0 pl-(--safe-area-left) text-sidebar-foreground [&>button]:hidden"
           style={
             // SAFETY: React.CSSProperties has no index signature for custom
             // properties; `--sidebar-width` is the CSS variable the sheet width reads.
@@ -231,7 +231,7 @@ function Sidebar({
         data-slot="sidebar-container"
         data-side={side}
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-dvh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
+          "fixed inset-y-0 z-10 hidden h-dvh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-(--safe-area-left) data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-(--safe-area-right) data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
             ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
@@ -464,8 +464,9 @@ const sidebarMenuButtonVariants = cva(
           "bg-background shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--sidebar-accent)]",
       },
       size: {
-        default: "h-8 text-[13px]",
-        sm: "h-7 text-xs",
+        // A touch screen gets a real 44 px row: the button clips, so it cannot use `touch-target`.
+        default: "h-8 text-[13px] pointer-coarse:h-11",
+        sm: "h-7 text-xs pointer-coarse:h-11",
         lg: "h-12 text-sm group-data-[collapsible=icon]:p-0!",
       },
     },

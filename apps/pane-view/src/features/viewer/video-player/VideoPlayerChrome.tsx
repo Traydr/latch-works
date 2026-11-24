@@ -58,7 +58,7 @@ export function VideoPlayerChrome({ chrome, playback }: VideoPlayerChromeProps):
 
       <div
         className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-3 ${fade}`}
-        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+        style={{ paddingBottom: "max(1rem, var(--safe-area-bottom))" }}
       >
         <ChromeRegion
           className="w-full max-w-4xl"

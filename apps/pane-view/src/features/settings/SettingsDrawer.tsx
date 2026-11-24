@@ -70,7 +70,7 @@ export function SettingsDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-overlay p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-overlay p-4 pr-[max(1rem,var(--safe-area-right))] pb-[max(1rem,var(--safe-area-bottom))] pl-[max(1rem,var(--safe-area-left))] backdrop-blur-sm">
       <button
         type="button"
         className="absolute inset-0"
@@ -165,7 +165,8 @@ export function SettingsDrawer({
             />
           </section>
 
-          <section className="space-y-3">
+          {/* Hidden on a touch screen, where the keys are rarely there to press. */}
+          <section className="space-y-3 pointer-coarse:hidden">
             <h3 className="text-balance text-sm font-semibold">Keyboard shortcuts</h3>
             <ul className="space-y-2">
               {GALLERY_HOTKEYS.map((entry) => (

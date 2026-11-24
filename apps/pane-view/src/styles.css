@@ -19,8 +19,23 @@
     accent-color: var(--primary);
   }
 
+  /*
+   * The device's safe-area insets (the notch, the Dynamic Island, the home indicator). Code reads
+   * these rather than env() so a test can stand in an inset where the browser reports none. The
+   * status bar is solid (plan 066, D2), so the page starts below it and the top inset stays 0.
+   */
+  :root {
+    --safe-area-top: env(safe-area-inset-top, 0px);
+    --safe-area-right: env(safe-area-inset-right, 0px);
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-left: env(safe-area-inset-left, 0px);
+  }
+
   body {
     @apply bg-background text-foreground;
+    /* A landscape iPhone's notch side: everything in the page's flow stays clear of it. */
+    padding-right: var(--safe-area-right);
+    padding-left: var(--safe-area-left);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -199,6 +214,29 @@
   --shadow-surface: var(--surface-ring);
   --shadow-surface-hover: var(--surface-ring-hover);
   --shadow-float: var(--surface-float);
+}
+
+/*
+ * A touch screen's tap target: an invisible box at least 44 px square, Apple's minimum, centred on
+ * a control that draws smaller. The desktop layout keeps its sizes. A control that is already
+ * positioned contains the box itself; any other becomes `relative` so it does.
+ */
+@utility touch-target {
+  @media (pointer: coarse) {
+    &:not(.absolute, .fixed, .sticky) {
+      position: relative;
+    }
+
+    &::after {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      content: "";
+      transform: translate(-50%, -50%);
+    }
+  }
 }
 
 ::-webkit-scrollbar {

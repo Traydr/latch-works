@@ -1,5 +1,14 @@
 import { getParentPath } from "@latch-works/media-domain";
-import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
+import {
+  Archive,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  type LucideIcon,
+  PanelRightClose,
+  PanelRightOpen,
+  Search,
+} from "lucide-react";
 import { type FormEvent, Fragment, type JSX, useMemo } from "react";
 import {
   Breadcrumb,
@@ -87,7 +96,12 @@ export function GalleryHeader({
           >
             <Search className="size-4" />
           </Button>
-          <form className="relative hidden w-72 items-center md:flex" onSubmit={onSubmitSearch}>
+          {/* Narrower below lg: an iPad in portrait has about 560 px beside the sidebar, which must
+              also fit the folder buttons. */}
+          <form
+            className="relative hidden w-44 items-center md:flex lg:w-60 xl:w-72"
+            onSubmit={onSubmitSearch}
+          >
             <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
             <Input
               aria-label="Search archive"
@@ -151,12 +165,13 @@ function MobilePathHeader({
         >
           <ChevronUp className="size-4" />
         </Button>
+        {/* The name truncates inside a span: clipping the button itself would clip its tap box. */}
         <button
-          className="min-w-0 flex-1 truncate text-left text-base font-semibold"
+          className="touch-target min-w-0 flex-1 text-left text-base font-semibold"
           onClick={onOpenPathSheet}
           type="button"
         >
-          {currentFolderName}
+          <span className="block truncate">{currentFolderName}</span>
         </button>
       </div>
       {displayPath ? <p className="truncate text-xs text-muted-foreground">{displayPath}</p> : null}
@@ -179,34 +194,25 @@ function DesktopPathHeader({
 }): JSX.Element {
   return (
     <>
-      <div className="hidden items-center gap-1 md:flex">
-        <Button
+      <div className="hidden shrink-0 items-center gap-1 md:flex">
+        <FolderNavButton
           disabled={!displayPath}
+          icon={ChevronUp}
+          label="Parent"
           onClick={() => onNavigateToPath(getParentPath(displayPath))}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          Parent
-        </Button>
-        <Button
+        />
+        <FolderNavButton
           disabled={!canNavigateSiblings}
+          icon={ChevronLeft}
+          label="Prev folder"
           onClick={() => onNavigateSiblingFolder(-1)}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          Prev folder
-        </Button>
-        <Button
+        />
+        <FolderNavButton
           disabled={!canNavigateSiblings}
+          icon={ChevronRight}
+          label="Next folder"
           onClick={() => onNavigateSiblingFolder(1)}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          Next folder
-        </Button>
+        />
       </div>
       <Breadcrumb className="flex min-w-0 items-center gap-2">
         <Archive className="size-4 shrink-0 text-muted-foreground" />
@@ -251,6 +257,37 @@ function DesktopPathHeader({
   );
 }
 
+/**
+ * A folder button in the header: its label from lg up, and only its icon below that, where an
+ * iPad in portrait leaves too little room beside the sidebar for the labels and the path.
+ */
+function FolderNavButton({
+  disabled,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  disabled: boolean;
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}): JSX.Element {
+  return (
+    <Button
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      size="sm"
+      title={label}
+      type="button"
+      variant="outline"
+    >
+      <Icon className="lg:hidden" />
+      <span className="hidden lg:inline">{label}</span>
+    </Button>
+  );
+}
+
 /** The phone's folder path: one row per level, the archive root first. */
 function PathSheet({
   breadcrumbs,
@@ -270,7 +307,7 @@ function PathSheet({
 
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
-      <SheetContent className="p-5" side="bottom">
+      <SheetContent className="p-5 pb-[calc(1.25rem+var(--safe-area-bottom))]" side="bottom">
         <SheetHeader>
           <SheetTitle>Folder path</SheetTitle>
         </SheetHeader>

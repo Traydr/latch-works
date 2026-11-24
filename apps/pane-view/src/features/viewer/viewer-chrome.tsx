@@ -53,7 +53,7 @@ export function IconButton({
       aria-label={label}
       title={title}
       disabled={disabled}
-      className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full transition ${ICON_BUTTON_TONE[tone]} ${ICON_BUTTON_SIZE[size]} ${active ? "text-violet-300" : "text-white/90"} ${className}`}
+      className={`touch-target inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full transition ${ICON_BUTTON_TONE[tone]} ${ICON_BUTTON_SIZE[size]} ${active ? "text-violet-300" : "text-white/90"} ${className}`}
       onClick={onClick}
     >
       <Icon className={fill ? "fill-current" : undefined} />
@@ -62,7 +62,7 @@ export function IconButton({
   );
 }
 
-const TOP_BAR_STYLE: CSSProperties = { paddingTop: "max(0.75rem, env(safe-area-inset-top))" };
+const TOP_BAR_STYLE: CSSProperties = { paddingTop: "max(0.75rem, var(--safe-area-top))" };
 
 /** The gradient across the top of a full-screen viewer; it fades with the chrome. */
 export function ViewerTopBar({
