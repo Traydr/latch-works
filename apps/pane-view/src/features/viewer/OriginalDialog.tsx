@@ -34,13 +34,18 @@ export function OriginalDialog({
       ref={dialogRef}
       aria-label={`Original of ${item.name}`}
       className="dark pointer-events-auto fixed inset-0 z-50 m-0 flex h-dvh max-h-none w-screen max-w-none flex-col border-y-0 border-r-(length:--safe-area-right) border-l-(length:--safe-area-left) border-transparent bg-zinc-950 p-0 text-zinc-100"
+      // React passes events up its own tree, so the viewer's dialog, this one's React parent,
+      // would otherwise close on this Escape and toggle its chrome on these taps. The viewer and
+      // the gallery also listen for keys on the window; under this dialog they must not step.
       onCancel={(event) => {
         event.preventDefault();
+        event.stopPropagation();
         onClose();
       }}
-      // The viewer and the gallery listen for keys on the window; under this dialog they must not
-      // step, close or move focus.
+      onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => event.stopPropagation()}
+      onMouseMove={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
     >
       <header className="flex min-h-14 shrink-0 items-center gap-2 border-b border-white/10 px-3 py-2 pt-[max(0.5rem,var(--safe-area-top))]">
         <Button className="gap-1" onClick={onClose} type="button" variant="ghost">

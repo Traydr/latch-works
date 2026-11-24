@@ -9,10 +9,13 @@ const HOME = "/";
 const PARSE_BASE = "https://pane-view.invalid";
 
 /** Paths that are not pages to come back to: the endpoints and the login page itself. */
-const EXCLUDED_PREFIXES = ["/api/", "/_serverFn/", "/login"];
+const EXCLUDED_PREFIXES = ["/api/", "/_serverfn/", "/login"];
+
+/** Longer than any real page's path; a crafted one must not swell the `Location` header. */
+const MAX_LENGTH = 2048;
 
 export function safeReturnPath(candidate: string | null | undefined): string {
-  if (!candidate?.startsWith("/")) return HOME;
+  if (!candidate?.startsWith("/") || candidate.length > MAX_LENGTH) return HOME;
 
   let url: URL;
 
@@ -25,7 +28,13 @@ export function safeReturnPath(candidate: string | null | undefined): string {
   // `//host` and `/\host` resolve to another origin; so does anything a browser reads that way.
   if (url.origin !== PARSE_BASE) return HOME;
 
-  if (EXCLUDED_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) return HOME;
+  // Parsing resolved dot segments, so `/..//host` now reads `//host`: on its own, as a
+  // `Location`, that is another site again.
+  if (url.pathname.startsWith("//")) return HOME;
+
+  const pathname = url.pathname.toLowerCase();
+
+  if (EXCLUDED_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return HOME;
 
   return `${url.pathname}${url.search}${url.hash}`;
 }

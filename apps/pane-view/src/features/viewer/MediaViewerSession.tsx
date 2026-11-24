@@ -143,7 +143,11 @@ export function MediaViewerSession({
           item={item}
           onClose={onClose}
           onCopyPath={() => void pathCopy.copy(item.path)}
-          onDownload={() => openOriginal(item)}
+          onDownload={() => {
+            // The original plays on its own; the viewer's copy waits where it was.
+            videoRef.current?.pause();
+            openOriginal(item);
+          }}
           onToggleFullscreen={dialog.toggleFullscreen}
           onToggleOriginal={() =>
             setOriginalShownFor((current) => (current === item.id ? null : item.id))

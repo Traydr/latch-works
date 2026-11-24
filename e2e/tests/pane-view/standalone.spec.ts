@@ -73,9 +73,15 @@ test.describe("Download", () => {
   test("in a browser, opens the original in a new tab", async ({ context, page }) => {
     await gotoBrowse(page, { path: "mixed" });
     const viewer = await openViewer(page, "mixed/photo-1.jpg");
+
+    // The new tab asks the original route, which redirects to the file.
+    const originalRequest = context.waitForEvent("request", (request) =>
+      /\/api\/media\/[0-9a-f-]+\/original$/.test(new URL(request.url()).pathname),
+    );
+
     const popup = context.waitForEvent("page");
     await viewer.getByRole("button", { name: "Download" }).click();
-    expect((await popup).url()).not.toBe(page.url());
+    await Promise.all([originalRequest, popup]);
     await expect(viewer).toBeVisible();
   });
 
@@ -96,8 +102,15 @@ test.describe("Download", () => {
       .poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth))
       .toBeGreaterThan(0);
 
-    // The viewer's window-wide keys stay quiet under the dialog: an arrow does not step it.
+    // Keys under the dialog stay with it: an arrow does not step the viewer, and Escape closes
+    // only the dialog.
     await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Escape");
+    await expect(original).toBeHidden();
+    await expect(viewer).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Viewer for photo-1.jpg" })).toBeVisible();
+
+    await viewer.getByRole("button", { name: "Download" }).click();
     await original.getByRole("button", { name: "Back" }).click();
     await expect(original).toBeHidden();
     await expect(page.getByRole("dialog", { name: "Viewer for photo-1.jpg" })).toBeVisible();

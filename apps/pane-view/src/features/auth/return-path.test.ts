@@ -14,6 +14,13 @@ describe("safeReturnPath", () => {
       "/\\example.com/",
       "\\\\example.com/",
       "javascript:alert(1)",
+      // Dot segments resolve before the origin is known: each of these comes out as `//host`.
+      "/..//example.com",
+      "/.//example.com",
+      "/./\\example.com",
+      "/%2e%2e//example.com",
+      "/x/..//example.com",
+      "/./../\\/example",
       "stats",
       "",
       null,
@@ -23,10 +30,16 @@ describe("safeReturnPath", () => {
     }
   });
 
-  it("returns to the gallery instead of an endpoint or the login page", () => {
+  it("returns to the gallery instead of an endpoint or the login page, in any case", () => {
     expect(safeReturnPath("/api/media/1/original")).toBe("/");
+    expect(safeReturnPath("/Api/media/1/original")).toBe("/");
     expect(safeReturnPath("/_serverFn/abc")).toBe("/");
     expect(safeReturnPath("/login?redirect=/stats")).toBe("/");
+    expect(safeReturnPath("/LOGIN")).toBe("/");
+  });
+
+  it("returns to the gallery for a path longer than any real page's", () => {
+    expect(safeReturnPath(`/?q=${"a".repeat(4096)}`)).toBe("/");
   });
 });
 
