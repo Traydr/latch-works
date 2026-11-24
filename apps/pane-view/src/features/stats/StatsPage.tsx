@@ -167,7 +167,7 @@ export function StatsPage() {
     })) ?? [];
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="min-h-dvh bg-background text-foreground">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 py-8">
         <header>
           <Link

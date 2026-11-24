@@ -17,7 +17,7 @@ export function ViewerStage({
 }): JSX.Element {
   return (
     <div
-      className="flex h-full select-none items-center justify-center p-3 pb-[env(safe-area-inset-bottom)] [-webkit-touch-callout:none]"
+      className="flex h-full select-none items-center justify-center p-3 pb-(--safe-area-bottom) [-webkit-touch-callout:none]"
       {...holdHandlers}
       onClick={(event) => {
         event.stopPropagation();

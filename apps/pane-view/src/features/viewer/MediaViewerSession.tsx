@@ -115,7 +115,7 @@ export function MediaViewerSession({
     // react-doctor-disable-next-line react-doctor/no-noninteractive-element-interactions
     <dialog
       ref={dialog.dialogRef}
-      className={`dark fixed inset-0 z-50 m-0 h-dvh max-h-none w-screen max-w-none border-0 bg-zinc-950/95 p-0 text-zinc-100 ${!isMobile && !chromeVisible ? "cursor-none" : ""}`}
+      className={`dark fixed inset-0 z-50 m-0 h-dvh max-h-none w-screen max-w-none border-y-0 border-r-(length:--safe-area-right) border-l-(length:--safe-area-left) border-transparent bg-zinc-950/95 p-0 text-zinc-100 ${!isMobile && !chromeVisible ? "cursor-none" : ""}`}
       aria-label={`Viewer for ${item.name}`}
       onCancel={(event) => {
         event.preventDefault();
@@ -313,8 +313,9 @@ function ViewerNavigation({
   mediaType: string;
   onStep: (delta: -1 | 1) => void;
 }): JSX.Element {
-  // A video keeps its picture for play/pause and hold-to-boost; only the edges step.
-  const zoneWidth = mediaType === "video" ? "w-[10%]" : "w-1/2";
+  // A video keeps its picture for play/pause and hold-to-boost; only the edges step, and each
+  // edge stays at least 44 px, the smallest target a thumb can hit.
+  const zoneWidth = mediaType === "video" ? "w-[max(10%,44px)]" : "w-1/2";
 
   return (
     <>

@@ -37,8 +37,16 @@ export function ArchiveSidebar({
   onNavigateToPath,
   onOpenSettings,
 }: ArchiveSidebarProps) {
-  const { state } = useSidebar();
+  const { setOpenMobile, state } = useSidebar();
   const isCollapsed = state === "collapsed";
+
+  // On a phone the sidebar is a modal sheet: left open, it would sit over the settings dialog
+  // and take every tap meant for it.
+  const openSettings = () => {
+    setOpenMobile(false);
+    onOpenSettings();
+  };
+
   // The "Archive root" row below stands for the root, so it adds no crumb of its own.
   const ancestors = currentPath ? buildBreadcrumbItems(currentPath) : [];
   const childFolders = [...folders].sort(compareByName);
@@ -130,11 +138,11 @@ export function ArchiveSidebar({
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <SidebarFooter className="border-t border-sidebar-border p-2 pb-[max(0.5rem,var(--safe-area-bottom))]">
         <div className="grid gap-1">
           <Button
             className="w-full justify-start gap-2"
-            onClick={onOpenSettings}
+            onClick={openSettings}
             type="button"
             variant="ghost"
           >

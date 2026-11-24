@@ -64,7 +64,7 @@ export function GalleryOverlays({
       />
       {hotkeysOpen ? <HotkeyOverlay onClose={onCloseHotkeys} /> : null}
       <Sheet onOpenChange={onMobileSearchOpenChange} open={mobileSearchOpen}>
-        <SheetContent className="p-5" side="bottom">
+        <SheetContent className="p-5 pb-[calc(1.25rem+var(--safe-area-bottom))]" side="bottom">
           <SheetHeader>
             <SheetTitle>Search archive</SheetTitle>
           </SheetHeader>

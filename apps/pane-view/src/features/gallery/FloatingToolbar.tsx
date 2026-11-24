@@ -261,7 +261,7 @@ export function FloatingToolbar({
   const activeLabel = SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? "Sort";
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-5 z-20 flex justify-center">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(1.25rem+var(--safe-area-bottom))] z-20 flex justify-center">
       <div
         data-floating-toolbar=""
         className="pointer-events-auto flex max-w-[96vw] flex-wrap items-center justify-center gap-1 rounded-xl bg-popover/95 p-1.5 shadow-float backdrop-blur-sm"

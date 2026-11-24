@@ -236,10 +236,14 @@ function MediaCard({
     >
       <Poster media={item} priority={priority} thumbnail={thumbnail} />
       {isDeleting || isDeleted ? <DeleteOverlay animated={isDeleting} /> : null}
-      <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100">
-        <div className="px-3 pb-3">
-          <p className="truncate text-sm font-semibold text-white">{item.name}</p>
-          <p className="text-xs text-white/70">{formatBytes(item.size)}</p>
+      {/* A mouse reveals the name and size on hover; a touch screen has no hover, so it always
+          shows a compact strip with the name alone. */}
+      <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100">
+        <div className="px-3 pb-3 pointer-coarse:px-2 pointer-coarse:pb-1.5">
+          <p className="truncate text-sm font-semibold text-white pointer-coarse:text-xs">
+            {item.name}
+          </p>
+          <p className="text-xs text-white/70 pointer-coarse:hidden">{formatBytes(item.size)}</p>
         </div>
       </div>
       {item.mediaType === "video" ? (
