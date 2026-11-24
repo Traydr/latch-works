@@ -6,6 +6,12 @@ import { env } from "../../env/server";
 import { db } from "../db";
 import * as schema from "../db/schema";
 
+const SECONDS_PER_DAY = 60 * 60 * 24;
+
+const SESSION_LIFETIME_SECONDS = 30 * SECONDS_PER_DAY;
+
+const SESSION_REFRESH_SECONDS = SECONDS_PER_DAY;
+
 export const auth = betterAuth({
   advanced: {
     cookiePrefix: "pane-view",
@@ -24,8 +30,13 @@ export const auth = betterAuth({
   },
   plugins: [tanstackStartCookies()],
   secret: env.BETTER_AUTH_SECRET,
+  // Plan 066, D5. An installed Home Screen app keeps its own cookies, which Safari copies only at
+  // install, so a lapsed session means signing in again inside the app. Thirty days, renewed on
+  // the first request of each day, keeps an iPad opened once a fortnight signed in.
   session: {
+    expiresIn: SESSION_LIFETIME_SECONDS,
     modelName: "sessions",
+    updateAge: SESSION_REFRESH_SECONDS,
   },
   user: {
     modelName: "users",

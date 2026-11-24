@@ -2,16 +2,21 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { safeReturnPath } from "@/features/auth/return-path";
 import { getSessionStatus } from "@/features/auth/session-service";
 
 export const Route = createFileRoute("/login")({
-  validateSearch: z.object({ error: z.string().optional().catch(undefined) }),
+  validateSearch: z.object({
+    error: z.string().optional().catch(undefined),
+    /** The page to return to after signing in; `safeReturnPath` decides whether to follow it. */
+    redirect: z.string().optional().catch(undefined),
+  }),
   ssr: false,
-  loader: async () => {
+  beforeLoad: async ({ search }) => {
     const { authenticated } = await getSessionStatus();
 
     if (authenticated) {
-      throw redirect({ to: "/" });
+      throw redirect({ href: safeReturnPath(search.redirect) });
     }
   },
   component: LoginRoute,
@@ -27,6 +32,9 @@ function LoginRoute() {
         className="grid w-full max-w-sm gap-4 rounded-xl bg-popover p-5 text-popover-foreground shadow-float"
         method="post"
       >
+        {search.redirect === undefined ? null : (
+          <input name="redirect" type="hidden" value={search.redirect} />
+        )}
         <div className="flex items-center gap-3 border-b border-border pb-4">
           <img
             alt=""

@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { env } from "../env/server";
+import { safeReturnPath, signInHref } from "../features/auth/return-path";
 import {
   auth,
   reconcileConfiguredOwner,
@@ -16,14 +17,19 @@ export const Route = createFileRoute("/api/auth/login")({
         const formData = await request.formData();
         const username = String(formData.get("username") ?? "");
         const password = String(formData.get("password") ?? "");
+        // The page the owner was on when the session lapsed; a failed attempt keeps it.
+        const returnTo = safeReturnPath(String(formData.get("redirect") ?? ""));
+
+        const invalid = new Response(null, {
+          headers: { Location: signInHref(returnTo, "invalid") },
+          status: 303,
+        });
+
         const clientIp = resolveClientIp(request, env.PANE_VIEW_TRUST_PROXY_HEADERS);
 
         // Counted before verifying, so parallel guesses cannot all pass the check at once.
         if (!(await reserveLoginAttempt(clientIp, username))) {
-          return new Response(null, {
-            headers: { Location: "/login?error=invalid" },
-            status: 303,
-          });
+          return invalid;
         }
 
         const owner = verifyConfiguredOwnerCredentials({
@@ -32,10 +38,7 @@ export const Route = createFileRoute("/api/auth/login")({
         });
 
         if (!owner) {
-          return new Response(null, {
-            headers: { Location: "/login?error=invalid" },
-            status: 303,
-          });
+          return invalid;
         }
 
         await reconcileConfiguredOwner();
@@ -49,13 +52,10 @@ export const Route = createFileRoute("/api/auth/login")({
         if (signInResponse.ok) {
           await clearLoginThrottle(clientIp, username);
 
-          return redirectWithAuthCookies(signInResponse, "/");
+          return redirectWithAuthCookies(signInResponse, returnTo);
         }
 
-        return new Response(null, {
-          headers: { Location: "/login?error=invalid" },
-          status: 303,
-        });
+        return invalid;
       },
     },
   },

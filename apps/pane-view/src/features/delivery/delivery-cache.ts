@@ -1,3 +1,4 @@
+import { redirectToSignIn } from "@/features/auth/return-path";
 import { UnauthorizedErrorSchema } from "@/features/auth/unauthorized";
 import { createConcurrencyLimiter } from "@/lib/concurrency-limiter";
 import {
@@ -372,5 +373,5 @@ function createDeliveryCache(
 }
 
 export const deliveryCache = createDeliveryCache(resolveMediaDeliveryUrls, {
-  onSignedOut: () => window.location.assign("/login"),
+  onSignedOut: redirectToSignIn,
 });
