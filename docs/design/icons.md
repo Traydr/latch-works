@@ -32,7 +32,9 @@ Electron Oriel's packaging compiled it with `actool` on macOS 26 and later; Orie
 carries the `.icns` only.
 
 Web pages use the SVG directly for logos and favicons. The only rasters they keep are
-`favicon.ico` for legacy browsers and `apple-touch-icon.png` for iOS home screens. Chrome
+`favicon.ico` for legacy browsers and `apple-touch-icon.png` for iOS home screens. Pane View also
+installs as a Home Screen web app, so it keeps the `icon-192.png` and `icon-512.png` that its
+`manifest.webmanifest` lists. Chrome
 extension icons retain PNG filenames. Desktop packagers retain ICO
 and ICNS filenames. Every raster is generated from the SVG masters; do not edit them by hand.
 
