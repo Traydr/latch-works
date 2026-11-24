@@ -141,7 +141,7 @@ export function ArchiveSidebar({
       <SidebarFooter className="border-t border-sidebar-border p-2 pb-[max(0.5rem,var(--safe-area-bottom))]">
         <div className="grid gap-1">
           <Button
-            className="w-full justify-start gap-2"
+            className="w-full justify-start gap-2 pointer-coarse:h-11"
             onClick={openSettings}
             type="button"
             variant="ghost"
@@ -149,20 +149,32 @@ export function ArchiveSidebar({
             <Settings className="size-4" />
             <span>Settings</span>
           </Button>
-          <Button asChild className="w-full justify-start gap-2" variant="ghost">
+          <Button
+            asChild
+            className="w-full justify-start gap-2 pointer-coarse:h-11"
+            variant="ghost"
+          >
             <Link to="/stats">
               <BarChart3 className="size-4" />
               <span>Stats</span>
             </Link>
           </Button>
-          <Button asChild className="w-full justify-start gap-2" variant="ghost">
+          <Button
+            asChild
+            className="w-full justify-start gap-2 pointer-coarse:h-11"
+            variant="ghost"
+          >
             <Link to="/manage">
               <Wrench className="size-4" />
               <span>Manage</span>
             </Link>
           </Button>
           <form action="/api/auth/logout" method="post">
-            <Button className="w-full justify-start gap-2" type="submit" variant="ghost">
+            <Button
+              className="w-full justify-start gap-2 pointer-coarse:h-11"
+              type="submit"
+              variant="ghost"
+            >
               <LogOut className="size-4" />
               <span>Sign out</span>
             </Button>

@@ -33,8 +33,9 @@ const CONTROL_SELECTOR =
  * Taps each enabled button in `scope` where a thumb would: its centre, which must reach the
  * button, and the middle of each edge of a 44 × 44 box around it (or its own box, if larger).
  * Those edge taps must reach the button too, unless they land on another control: two small
- * controls a few pixels apart cannot both own the gap between them. The result lists the misses,
- * such as a tap box clipped by its own `overflow: hidden`.
+ * controls a few pixels apart cannot both own the gap between them, but a large control under the
+ * point does not excuse it. The result lists the misses, such as a tap box clipped by its own
+ * `overflow: hidden`.
  */
 async function findMissedTaps(scope: Locator): Promise<string[]> {
   return scope.locator("button:visible:enabled").evaluateAll(
@@ -71,8 +72,22 @@ async function findMissedTaps(scope: Locator): Promise<string[]> {
           if (hit !== null && button.contains(hit)) continue;
 
           const onCentre = dx === 0 && dy === 0;
+          const neighbour = hit?.closest(controlSelector);
 
-          if (!onCentre && hit?.closest(controlSelector)) continue;
+          // A control packed beside this one (in the same group: a shared parent or grandparent)
+          // may own the point if it lies inside that control's own tap box. A control from
+          // elsewhere under the point (a tile, the viewer's step zones) excuses nothing.
+          if (!onCentre && neighbour) {
+            const group = button.parentElement?.parentElement;
+            const packed = group?.contains(neighbour) ?? false;
+            const box = neighbour.getBoundingClientRect();
+
+            const insideItsTapBox =
+              Math.abs(x - (box.left + box.width / 2)) <= Math.max(box.width, minTarget) / 2 &&
+              Math.abs(y - (box.top + box.height / 2)) <= Math.max(box.height, minTarget) / 2;
+
+            if (packed && insideItsTapBox) continue;
+          }
 
           misses.push(
             `${label} at (${Math.round(dx)}, ${Math.round(dy)}) reached ${hit?.tagName ?? "nothing"}`,
@@ -150,9 +165,9 @@ test.describe("touch", () => {
       await gotoBrowse(page, { path: "mixed" });
       await standInSafeArea(page, { bottom: 21, left: 59, right: 59 });
 
-      // Every control and every tile stays between the two insets.
+      // Every control, every tile and the grid itself stay between the two insets.
       const underInsets = async () =>
-        page.locator("button:visible, [role=region]:visible").evaluateAll(
+        page.locator("button:visible, section[aria-label='Archive browser']").evaluateAll(
           (elements, inset) =>
             elements.flatMap((element) => {
               const { left, right, width } = element.getBoundingClientRect();
