@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
 import type { GalleryBrowseEntry, GalleryMedia } from "@/features/library/listing-contract";
+import { useOpenOriginal } from "@/features/viewer/use-open-original";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { cn } from "@/lib/utils";
 
@@ -85,6 +86,7 @@ export const GalleryBrowsePane = memo(function GalleryBrowsePane({
   const loadMoreTriggerIntersectingRef = useRef(false);
   const loadingMoreMediaRef = useRef(loadingMoreMedia);
   const pathCopy = useCopyToClipboard();
+  const { openOriginal, originalDialog } = useOpenOriginal();
 
   useEffect(() => {
     loadingMoreMediaRef.current = loadingMoreMedia;
@@ -189,7 +191,7 @@ export const GalleryBrowsePane = memo(function GalleryBrowsePane({
             onDelete={onDelete}
             onDownload={() => {
               if (selected) {
-                window.open(`/api/media/${selected.id}/original`, "_blank", "noopener,noreferrer");
+                openOriginal(selected);
               }
             }}
             onNext={onNext}
@@ -201,6 +203,7 @@ export const GalleryBrowsePane = memo(function GalleryBrowsePane({
           />
         </div>
       ) : null}
+      {originalDialog}
     </div>
   );
 });

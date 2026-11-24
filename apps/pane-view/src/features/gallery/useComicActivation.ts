@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { redirectToSignIn } from "@/features/auth/return-path";
 import { UnauthorizedErrorSchema } from "@/features/auth/unauthorized";
 import type { GalleryBrowseSession } from "@/features/gallery/useGalleryBrowse";
 import type { GalleryComic } from "@/features/library/listing-contract";
@@ -45,7 +46,7 @@ export function useComicActivation(
           }
         } catch (error) {
           if (UnauthorizedErrorSchema.safeParse(error).success) {
-            window.location.assign("/login");
+            redirectToSignIn();
           } else if (comicActivationRef.current === activation) {
             setOpenError(error instanceof Error ? error.message : String(error));
           }

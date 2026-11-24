@@ -21,6 +21,7 @@ import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { type CopyStatus, useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle, type ViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
+import { useOpenOriginal } from "./use-open-original";
 import { useViewerDialog } from "./useViewerDialog";
 import { useViewerKeyboard } from "./useViewerKeyboard";
 import { ViewerStage } from "./ViewerStage";
@@ -60,6 +61,7 @@ export function MediaViewerSession({
   rememberViewerPosition,
 }: MediaViewerSessionProps): JSX.Element {
   const isMobile = useIsMobile();
+  const { openOriginal, originalDialog } = useOpenOriginal();
   const isCoarsePointer = useCoarsePointer();
   const isVideoItem = item.mediaType === "video";
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -141,6 +143,7 @@ export function MediaViewerSession({
           item={item}
           onClose={onClose}
           onCopyPath={() => void pathCopy.copy(item.path)}
+          onDownload={() => openOriginal(item)}
           onToggleFullscreen={dialog.toggleFullscreen}
           onToggleOriginal={() =>
             setOriginalShownFor((current) => (current === item.id ? null : item.id))
@@ -192,6 +195,7 @@ export function MediaViewerSession({
           </ViewerStage>
         )}
       </div>
+      {originalDialog}
     </dialog>
   );
 }
@@ -216,6 +220,7 @@ function ViewerTitleBar({
   item,
   onClose,
   onCopyPath,
+  onDownload,
   onToggleFullscreen,
   onToggleOriginal,
   showOriginal,
@@ -229,6 +234,7 @@ function ViewerTitleBar({
   item: GalleryMedia;
   onClose: () => void;
   onCopyPath: () => void;
+  onDownload: () => void;
   onToggleFullscreen: () => void;
   onToggleOriginal: () => void;
   showOriginal: boolean;
@@ -258,15 +264,7 @@ function ViewerTitleBar({
           <span aria-live="polite" className="sr-only">
             {copyStatus === "idle" ? "" : COPY_PATH_LABELS[copyStatus]}
           </span>
-          <IconButton
-            icon={Download}
-            label="Download"
-            onClick={() =>
-              window.open(`/api/media/${item.id}/original`, "_blank", "noopener,noreferrer")
-            }
-            size="sm"
-            tone="bar"
-          />
+          <IconButton icon={Download} label="Download" onClick={onDownload} size="sm" tone="bar" />
           {item.mediaType === "image" ? (
             <IconButton
               icon={Image}
