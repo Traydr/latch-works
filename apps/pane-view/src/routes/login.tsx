@@ -21,7 +21,7 @@ function LoginRoute() {
   const search = Route.useSearch();
 
   return (
-    <main className="grid min-h-screen place-items-center bg-background p-5 text-foreground">
+    <main className="grid min-h-dvh place-items-center bg-background p-5 text-foreground">
       <form
         action="/api/auth/login"
         className="grid w-full max-w-sm gap-4 rounded-xl bg-popover p-5 text-popover-foreground shadow-float"

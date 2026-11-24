@@ -121,12 +121,21 @@ async function writeIco(relativePath: string, renderAt: RenderAt): Promise<void>
   await write(relativePath, encodeIco(ICO_SIZES, await renderSizes(renderAt, ICO_SIZES)));
 }
 
-/** Web apps serve the SVG directly; these are the legacy-browser and iOS fallbacks. */
-async function generateWebIcons(app: string): Promise<void> {
+/**
+ * Web apps serve the SVG directly; these are the legacy-browser and iOS fallbacks. An app that
+ * installs to the Home Screen also gets the 192 and 512 px icons its web app manifest lists.
+ */
+async function generateWebIcons(app: string, { manifest = false } = {}): Promise<void> {
   const directory = path.join("apps", app, "public");
   const renderAt = await loadMaster(path.join(directory, "favicon.svg"));
   await write(path.join(directory, "apple-touch-icon.png"), await renderAt(180));
   await writeIco(path.join(directory, "favicon.ico"), renderAt);
+
+  if (manifest) {
+    for (const size of [192, 512]) {
+      await write(path.join(directory, `icon-${size}.png`), await renderAt(size));
+    }
+  }
 }
 
 /** Oriel: the PNG is the 1024 px master raster, ICO is Windows' icon, ICNS is macOS'. */
@@ -150,9 +159,9 @@ async function generateExtensionIcons(): Promise<void> {
   }
 }
 
-for (const app of ["pane-view", "showcase"]) {
-  await generateWebIcons(app);
-}
+await generateWebIcons("pane-view", { manifest: true });
+
+await generateWebIcons("showcase");
 
 await generateDesktopIcons();
 

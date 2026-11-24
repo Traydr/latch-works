@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 
 export function AppNotFound() {
   return (
-    <main className="grid min-h-screen place-items-center bg-background p-5 text-foreground">
+    <main className="grid min-h-dvh place-items-center bg-background p-5 text-foreground">
       <section
         className="grid w-full max-w-md justify-items-center gap-3 rounded-xl bg-popover p-6 text-center text-popover-foreground shadow-float"
         aria-labelledby="not-found-title"
