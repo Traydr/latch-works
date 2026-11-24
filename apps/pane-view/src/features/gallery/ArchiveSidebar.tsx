@@ -15,6 +15,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { clearAppCaches } from "@/features/offline/service-worker";
 import { cn } from "@/lib/utils";
 import { buildBreadcrumbItems } from "./browse-search";
 
@@ -169,7 +170,16 @@ export function ArchiveSidebar({
               <span>Manage</span>
             </Link>
           </Button>
-          <form action="/api/auth/logout" method="post">
+          <form
+            action="/api/auth/logout"
+            method="post"
+            onSubmit={(event) => {
+              // The caches go before the session does; signing out never waits on a failure.
+              event.preventDefault();
+              const form = event.currentTarget;
+              void clearAppCaches().finally(() => form.submit());
+            }}
+          >
             <Button
               className="w-full justify-start gap-2 pointer-coarse:h-11"
               type="submit"

@@ -1,17 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { PANE_VIEW_CREDENTIALS } from "../../src/env.ts";
-import { card, gotoBrowse, openViewer } from "../../src/pane-view.ts";
+import { card, gotoBrowse, openViewer, signInWithForm } from "../../src/pane-view.ts";
 
 /**
  * Plan 066, phase 3: the two flows that break in a Home Screen app, which has no address bar or
  * tabs to recover with.
  */
-
-async function signIn(page: Page): Promise<void> {
-  await page.getByLabel("Username").fill(PANE_VIEW_CREDENTIALS.username);
-  await page.getByLabel("Password").fill(PANE_VIEW_CREDENTIALS.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-}
 
 /** Chromium cannot emulate `display-mode: standalone`, so the page is told it matches. */
 async function runAsHomeScreenApp(page: Page): Promise<void> {
@@ -32,7 +26,7 @@ test.describe("sign-in return path", () => {
     await page.goto("/?path=mixed");
     await expect(page).toHaveURL(/\/login\?redirect=%2F%3Fpath%3Dmixed$/);
 
-    await signIn(page);
+    await signInWithForm(page);
     await expect(page).toHaveURL(/\/\?path=mixed$/);
     await expect(card(page, "mixed/photo-1.jpg")).toBeVisible();
   });
@@ -63,7 +57,7 @@ test.describe("a session that lapses while browsing", () => {
       .click();
     await expect(page).toHaveURL(/\/login\?redirect=%2F%3Fpath%3Dmixed$/);
 
-    await signIn(page);
+    await signInWithForm(page);
     await expect(page).toHaveURL(/\/\?path=mixed$/);
     await expect(card(page, "mixed/photo-1.jpg")).toBeVisible();
   });

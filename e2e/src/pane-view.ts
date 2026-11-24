@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { PANE_VIEW_CREDENTIALS } from "./env.ts";
 
 /**
  * Page-level helpers for the Pane View suite. They read the gallery the way a
@@ -140,4 +141,27 @@ export async function setSettingToggle(page: Page, label: string, on: boolean): 
   if ((await toggle.isChecked()) !== on) {
     await toggle.click();
   }
+}
+
+/** Better Auth's sign-in window: three sign-ins per IP, and each one restarts the window. */
+const SIGN_IN_WINDOW_MS = 10_500;
+
+/**
+ * Signs in through the login form from a login page. The app reports a sign-in that Better Auth's
+ * rate limit refused as wrong credentials, and specs that sign in a few seconds apart can hit that
+ * limit. So a refused attempt with the right password waits the window out and tries once more.
+ */
+export async function signInWithForm(page: Page): Promise<void> {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    await page.getByLabel("Username").fill(PANE_VIEW_CREDENTIALS.username);
+    await page.getByLabel("Password").fill(PANE_VIEW_CREDENTIALS.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.waitForURL((url) => url.pathname !== "/login" || url.searchParams.has("error"));
+
+    if (!new URL(page.url()).searchParams.has("error")) return;
+
+    await page.waitForTimeout(SIGN_IN_WINDOW_MS);
+  }
+
+  throw new Error("Signing in with the e2e credentials was refused twice.");
 }

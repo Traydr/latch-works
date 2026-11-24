@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 import { ThemeProvider } from "next-themes";
+import { ServiceWorkerUpdates } from "@/features/offline/ServiceWorkerUpdates";
 import { ThemeColorSync } from "@/features/settings/ThemeSync";
 import appCss from "../styles.css?url";
 import { AppNotFound } from "./-app-not-found";
@@ -44,6 +45,7 @@ function RootComponent() {
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
         <ThemeColorSync />
         <Outlet />
+        <ServiceWorkerUpdates />
       </ThemeProvider>
     </RootDocument>
   );
