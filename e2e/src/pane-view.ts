@@ -155,7 +155,15 @@ export async function signInWithForm(page: Page): Promise<void> {
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     await page.getByLabel("Username").fill(PANE_VIEW_CREDENTIALS.username);
     await page.getByLabel("Password").fill(PANE_VIEW_CREDENTIALS.password);
-    await page.getByRole("button", { name: "Sign in" }).click();
+    // The form posts, then the server redirects: wait for the page that redirect lands on.
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === "/api/auth/login" &&
+          response.request().method() === "POST",
+      ),
+      page.getByRole("button", { name: "Sign in" }).click(),
+    ]);
     await page.waitForURL((url) => url.pathname !== "/login" || url.searchParams.has("error"));
 
     if (!new URL(page.url()).searchParams.has("error")) return;

@@ -79,24 +79,39 @@ self.addEventListener("fetch", (event) => {
   if (NEVER_INTERCEPTED_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(networkThenOffline(request));
+    event.respondWith(networkThenOffline(request, event));
   } else if (url.pathname.startsWith("/assets/")) {
-    event.respondWith(cacheFirst(request));
+    event.respondWith(cacheFirst(request, event));
   } else if (STATIC_PATHS.has(url.pathname)) {
     event.respondWith(staleWhileRevalidate(request, event));
   }
 });
 
 /** A page always comes from the server: it is rendered per session. Offline, the offline page. */
-async function networkThenOffline(request) {
+async function networkThenOffline(request, event) {
   try {
-    return await fetch(request);
+    const response = await fetch(request);
+    // Signing out deletes every cache, the offline page's included; a page that loads puts it back.
+    event.waitUntil(restoreOfflinePage().catch(() => undefined));
+
+    return response;
   } catch {
     return (await caches.match(OFFLINE_URL)) ?? Response.error();
   }
 }
 
-async function cacheFirst(request) {
+async function restoreOfflinePage() {
+  const cache = await caches.open(STATIC_CACHE);
+  const missing = [];
+
+  for (const path of OFFLINE_PAGE_FILES) {
+    if (!(await cache.match(path))) missing.push(path);
+  }
+
+  if (missing.length > 0) await cache.addAll(missing);
+}
+
+async function cacheFirst(request, event) {
   const cache = await caches.open(ASSET_CACHE);
   const cached = await cache.match(request);
 
@@ -104,7 +119,8 @@ async function cacheFirst(request) {
 
   const response = await fetch(request);
 
-  if (isCacheable(response)) await cache.put(request, response.clone());
+  // The page gets the response at once; the copy is written while it reads it.
+  if (isCacheable(response)) event.waitUntil(cache.put(request, response.clone()));
 
   return response;
 }
@@ -128,7 +144,17 @@ async function staleWhileRevalidate(request, event) {
   return refresh;
 }
 
-/** Only a complete, same-origin answer: never a redirect, an error or an opaque response. */
+/**
+ * Only a complete, same-origin answer the server lets anyone keep: never a redirect (followed or
+ * not), an error, an opaque response, or one marked private or no-store.
+ */
 function isCacheable(response) {
-  return response.ok && response.status === 200 && response.type === "basic";
+  const cacheControl = response.headers.get("cache-control") ?? "";
+
+  return (
+    response.status === 200 &&
+    response.type === "basic" &&
+    !response.redirected &&
+    !/no-store|private/i.test(cacheControl)
+  );
 }

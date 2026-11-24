@@ -24,8 +24,11 @@ export function ServiceWorkerUpdates(): JSX.Element | null {
       });
     };
 
+    // Another window may have pressed Reload: the new worker now runs this one too, and its
+    // toast has nothing left to offer.
     const onControllerChange = () => {
       if (reloadRequested.current) window.location.reload();
+      else setWaiting(null);
     };
 
     container.addEventListener("controllerchange", onControllerChange);
@@ -61,7 +64,12 @@ export function ServiceWorkerUpdates(): JSX.Element | null {
           className="gap-1.5"
           onClick={() => {
             reloadRequested.current = true;
-            waiting.postMessage({ type: "skip-waiting" });
+
+            if (waiting.state === "activated") {
+              window.location.reload();
+            } else {
+              waiting.postMessage({ type: "skip-waiting" });
+            }
           }}
           size="sm"
           type="button"

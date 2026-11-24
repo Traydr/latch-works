@@ -15,7 +15,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { clearAppCaches } from "@/features/offline/service-worker";
+import { clearAppCachesBriefly } from "@/features/offline/service-worker";
 import { cn } from "@/lib/utils";
 import { buildBreadcrumbItems } from "./browse-search";
 
@@ -174,10 +174,10 @@ export function ArchiveSidebar({
             action="/api/auth/logout"
             method="post"
             onSubmit={(event) => {
-              // The caches go before the session does; signing out never waits on a failure.
+              // The caches go before the session does; signing out never waits long on them.
               event.preventDefault();
               const form = event.currentTarget;
-              void clearAppCaches().finally(() => form.submit());
+              void clearAppCachesBriefly().then(() => form.submit());
             }}
           >
             <Button

@@ -87,6 +87,34 @@ test.describe("service worker", () => {
         privateKinds.has(entry.kind) && entry.fromWorker ? [entry.url] : [],
       ),
     ).toEqual([]);
+
+    // D1: whatever passed through the worker, its caches hold only hashed assets and public files.
+    const publicFiles = [
+      "/offline.html",
+      "/manifest.webmanifest",
+      "/favicon.svg",
+      "/favicon.ico",
+      "/apple-touch-icon.png",
+      "/icon-192.png",
+      "/icon-512.png",
+    ];
+
+    const cachedPaths = await page.evaluate(async () => {
+      const paths: string[] = [];
+
+      for (const name of await caches.keys()) {
+        for (const request of await (await caches.open(name)).keys()) {
+          paths.push(new URL(request.url).pathname);
+        }
+      }
+
+      return paths;
+    });
+
+    expect(cachedPaths.length).toBeGreaterThan(0);
+    expect(
+      cachedPaths.filter((path) => !path.startsWith("/assets/") && !publicFiles.includes(path)),
+    ).toEqual([]);
   });
 
   test("offers a reload when a new build's worker waits, and takes over only then", async ({
@@ -104,8 +132,10 @@ test.describe("service worker", () => {
       await page.evaluate(() => navigator.serviceWorker.controller?.scriptURL ?? ""),
     ).not.toContain("v=next-build");
 
-    await toast.getByRole("button", { name: "Reload" }).click();
-    await page.waitForEvent("load");
+    await Promise.all([
+      page.waitForEvent("load"),
+      toast.getByRole("button", { name: "Reload" }).click(),
+    ]);
     await expect
       .poll(() => page.evaluate(() => navigator.serviceWorker.controller?.scriptURL ?? ""))
       .toContain("v=next-build");
@@ -151,5 +181,14 @@ test.describe("signing out", () => {
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/login/);
     expect(await page.evaluate(() => caches.keys())).not.toContain("pane-view-marker");
+
+    // The offline page went with the caches; loading the login page put it back.
+    await expect
+      .poll(() => page.evaluate(async () => (await caches.match("/offline.html")) !== undefined))
+      .toBe(true);
+    await page.context().setOffline(true);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "You're offline" })).toBeVisible();
+    await page.context().setOffline(false);
   });
 });

@@ -34,8 +34,8 @@
         display: grid;
         min-height: 100dvh;
         margin: 0;
-        padding: 20px calc(20px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom))
-          calc(20px + env(safe-area-inset-left));
+        padding: calc(20px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right))
+          calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));
         box-sizing: border-box;
         place-items: center;
         background: var(--background);
@@ -93,8 +93,10 @@
         cursor: pointer;
       }
 
-      button:hover {
-        background: var(--primary-hover);
+      @media (hover: hover) {
+        button:hover {
+          background: var(--primary-hover);
+        }
       }
     </style>
   </head>

@@ -12,9 +12,19 @@ export function serviceWorkerSupported(): boolean {
  * Deletes every cache the app holds. Signing out calls it, so the device keeps nothing of the
  * session. The worker caches only public files (plan 066, D1); clearing them is a precaution.
  */
-export async function clearAppCaches(): Promise<void> {
+async function clearAppCaches(): Promise<void> {
   if (!("caches" in window)) return;
 
   const names = await caches.keys();
   await Promise.all(names.map((name) => caches.delete(name)));
+}
+
+/** How long signing out waits for the caches to clear before it goes ahead regardless. */
+const CLEAR_TIMEOUT_MS = 1000;
+
+/** Clears the caches, but never holds up what follows for long, even if the browser stalls. */
+export function clearAppCachesBriefly(): Promise<void> {
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, CLEAR_TIMEOUT_MS));
+
+  return Promise.race([clearAppCaches().catch(() => undefined), timeout]);
 }
