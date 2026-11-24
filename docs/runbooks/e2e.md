@@ -56,6 +56,10 @@ expected order and count from it.
 | `search.spec.ts` | plain query, literal `%`/`_`, empty result |
 | `viewer.spec.ts` | step/wrap/loop, page-boundary stepping, video resume, PDF, grid keyboard |
 | `manage.spec.ts` | sync token guard, active-run maintenance block, stats page, folder soft-delete |
+| `install.spec.ts` | the web app manifest and its icons, the Apple web app metas, theme-color metas that follow a manual theme |
+| `touch.spec.ts` | a phone's safe areas (stood in through `--safe-area-*`), 44 px tap targets by hit test, tile names without hover |
+| `standalone.spec.ts` | the sign-in return path, a lapsed session mid-browse, Download in a browser and in the installed app |
+| `offline.spec.ts` | service worker registration and headers, what it serves and never serves, the update toast, the offline page, cache clearing on sign-out |
 
 The bucket gets a CORS rule for the app origin during setup: images load cross-origin without
 one, but the PDF viewer `fetch`es the signed original, which rustfs refuses without a rule.
@@ -89,6 +93,10 @@ would start a run. Before a Gather Box PR is ready, check by hand with the unpac
    suffix, nothing is overwritten.
 4. With archive media conversion on, a GIF post produces an MP4 and a still produces an AVIF.
 5. Cancel a run mid-way: the panel shows it cancelled and no partial file is left behind.
+
+Better Auth allows three sign-ins per IP while each falls within 10 seconds of the last, and the
+login page reports a refused one as wrong credentials. Sign in through `signInWithForm` in
+`e2e/src/pane-view.ts`, which waits the window out once when that happens.
 
 ## Adding a spec
 

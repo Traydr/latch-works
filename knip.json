@@ -12,7 +12,12 @@
       "entry": ["scripts/*.ts"]
     },
     "apps/pane-view": {
-      "entry": ["drizzle.config.ts", "src/routes/**/*.{ts,tsx}", "src/server/db/schema.ts"],
+      "entry": [
+        "drizzle.config.ts",
+        "public/sw.js",
+        "src/routes/**/*.{ts,tsx}",
+        "src/server/db/schema.ts"
+      ],
       "drizzle": false
     },
     "apps/gather-box": {

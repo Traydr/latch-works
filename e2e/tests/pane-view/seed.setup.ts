@@ -12,6 +12,7 @@ import {
   REPO_ROOT,
 } from "../../src/env.ts";
 import { FIXTURE_ITEMS } from "../../src/fixture.ts";
+import { signInWithForm } from "../../src/pane-view.ts";
 
 /**
  * Seeds the freshly migrated e2e database by pushing the fixture archive with
@@ -77,9 +78,8 @@ setup("push the fixture archive through Lockstep", async ({ request }) => {
 
 setup("sign in and store the session", async ({ page }) => {
   await page.goto("/login");
-  await page.getByLabel("Username").fill(PANE_VIEW_CREDENTIALS.username);
-  await page.getByLabel("Password").fill(PANE_VIEW_CREDENTIALS.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  // A run that starts right after another can meet Better Auth's sign-in rate limit.
+  await signInWithForm(page);
   await expect(page.getByRole("region", { name: "Archive browser" })).toBeVisible();
   await mkdir(path.dirname(AUTH_STATE_PATH), { recursive: true });
   await page.context().storageState({ path: AUTH_STATE_PATH });

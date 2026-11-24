@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { PANE_VIEW_CREDENTIALS } from "../../src/env.ts";
+import { signInWithForm } from "../../src/pane-view.ts";
 
 test.describe("auth", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
@@ -46,9 +47,7 @@ test.describe("auth", () => {
 
   test("signing out returns to the login page", async ({ page }) => {
     await page.goto("/login");
-    await page.getByLabel("Username").fill(PANE_VIEW_CREDENTIALS.username);
-    await page.getByLabel("Password").fill(PANE_VIEW_CREDENTIALS.password);
-    await page.getByRole("button", { name: "Sign in" }).click();
+    await signInWithForm(page);
     await expect(page.getByRole("region", { name: "Archive browser" })).toBeVisible();
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/login/);
