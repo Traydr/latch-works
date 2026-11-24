@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { card, gotoBrowse } from "../../src/pane-view.ts";
 
 /**
@@ -25,47 +25,64 @@ async function standInSafeArea(page: Page, insets: SafeAreaInsets): Promise<void
   });
 }
 
-interface ButtonBox {
-  bottom: number;
-  hitHeight: number;
-  hitWidth: number;
-  label: string;
-  left: number;
-  right: number;
-}
+/** What a thumb can operate: a tap that lands on one of these did something. */
+const CONTROL_SELECTOR =
+  "button, a[href], input, select, textarea, [role=button], [role=slider], [role=switch]";
 
-/** Every button on screen: its box, and its tap target including a `touch-target` pseudo-box. */
-async function expectTapTargets(page: Page): Promise<void> {
-  const buttons = await readVisibleButtons(page);
-  expect(buttons.length).toBeGreaterThan(2);
+/**
+ * Taps each enabled button in `scope` where a thumb would: its centre, which must reach the
+ * button, and the middle of each edge of a 44 × 44 box around it (or its own box, if larger).
+ * Those edge taps must reach the button too, unless they land on another control: two small
+ * controls a few pixels apart cannot both own the gap between them. The result lists the misses,
+ * such as a tap box clipped by its own `overflow: hidden`.
+ */
+async function findMissedTaps(scope: Locator): Promise<string[]> {
+  return scope.locator("button:visible:enabled").evaluateAll(
+    (buttons, { controlSelector, minTarget }) => {
+      const misses: string[] = [];
 
-  for (const button of buttons) {
-    expect.soft(button.hitWidth, `${button.label} tap width`).toBeGreaterThanOrEqual(MIN_TARGET);
-    expect.soft(button.hitHeight, `${button.label} tap height`).toBeGreaterThanOrEqual(MIN_TARGET);
-  }
-}
+      for (const button of buttons) {
+        const rect = button.getBoundingClientRect();
 
-async function readVisibleButtons(page: Page): Promise<ButtonBox[]> {
-  return page.locator("button:visible").evaluateAll((buttons) =>
-    buttons.flatMap((button) => {
-      const rect = button.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) continue;
 
-      if (rect.width === 0 || rect.height === 0) return [];
+        const label = button.getAttribute("aria-label") ?? button.textContent?.trim() ?? "";
+        const halfWidth = Math.max(rect.width, minTarget) / 2 - 1;
+        const halfHeight = Math.max(rect.height, minTarget) / 2 - 1;
+        const centreX = rect.left + rect.width / 2;
+        const centreY = rect.top + rect.height / 2;
 
-      const after = getComputedStyle(button, "::after");
-      const pseudo = after.content !== "none" && after.position === "absolute";
+        const taps: Array<[dx: number, dy: number]> = [
+          [0, 0],
+          [-halfWidth, 0],
+          [halfWidth, 0],
+          [0, -halfHeight],
+          [0, halfHeight],
+        ];
 
-      return [
-        {
-          bottom: rect.bottom,
-          hitHeight: Math.max(rect.height, pseudo ? Number.parseFloat(after.height) : 0),
-          hitWidth: Math.max(rect.width, pseudo ? Number.parseFloat(after.width) : 0),
-          label: button.getAttribute("aria-label") ?? button.textContent?.trim() ?? "",
-          left: rect.left,
-          right: rect.right,
-        },
-      ];
-    }),
+        for (const [dx, dy] of taps) {
+          const x = centreX + dx;
+          const y = centreY + dy;
+
+          if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) continue;
+
+          const hit = document.elementFromPoint(x, y);
+
+          if (hit !== null && button.contains(hit)) continue;
+
+          const onCentre = dx === 0 && dy === 0;
+
+          if (!onCentre && hit?.closest(controlSelector)) continue;
+
+          misses.push(
+            `${label} at (${Math.round(dx)}, ${Math.round(dy)}) reached ${hit?.tagName ?? "nothing"}`,
+          );
+        }
+      }
+
+      return misses;
+    },
+    { controlSelector: CONTROL_SELECTOR, minTarget: MIN_TARGET },
   );
 }
 
@@ -89,15 +106,32 @@ test.describe("touch", () => {
         })
         .toBe(852 - 34 - 20);
 
-      await expectTapTargets(page);
+      expect(await findMissedTaps(page.locator("body"))).toEqual([]);
+    });
+
+    test("the sidebar sheet's rows are 44 px to tap", async ({ page }) => {
+      await gotoBrowse(page, { path: "mixed" });
+      await page.getByRole("button", { name: "Toggle Sidebar" }).click();
+      const sidebar = page.getByRole("dialog", { name: "Sidebar" });
+      await expect(sidebar).toBeVisible();
+      expect(await findMissedTaps(sidebar)).toEqual([]);
+    });
+
+    test("the toolbar's menu items are 44 px to tap", async ({ page }) => {
+      await gotoBrowse(page, { path: "mixed" });
+      await page.locator("[data-floating-toolbar]").getByTitle("Sort", { exact: true }).click();
+      const sortMenu = page.getByRole("menu");
+      await expect(sortMenu).toBeVisible();
+      expect(await findMissedTaps(sortMenu)).toEqual([]);
     });
 
     for (const path of ["mixed/photo-1.jpg", "mixed/reel.mp4"]) {
       test(`the viewer's controls for ${path} are 44 px to tap`, async ({ page }) => {
         await gotoBrowse(page, { path: "mixed" });
         await card(page, path).tap();
-        await expect(page.getByRole("dialog", { name: /^Viewer for / })).toBeVisible();
-        await expectTapTargets(page);
+        const viewer = page.getByRole("dialog", { name: /^Viewer for / });
+        await expect(viewer).toBeVisible();
+        expect(await findMissedTaps(viewer)).toEqual([]);
       });
     }
 
@@ -116,15 +150,20 @@ test.describe("touch", () => {
       await gotoBrowse(page, { path: "mixed" });
       await standInSafeArea(page, { bottom: 21, left: 59, right: 59 });
 
-      await expect
-        .poll(async () => {
-          const buttons = await readVisibleButtons(page);
+      // Every control and every tile stays between the two insets.
+      const underInsets = async () =>
+        page.locator("button:visible, [role=region]:visible").evaluateAll(
+          (elements, inset) =>
+            elements.flatMap((element) => {
+              const { left, right, width } = element.getBoundingClientRect();
+              const outside = width > 0 && (left < inset || right > window.innerWidth - inset);
 
-          return buttons
-            .filter((button) => button.left < 59 || button.right > 852 - 59)
-            .map((button) => button.label);
-        })
-        .toEqual([]);
+              return outside ? [element.getAttribute("aria-label") ?? element.tagName] : [];
+            }),
+          59,
+        );
+
+      await expect.poll(underInsets).toEqual([]);
     });
   });
 });

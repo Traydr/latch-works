@@ -219,7 +219,7 @@ function MediaFilterMenu({ onChange, visibility }: MediaFilterMenuProps) {
           {filters.map((filter) => (
             <button
               aria-checked={filter.active}
-              className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left text-[13px] text-popover-foreground transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 pointer-coarse:h-11 text-left text-[13px] text-popover-foreground transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
               disabled={filter.disabled}
               key={filter.key}
               onClick={() => onChange({ [filter.key]: !visibility[filter.key] })}
@@ -324,7 +324,7 @@ export function FloatingToolbar({
                     type="button"
                     role="menuitemradio"
                     aria-checked={selected}
-                    className="flex h-8 w-full cursor-pointer items-center justify-between rounded-lg px-2.5 text-left text-[13px] text-popover-foreground transition hover:bg-accent"
+                    className="flex h-8 w-full cursor-pointer items-center justify-between rounded-lg px-2.5 pointer-coarse:h-11 text-left text-[13px] text-popover-foreground transition hover:bg-accent"
                     onClick={() => {
                       onChangeSortMode(option.value);
                       setSortMenuOpen(false);

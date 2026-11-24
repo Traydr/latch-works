@@ -464,8 +464,9 @@ const sidebarMenuButtonVariants = cva(
           "bg-background shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--sidebar-accent)]",
       },
       size: {
-        default: "h-8 text-[13px]",
-        sm: "h-7 text-xs",
+        // A touch screen gets a real 44 px row: the button clips, so it cannot use `touch-target`.
+        default: "h-8 text-[13px] pointer-coarse:h-11",
+        sm: "h-7 text-xs pointer-coarse:h-11",
         lg: "h-12 text-sm group-data-[collapsible=icon]:p-0!",
       },
     },

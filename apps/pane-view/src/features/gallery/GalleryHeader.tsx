@@ -165,12 +165,13 @@ function MobilePathHeader({
         >
           <ChevronUp className="size-4" />
         </Button>
+        {/* The name truncates inside a span: clipping the button itself would clip its tap box. */}
         <button
-          className="touch-target min-w-0 flex-1 truncate text-left text-base font-semibold"
+          className="touch-target min-w-0 flex-1 text-left text-base font-semibold"
           onClick={onOpenPathSheet}
           type="button"
         >
-          {currentFolderName}
+          <span className="block truncate">{currentFolderName}</span>
         </button>
       </div>
       {displayPath ? <p className="truncate text-xs text-muted-foreground">{displayPath}</p> : null}
