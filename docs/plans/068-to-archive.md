@@ -167,12 +167,13 @@ now()`. Later, Archived and Remove then work the same for every row. The **reche
 4. **Sidebar:** a "To archive" link in `ArchiveSidebar.tsx`'s footer, above Settings, with an
    inbox icon and no count.
 5. **Focus mode** (mock H): `?run=1` on the same route, so Back leaves it. It shows one card (badge,
-   site, label, URL), a progress line ("3 of 13 · 2 archived") and the next two links.
+   site, label, URL), a progress line ("10 left · 2 archived") and the next two links.
    - **Keys:** ↵ opens, A archives, L sends it to the back, Backspace removes (with Undo), Esc
      leaves. They work only while focus mode is mounted and no text field has focus, so they
      never reach the gallery hotkeys.
-   - **After Open:** when the tab is visible again (`visibilitychange`), the card says "Opened N
-     minutes ago" and **Archived** becomes the main button, with "Again" and Later beside it.
+   - **After Open:** the card says "Opened N minutes ago" (refreshed on `visibilitychange`) and
+     **Archived** becomes the main button, with "Again" and Later beside it. The new tab has
+     focus, so the owner sees this when they come back.
    - **Archiving** moves straight to the next card. Undo sits in the foot bar for a few seconds.
    - **The end:** when the list is empty, the run says so and offers the way back to the page.
 6. **End-to-end:** `e2e/tests/pane-view/to-archive.spec.ts` covers pasting three links (two of

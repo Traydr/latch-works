@@ -1,5 +1,5 @@
 import { Check, Clock, ExternalLink, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useEffectEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatMinutesAgo } from "./link-dates";
@@ -56,10 +56,11 @@ export function FocusRun({
   const [current, ...rest] = links;
   const [opened, setOpened] = useState<Opened | null>(null);
   const [, setVisibleAgainAt] = useState(0);
-  const [tally, setTally] = useState({ archived: 0, handled: 0 });
-  const total = useRef<number | null>(null);
+  const [archivedCount, setArchivedCount] = useState(0);
+  // The most links this run has held: the list may still be loading when the run starts.
+  const [peak, setPeak] = useState(links.length);
 
-  total.current ??= links.length;
+  if (links.length > peak) setPeak(links.length);
 
   const isBack = current !== undefined && opened?.id === current.id;
 
@@ -85,92 +86,81 @@ export function FocusRun({
     releaseFocus();
   };
 
-  const handle = (archived: boolean) => {
-    releaseFocus();
-    setTally((last) => ({
-      archived: last.archived + (archived ? 1 : 0),
-      handled: last.handled + 1,
-    }));
-  };
-
   const archive = (link: ArchiveLink) => {
+    releaseFocus();
     commands.archive(link);
-    handle(true);
+    setArchivedCount((count) => count + 1);
   };
 
   const later = (link: ArchiveLink) => {
+    releaseFocus();
     commands.later(link);
-    handle(false);
   };
 
   const remove = (link: ArchiveLink) => {
+    releaseFocus();
     commands.remove(link);
-    handle(false);
   };
 
-  const keyActions = useRef({ archive, later, onExit, open, remove, current });
+  const onKey = useEffectEvent((event: KeyboardEvent) => {
+    // A held key repeats; only the first press acts, so holding ⌫ can't remove a run of links.
+    if (event.repeat || isForeignKey(event)) return;
 
-  keyActions.current = { archive, later, onExit, open, remove, current };
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onExit();
+
+      return;
+    }
+
+    const link = current;
+
+    if (!link) return;
+
+    switch (event.key) {
+      case "Enter":
+        // A focused button presses itself on Enter; only a bare Enter opens.
+        if (
+          event.target instanceof HTMLButtonElement ||
+          event.target instanceof HTMLAnchorElement
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+        open(link);
+        break;
+      case "a":
+      case "A":
+        event.preventDefault();
+        archive(link);
+        break;
+      case "l":
+      case "L":
+        event.preventDefault();
+        later(link);
+        break;
+      case "Backspace":
+      case "Delete":
+        event.preventDefault();
+        remove(link);
+        break;
+      default:
+        break;
+    }
+  });
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      // A held key repeats; only the first press acts, so holding ⌫ can't remove a run of links.
-      if (event.repeat || isForeignKey(event)) return;
+    const listener = (event: KeyboardEvent) => onKey(event);
 
-      const actions = keyActions.current;
+    window.addEventListener("keydown", listener);
 
-      if (event.key === "Escape") {
-        event.preventDefault();
-        actions.onExit();
-
-        return;
-      }
-
-      const link = actions.current;
-
-      if (!link) return;
-
-      switch (event.key) {
-        case "Enter":
-          // A focused button presses itself on Enter; only a bare Enter opens.
-          if (
-            event.target instanceof HTMLButtonElement ||
-            event.target instanceof HTMLAnchorElement
-          ) {
-            return;
-          }
-
-          event.preventDefault();
-          actions.open(link);
-          break;
-        case "a":
-        case "A":
-          event.preventDefault();
-          actions.archive(link);
-          break;
-        case "l":
-        case "L":
-          event.preventDefault();
-          actions.later(link);
-          break;
-        case "Backspace":
-        case "Delete":
-          event.preventDefault();
-          actions.remove(link);
-          break;
-        default:
-          break;
-      }
-    };
-
-    window.addEventListener("keydown", onKey);
-
-    return () => window.removeEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", listener);
   }, []);
 
   const sites = countSites(allLinks);
-  const runTotal = Math.max(total.current, tally.handled + links.length);
-  const position = Math.min(tally.handled + 1, runTotal);
+  // Later keeps a link in the run, so progress counts links that left it, not keys pressed.
+  const progress = peak === 0 ? 1 : (peak - links.length) / peak;
   const parsed = current ? parseLink(current.url) : null;
 
   return (
@@ -212,12 +202,11 @@ export function FocusRun({
         >
           <div
             className="h-full rounded-full bg-primary transition-[width]"
-            style={{ width: `${runTotal === 0 ? 100 : (tally.handled / runTotal) * 100}%` }}
+            style={{ width: `${progress * 100}%` }}
           />
         </div>
         <span className="text-[13px] text-muted-foreground tabular-nums">
-          {current ? `${position} of ${runTotal}` : `${runTotal} of ${runTotal}`} · {tally.archived}{" "}
-          archived
+          {links.length} left · {archivedCount} archived
         </span>
       </header>
 
@@ -306,7 +295,7 @@ export function FocusRun({
           <div className="grid justify-items-center gap-3 text-center">
             <p className="text-lg font-semibold">Nothing left here</p>
             <p className="text-sm text-muted-foreground">
-              {tally.archived > 0 ? `${tally.archived} archived this run.` : "The list is empty."}
+              {archivedCount > 0 ? `${archivedCount} archived this run.` : "The list is empty."}
             </p>
             <Button onClick={onExit} variant="secondary">
               Back to the list

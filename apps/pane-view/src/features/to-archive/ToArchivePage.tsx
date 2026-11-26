@@ -1,6 +1,6 @@
 import { getRouteApi, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { cn } from "@/lib/utils";
 import { ArchivedView } from "./ArchivedView";
 import { FocusRun } from "./FocusRun";
@@ -40,9 +40,7 @@ export function ToArchivePage() {
   };
 
   const commands = useLinkCommands({ notify, onShow: show });
-  const addRef = useRef(commands.add);
-
-  addRef.current = commands.add;
+  const addPasted = useEffectEvent((text: string) => commands.add(text));
 
   useEffect(() => {
     if (!highlightId) return;
@@ -62,7 +60,7 @@ export function ToArchivePage() {
       if (extractUrls(text).length === 0) return;
 
       event.preventDefault();
-      addRef.current(text);
+      addPasted(text);
     };
 
     document.addEventListener("paste", onPaste);

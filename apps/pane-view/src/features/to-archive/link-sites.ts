@@ -122,6 +122,7 @@ export interface ParsedLink {
 }
 
 const TRACKING_PARAMETERS = new Set([
+  "enteragree",
   "fbclid",
   "gclid",
   "igshid",
@@ -149,14 +150,73 @@ type SiteRule = (segments: string[], host: string) => SiteForm;
 
 const DROP_QUERY: readonly string[] = [];
 
+/**
+ * A path no rule names: the page is the whole path and its query. A rule rewrites only the forms
+ * it knows, so two links it doesn't know can never share a key.
+ */
+function whole(segments: readonly string[]): SiteForm {
+  return { path: segmentsPath(segments) };
+}
+
 /** An X profile's tabs; `x.com/name/media` is the profile `x.com/name`. */
 const X_PROFILE_TABS = new Set(["media", "with_replies", "likes", "highlights", "articles"]);
+
+/** First path segments on X that are X's own pages, not a handle. */
+const X_PAGES = new Set([
+  "compose",
+  "explore",
+  "hashtag",
+  "home",
+  "i",
+  "intent",
+  "messages",
+  "notifications",
+  "search",
+  "settings",
+]);
+
+/** A Patreon creator's tabs; `patreon.com/name/about` is the creator `patreon.com/name`. */
+const PATREON_CREATOR_TABS = new Set([
+  "about",
+  "chats",
+  "collections",
+  "community",
+  "membership",
+  "posts",
+  "recommendations",
+]);
+
+/** A Ko-fi creator's tabs; `ko-fi.com/name/shop` is the creator `ko-fi.com/name`. */
+const KOFI_CREATOR_TABS = new Set([
+  "about",
+  "commissions",
+  "gallery",
+  "goal",
+  "posts",
+  "shop",
+  "tiers",
+]);
+
+/** First path segments on Ko-fi that are Ko-fi's own pages or one item, not a creator. */
+const KOFI_PAGES = new Set([
+  "album",
+  "c",
+  "explore",
+  "home",
+  "i",
+  "manage",
+  "post",
+  "s",
+  "search",
+  "settings",
+]);
 
 /** First path segments on Patreon that name a page of Patreon's own, not a creator. */
 const PATREON_PAGES = new Set([
   "checkout",
   "collection",
   "explore",
+  "file",
   "home",
   "join",
   "library",
@@ -235,7 +295,7 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       return { path: segmentsPath(segments), keepQuery: DROP_QUERY, label: user };
     }
 
-    return { path: segmentsPath(segments), keepQuery: DROP_QUERY };
+    return whole(segments);
   },
 
   kemono(segments) {
@@ -258,7 +318,7 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       };
     }
 
-    return { path: segmentsPath(segments), keepQuery: DROP_QUERY };
+    return whole(segments);
   },
 
   pixiv(segments) {
@@ -286,7 +346,6 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       return {
         host: "fanbox.cc",
         path: posts ? `/@${creator}/posts/${posts}` : `/@${creator}${segmentsPath(segments)}`,
-        keepQuery: DROP_QUERY,
         label: posts ? `Post ${posts}` : creator,
       };
     }
@@ -309,7 +368,7 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       return { path: `/@${handle}`, keepQuery: DROP_QUERY, label: handle };
     }
 
-    return { path: segmentsPath(segments), keepQuery: DROP_QUERY, label: creator };
+    return whole(segments);
   },
 
   danbooru(segments) {
@@ -343,11 +402,11 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       };
     }
 
-    if (handle && handle !== "i" && (!status || X_PROFILE_TABS.has(status))) {
+    if (handle && !X_PAGES.has(handle) && (!status || X_PROFILE_TABS.has(status))) {
       return { path: `/${handle}`, keepQuery: DROP_QUERY, label: `@${handle}` };
     }
 
-    return { path: segmentsPath(rest), keepQuery: DROP_QUERY };
+    return whole(rest);
   },
 
   reddit(segments) {
@@ -376,53 +435,54 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       return { path: `/r/${lower}`, keepQuery: DROP_QUERY, label: `r/${lower}` };
     }
 
-    return { path: segmentsPath(segments), keepQuery: DROP_QUERY };
-  },
-
-  myhentaigallery(segments) {
-    return { path: segmentsPath(segments), keepQuery: DROP_QUERY };
+    return whole(segments);
   },
 
   patreon(segments) {
-    const lower = segments.map((segment) => segment.toLowerCase());
-    const [first, second] = lower;
+    const [first, second, third] = segments.map((segment) => segment.toLowerCase());
 
-    if (first === "posts" && second) {
+    if (first === "posts" && second && segments.length === 2) {
       const id = lastDigits(second) ?? second;
 
       return { path: `/posts/${id}`, keepQuery: DROP_QUERY, label: `Post ${id}` };
     }
 
-    if ((first === "c" || first === "cw") && second) {
+    // /c/name and /cw/name are the creator name, alone or with one of its tabs.
+    if (
+      (first === "c" || first === "cw") &&
+      second &&
+      (!third || PATREON_CREATOR_TABS.has(third))
+    ) {
       return { path: `/${second}`, keepQuery: DROP_QUERY, label: second };
     }
 
-    if (first === "user") {
+    if (first === "user" && segments.length === 1) {
       return { path: "/user", keepQuery: ["u"], label: "Creator" };
     }
 
-    if (first && !PATREON_PAGES.has(first)) {
-      return { path: `/${first}`, keepQuery: DROP_QUERY, label: first };
-    }
+    const isCreatorPage =
+      first !== undefined &&
+      !PATREON_PAGES.has(first) &&
+      segments.length <= 2 &&
+      (!second || PATREON_CREATOR_TABS.has(second));
 
-    // A Patreon page that isn't a creator's (/collection/N, /join/name): the whole path is the page.
-    return { path: segmentsPath(lower), keepQuery: DROP_QUERY };
+    if (isCreatorPage) return { path: `/${first}`, keepQuery: DROP_QUERY, label: first };
+
+    return whole(segments);
   },
 
   kofi(segments) {
-    const lower = segments.map((segment) => segment.toLowerCase());
-    const [first] = lower;
+    const [first, second] = segments.map((segment) => segment.toLowerCase());
 
-    // ko-fi.com/s/…, /post/…, /album/… and /i/… are one item; anything else is a creator and a tab.
-    if (first && ["s", "post", "album", "i"].includes(first)) {
-      return { path: segmentsPath(lower), keepQuery: DROP_QUERY };
-    }
+    const isCreatorPage =
+      first !== undefined &&
+      !KOFI_PAGES.has(first) &&
+      segments.length <= 2 &&
+      (!second || KOFI_CREATOR_TABS.has(second));
 
-    if (first) {
-      return { path: `/${first}`, keepQuery: DROP_QUERY, label: first };
-    }
+    if (isCreatorPage) return { path: `/${first}`, keepQuery: DROP_QUERY, label: first };
 
-    return { path: "", keepQuery: DROP_QUERY };
+    return whole(segments);
   },
 
   subscribestar(segments) {
@@ -437,7 +497,7 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       return { path: `/${first}`, keepQuery: DROP_QUERY, label: first };
     }
 
-    return { path: segmentsPath(lower), keepQuery: DROP_QUERY };
+    return whole(segments);
   },
 };
 
@@ -496,6 +556,15 @@ function parseHttpUrl(input: string): URL | null {
   return url;
 }
 
+/** A label as a person reads it: `%E3%81%82` shown as the character it encodes. */
+function readableLabel(label: string): string {
+  try {
+    return decodeURIComponent(label);
+  } catch {
+    return label;
+  }
+}
+
 /** Recognises a link and works out its canonical form; null for anything that isn't an http(s) URL. */
 export function parseLink(input: string): ParsedLink | null {
   const trimmed = input.trim();
@@ -505,30 +574,17 @@ export function parseLink(input: string): ParsedLink | null {
 
   const host = canonicalHost(url.hostname);
   const site = siteForHost(host);
-
-  const segments = url.pathname.split("/").flatMap((segment) => {
-    if (segment.length === 0) return [];
-
-    try {
-      return [decodeURIComponent(segment)];
-    } catch {
-      return [segment];
-    }
-  });
-
+  // Segments stay as the URL parser encoded them, so `a%2Fb` stays one segment.
+  const segments = url.pathname.split("/").filter((segment) => segment.length > 0);
   const rule = SITE_RULES[site.key];
-  const form: SiteForm = rule ? rule(segments, host) : { path: segmentsPath(segments) };
-
-  const path = form.path
-    .split("/")
-    .map((segment) => (segment ? encodeURIComponent(segment).replace(/%40/g, "@") : segment))
-    .join("/");
+  const form: SiteForm = rule ? rule(segments, host) : whole(segments);
+  const port = url.port ? `:${url.port}` : "";
 
   return {
     url: trimmed,
-    canonicalUrl: `${form.host ?? host}${path}${queryString(url, form.keepQuery)}`,
+    canonicalUrl: `${form.host ?? host}${port}${form.path}${queryString(url, form.keepQuery)}`,
     site: site.key,
-    label: form.label ?? (segments.at(-1) || host),
+    label: readableLabel(form.label ?? (segments.at(-1) || host)),
   };
 }
 

@@ -4,6 +4,8 @@ import { siteByKey } from "./link-sites";
 import type { AddLinksResult, ArchiveLink } from "./to-archive-contract";
 import { useLinkActions } from "./to-archive-queries";
 
+const UNSAVED = "That change didn't save.";
+
 function describeAdded(result: AddLinksResult): string {
   const counts = { added: 0, archived: 0, waiting: 0 };
 
@@ -35,18 +37,24 @@ export function useLinkCommands({
   onShow: (link: ArchiveLink) => void;
 }) {
   const actions = useLinkActions();
+
+  // Server functions reject with an Error whose message is meant for the owner.
   const fail = (error: Error) => notify({ message: error.message, tone: "error" });
+
+  // `mutateAsync` settles every call; `mutate`'s per-call callbacks fire only for the latest
+  // call, so a failure behind a quicker second change would pass without a notice.
+  const run = <T>(change: Promise<T>) =>
+    change.catch((error) => fail(error instanceof Error ? error : new Error(UNSAVED)));
 
   const undo = (link: ArchiveLink) => ({
     label: "Undo",
-    run: () => actions.restore.mutate(link, { onError: fail }),
+    run: () => void run(actions.restore.mutateAsync(link)),
   });
 
   return {
     add(text: string, { onDone }: { onDone?: () => void } = {}) {
-      actions.add.mutate(text, {
-        onError: fail,
-        onSuccess: (result) => {
+      void actions.add.mutateAsync(text).then(
+        (result) => {
           onDone?.();
 
           const [only, ...others] = result.outcomes;
@@ -76,7 +84,7 @@ export function useLinkCommands({
               notify({
                 action: {
                   label: "Undo",
-                  run: () => actions.remove.mutate(link, { onError: fail }),
+                  run: () => void run(actions.remove.mutateAsync(link)),
                 },
                 message: `Added to ${siteByKey(link.site).label}`,
               });
@@ -91,7 +99,7 @@ export function useLinkCommands({
               notify({
                 action: {
                   label: "Queue again",
-                  run: () => actions.queueAgain.mutate(link, { onError: fail }),
+                  run: () => void run(actions.queueAgain.mutateAsync(link)),
                 },
                 message: link.archivedAt
                   ? `Archived ${formatDaysAgo(new Date(link.archivedAt))}`
@@ -105,25 +113,26 @@ export function useLinkCommands({
             }
           }
         },
-      });
+        (error) => fail(error instanceof Error ? error : new Error(UNSAVED)),
+      );
     },
     archive(link: ArchiveLink) {
-      actions.archive.mutate(link, { onError: fail });
+      void run(actions.archive.mutateAsync(link));
       notify({ action: undo(link), message: "Archived" });
     },
     later(link: ArchiveLink) {
-      actions.later.mutate(link, { onError: fail });
+      void run(actions.later.mutateAsync(link));
     },
     remove(link: ArchiveLink) {
-      actions.remove.mutate(link, { onError: fail });
+      void run(actions.remove.mutateAsync(link));
       notify({ action: undo(link), message: "Removed" });
     },
     queueAgain(link: ArchiveLink) {
-      actions.queueAgain.mutate(link, { onError: fail });
+      void run(actions.queueAgain.mutateAsync(link));
       notify({ action: undo(link), message: "Back in To archive" });
     },
     setRecheck(link: ArchiveLink, days: number | null) {
-      actions.recheck.mutate({ days, link }, { onError: fail });
+      void run(actions.recheck.mutateAsync({ days, link }));
 
       if (days !== null && link.archivedAt) {
         const due = recheckDueDate(new Date(link.archivedAt), days);

@@ -81,8 +81,19 @@ describe("parseLink", () => {
     ["https://www.patreon.com/collection/12345", "patreon.com/collection/12345"],
     [
       "https://www.patreon.com/join/inkwellmoth/checkout?rid=1",
-      "patreon.com/join/inkwellmoth/checkout",
+      "patreon.com/join/inkwellmoth/checkout?rid=1",
     ],
+    [
+      "https://www.patreon.com/inkwellmoth/shop/winter-pack-123456",
+      "patreon.com/inkwellmoth/shop/winter-pack-123456",
+    ],
+    ["https://www.patreon.com/file?h=1&i=2", "patreon.com/file?h=1&i=2"],
+    ["https://ko-fi.com/c/1a2b3c4d5e", "ko-fi.com/c/1a2b3c4d5e"],
+    ["https://ko-fi.com/saltmarshstudio/shop/item-9", "ko-fi.com/saltmarshstudio/shop/item-9"],
+    ["https://x.com/search?q=winter&src=typed", "x.com/search?q=winter&src=typed"],
+    ["https://kemono.su/posts?q=winter", "kemono.su/posts?q=winter"],
+    ["https://example.com:8080/a", "example.com:8080/a"],
+    ["https://example.com/a%2Fb", "example.com/a%2Fb"],
     [
       "https://subscribestar.adult/velvetcartograph/about",
       "subscribestar.adult/velvetcartograph/about",
