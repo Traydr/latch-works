@@ -114,7 +114,8 @@ export function FocusRun({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (isForeignKey(event)) return;
+      // A held key repeats; only the first press acts, so holding ⌫ can't remove a run of links.
+      if (event.repeat || isForeignKey(event)) return;
 
       const actions = keyActions.current;
 
@@ -184,7 +185,11 @@ export function FocusRun({
           <span className="sr-only">Site</span>
           <select
             className="h-8 appearance-none rounded-full bg-secondary pr-8 pl-3 text-[13px] font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-            onChange={(event) => onSiteChange(event.target.value)}
+            onChange={(event) => {
+              // A focused select would keep the run's keys (and change site on A or L).
+              event.currentTarget.blur();
+              onSiteChange(event.target.value);
+            }}
             value={site}
           >
             <option value={ALL_SITES}>All sites · {allLinks.length}</option>

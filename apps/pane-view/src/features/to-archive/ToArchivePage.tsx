@@ -80,6 +80,7 @@ export function ToArchivePage() {
     return (
       <main className="min-h-dvh bg-background text-foreground">
         <FocusRun
+          key={site}
           allLinks={links}
           commands={commands}
           onExit={() => void navigate({ search: (previous) => ({ ...previous, run: undefined }) })}

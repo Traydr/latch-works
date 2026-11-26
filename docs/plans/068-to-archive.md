@@ -137,12 +137,13 @@ now()`. Later, Archived and Remove then work the same for every row. The **reche
    the queries below. Each server function is in `features/to-archive/to-archive-service.ts`,
    calls `assertWebSessionAuthorized()` first, and parses its input with a zod contract in
    `to-archive-contract.ts`:
-   - `listToArchive({ site? })` returns the rows oldest first, plus a count per site (after the
-     recheck flip).
+   - `listToArchive()` returns every waiting row, oldest first (after the recheck flip). The page
+     filters by site and counts per site itself: the list is short, and one query serves both.
    - `listArchived({ search?, cursor? })` returns pages of 100, newest first. Search is
      `canonical_url ILIKE`.
-   - `addLinks({ text })` returns one outcome per URL: `added`, `waiting` (with `added_at`),
-     `archived` (with `archived_at` and `id`) or `invalid`. Repeats inside one paste count once.
+   - `addLinks({ text })` returns one outcome per link: `added`, `waiting` (with `added_at`) or
+     `archived` (with `archived_at` and `id`), and a `skipped` count of URLs that aren't a link
+     it can store. Repeats inside one paste count once.
    - `archiveLink`, `laterLink`, `requeueLink` (Queue again, and Back to To archive), `removeLink`
      (returns the deleted row), `restoreLink(row)` (Undo), and `setRecheck({ id, days | null })`.
    - The queries go in `to-archive-queries.ts` with TanStack Query keys, like

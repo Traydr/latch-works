@@ -137,6 +137,8 @@ const SUBDOMAIN_PREFIX = /^(?:www|m|mobile)\./;
 
 /** What a site rule makes of a link's path segments. */
 interface SiteForm {
+  /** Set when the site writes one page under two hosts; the host otherwise stays as given. */
+  host?: string;
   path: string;
   /** Keep only these query parameters; omitted keeps every non-tracking one. */
   keepQuery?: readonly string[];
@@ -146,6 +148,24 @@ interface SiteForm {
 type SiteRule = (segments: string[], host: string) => SiteForm;
 
 const DROP_QUERY: readonly string[] = [];
+
+/** An X profile's tabs; `x.com/name/media` is the profile `x.com/name`. */
+const X_PROFILE_TABS = new Set(["media", "with_replies", "likes", "highlights", "articles"]);
+
+/** First path segments on Patreon that name a page of Patreon's own, not a creator. */
+const PATREON_PAGES = new Set([
+  "checkout",
+  "collection",
+  "explore",
+  "home",
+  "join",
+  "library",
+  "login",
+  "messages",
+  "notifications",
+  "search",
+  "settings",
+]);
 
 function lastDigits(segment: string | undefined): string | undefined {
   return segment?.match(/(\d+)$/)?.[1];
@@ -257,7 +277,19 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
   },
 
   fanbox(segments, host) {
+    // creator.fanbox.cc/posts/N and fanbox.cc/@creator/posts/N are one page; keep the second form.
     const creator = host.endsWith(".fanbox.cc") ? host.slice(0, -".fanbox.cc".length) : undefined;
+
+    if (creator) {
+      const posts = segments[0] === "posts" && segments[1] ? segments[1] : undefined;
+
+      return {
+        host: "fanbox.cc",
+        path: posts ? `/@${creator}/posts/${posts}` : `/@${creator}${segmentsPath(segments)}`,
+        keepQuery: DROP_QUERY,
+        label: posts ? `Post ${posts}` : creator,
+      };
+    }
 
     if (segments[0] === "posts" && segments[1]) {
       return { path: `/posts/${segments[1]}`, keepQuery: DROP_QUERY, label: `Post ${segments[1]}` };
@@ -296,7 +328,12 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
   },
 
   x(segments) {
-    const [handle, status, id] = segments;
+    // Handles ignore case on X; /i/web/status/N is /i/status/N.
+    const rest =
+      segments[0] === "i" && segments[1] === "web" ? ["i", ...segments.slice(2)] : segments;
+
+    const [first, status, id] = rest;
+    const handle = first?.toLowerCase();
 
     if (handle && status === "status" && id) {
       return {
@@ -306,30 +343,37 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       };
     }
 
-    if (handle && segments.length >= 1) {
+    if (handle && handle !== "i" && (!status || X_PROFILE_TABS.has(status))) {
       return { path: `/${handle}`, keepQuery: DROP_QUERY, label: `@${handle}` };
     }
 
-    return { path: "", keepQuery: DROP_QUERY };
+    return { path: segmentsPath(rest), keepQuery: DROP_QUERY };
   },
 
   reddit(segments) {
-    const [r, subreddit, comments, id] = segments;
+    const [r, name, area, id] = segments;
+    // Subreddit and user names ignore case on Reddit.
+    const lower = name?.toLowerCase();
 
-    if (r === "r" && subreddit && comments === "comments" && id) {
+    if (r === "r" && lower && area === "comments" && id) {
       return {
-        path: `/r/${subreddit}/comments/${id}`,
+        path: `/r/${lower}/comments/${id}`,
         keepQuery: DROP_QUERY,
-        label: `r/${subreddit} post`,
+        label: `r/${lower} post`,
       };
     }
 
-    if ((r === "u" || r === "user") && subreddit) {
-      return { path: `/user/${subreddit}`, keepQuery: DROP_QUERY, label: `u/${subreddit}` };
+    if (r === "r" && lower && area === "s" && id) {
+      // The app's share link: a short code that stands for one post.
+      return { path: `/r/${lower}/s/${id}`, keepQuery: DROP_QUERY, label: `r/${lower} post` };
     }
 
-    if (r === "r" && subreddit) {
-      return { path: `/r/${subreddit}`, keepQuery: DROP_QUERY, label: `r/${subreddit}` };
+    if ((r === "u" || r === "user") && lower && segments.length === 2) {
+      return { path: `/user/${lower}`, keepQuery: DROP_QUERY, label: `u/${lower}` };
+    }
+
+    if (r === "r" && lower && segments.length === 2) {
+      return { path: `/r/${lower}`, keepQuery: DROP_QUERY, label: `r/${lower}` };
     }
 
     return { path: segmentsPath(segments), keepQuery: DROP_QUERY };
@@ -357,10 +401,11 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       return { path: "/user", keepQuery: ["u"], label: "Creator" };
     }
 
-    if (first && !["home", "login", "search", "messages", "settings"].includes(first)) {
+    if (first && !PATREON_PAGES.has(first)) {
       return { path: `/${first}`, keepQuery: DROP_QUERY, label: first };
     }
 
+    // A Patreon page that isn't a creator's (/collection/N, /join/name): the whole path is the page.
     return { path: segmentsPath(lower), keepQuery: DROP_QUERY };
   },
 
@@ -388,11 +433,11 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       return { path: `/posts/${second}`, keepQuery: DROP_QUERY, label: `Post ${second}` };
     }
 
-    if (first) {
+    if (first && lower.length === 1) {
       return { path: `/${first}`, keepQuery: DROP_QUERY, label: first };
     }
 
-    return { path: "", keepQuery: DROP_QUERY };
+    return { path: segmentsPath(lower), keepQuery: DROP_QUERY };
   },
 };
 
@@ -401,6 +446,8 @@ function canonicalHost(host: string): string {
   const bare = host.toLowerCase().replace(/\.$/, "").replace(SUBDOMAIN_PREFIX, "");
 
   if (bare === "twitter.com" || bare === "mobile.twitter.com") return "x.com";
+
+  if (bare === "ao3.org") return "archiveofourown.org";
 
   if (bare === "old.reddit.com" || bare === "new.reddit.com" || bare === "np.reddit.com") {
     return "reddit.com";
@@ -479,7 +526,7 @@ export function parseLink(input: string): ParsedLink | null {
 
   return {
     url: trimmed,
-    canonicalUrl: `${host}${path}${queryString(url, form.keepQuery)}`,
+    canonicalUrl: `${form.host ?? host}${path}${queryString(url, form.keepQuery)}`,
     site: site.key,
     label: form.label ?? (segments.at(-1) || host),
   };

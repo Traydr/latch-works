@@ -17,6 +17,8 @@ function describeAdded(result: AddLinksResult): string {
 
   if (counts.archived > 0) parts.push(`${counts.archived} already archived`);
 
+  if (result.skipped > 0) parts.push(`${result.skipped} not a link`);
+
   return parts.join(" · ");
 }
 
@@ -47,15 +49,21 @@ export function useLinkCommands({
         onSuccess: (result) => {
           onDone?.();
 
-          if (result.nothingFound) {
-            notify({ message: "No link found in that text.", tone: "error" });
+          const [only, ...others] = result.outcomes;
+
+          if (!only) {
+            notify({
+              message:
+                result.skipped > 0
+                  ? "That isn't a link Pane View can open."
+                  : "No link found in that text.",
+              tone: "error",
+            });
 
             return;
           }
 
-          const [only, ...others] = result.outcomes;
-
-          if (!only || others.length > 0) {
+          if (others.length > 0 || result.skipped > 0) {
             notify({ message: describeAdded(result) });
 
             return;
@@ -120,7 +128,12 @@ export function useLinkCommands({
       if (days !== null && link.archivedAt) {
         const due = recheckDueDate(new Date(link.archivedAt), days);
 
-        notify({ message: `Rechecks every ${days} days, next on ${formatShortDate(due)}` });
+        notify({
+          message:
+            due.getTime() <= Date.now()
+              ? `Rechecks every ${days} days. It's due now, so it goes back to To archive`
+              : `Rechecks every ${days} days, next on ${formatShortDate(due)}`,
+        });
       }
     },
     isAdding: actions.add.isPending,

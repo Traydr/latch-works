@@ -53,7 +53,8 @@ describe("parseLink", () => {
     ["https://www.pixiv.net/en/artworks/120334561", "pixiv.net/artworks/120334561"],
     ["https://www.pixiv.net/users/4410/illustrations", "pixiv.net/users/4410"],
     // FANBOX
-    ["https://tidepool.fanbox.cc/posts/909221?utm_campaign=x", "tidepool.fanbox.cc/posts/909221"],
+    ["https://tidepool.fanbox.cc/posts/909221?utm_campaign=x", "fanbox.cc/@tidepool/posts/909221"],
+    ["https://tidepool.fanbox.cc/", "fanbox.cc/@tidepool"],
     ["https://www.fanbox.cc/@tidepool/posts/909221", "fanbox.cc/@tidepool/posts/909221"],
     // Danbooru
     ["https://danbooru.donmai.us/posts/7712004?q=saltmarsh", "danbooru.donmai.us/posts/7712004"],
@@ -71,6 +72,25 @@ describe("parseLink", () => {
       "https://old.reddit.com/r/art/comments/1abcde/winter_set/?share_id=x",
       "reddit.com/r/art/comments/1abcde",
     ],
+    // A path a rule doesn't name stays whole, so two such links never share a key.
+    ["https://www.reddit.com/r/Art/s/AbC123xyz", "reddit.com/r/art/s/AbC123xyz"],
+    ["https://www.reddit.com/r/Art/s/ZzZ999qqq", "reddit.com/r/art/s/ZzZ999qqq"],
+    ["https://www.reddit.com/r/Art/wiki/index", "reddit.com/r/Art/wiki/index"],
+    ["https://x.com/i/web/status/111", "x.com/i/status/111"],
+    ["https://x.com/HarborGlass/lists/9", "x.com/HarborGlass/lists/9"],
+    ["https://www.patreon.com/collection/12345", "patreon.com/collection/12345"],
+    [
+      "https://www.patreon.com/join/inkwellmoth/checkout?rid=1",
+      "patreon.com/join/inkwellmoth/checkout",
+    ],
+    [
+      "https://subscribestar.adult/velvetcartograph/about",
+      "subscribestar.adult/velvetcartograph/about",
+    ],
+    // Names the sites read without case, and a site's second host.
+    ["https://x.com/HarborGlass/status/1850012", "x.com/harborglass/status/1850012"],
+    ["https://www.reddit.com/r/Art/comments/1abcde/x/", "reddit.com/r/art/comments/1abcde"],
+    ["https://ao3.org/works/51200417", "archiveofourown.org/works/51200417"],
     // Patreon
     ["https://www.patreon.com/c/InkwellMoth/posts?utm_source=discord", "patreon.com/inkwellmoth"],
     ["https://www.patreon.com/inkwellmoth/about", "patreon.com/inkwellmoth"],

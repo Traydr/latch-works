@@ -18,6 +18,8 @@ import {
   setLinkRecheck,
 } from "./to-archive-service";
 
+const LINK_MUTATION = ["to-archive", "change"];
+
 const toArchiveKeys = {
   all: ["to-archive"] as const,
   waiting: () => [...toArchiveKeys.all, "waiting"] as const,
@@ -68,42 +70,57 @@ export function useLinkActions() {
   const without = (link: ArchiveLink) => (links: ArchiveLink[]) =>
     links.filter((other) => other.id !== link.id);
 
-  const settle = () => queryClient.invalidateQueries({ queryKey: toArchiveKeys.all });
+  // While other changes are still on their way, a refetch would bring back what they removed.
+  const settle = () => {
+    if (queryClient.isMutating({ mutationKey: LINK_MUTATION }) <= 1) {
+      void queryClient.invalidateQueries({ queryKey: toArchiveKeys.all });
+    }
+  };
+
+  // One scope: each change waits for the one before, so Undo never overtakes what it undoes.
+  const ordered = { mutationKey: LINK_MUTATION, scope: { id: "to-archive" } } as const;
 
   const add = useMutation({
+    ...ordered,
     mutationFn: (text: string) => addArchiveLinks({ data: { text } }),
     onSettled: settle,
   });
 
   const archive = useMutation({
+    ...ordered,
     mutationFn: (link: ArchiveLink) => markLinkArchived({ data: { id: link.id } }),
     onMutate: (link) => editWaiting(without(link)),
     onSettled: settle,
   });
 
   const later = useMutation({
+    ...ordered,
     mutationFn: (link: ArchiveLink) => sendLinkToBack({ data: { id: link.id } }),
     onMutate: (link) => editWaiting((links) => [...without(link)(links), link]),
     onSettled: settle,
   });
 
   const queueAgain = useMutation({
+    ...ordered,
     mutationFn: (link: ArchiveLink) => queueLinkAgain({ data: { id: link.id } }),
     onSettled: settle,
   });
 
   const remove = useMutation({
+    ...ordered,
     mutationFn: (link: ArchiveLink) => removeArchiveLink({ data: { id: link.id } }),
     onMutate: (link) => editWaiting(without(link)),
     onSettled: settle,
   });
 
   const restore = useMutation({
+    ...ordered,
     mutationFn: (link: ArchiveLink) => restoreArchiveLink({ data: link }),
     onSettled: settle,
   });
 
   const recheck = useMutation({
+    ...ordered,
     mutationFn: ({ days, link }: { days: number | null; link: ArchiveLink }) =>
       setLinkRecheck({ data: { days, id: link.id } }),
     onSettled: settle,

@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, ilike, isNotNull, lt, lte, or, sql } from "drizzle-orm";
+import { z } from "zod";
 import { extractUrls, type ParsedLink, parseLink } from "@/features/to-archive/link-sites";
 import {
   type AddLinkOutcome,
@@ -95,12 +96,13 @@ function encodeCursor(link: ArchiveLink): string {
 }
 
 function decodeCursor(cursor: string): ArchivedCursor | null {
-  const [archivedAt, id] = cursor.split("|");
+  const [archivedAt, rawId] = cursor.split("|");
   const date = archivedAt ? new Date(archivedAt) : null;
+  const id = z.uuid().safeParse(rawId);
 
-  if (!date || Number.isNaN(date.getTime()) || !id) return null;
+  if (!date || Number.isNaN(date.getTime()) || !id.success) return null;
 
-  return { archivedAt: date, id };
+  return { archivedAt: date, id: id.data };
 }
 
 function escapeLike(term: string): string {
@@ -176,11 +178,16 @@ async function addOne(link: ParsedLink, database: Database): Promise<AddLinkOutc
  */
 export async function addLinks(text: string, database: Database = db): Promise<AddLinksResult> {
   const byCanonical = new Map<string, ParsedLink>();
+  let skipped = 0;
 
   for (const candidate of extractUrls(text)) {
     const link = parseLink(candidate);
 
-    if (link && !byCanonical.has(link.canonicalUrl)) byCanonical.set(link.canonicalUrl, link);
+    if (!link) {
+      skipped += 1;
+    } else if (!byCanonical.has(link.canonicalUrl)) {
+      byCanonical.set(link.canonicalUrl, link);
+    }
   }
 
   const outcomes: AddLinkOutcome[] = [];
@@ -190,13 +197,14 @@ export async function addLinks(text: string, database: Database = db): Promise<A
     outcomes.push(await addOne(link, database));
   }
 
-  return { nothingFound: byCanonical.size === 0, outcomes };
+  return { outcomes, skipped };
 }
 
 export async function archiveLink(id: string, database: Database = db): Promise<ArchiveLink> {
   const [row] = await database
     .update(archiveLinks)
-    .set({ archivedAt: sql`now()`, status: "archived" })
+    // To the millisecond: the Archived cursor carries an ISO time, which has no microseconds.
+    .set({ archivedAt: sql`date_trunc('milliseconds', clock_timestamp())`, status: "archived" })
     .where(eq(archiveLinks.id, id))
     .returning();
 

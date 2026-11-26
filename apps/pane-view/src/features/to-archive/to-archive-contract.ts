@@ -38,8 +38,8 @@ export type AddLinkOutcome =
 
 export interface AddLinksResult {
   outcomes: AddLinkOutcome[];
-  /** True when the text held no http(s) link at all. */
-  nothingFound: boolean;
+  /** URLs in the text that aren't a link Pane View can store (no host, or not http or https). */
+  skipped: number;
 }
 
 export interface ArchivedPage {

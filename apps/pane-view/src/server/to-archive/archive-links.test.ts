@@ -40,12 +40,12 @@ describe("addLinks", () => {
         "https://www.patreon.com/c/inkwellmoth/posts?utm_source=discord",
         "finished https://archiveofourown.org/works/51200417/chapters/129433021",
         "https://patreon.com/inkwellmoth",
-        "no link here",
+        "no link here http://localhost/admin",
       ].join("\n"),
       testDatabase().db,
     );
 
-    expect(result.nothingFound).toBe(false);
+    expect(result.skipped).toBe(1);
     expect(result.outcomes.map(({ kind, link }) => [kind, link.canonicalUrl, link.site])).toEqual([
       ["added", "patreon.com/inkwellmoth", "patreon"],
       ["added", "archiveofourown.org/works/51200417", "archiveofourown"],
@@ -73,11 +73,8 @@ describe("addLinks", () => {
     expect(await waitingKeys()).toEqual(["danbooru.donmai.us/posts/7712004"]);
   });
 
-  it("says when the text holds no link", async () => {
-    expect(await addLinks("just words", testDatabase().db)).toEqual({
-      nothingFound: true,
-      outcomes: [],
-    });
+  it("adds nothing when the text holds no link", async () => {
+    expect(await addLinks("just words", testDatabase().db)).toEqual({ outcomes: [], skipped: 0 });
   });
 });
 

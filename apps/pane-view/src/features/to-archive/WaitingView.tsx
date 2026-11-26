@@ -41,7 +41,8 @@ function PasteBox({ commands }: { commands: LinkCommands }) {
   const add = (value: string) => {
     if (value.trim().length === 0) return;
 
-    commands.add(value, { onDone: () => setText("") });
+    // Clear the box only if it still holds what was added, not what was typed since.
+    commands.add(value, { onDone: () => setText((current) => (current === value ? "" : current)) });
   };
 
   return (
@@ -58,7 +59,6 @@ function PasteBox({ commands }: { commands: LinkCommands }) {
         <input
           autoComplete="off"
           className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          disabled={commands.isAdding}
           name="link"
           onChange={(event) => setText(event.target.value)}
           onPaste={(event) => {
