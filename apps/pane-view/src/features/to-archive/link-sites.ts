@@ -253,10 +253,16 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
 
     const [area, user, tab] = segments;
 
-    if (area === "users" && user && (!tab || tab === "profile" || tab === "pseuds")) {
-      // /users/name, /users/name/profile and /users/name/pseuds/… are the one author page.
-      return { path: `/users/${user}`, keepQuery: DROP_QUERY, label: user };
-    }
+    // /users/name, /users/name/profile and /users/name/pseuds/P are the one author page; their
+    // works, bookmarks and series lists (under either spelling) are pages of their own.
+    const isAuthorPage =
+      area === "users" &&
+      user !== undefined &&
+      (segments.length === 2 ||
+        (segments.length === 3 && tab === "profile") ||
+        (segments.length === 4 && tab === "pseuds"));
+
+    if (isAuthorPage) return { path: `/users/${user}`, keepQuery: DROP_QUERY, label: user };
 
     if (segments[0] === "series" && segments[1]) {
       return {
@@ -394,9 +400,9 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       return { path: `/posts/${id}`, keepQuery: DROP_QUERY, label: `Post ${id}` };
     }
 
-    if (area === "posts") {
-      // A tag search: the tags are the page.
-      return { path: "/posts", keepQuery: ["tags"], label: "Search" };
+    if (area === "posts" && segments.length === 1) {
+      // A search: the tags (or an image's md5) are the page; paging is dropped.
+      return { path: "/posts", keepQuery: ["md5", "tags"], label: "Search" };
     }
 
     return { path: segmentsPath(segments) };
@@ -431,6 +437,17 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
     const lower = name?.toLowerCase();
 
     if (r === "r" && lower && area === "comments" && id) {
+      // /comments/id/slug/cid and /comments/id/comment/cid are one comment inside the post.
+      const [, , , , slugOrComment, comment] = segments;
+
+      if (slugOrComment && comment) {
+        return {
+          path: `/r/${lower}/comments/${id}/comment/${comment}`,
+          keepQuery: DROP_QUERY,
+          label: `r/${lower} comment`,
+        };
+      }
+
       return {
         path: `/r/${lower}/comments/${id}`,
         keepQuery: DROP_QUERY,
@@ -467,6 +484,7 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
     if (
       (first === "c" || first === "cw") &&
       second &&
+      segments.length <= 3 &&
       (!third || PATREON_CREATOR_TABS.has(third))
     ) {
       return { path: `/${second}`, keepQuery: DROP_QUERY, label: second };
@@ -572,6 +590,15 @@ function parseHttpUrl(input: string): URL | null {
   return url;
 }
 
+/**
+ * A fragment that is a route, not a place on the page, stays in the key: old MEGA links
+ * (`#F!id!key`, `#!id!key`) and single-page apps (`#/…`) name the page with it. Any other
+ * fragment (`#section-2`) is dropped.
+ */
+function routeFragment(url: URL): string {
+  return url.hash.startsWith("#/") || url.hash.includes("!") ? url.hash : "";
+}
+
 /** A label as a person reads it: `%E3%81%82` shown as the character it encodes. */
 function readableLabel(label: string): string {
   try {
@@ -598,9 +625,9 @@ export function parseLink(input: string): ParsedLink | null {
 
   return {
     url: trimmed,
-    canonicalUrl: `${form.host ?? host}${port}${form.path}${queryString(url, form.keepQuery)}`,
+    canonicalUrl: `${form.host ?? host}${port}${form.path}${queryString(url, form.keepQuery)}${routeFragment(url)}`,
     site: site.key,
-    label: readableLabel(form.label ?? (segments.at(-1) || host)),
+    label: readableLabel(form.label ?? (segments.slice(-2).join("/") || host)),
   };
 }
 

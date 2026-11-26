@@ -85,18 +85,28 @@ letters, not the sites' logos.
 Applied in this order:
 
 1. Every link: trim it, require `http:` or `https:` (anything else is refused), lowercase the host,
-   drop `www.`, `m.` and `mobile.`, drop the fragment, drop `utm_*`, `ref`, `ref_src`, `fbclid`,
-   `igshid` and `si`, sort the remaining query parameters, and drop a trailing slash. The scheme is
-   dropped from the key, so `http` and `https` match.
-2. Per site:
-   - AO3: `/works/N/chapters/M` → `/works/N`, and the query is dropped.
+   drop `www.`, `m.` and `mobile.`, drop the fragment unless it is a route (`#!…`, `#F!…!…` as old
+   MEGA links use, `#/…`), drop `utm_*`, `ref`, `ref_src`, `fbclid`, `igshid`, `si` and
+   `enterAgree`, sort the remaining query parameters, and drop a trailing slash. The scheme is
+   dropped from the key, so `http` and `https` match; a non-default port stays.
+2. Per site, a rule rewrites only the forms it names; any other path stays whole with its query,
+   so two pages a rule doesn't know never share a key. The forms named:
+   - AO3: `/works/N/chapters/M` → `/works/N`, and the query is dropped. `/users/name/profile` and
+     `/users/name/pseuds/P` → `/users/name`; the works, bookmarks and series lists stay whole.
    - FanFiction.Net: `/s/N/…` → `/s/N`.
-   - pixiv: a language prefix goes (`/en/artworks/N` → `/artworks/N`).
-   - Danbooru: `/posts/N?…` → `/posts/N`.
-   - Patreon: `/c/name` and `/name/posts` → `/name`, and `/posts/slug-N` → `/posts/N`.
-   - Ko-fi: `/name/shop`, `/name/posts` and similar tabs → `/name`.
-   - X: `twitter.com` → `x.com`, and `/status/N/photo/1` → `/status/N`.
-   - Reddit: `old.` goes, and `/r/s/comments/id/slug` → `/r/s/comments/id`.
+   - pixiv: a language prefix goes (`/en/artworks/N` → `/artworks/N`), and `/users/N` with an
+     artwork tab → `/users/N`.
+   - FANBOX: `name.fanbox.cc/…` → `fanbox.cc/@name/…`; `/@name/posts` and `/@name/plans` →
+     `/@name`.
+   - Danbooru: `/posts/N?…` → `/posts/N`; a `/posts` search keeps only `tags` and `md5`.
+   - Patreon: `/c/name`, `/cw/name` and `/name/<tab>` → `/name`, `/posts/slug-N` → `/posts/N`,
+     and `/user/<tab>?u=N` → `/user?u=N`.
+   - Ko-fi: `/name/shop`, `/name/posts` and the other creator tabs → `/name`.
+   - SubscribeStar: only the bare creator page and `/posts/N` are rewritten.
+   - X: `twitter.com` → `x.com`, `/status/N/photo/1` → `/status/N`, `/i/web/status/N` →
+     `/i/status/N`, and handles ignore case.
+   - Reddit: `old.` goes, `/r/s/comments/id/slug` → `/r/s/comments/id`, a comment permalink →
+     `/r/s/comments/id/comment/cid`, share links (`/r/s/s/code`) are kept, and names ignore case.
    - Kemono and Pawchive keep their own host. They're mirrors, but either can be missing a post.
 
 `canonical_url` is the key, and `url` keeps what was pasted (for opening).

@@ -143,6 +143,16 @@ describe("parseLink", () => {
       "https://archiveofourown.org/users/lanternfish",
       "https://archiveofourown.org/users/lanternfish/works",
       "https://archiveofourown.org/users/lanternfish/bookmarks",
+      "https://archiveofourown.org/users/lanternfish/pseuds/lanternfish/works",
+      "https://archiveofourown.org/users/lanternfish/pseuds/lanternfish/bookmarks",
+      "https://archiveofourown.org/users/lanternfish/pseuds/lanternfish/series",
+      "https://www.reddit.com/r/art/comments/1abcde/winter_set/",
+      "https://www.reddit.com/r/art/comments/1abcde/winter_set/kx9z1f/",
+      "https://www.patreon.com/cw/inkwellmoth/collections/999",
+      "https://danbooru.donmai.us/posts?md5=abc",
+      "https://danbooru.donmai.us/posts?md5=def",
+      "https://mega.nz/#F!abc!key",
+      "https://mega.nz/#F!def!key2",
       "https://kemono.cr/patreon/user/88123",
       "https://kemono.cr/patreon/user/88123/community",
       "https://www.pixiv.net/users/4410",
@@ -168,6 +178,15 @@ describe("parseLink", () => {
       ["https://alice.fanbox.cc/posts/999?x=1", "https://www.fanbox.cc/@alice/posts/999?x=1"],
       ["https://www.patreon.com/user/posts?u=222", "https://www.patreon.com/user?u=222"],
       ["https://www.pixiv.net/en/users/4410/illustrations", "https://www.pixiv.net/users/4410"],
+      [
+        "https://archiveofourown.org/users/lanternfish/pseuds/lanternfish",
+        "https://archiveofourown.org/users/lanternfish",
+      ],
+      [
+        "https://www.reddit.com/r/art/comments/1abcde/comment/kx9z1f/",
+        "https://www.reddit.com/r/Art/comments/1abcde/winter_set/kx9z1f/",
+      ],
+      ["https://example.com/page#section-2", "https://example.com/page"],
     ] as const;
 
     for (const [a, b] of samePage) expect(canonical(a)).toBe(canonical(b));
@@ -194,7 +213,7 @@ describe("parseLink", () => {
   it("puts an unknown host under Other sites", () => {
     expect(parseLink(" https://glasshouse-gremlin.tumblr.com/post/7381 ")).toEqual({
       canonicalUrl: "glasshouse-gremlin.tumblr.com/post/7381",
-      label: "7381",
+      label: "post/7381",
       site: "other",
       url: "https://glasshouse-gremlin.tumblr.com/post/7381",
     });
