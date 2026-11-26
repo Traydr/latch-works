@@ -90,24 +90,37 @@ Applied in this order:
    `enterAgree`, sort the remaining query parameters, and drop a trailing slash. The scheme is
    dropped from the key, so `http` and `https` match; a non-default port stays.
 2. Per site, a rule rewrites only the forms it names; any other path stays whole with its query,
-   so two pages a rule doesn't know never share a key. The forms named:
-   - AO3: `/works/N/chapters/M` → `/works/N`, and the query is dropped. `/users/name/profile` and
-     `/users/name/pseuds/P` → `/users/name`; the works, bookmarks and series lists stay whole.
-   - FanFiction.Net: `/s/N/…` → `/s/N`.
-   - pixiv: a language prefix goes (`/en/artworks/N` → `/artworks/N`), and `/users/N` with an
-     artwork tab → `/users/N`.
-   - FANBOX: `name.fanbox.cc/…` → `fanbox.cc/@name/…`; `/@name/posts` and `/@name/plans` →
-     `/@name`.
-   - Danbooru: `/posts/N?…` → `/posts/N`; a `/posts` search keeps only `tags` and `md5`.
-   - Patreon: `/c/name`, `/cw/name` and `/name/<tab>` → `/name`, `/posts/slug-N` → `/posts/N`,
-     and `/user/<tab>?u=N` → `/user?u=N`.
-   - Ko-fi: `/name/shop`, `/name/posts` and the other creator tabs → `/name`.
-   - SubscribeStar: only the bare creator page and `/posts/N` are rewritten.
-   - X: `twitter.com` → `x.com`, `/status/N/photo/1` → `/status/N`, `/i/web/status/N` →
-     `/i/status/N`, and handles ignore case.
-   - Reddit: `old.` goes, `/r/s/comments/id/slug` → `/r/s/comments/id`, a comment permalink →
-     `/r/s/comments/id/comment/cid`, share links (`/r/s/s/code`) are kept, and names ignore case.
-   - Kemono and Pawchive keep their own host. They're mirrors, but either can be missing a post.
+   so two pages a rule doesn't know never share a key. A rewritten form drops its query unless
+   noted. The forms named:
+   - AO3: `…/works/N/…` (chapters, a collection's copy, bookmarks, kudos) → `/works/N`;
+     `/series/N/…` → `/series/N`; `/users/name`, `/users/name/profile` and `/users/name/pseuds/P`
+     → `/users/name`. An author's works, bookmarks and series lists stay whole.
+   - FanFiction.Net: `/s/N/…` → `/s/N` and `/u/N/…` → `/u/N`.
+   - Hentai Foundry: `/pictures|stories/user/name/ID/…` → `…/ID`; other `/pictures|stories/user/…`
+     and `/user/…` pages keep their path and drop the query.
+   - Kemono and Pawchive keep their own host (they're mirrors, but either can be missing a post).
+     `/<service>/user/<id>/post/<post>/…` → the post; `/<service>/user/<id>` alone → the creator.
+   - pixiv: a language prefix goes (`/en/artworks/N` → `/artworks/N`), `/artworks/N/…` →
+     `/artworks/N`, and `/users/N` with `artworks`, `illustrations` or `manga` → `/users/N`.
+   - FANBOX: `name.fanbox.cc/…` → `fanbox.cc/@name/…`; `/@name/posts/N` stays; `/@name/posts`
+     and `/@name/plans` → `/@name`; `fanbox.cc/posts/N` stays.
+   - Danbooru: `/posts/N/…` → `/posts/N`; exactly `/posts` (a search) keeps only `tags` and `md5`.
+   - X: `twitter.com` → `x.com`, handles ignore case, `/name/status/N/…` → `/name/status/N`,
+     `/i/web/status/N` → `/i/status/N`, and `/name` with a profile tab (`media`, `likes`, …) →
+     `/name`. X's own pages (`search`, `explore`, `home`, …) stay whole with their query.
+   - Reddit: `old.`, `new.` and `np.` go, names ignore case, `/r/s/comments/id/slug` →
+     `/r/s/comments/id`, a comment permalink → `/r/s/comments/id/comment/cid`, `/r/s/s/code`
+     share links stay, `/r/s` and `/u/name` (→ `/user/name`) alone are the subreddit and user.
+   - Patreon: `/name`, `/name/<tab>`, `/c/name[/<tab>]` and `/cw/name[/<tab>]` → `/name`;
+     `/posts/slug-N` → `/posts/N`; `/user[/<tab>]?u=N` → `/user?u=N`. Patreon's own pages
+     (`collection`, `file`, `join`, …) stay whole with their query.
+   - Ko-fi: `/name` and `/name/<tab>` (`shop`, `posts`, `gallery`, …) → `/name`; Ko-fi's own pages
+     and items (`/s/…`, `/post/…`, `/c/…`, …) stay whole.
+   - SubscribeStar: `/name` alone, and `/posts/N/…` → `/posts/N`.
+
+   Pulling links out of pasted text drops sentence punctuation and unmatched brackets from a
+   link's end. A trailing `*`, `_` or `~` stays unless the same run opened the link, as chat
+   markdown does.
 
 `canonical_url` is the key, and `url` keeps what was pasted (for opening).
 

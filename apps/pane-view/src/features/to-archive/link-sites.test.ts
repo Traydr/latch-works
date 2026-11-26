@@ -153,6 +153,11 @@ describe("parseLink", () => {
       "https://danbooru.donmai.us/posts?md5=def",
       "https://mega.nz/#F!abc!key",
       "https://mega.nz/#F!def!key2",
+      "https://mega.nz/folder/abc#key",
+      "https://mega.nz/folder/abc#key/folder/sub1",
+      "https://mega.nz/folder/abc#key/folder/sub2",
+      "https://x.com/inkfox",
+      "https://x.com/inkfox_",
       "https://kemono.cr/patreon/user/88123",
       "https://kemono.cr/patreon/user/88123/community",
       "https://www.pixiv.net/users/4410",
@@ -241,6 +246,21 @@ describe("extractUrls", () => {
       "https://ko-fi.com/saltmarshstudio/shop",
       "https://danbooru.donmai.us/posts/7712004",
       "https://en.wikipedia.org/wiki/Glass_(disambiguation)",
+    ]);
+  });
+
+  it("keeps the _, * and ~ that end a link, and drops markdown around one", () => {
+    expect(
+      extractUrls(
+        "https://x.com/inkfox_ and https://mega.nz/folder/abc#Kx9_ then _https://ko-fi.com/name_ " +
+          "**https://www.patreon.com/name_**, ~~https://x.com/old~~",
+      ),
+    ).toEqual([
+      "https://x.com/inkfox_",
+      "https://mega.nz/folder/abc#Kx9_",
+      "https://ko-fi.com/name",
+      "https://www.patreon.com/name_",
+      "https://x.com/old",
     ]);
   });
 

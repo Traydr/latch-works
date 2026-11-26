@@ -424,7 +424,13 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       };
     }
 
-    if (handle && !X_PAGES.has(handle) && (!status || X_PROFILE_TABS.has(status))) {
+    const isProfile =
+      handle !== undefined &&
+      !X_PAGES.has(handle) &&
+      rest.length <= 2 &&
+      (!status || X_PROFILE_TABS.has(status));
+
+    if (isProfile) {
       return { path: `/${handle}`, keepQuery: DROP_QUERY, label: `@${handle}` };
     }
 
@@ -591,12 +597,12 @@ function parseHttpUrl(input: string): URL | null {
 }
 
 /**
- * A fragment that is a route, not a place on the page, stays in the key: old MEGA links
- * (`#F!id!key`, `#!id!key`) and single-page apps (`#/…`) name the page with it. Any other
+ * A fragment that is a route, not a place on the page, stays in the key: MEGA links
+ * (`#F!id!key`, `#key/folder/sub`) and single-page apps (`#/…`) name the page with it. Any other
  * fragment (`#section-2`) is dropped.
  */
 function routeFragment(url: URL): string {
-  return url.hash.startsWith("#/") || url.hash.includes("!") ? url.hash : "";
+  return url.hash.includes("/") || url.hash.includes("!") ? url.hash : "";
 }
 
 /** A label as a person reads it: `%E3%81%82` shown as the character it encodes. */
@@ -634,9 +640,17 @@ export function parseLink(input: string): ParsedLink | null {
 const URL_IN_TEXT = /https?:\/\/[^\s<>"'`]+/gi;
 const BARE_LINK = /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/?#]\S*)?$/i;
 
-/** A URL's end, without the punctuation a sentence or a pair of brackets left on it. */
-function trimTrailing(candidate: string): string {
-  let url = candidate.replace(/[.,;:!?*_~]+$/, "");
+/**
+ * A URL's end, without the punctuation a sentence or a pair of brackets left on it. `*`, `_` and
+ * `~` end many real links (`x.com/name_`), so they go only when the same run opened the link, as
+ * chat markdown (`_https://…_`, `**https://…**`) wraps it.
+ */
+function trimTrailing(candidate: string, opening: string): string {
+  let url = candidate.replace(/[.,;:!?]+$/, "");
+
+  if (opening && url.endsWith(opening)) url = url.slice(0, -opening.length);
+
+  url = url.replace(/[.,;:!?]+$/, "");
 
   while (url.endsWith(")") && (url.match(/\(/g)?.length ?? 0) < (url.match(/\)/g)?.length ?? 0)) {
     url = url.slice(0, -1).replace(/[.,;:!?]+$/, "");
@@ -650,7 +664,12 @@ function trimTrailing(candidate: string): string {
  * without a scheme (`patreon.com/name`) is taken as https.
  */
 export function extractUrls(text: string): string[] {
-  const found = [...text.matchAll(URL_IN_TEXT)].map((match) => trimTrailing(match[0]));
+  const found = [...text.matchAll(URL_IN_TEXT)].map((match) => {
+    const before = text.slice(0, match.index);
+    const opening = before.match(/[*_~]+$/)?.[0] ?? "";
+
+    return trimTrailing(match[0], opening);
+  });
 
   if (found.length > 0) return found;
 
