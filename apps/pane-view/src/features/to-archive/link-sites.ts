@@ -186,6 +186,12 @@ const PATREON_CREATOR_TABS = new Set([
   "recommendations",
 ]);
 
+/** A pixiv user's artwork tabs; `pixiv.net/users/N/illustrations` is the user `pixiv.net/users/N`. */
+const PIXIV_USER_TABS = new Set(["artworks", "illustrations", "manga"]);
+
+/** A FANBOX creator's tabs; `fanbox.cc/@name/posts` is the creator `fanbox.cc/@name`. */
+const FANBOX_CREATOR_TABS = new Set(["plans", "posts"]);
+
 /** A Ko-fi creator's tabs; `ko-fi.com/name/shop` is the creator `ko-fi.com/name`. */
 const KOFI_CREATOR_TABS = new Set([
   "about",
@@ -214,6 +220,7 @@ const KOFI_PAGES = new Set([
 /** First path segments on Patreon that name a page of Patreon's own, not a creator. */
 const PATREON_PAGES = new Set([
   "checkout",
+  "user",
   "collection",
   "explore",
   "file",
@@ -244,8 +251,11 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       return { path: `/works/${work}`, keepQuery: DROP_QUERY, label: `Work ${work}` };
     }
 
-    if (segments[0] === "users" && segments[1]) {
-      return { path: `/users/${segments[1]}`, keepQuery: DROP_QUERY, label: segments[1] };
+    const [area, user, tab] = segments;
+
+    if (area === "users" && user && (!tab || tab === "profile" || tab === "pseuds")) {
+      // /users/name, /users/name/profile and /users/name/pseuds/… are the one author page.
+      return { path: `/users/${user}`, keepQuery: DROP_QUERY, label: user };
     }
 
     if (segments[0] === "series" && segments[1]) {
@@ -311,11 +321,13 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
         };
       }
 
-      return {
-        path: `/${service}/user/${id}`,
-        keepQuery: DROP_QUERY,
-        label: `${service} user ${id}`,
-      };
+      if (segments.length === 3) {
+        return {
+          path: `/${service}/user/${id}`,
+          keepQuery: DROP_QUERY,
+          label: `${service} user ${id}`,
+        };
+      }
     }
 
     return whole(segments);
@@ -329,7 +341,9 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       return { path: `/artworks/${id}`, keepQuery: DROP_QUERY, label: `Artwork ${id}` };
     }
 
-    if (area === "users" && id) {
+    const [, , tab] = rest;
+
+    if (area === "users" && id && (!tab || PIXIV_USER_TABS.has(tab)) && rest.length <= 3) {
       return { path: `/users/${id}`, keepQuery: DROP_QUERY, label: `User ${id}` };
     }
 
@@ -337,38 +351,40 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
   },
 
   fanbox(segments, host) {
-    // creator.fanbox.cc/posts/N and fanbox.cc/@creator/posts/N are one page; keep the second form.
-    const creator = host.endsWith(".fanbox.cc") ? host.slice(0, -".fanbox.cc".length) : undefined;
+    // creator.fanbox.cc/… and fanbox.cc/@creator/… are one page; keep the second form.
+    const subdomain = host.endsWith(".fanbox.cc") ? host.slice(0, -".fanbox.cc".length) : undefined;
+    const first = segments[0];
+    const handle = subdomain ?? (first?.startsWith("@") ? first.slice(1) : undefined);
 
-    if (creator) {
-      const posts = segments[0] === "posts" && segments[1] ? segments[1] : undefined;
-
-      return {
-        host: "fanbox.cc",
-        path: posts ? `/@${creator}/posts/${posts}` : `/@${creator}${segmentsPath(segments)}`,
-        label: posts ? `Post ${posts}` : creator,
-      };
-    }
-
-    if (segments[0] === "posts" && segments[1]) {
-      return { path: `/posts/${segments[1]}`, keepQuery: DROP_QUERY, label: `Post ${segments[1]}` };
-    }
-
-    if (segments[0]?.startsWith("@")) {
-      const handle = segments[0].slice(1);
-
-      if (segments[1] === "posts" && segments[2]) {
+    if (!handle) {
+      if (first === "posts" && segments[1] && segments.length === 2) {
         return {
-          path: `/@${handle}/posts/${segments[2]}`,
+          path: `/posts/${segments[1]}`,
           keepQuery: DROP_QUERY,
-          label: `Post ${segments[2]}`,
+          label: `Post ${segments[1]}`,
         };
       }
 
-      return { path: `/@${handle}`, keepQuery: DROP_QUERY, label: handle };
+      return whole(segments);
     }
 
-    return whole(segments);
+    const rest = subdomain ? segments : segments.slice(1);
+    const [area, post] = rest;
+
+    if (area === "posts" && post && rest.length === 2) {
+      return {
+        host: "fanbox.cc",
+        path: `/@${handle}/posts/${post}`,
+        keepQuery: DROP_QUERY,
+        label: `Post ${post}`,
+      };
+    }
+
+    if (rest.length === 0 || (rest.length === 1 && area && FANBOX_CREATOR_TABS.has(area))) {
+      return { host: "fanbox.cc", path: `/@${handle}`, keepQuery: DROP_QUERY, label: handle };
+    }
+
+    return { host: "fanbox.cc", path: `/@${handle}${segmentsPath(rest)}` };
   },
 
   danbooru(segments) {
@@ -456,7 +472,7 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
       return { path: `/${second}`, keepQuery: DROP_QUERY, label: second };
     }
 
-    if (first === "user" && segments.length === 1) {
+    if (first === "user" && (!second || (PATREON_CREATOR_TABS.has(second) && !third))) {
       return { path: "/user", keepQuery: ["u"], label: "Creator" };
     }
 
@@ -505,7 +521,7 @@ const SITE_RULES: Partial<Record<LinkSiteKey, SiteRule>> = {
 function canonicalHost(host: string): string {
   const bare = host.toLowerCase().replace(/\.$/, "").replace(SUBDOMAIN_PREFIX, "");
 
-  if (bare === "twitter.com" || bare === "mobile.twitter.com") return "x.com";
+  if (bare === "twitter.com") return "x.com";
 
   if (bare === "ao3.org") return "archiveofourown.org";
 

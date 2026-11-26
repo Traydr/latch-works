@@ -37,17 +37,20 @@ function isForeignKey(event: KeyboardEvent): boolean {
 /**
  * Focus mode (plan 068, mock H): one link at a time from the front of the list. ↵ opens it in a
  * new tab; back in this tab, Archived becomes the main button. A archives, L sends it to the
- * back, Backspace removes it, Esc leaves. Every action offers Undo in the foot notice.
+ * back, Backspace removes it, Esc leaves. Archived and Remove offer Undo in the foot notice.
  */
 export function FocusRun({
   allLinks,
   commands,
+  isLoading,
   onExit,
   onSiteChange,
   site,
 }: {
   allLinks: readonly ArchiveLink[];
   commands: LinkCommands;
+  /** True until the list has loaded once; an empty run then means "not yet", not "done". */
+  isLoading: boolean;
   onExit: () => void;
   onSiteChange: (site: string) => void;
   site: string;
@@ -88,7 +91,7 @@ export function FocusRun({
 
   const archive = (link: ArchiveLink) => {
     releaseFocus();
-    commands.archive(link);
+    commands.archive(link, { onUndo: () => setArchivedCount((count) => count - 1) });
     setArchivedCount((count) => count + 1);
   };
 
@@ -160,7 +163,7 @@ export function FocusRun({
 
   const sites = countSites(allLinks);
   // Later keeps a link in the run, so progress counts links that left it, not keys pressed.
-  const progress = peak === 0 ? 1 : (peak - links.length) / peak;
+  const progress = peak === 0 ? (isLoading ? 0 : 1) : (peak - links.length) / peak;
   const parsed = current ? parseLink(current.url) : null;
 
   return (
@@ -291,6 +294,8 @@ export function FocusRun({
 
             <p className="text-center text-xs text-muted-foreground">⌫ removes the link</p>
           </div>
+        ) : isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
         ) : (
           <div className="grid justify-items-center gap-3 text-center">
             <p className="text-lg font-semibold">Nothing left here</p>

@@ -120,6 +120,59 @@ describe("parseLink", () => {
     expect(canonical(url)).toBe(expected);
   });
 
+  it("keeps every distinct page on its own key", () => {
+    // Each pair is two different things to archive; a rule that collapses a form it doesn't
+    // name would give one of them the key of the other, or of the creator page.
+    const distinct = [
+      "https://www.patreon.com/inkwellmoth",
+      "https://www.patreon.com/inkwellmoth/shop/winter-pack-123456",
+      "https://www.patreon.com/inkwellmoth/shop/spring-pack-654321",
+      "https://www.patreon.com/collection/12345",
+      "https://www.patreon.com/collection/67890",
+      "https://www.patreon.com/file?h=1&i=2",
+      "https://www.patreon.com/file?h=3&i=4",
+      "https://www.patreon.com/user?u=111",
+      "https://www.patreon.com/user/posts?u=222",
+      "https://www.patreon.com/user/about?u=333",
+      "https://ko-fi.com/saltmarshstudio",
+      "https://ko-fi.com/c/1a2b3c4d5e",
+      "https://ko-fi.com/c/9z8y7x6w5v",
+      "https://www.fanbox.cc/@alice",
+      "https://www.fanbox.cc/@alice/shop/items/12345",
+      "https://www.fanbox.cc/@alice/posts/999",
+      "https://archiveofourown.org/users/lanternfish",
+      "https://archiveofourown.org/users/lanternfish/works",
+      "https://archiveofourown.org/users/lanternfish/bookmarks",
+      "https://kemono.cr/patreon/user/88123",
+      "https://kemono.cr/patreon/user/88123/community",
+      "https://www.pixiv.net/users/4410",
+      "https://www.pixiv.net/users/4410/bookmarks/artworks",
+      "https://www.reddit.com/r/art",
+      "https://www.reddit.com/r/Art/s/AbC123xyz",
+      "https://www.reddit.com/r/Art/s/ZzZ999qqq",
+      "https://x.com/harborglass",
+      "https://x.com/i/web/status/111",
+      "https://x.com/i/web/status/222",
+      "https://x.com/search?q=a",
+      "https://x.com/search?q=b",
+    ];
+
+    const keys = distinct.map(canonical);
+
+    expect(new Set(keys).size).toBe(distinct.length);
+  });
+
+  it("gives one page one key, however it is written", () => {
+    const samePage = [
+      ["https://alice.fanbox.cc/shop/items/12345", "https://www.fanbox.cc/@alice/shop/items/12345"],
+      ["https://alice.fanbox.cc/posts/999?x=1", "https://www.fanbox.cc/@alice/posts/999?x=1"],
+      ["https://www.patreon.com/user/posts?u=222", "https://www.patreon.com/user?u=222"],
+      ["https://www.pixiv.net/en/users/4410/illustrations", "https://www.pixiv.net/users/4410"],
+    ] as const;
+
+    for (const [a, b] of samePage) expect(canonical(a)).toBe(canonical(b));
+  });
+
   it("recognises the site and names the link", () => {
     expect(parseLink("https://www.patreon.com/c/inkwellmoth/posts")).toEqual({
       canonicalUrl: "patreon.com/inkwellmoth",

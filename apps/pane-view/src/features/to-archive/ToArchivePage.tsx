@@ -81,6 +81,7 @@ export function ToArchivePage() {
           key={site}
           allLinks={links}
           commands={commands}
+          isLoading={waiting.isLoading}
           onExit={() => void navigate({ search: (previous) => ({ ...previous, run: undefined }) })}
           onSiteChange={setSite}
           site={site}

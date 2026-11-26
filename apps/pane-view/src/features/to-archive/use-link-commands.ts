@@ -26,7 +26,8 @@ function describeAdded(result: AddLinksResult): string {
 
 /**
  * What the page and focus mode do to links, each with the notice that follows it. Archived,
- * Later and Remove offer Undo, which puts the link back as it was.
+ * Remove and Queue again offer Undo, which puts the link back as it was; Later's move is plain
+ * to see, so it has no notice.
  */
 export function useLinkCommands({
   notify,
@@ -46,9 +47,12 @@ export function useLinkCommands({
   const run = <T>(change: Promise<T>) =>
     change.catch((error) => fail(error instanceof Error ? error : new Error(UNSAVED)));
 
-  const undo = (link: ArchiveLink) => ({
+  const undo = (link: ArchiveLink, onUndo?: () => void) => ({
     label: "Undo",
-    run: () => void run(actions.restore.mutateAsync(link)),
+    run: () => {
+      onUndo?.();
+      void run(actions.restore.mutateAsync(link));
+    },
   });
 
   return {
@@ -116,9 +120,9 @@ export function useLinkCommands({
         (error) => fail(error instanceof Error ? error : new Error(UNSAVED)),
       );
     },
-    archive(link: ArchiveLink) {
+    archive(link: ArchiveLink, { onUndo }: { onUndo?: () => void } = {}) {
       void run(actions.archive.mutateAsync(link));
-      notify({ action: undo(link), message: "Archived" });
+      notify({ action: undo(link, onUndo), message: "Archived" });
     },
     later(link: ArchiveLink) {
       void run(actions.later.mutateAsync(link));
