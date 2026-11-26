@@ -119,13 +119,14 @@ Applied in this order:
      and items (`/s/…`, `/post/…`, `/c/…`, …) stay whole.
    - SubscribeStar: `/name` alone, and `/posts/N/…` → `/posts/N`.
 
-   Pulling links out of pasted text: a link is made only of the ASCII characters a URL may hold
-   (browsers copy a URL percent-encoded), so it ends at whitespace, quotes, `|` (Discord's
-   `||spoiler||`), emoji, typographic punctuation, or Japanese text written straight after it,
-   and at `](` in a Markdown link. Whatever opened it (markdown such as `**` or `_`, a bracket,
-   both stacked, or the emphasis around a `[label](url)`) comes off its end as the mirror run,
-   then sentence punctuation, a Discord `:emoji:` code, and closing brackets with no opener in
-   the link. A trailing `*`, `_` or `~` otherwise stays: many handles end with one.
+   Pulling links out of pasted text: a link is made only of the ASCII characters a URL may hold,
+   `'` included (AO3 tag links keep it raw); browsers copy a URL percent-encoded. So it ends at
+   whitespace, `"`, `|` (Discord's `||spoiler||`), emoji, typographic punctuation, or Japanese
+   text written straight after it, and at `](` in a Markdown link. From its end come off, in one
+   pass: Discord `:emoji:` codes, sentence punctuation, `'`, `*` and `~` (no link on these sites
+   ends in them), the mirror of whatever opened the link (`**(` → `)**`, `_` → `_`, the emphasis
+   around a `[label](url)`), and closing brackets with no opener in the link. A trailing `_`
+   otherwise stays: many handles end with one.
 
 `canonical_url` is the key, and `url` keeps what was pasted (for opening).
 

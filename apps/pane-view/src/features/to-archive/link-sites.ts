@@ -640,15 +640,23 @@ export function parseLink(input: string): ParsedLink | null {
 
 /**
  * A URL in pasted text is made only of the characters a URL may hold, so it ends at anything
- * else: whitespace, quotes, `|` (Discord's `||spoiler||`), an emoji, `…` or a curly quote, or
+ * else: whitespace, `"`, `|` (Discord's `||spoiler||`), an emoji, `…` or a curly quote, or
  * Japanese text written straight after it. Browsers copy a URL with anything else
  * percent-encoded. It also ends at `](`, where a Markdown link's label meets its target.
  */
-const URL_IN_TEXT = /https?:\/\/(?:(?!\]\()[A-Za-z0-9\-._~:/?#[\]@!$&()*+,;=%])+/gi;
+const URL_IN_TEXT = /https?:\/\/(?:(?!\]\()[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%])+/gi;
 
 const BARE_LINK = /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/?#]\S*)?$/i;
 
-const SENTENCE_END = /[.,;:!?]+$/;
+/**
+ * What a sentence or chat markdown leaves after a link. No link on the owner's sites ends in
+ * `*` or `~`, so those always go; `_` ends many handles (`x.com/name_`), so it goes only as the
+ * mirror of what opened the link.
+ */
+const TRAILING = new Set([".", ",", ";", ":", "!", "?", "'", "*", "~"]);
+
+/** A Discord emoji code's name: lowercase, as Discord writes them (`:fire:`). */
+const EMOJI_NAME = /^[a-z0-9_+-]+$/;
 
 /** Each bracket that can open a link in chat text, and the one that closes it. */
 const BRACKETS = new Map([
@@ -669,27 +677,64 @@ function count(text: string, character: string): number {
   return text.split(character).length - 1;
 }
 
-/**
- * A URL's end, without what a sentence or a wrapper left on it. Whatever opened the link
- * (markdown such as `**` or `_`, a bracket, or both stacked) is closed by its mirror at the end,
- * which comes off. `*`, `_` and `~` end many real links (`x.com/name_`), so they come off only as
- * that mirror. Then sentence punctuation and any closing bracket with no opener in the URL go.
- */
-function trimTrailing(candidate: string, opening: string): string {
-  // A Discord emoji code written straight after the link (`…/status/1:fire:`).
-  let url = candidate.replace(/:[a-z0-9_+-]+:$/i, "").replace(SENTENCE_END, "");
-  const closing = closingFor(opening);
+/** Drops Discord emoji codes written straight after a link (`…/status/1:fire::fire:`). */
+function withoutEmojiCodes(url: string): string {
+  let end = url.length;
 
-  if (closing && url.endsWith(closing))
-    url = url.slice(0, -closing.length).replace(SENTENCE_END, "");
+  while (url.charAt(end - 1) === ":") {
+    const start = url.lastIndexOf(":", end - 2);
 
-  for (const [open, close] of BRACKETS) {
-    while (url.endsWith(close) && count(url, open) < count(url, close)) {
-      url = url.slice(0, -1).replace(SENTENCE_END, "");
-    }
+    if (start === -1 || !EMOJI_NAME.test(url.slice(start + 1, end - 1))) break;
+
+    end = start;
   }
 
-  return url;
+  return url.slice(0, end);
+}
+
+/**
+ * A URL's end, without what a sentence or a wrapper left on it, in one pass from the end:
+ * emoji codes, the punctuation and markdown in `TRAILING`, the mirror of whatever opened the
+ * link (`**(` closes with `)**`, `_` with `_`), and closing brackets with no opener in the URL.
+ */
+function trimTrailing(candidate: string, opening: string): string {
+  const closing = closingFor(opening);
+  const excess = new Map<string, number>();
+
+  for (const [open, close] of BRACKETS) {
+    excess.set(close, count(candidate, close) - count(candidate, open));
+  }
+
+  const url = withoutEmojiCodes(candidate);
+  let mirrored = closing === "";
+  let end = url.length;
+
+  for (;;) {
+    const last = url.charAt(end - 1);
+    const unmatched = excess.get(last) ?? 0;
+
+    if (TRAILING.has(last)) {
+      end -= 1;
+    } else if (!mirrored && url.slice(0, end).endsWith(closing)) {
+      for (const character of closing) {
+        const left = excess.get(character);
+
+        if (left !== undefined) excess.set(character, left - 1);
+      }
+
+      end -= closing.length;
+      mirrored = true;
+    } else if (unmatched > 0) {
+      excess.set(last, unmatched - 1);
+      end -= 1;
+    } else {
+      break;
+    }
+
+    if (end === 0) break;
+  }
+
+  return url.slice(0, end);
 }
 
 /**

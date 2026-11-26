@@ -329,6 +329,42 @@ describe("extractUrls", () => {
     ]);
   });
 
+  it("drops the markdown of a sentence that ends with its link", () => {
+    expect(
+      extractUrls(
+        [
+          "**New post! https://www.patreon.com/posts/winter-118842301**",
+          "*new set up: https://x.com/artist/status/123*",
+          "~~old link https://ko-fi.com/artist~~ 'https://x.com/quoted_'",
+          "https://x.com/a/status/1:fire::fire: https://example.com/wiki/Help:Contents:",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      "https://www.patreon.com/posts/winter-118842301",
+      "https://x.com/artist/status/123",
+      "https://ko-fi.com/artist",
+      "https://x.com/quoted_",
+      "https://x.com/a/status/1",
+      "https://example.com/wiki/Help:Contents",
+    ]);
+  });
+
+  it("keeps the apostrophes AO3 writes in tag links", () => {
+    const tag = "https://archiveofourown.org/tags/Baldur's%20Gate%20(Video%20Games)/works";
+
+    expect(extractUrls(`queue ${tag}.`)).toEqual([tag]);
+    expect(parseLink(tag)?.canonicalUrl).toBe(
+      "archiveofourown.org/tags/Baldur's%20Gate%20(Video%20Games)/works",
+    );
+  });
+
+  it("trims a long run of closing brackets in linear time", () => {
+    const started = performance.now();
+
+    expect(extractUrls(`https://a.com/x${")".repeat(40_000)}`)).toEqual(["https://a.com/x"]);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it("takes a lone link typed without a scheme as https", () => {
     expect(extractUrls("  patreon.com/inkwellmoth ")).toEqual(["https://patreon.com/inkwellmoth"]);
     expect(extractUrls("just some words")).toEqual([]);
