@@ -637,23 +637,54 @@ export function parseLink(input: string): ParsedLink | null {
   };
 }
 
-const URL_IN_TEXT = /https?:\/\/[^\s<>"'`]+/gi;
+/**
+ * A URL in pasted text runs until whitespace or a character no link here ends with: quotes,
+ * angle brackets, `|` (Discord's `||spoiler||` and list separators), zero-width spaces, arrows,
+ * and CJK punctuation and full-width forms (`」`, `、` in Japanese captions).
+ */
+const URL_IN_TEXT =
+  /https?:\/\/[^\s<>"'`|\u200B-\u200D\uFEFF\u2190-\u21FF\u3000-\u303F\uFF00-\uFFEF]+/gi;
+
 const BARE_LINK = /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/?#]\S*)?$/i;
 
+const SENTENCE_END = /[.,;:!?]+$/;
+
+/** Each bracket that can open a link in chat text, and the one that closes it. */
+const BRACKETS = new Map([
+  ["(", ")"],
+  ["[", "]"],
+  ["{", "}"],
+]);
+
+/** The run that closes `opening`: `**(` closes with `)**`. */
+function closingFor(opening: string): string {
+  return [...opening]
+    .reverse()
+    .map((character) => BRACKETS.get(character) ?? character)
+    .join("");
+}
+
+function count(text: string, character: string): number {
+  return text.split(character).length - 1;
+}
+
 /**
- * A URL's end, without the punctuation a sentence or a pair of brackets left on it. `*`, `_` and
- * `~` end many real links (`x.com/name_`), so they go only when the same run opened the link, as
- * chat markdown (`_https://…_`, `**https://…**`) wraps it.
+ * A URL's end, without what a sentence or a wrapper left on it. Whatever opened the link
+ * (markdown such as `**` or `_`, a bracket, or both stacked) is closed by its mirror at the end,
+ * which comes off. `*`, `_` and `~` end many real links (`x.com/name_`), so they come off only as
+ * that mirror. Then sentence punctuation and any closing bracket with no opener in the URL go.
  */
 function trimTrailing(candidate: string, opening: string): string {
-  let url = candidate.replace(/[.,;:!?]+$/, "");
+  let url = candidate.replace(SENTENCE_END, "");
+  const closing = closingFor(opening);
 
-  if (opening && url.endsWith(opening)) url = url.slice(0, -opening.length);
+  if (closing && url.endsWith(closing))
+    url = url.slice(0, -closing.length).replace(SENTENCE_END, "");
 
-  url = url.replace(/[.,;:!?]+$/, "");
-
-  while (url.endsWith(")") && (url.match(/\(/g)?.length ?? 0) < (url.match(/\)/g)?.length ?? 0)) {
-    url = url.slice(0, -1).replace(/[.,;:!?]+$/, "");
+  for (const [open, close] of BRACKETS) {
+    while (url.endsWith(close) && count(url, open) < count(url, close)) {
+      url = url.slice(0, -1).replace(SENTENCE_END, "");
+    }
   }
 
   return url;
@@ -666,7 +697,7 @@ function trimTrailing(candidate: string, opening: string): string {
 export function extractUrls(text: string): string[] {
   const found = [...text.matchAll(URL_IN_TEXT)].map((match) => {
     const before = text.slice(0, match.index);
-    const opening = before.match(/[*_~]+$/)?.[0] ?? "";
+    const opening = before.match(/[*_~([{]+$/)?.[0] ?? "";
 
     return trimTrailing(match[0], opening);
   });

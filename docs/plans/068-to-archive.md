@@ -85,8 +85,9 @@ letters, not the sites' logos.
 Applied in this order:
 
 1. Every link: trim it, require `http:` or `https:` (anything else is refused), lowercase the host,
-   drop `www.`, `m.` and `mobile.`, drop the fragment unless it is a route (`#!…`, `#F!…!…` as old
-   MEGA links use, `#/…`), drop `utm_*`, `ref`, `ref_src`, `fbclid`, `igshid`, `si` and
+   drop `www.`, `m.` and `mobile.`, drop the fragment unless it holds a `/` or a `!` (a route, as
+   MEGA links `#F!id!key` and `#key/folder/sub` and single-page apps `#/…` use), drop `utm_*`,
+   `fbclid`, `gclid`, `igshid`, `mc_cid`, `mc_eid`, `ref`, `ref_src`, `ref_url`, `si` and
    `enterAgree`, sort the remaining query parameters, and drop a trailing slash. The scheme is
    dropped from the key, so `http` and `https` match; a non-default port stays.
 2. Per site, a rule rewrites only the forms it names; any other path stays whole with its query,
@@ -118,9 +119,11 @@ Applied in this order:
      and items (`/s/…`, `/post/…`, `/c/…`, …) stay whole.
    - SubscribeStar: `/name` alone, and `/posts/N/…` → `/posts/N`.
 
-   Pulling links out of pasted text drops sentence punctuation and unmatched brackets from a
-   link's end. A trailing `*`, `_` or `~` stays unless the same run opened the link, as chat
-   markdown does.
+   Pulling links out of pasted text: a link ends at whitespace, quotes, angle brackets, `|`
+   (Discord's `||spoiler||`), zero-width spaces, arrows, and CJK punctuation. Whatever opened it
+   (markdown such as `**` or `_`, a bracket, or both stacked) comes off its end as the mirror run,
+   then sentence punctuation and closing brackets with no opener in the link. A trailing `*`, `_`
+   or `~` otherwise stays: many handles end with one.
 
 `canonical_url` is the key, and `url` keeps what was pasted (for opening).
 
@@ -189,7 +192,7 @@ now()`. Later, Archived and Remove then work the same for every row. The **reche
      `components/ui/dropdown-menu.tsx`.
 4. **Sidebar:** a "To archive" link in `ArchiveSidebar.tsx`'s footer, above Settings, with an
    inbox icon and no count.
-5. **Focus mode** (mock H): `?run=1` on the same route, so Back leaves it. It shows one card (badge,
+5. **Focus mode** (mock H): `?run=true` on the same route, so Back leaves it. It shows one card (badge,
    site, label, URL), a progress line ("10 left · 2 archived") and the next two links.
    - **Keys:** ↵ opens, A archives, L sends it to the back, Backspace removes (with Undo), Esc
      leaves. They work only while focus mode is mounted and no text field has focus, so they

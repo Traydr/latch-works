@@ -11,6 +11,9 @@ export const RECHECK_DAY_CHOICES = [30, 60, 90, 180] as const;
 
 export const DEFAULT_RECHECK_DAYS = 90;
 
+/** Ten years: anything longer is a typo, and it keeps the value well inside a Postgres integer. */
+const MAX_RECHECK_DAYS = 3650;
+
 export const ARCHIVED_PAGE_SIZE = 100;
 
 export const ArchiveLinkSchema = z.object({
@@ -22,7 +25,7 @@ export const ArchiveLinkSchema = z.object({
   /** ISO timestamps. */
   queuedAt: z.iso.datetime({ offset: true }),
   archivedAt: z.iso.datetime({ offset: true }).nullable(),
-  recheckDays: z.number().int().positive().nullable(),
+  recheckDays: z.number().int().positive().max(MAX_RECHECK_DAYS).nullable(),
   addedAt: z.iso.datetime({ offset: true }),
 });
 
@@ -60,7 +63,7 @@ export type ListArchivedInput = z.infer<typeof ListArchivedInputSchema>;
 
 export const SetRecheckInputSchema = z.object({
   id: z.uuid(),
-  days: z.number().int().positive().max(3650).nullable(),
+  days: z.number().int().positive().max(MAX_RECHECK_DAYS).nullable(),
 });
 
 /** A link is a recheck when it waits in To archive after having been archived before. */

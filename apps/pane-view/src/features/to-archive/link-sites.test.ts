@@ -264,6 +264,32 @@ describe("extractUrls", () => {
     ]);
   });
 
+  it("unwraps spoilers, brackets and stacked markdown, and stops at CJK punctuation", () => {
+    expect(
+      extractUrls(
+        [
+          "||https://kemono.su/patreon/user/123/post/456||",
+          "[https://www.patreon.com/inkfox] {https://ko-fi.com/inkfox}",
+          "Patreon: https://www.patreon.com/inkfox| Ko-fi: https://ko-fi.com/inkfox_",
+          "**(https://x.com/a_)**, _(https://x.com/b)_",
+          "pixiv→https://www.pixiv.net/users/123、FANBOX→https://inkfox.fanbox.cc/」",
+          "https://x.com/c\u200B",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      "https://kemono.su/patreon/user/123/post/456",
+      "https://www.patreon.com/inkfox",
+      "https://ko-fi.com/inkfox",
+      "https://www.patreon.com/inkfox",
+      "https://ko-fi.com/inkfox_",
+      "https://x.com/a_",
+      "https://x.com/b",
+      "https://www.pixiv.net/users/123",
+      "https://inkfox.fanbox.cc/",
+      "https://x.com/c",
+    ]);
+  });
+
   it("takes a lone link typed without a scheme as https", () => {
     expect(extractUrls("  patreon.com/inkwellmoth ")).toEqual(["https://patreon.com/inkwellmoth"]);
     expect(extractUrls("just some words")).toEqual([]);
