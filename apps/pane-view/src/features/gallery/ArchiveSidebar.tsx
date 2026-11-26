@@ -1,6 +1,15 @@
 import { compareByName, type FolderNode } from "@latch-works/media-domain";
 import { Link } from "@tanstack/react-router";
-import { Archive, BarChart3, ChevronRight, Folder, LogOut, Settings, Wrench } from "lucide-react";
+import {
+  Archive,
+  BarChart3,
+  ChevronRight,
+  Folder,
+  Inbox,
+  LogOut,
+  Settings,
+  Wrench,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -141,6 +150,16 @@ export function ArchiveSidebar({
 
       <SidebarFooter className="border-t border-sidebar-border p-2 pb-[max(0.5rem,var(--safe-area-bottom))]">
         <div className="grid gap-1">
+          <Button
+            asChild
+            className="w-full justify-start gap-2 pointer-coarse:h-11"
+            variant="ghost"
+          >
+            <Link to="/to-archive">
+              <Inbox className="size-4" />
+              <span>To archive</span>
+            </Link>
+          </Button>
           <Button
             className="w-full justify-start gap-2 pointer-coarse:h-11"
             onClick={openSettings}

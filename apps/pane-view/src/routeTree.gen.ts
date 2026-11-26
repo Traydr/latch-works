@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedGalleryRouteImport } from './routes/_authed/_gallery'
 import { Route as AuthedManageRouteImport } from './routes/_authed/manage'
 import { Route as AuthedStatsRouteImport } from './routes/_authed/stats'
+import { Route as AuthedToArchiveRouteImport } from './routes/_authed/to-archive'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
 import { Route as AuthedGalleryIndexRouteImport } from './routes/_authed/_gallery/index'
 import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
@@ -47,6 +48,11 @@ const AuthedManageRoute = AuthedManageRouteImport.update({
 const AuthedStatsRoute = AuthedStatsRouteImport.update({
   id: '/stats',
   path: '/stats',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedToArchiveRoute = AuthedToArchiveRouteImport.update({
+  id: '/to-archive',
+  path: '/to-archive',
   getParentRoute: () => AuthedRoute,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
@@ -111,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/manage': typeof AuthedManageRoute
   '/stats': typeof AuthedStatsRoute
+  '/to-archive': typeof AuthedToArchiveRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
@@ -127,6 +134,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/manage': typeof AuthedManageRoute
   '/stats': typeof AuthedStatsRoute
+  '/to-archive': typeof AuthedToArchiveRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
@@ -145,6 +153,7 @@ export interface FileRoutesById {
   '/_authed/_gallery': typeof AuthedGalleryRouteWithChildren
   '/_authed/manage': typeof AuthedManageRoute
   '/_authed/stats': typeof AuthedStatsRoute
+  '/_authed/to-archive': typeof AuthedToArchiveRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
@@ -164,6 +173,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/manage'
     | '/stats'
+    | '/to-archive'
     | '/api/health'
     | '/api/auth/login'
     | '/api/auth/logout'
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/manage'
     | '/stats'
+    | '/to-archive'
     | '/api/health'
     | '/api/auth/login'
     | '/api/auth/logout'
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/_authed/_gallery'
     | '/_authed/manage'
     | '/_authed/stats'
+    | '/_authed/to-archive'
     | '/api/health'
     | '/api/auth/login'
     | '/api/auth/logout'
@@ -259,6 +271,13 @@ declare module '@tanstack/react-router' {
       path: '/stats'
       fullPath: '/stats'
       preLoaderRoute: typeof AuthedStatsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/to-archive': {
+      id: '/_authed/to-archive'
+      path: '/to-archive'
+      fullPath: '/to-archive'
+      preLoaderRoute: typeof AuthedToArchiveRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/api/health': {
@@ -357,12 +376,14 @@ interface AuthedRouteChildren {
   AuthedGalleryRoute: typeof AuthedGalleryRouteWithChildren
   AuthedManageRoute: typeof AuthedManageRoute
   AuthedStatsRoute: typeof AuthedStatsRoute
+  AuthedToArchiveRoute: typeof AuthedToArchiveRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedGalleryRoute: AuthedGalleryRouteWithChildren,
   AuthedManageRoute: AuthedManageRoute,
   AuthedStatsRoute: AuthedStatsRoute,
+  AuthedToArchiveRoute: AuthedToArchiveRoute,
 }
 
 const AuthedRouteWithChildren =
