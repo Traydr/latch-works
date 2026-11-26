@@ -290,6 +290,45 @@ describe("extractUrls", () => {
     ]);
   });
 
+  it("ends a link where text written straight after it begins", () => {
+    expect(
+      extractUrls(
+        [
+          "https://www.patreon.com/posts/summer-pack-123456… and https://www.patreon.com/posts/other-pack-987654🎉",
+          "https://www.pixiv.net/artworks/12345678の続きです",
+          "続きはこちら→https://name.fanbox.cc/posts/1234567で公開中",
+          "“https://x.com/a” — https://x.com/b—enjoy https://x.com/c/status/1:fire:",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      "https://www.patreon.com/posts/summer-pack-123456",
+      "https://www.patreon.com/posts/other-pack-987654",
+      "https://www.pixiv.net/artworks/12345678",
+      "https://name.fanbox.cc/posts/1234567",
+      "https://x.com/a",
+      "https://x.com/b",
+      "https://x.com/c/status/1",
+    ]);
+  });
+
+  it("takes the target of a Markdown link, inside emphasis or not", () => {
+    expect(
+      extractUrls(
+        [
+          "New post on **[Patreon](https://www.patreon.com/posts/new-pack-123456)**!",
+          "*[Ko-fi](https://ko-fi.com/name)* __[X](https://x.com/name_)__",
+          "[https://www.patreon.com/posts/foo-123](https://www.patreon.com/posts/foo-123)",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      "https://www.patreon.com/posts/new-pack-123456",
+      "https://ko-fi.com/name",
+      "https://x.com/name_",
+      "https://www.patreon.com/posts/foo-123",
+      "https://www.patreon.com/posts/foo-123",
+    ]);
+  });
+
   it("takes a lone link typed without a scheme as https", () => {
     expect(extractUrls("  patreon.com/inkwellmoth ")).toEqual(["https://patreon.com/inkwellmoth"]);
     expect(extractUrls("just some words")).toEqual([]);

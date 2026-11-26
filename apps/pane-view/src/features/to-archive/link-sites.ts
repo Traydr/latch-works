@@ -234,8 +234,9 @@ const PATREON_PAGES = new Set([
   "settings",
 ]);
 
+/** A post id at the end of a slug (`winter-set-118842301`), or a segment that is only digits. */
 function lastDigits(segment: string | undefined): string | undefined {
-  return segment?.match(/(\d+)$/)?.[1];
+  return segment?.match(/(?:^|-)(\d+)$/)?.[1];
 }
 
 function segmentsPath(segments: readonly string[]): string {
@@ -638,12 +639,12 @@ export function parseLink(input: string): ParsedLink | null {
 }
 
 /**
- * A URL in pasted text runs until whitespace or a character no link here ends with: quotes,
- * angle brackets, `|` (Discord's `||spoiler||` and list separators), zero-width spaces, arrows,
- * and CJK punctuation and full-width forms (`」`, `、` in Japanese captions).
+ * A URL in pasted text is made only of the characters a URL may hold, so it ends at anything
+ * else: whitespace, quotes, `|` (Discord's `||spoiler||`), an emoji, `…` or a curly quote, or
+ * Japanese text written straight after it. Browsers copy a URL with anything else
+ * percent-encoded. It also ends at `](`, where a Markdown link's label meets its target.
  */
-const URL_IN_TEXT =
-  /https?:\/\/[^\s<>"'`|\u200B-\u200D\uFEFF\u2190-\u21FF\u3000-\u303F\uFF00-\uFFEF]+/gi;
+const URL_IN_TEXT = /https?:\/\/(?:(?!\]\()[A-Za-z0-9\-._~:/?#[\]@!$&()*+,;=%])+/gi;
 
 const BARE_LINK = /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/?#]\S*)?$/i;
 
@@ -675,7 +676,8 @@ function count(text: string, character: string): number {
  * that mirror. Then sentence punctuation and any closing bracket with no opener in the URL go.
  */
 function trimTrailing(candidate: string, opening: string): string {
-  let url = candidate.replace(SENTENCE_END, "");
+  // A Discord emoji code written straight after the link (`…/status/1:fire:`).
+  let url = candidate.replace(/:[a-z0-9_+-]+:$/i, "").replace(SENTENCE_END, "");
   const closing = closingFor(opening);
 
   if (closing && url.endsWith(closing))
@@ -691,15 +693,29 @@ function trimTrailing(candidate: string, opening: string): string {
 }
 
 /**
+ * What opens the link that `before` leads into. In a Markdown link (`**[label](url)**`) the
+ * emphasis sits before the `[`, so it is taken from there, followed by the `(`.
+ */
+function openingBefore(before: string): string {
+  if (before.endsWith("](")) {
+    const label = before.lastIndexOf("[");
+    const emphasis = label === -1 ? "" : (before.slice(0, label).match(/[*_~]+$/)?.[0] ?? "");
+
+    return `${emphasis}(`;
+  }
+
+  return before.match(/[*_~([{]+$/)?.[0] ?? "";
+}
+
+/**
  * Every http(s) URL in pasted text: a list, chat messages, a single link. A lone link typed
  * without a scheme (`patreon.com/name`) is taken as https.
  */
 export function extractUrls(text: string): string[] {
   const found = [...text.matchAll(URL_IN_TEXT)].map((match) => {
     const before = text.slice(0, match.index);
-    const opening = before.match(/[*_~([{]+$/)?.[0] ?? "";
 
-    return trimTrailing(match[0], opening);
+    return trimTrailing(match[0], openingBefore(before));
   });
 
   if (found.length > 0) return found;

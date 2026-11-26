@@ -119,11 +119,13 @@ Applied in this order:
      and items (`/s/…`, `/post/…`, `/c/…`, …) stay whole.
    - SubscribeStar: `/name` alone, and `/posts/N/…` → `/posts/N`.
 
-   Pulling links out of pasted text: a link ends at whitespace, quotes, angle brackets, `|`
-   (Discord's `||spoiler||`), zero-width spaces, arrows, and CJK punctuation. Whatever opened it
-   (markdown such as `**` or `_`, a bracket, or both stacked) comes off its end as the mirror run,
-   then sentence punctuation and closing brackets with no opener in the link. A trailing `*`, `_`
-   or `~` otherwise stays: many handles end with one.
+   Pulling links out of pasted text: a link is made only of the ASCII characters a URL may hold
+   (browsers copy a URL percent-encoded), so it ends at whitespace, quotes, `|` (Discord's
+   `||spoiler||`), emoji, typographic punctuation, or Japanese text written straight after it,
+   and at `](` in a Markdown link. Whatever opened it (markdown such as `**` or `_`, a bracket,
+   both stacked, or the emphasis around a `[label](url)`) comes off its end as the mirror run,
+   then sentence punctuation, a Discord `:emoji:` code, and closing brackets with no opener in
+   the link. A trailing `*`, `_` or `~` otherwise stays: many handles end with one.
 
 `canonical_url` is the key, and `url` keeps what was pasted (for opening).
 
