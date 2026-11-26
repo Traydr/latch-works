@@ -15,6 +15,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { ARCHIVE_LINK_STATUSES } from "@/features/to-archive/to-archive-contract";
 import type { JsonValue } from "@/lib/json";
 import {
   ACTIVE_MAINTENANCE_JOB_STATUSES,
@@ -307,5 +308,41 @@ export const maintenanceJobs = pgTable(
     activeTypeUnique: uniqueIndex(ACTIVE_MAINTENANCE_JOB_INDEX)
       .on(table.type)
       .where(sql`${table.status} in (${activeStatusList})`),
+  }),
+);
+
+/** Plan 068: a link waits in To archive until the owner marks it archived. */
+export const archiveLinkStatusEnum = pgEnum("archive_link_status", ARCHIVE_LINK_STATUSES);
+
+export const archiveLinks = pgTable(
+  "archive_links",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** The link as pasted; opening it opens this. */
+    url: text("url").notNull(),
+    /** The duplicate key (`features/to-archive/link-sites.ts`). */
+    canonicalUrl: text("canonical_url").notNull(),
+    /** A site key; text rather than an enum so a new site needs no migration. */
+    site: text("site").notNull(),
+    status: archiveLinkStatusEnum("status").notNull().default("to_archive"),
+    /** The To archive order, oldest first. Adding, Later and queueing again set it to now. */
+    queuedAt: timestamp("queued_at", { withTimezone: true }).defaultNow().notNull(),
+    /** Kept when a link goes back to To archive, which marks it as a recheck. */
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    /** Null unless the owner switched on a recheck. */
+    recheckDays: integer("recheck_days"),
+    addedAt: timestamp("added_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    canonicalUrlUnique: uniqueIndex("archive_links_canonical_url_unique").on(table.canonicalUrl),
+    queueIndex: index("archive_links_status_queued_at_idx").on(table.status, table.queuedAt),
+    archivedIndex: index("archive_links_status_archived_at_idx").on(
+      table.status,
+      table.archivedAt.desc(),
+    ),
+    recheckDaysPositive: check(
+      "archive_links_recheck_days_positive",
+      sql`${table.recheckDays} is null or ${table.recheckDays} > 0`,
+    ),
   }),
 );
